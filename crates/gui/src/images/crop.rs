@@ -490,14 +490,15 @@ mod tests {
         assert_eq!((vanishing.left, vanishing.top), (1, 1), "the origin was not scaled with the rectangle");
     }
     #[test]
-    fn a_cropped_display_p3_picture_keeps_its_profile() {
-        let source = picture_of(40, 30).with_metadata(crate::test_support::display_p3());
+    fn a_cropped_display_p3_picture_keeps_its_metadata() {
+        let source = picture_of(40, 30).with_metadata(crate::test_support::described());
         let crop = Crop::new(4, 3, 20, 10, 90, true, false).expect("legal");
 
         let cropped = cropped(&source, crop);
 
         assert_ne!(cropped.identity(), source.identity(), "the framing changed nothing");
         assert_eq!(cropped.metadata().icc_profile.as_deref(), Some(crate::test_support::DISPLAY_P3));
+        assert_eq!(cropped.metadata(), source.metadata(), "the EXIF, XMP or IPTC was lost");
         assert!(Arc::ptr_eq(&cropped.shared_metadata(), &source.shared_metadata()), "the profile was copied");
     }
 

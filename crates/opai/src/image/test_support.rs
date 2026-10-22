@@ -95,6 +95,47 @@ pub(crate) fn written_p3(format: ImageFormat) -> Vec<u8> {
     bytes
 }
 
+/// A minimal big-endian EXIF block: `Make` = `Cam` and `Orientation` = 6 (rotate 90° clockwise to view) in IFD0.
+///
+/// Orientation 6 rather than 1 so a test can tell a rendition that carried it from one that did not.
+pub(crate) const EXIF: &[u8] = b"MM\0\x2a\0\0\0\x08\0\x02\
+    \x01\x0f\0\x02\0\0\0\x04Cam\0\
+    \x01\x12\0\x03\0\0\0\x01\0\x06\0\0\
+    \0\0\0\0";
+
+/// A small XMP packet naming two keywords.
+pub(crate) const XMP: &[u8] = b"<?xpacket begin='\xef\xbb\xbf' id='W5M0MpCehiHzreSzNTczkc9d'?>\
+<x:xmpmeta xmlns:x='adobe:ns:meta/'><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>\
+<rdf:Description rdf:about='' xmlns:dc='http://purl.org/dc/elements/1.1/'>\
+<dc:subject><rdf:Bag><rdf:li>hawk</rdf:li><rdf:li>bird</rdf:li></rdf:Bag></dc:subject>\
+</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end='w'?>";
+
+/// A Photoshop resource block holding one IPTC-IIM resource (`0x0404`) with one keyword dataset (2:25 `hawk`).
+pub(crate) const IPTC: &[u8] = b"8BIM\x04\x04\0\0\0\0\0\x09\x1c\x02\x19\0\x04hawk\0";
+
+/// Metadata carrying [`DISPLAY_P3`] and the three descriptive blocks, [`EXIF`], [`XMP`] and [`IPTC`].
+pub(crate) fn described() -> Metadata {
+    let mut metadata = display_p3();
+    metadata.exif = Some(EXIF.to_vec());
+    metadata.xmp = Some(XMP.to_vec());
+    metadata.iptc = Some(IPTC.to_vec());
+    metadata
+}
+
+/// [`sample_image`] as `format` with [`described`] embedded: a photograph as a camera and a cataloguing tool leave it.
+///
+/// # Panics
+///
+/// Panics if the fixture cannot be encoded, or if the format did not take every block it can hold.
+pub(crate) fn written_described(format: ImageFormat) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let embedded = encode_writer_with(&sample_image(), &mut bytes, format, None, &described())
+        .unwrap_or_else(|err| panic!("the described {format:?} fixture could not be encoded: {err}"));
+    assert!(embedded.icc_profile && embedded.exif && embedded.xmp, "{format:?} did not embed {embedded:?}");
+    assert_eq!(embedded.iptc, format == ImageFormat::Jpeg, "{format:?}");
+    bytes
+}
+
 /// Writes `bytes` into `dir` under `name` and hands back the path.
 pub(crate) fn write_fixture(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {
     // The name is the test's to choose, because half of what these tests assert is that the name does *not* decide

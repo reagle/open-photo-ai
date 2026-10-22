@@ -348,12 +348,13 @@ async fn an_empty_chain_returns_a_picture_identical_to_the_source() {
 }
 
 #[tokio::test]
-async fn a_computed_result_and_a_cache_served_one_both_carry_the_sources_colour_profile() {
-    // The cache stores pixels only, so the profile a result carries must come from the source on every path: a
-    // Display P3 photograph enhanced once and then served again must not come back the second time as untagged sRGB.
+async fn a_computed_result_and_a_cache_served_one_both_carry_the_sources_metadata() {
+    // The cache stores pixels only, so the metadata a result carries must come from the source on every path: a
+    // Display P3 photograph enhanced once and then served again must not come back the second time as untagged sRGB,
+    // nor without the EXIF, XMP and IPTC it was loaded with.
     let backend = Fake::new();
     let cache = store();
-    let source = picture(120, 80).with_metadata(crate::image::test_support::display_p3());
+    let source = picture(120, 80).with_metadata(crate::image::test_support::described());
 
     let computed = process(&backend, Some(&cache), &source, &[kyoto(2.0)], None).await.unwrap().picture;
     let ran = backend.log().ran.len();
@@ -361,7 +362,7 @@ async fn a_computed_result_and_a_cache_served_one_both_carry_the_sources_colour_
 
     assert_eq!(backend.log().ran.len(), ran, "the second run was not served from the cache");
     for (result, how) in [(&computed, "computed"), (&served, "served")] {
-        assert_eq!(result.metadata(), source.metadata(), "the {how} result lost the profile");
+        assert_eq!(result.metadata(), source.metadata(), "the {how} result lost the metadata");
         assert!(Arc::ptr_eq(&result.shared_metadata(), &source.shared_metadata()), "the {how} result copied it");
     }
 
