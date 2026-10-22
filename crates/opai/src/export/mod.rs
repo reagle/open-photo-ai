@@ -11,7 +11,15 @@
 //! - [`mod@claim`]: holding that destination while the file is written ([`claim()`]) — the first free numbered name
 //!   without overwriting, or a hidden name renamed over the destination on [`Claim::commit`] with it — and giving it
 //!   back when the write does not finish.
+//! - [`mod@loss`]: what writing a picture as a format loses against its source ([`losses`], [`Loss`]): HDR (always,
+//!   until HDR is written), bits per channel or float samples, and the colour profile (a format that cannot hold one, a
+//!   profile for another colour model, one the load discarded, a coded description nothing writes yet). Asked before
+//!   the write; worded in English by `Display` and left to a front end by `Serialize`. An HDR source whose PQ or HLG
+//!   is declared by an embedded ICC `cicp` tag is reported as losing HDR even where the profile is embedded: a known
+//!   over-warning.
 //! - [`mod@write`]: the claim, the save and the commit together ([`write()`]), which is how a front end writes one.
+//!   It assesses the losses, reconciles them with what the encoder embedded, logs each as a warning and answers them
+//!   on [`Written::losses`].
 //!   It embeds the source's metadata as the export policy rewrites it: the EXIF with every field true of the file and
 //!   its MakerNote kept where safe, the XMP with a new identity and history, the IPTC-IIM, and the ICC profile.
 //!
@@ -23,6 +31,7 @@
 
 pub mod claim;
 pub mod format;
+pub mod loss;
 pub(crate) mod metadata;
 pub mod name;
 pub mod write;
@@ -31,5 +40,6 @@ pub use claim::{Claim, claim};
 pub use format::{
     ExportFormat, ExportFormats, FormatCapability, FormatChoice, QualityRange, UnknownFormat, capabilities,
 };
+pub use loss::{Loss, ProfileCause, losses};
 pub use name::{Named, Naming, destination_for, name_for};
 pub use write::{WriteError, WriteOptions, Written, write};

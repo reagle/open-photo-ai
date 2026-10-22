@@ -4,12 +4,12 @@
 use std::borrow::Cow;
 use std::path::Path;
 
-use ::image::DynamicImage;
+use ::image::{ColorType, DynamicImage};
 use rust_sak::image::{Embedded, ImageFormat, Metadata};
 
 /// The profile's data colour space, the four-character signature at bytes 16..20 of its header (`RGB `, `GRAY`,
 /// `CMYK`, …), trimmed; `None` if there is no header to read it from.
-pub(super) fn colour_space(profile: &[u8]) -> Option<&str> {
+pub(crate) fn colour_space(profile: &[u8]) -> Option<&str> {
     let signature = profile.get(16..20)?;
     std::str::from_utf8(signature).ok().map(str::trim_end)
 }
@@ -21,7 +21,7 @@ pub(super) fn describes(profile: &[u8], pixels: &DynamicImage) -> bool {
 }
 
 /// Whether `profile` is for colour pixels (`colour`) or grayscale ones (`!colour`).
-fn fits(profile: &[u8], colour: bool) -> bool {
+pub(crate) fn fits(profile: &[u8], colour: bool) -> bool {
     match colour_space(profile) {
         Some("RGB") => colour,
         Some("GRAY") => !colour,
@@ -37,7 +37,11 @@ fn fits(profile: &[u8], colour: bool) -> bool {
 /// Mirrors `rust_sak::image`'s `make_compatible` and the codecs behind it, which are not public; the test
 /// `the_written_colour_model_is_the_one_rust_sak_writes` encodes through `rust-sak` and fails if the two drift apart.
 pub(super) fn written_in_colour(format: ImageFormat, pixels: &DynamicImage) -> bool {
-    let colour = pixels.color();
+    writes_colour(format, pixels.color())
+}
+
+/// [`written_in_colour`] for pixels of `colour`, without needing them.
+pub(crate) fn writes_colour(format: ImageFormat, colour: ColorType) -> bool {
     if colour.has_color() {
         return true;
     }
@@ -49,15 +53,36 @@ pub(super) fn written_in_colour(format: ImageFormat, pixels: &DynamicImage) -> b
 }
 
 /// The profile's own description (`Display P3`), for a log record to name it by.
-pub(super) fn description(profile: &[u8]) -> Option<String> {
+pub(crate) fn description(profile: &[u8]) -> Option<String> {
     rust_sak::image::icc_profile_description(profile)
+}
+
+/// Whether `profile` is plain sRGB, by the description the common sRGB profiles give themselves (`sRGB
+/// IEC61966-2.1`, its black-scaled and 2014 variants, `sRGB built-in`): what an AVIF or HEIF file says without one, since
+/// its unspecified colour description is read as sRGB. Judged by name, so a profile that calls itself sRGB and is not
+/// is believed; the cost is one warning missed for a mislabelled profile.
+pub(crate) fn is_srgb(profile: &[u8]) -> bool {
+    colour_space(profile) == Some("RGB")
+        && description(profile).is_some_and(|name| {
+            let name = name.to_ascii_lowercase();
+            name == "srgb"
+                || name == "srgb built-in"
+                || name.starts_with("srgb iec61966-2")
+                || name.starts_with("srgb2014")
+        })
+}
+
+/// Whether leaving `profile` out of a file written as `format` changes how its colours read: not for plain sRGB in an
+/// AVIF or HEIF, whose colours are then read as sRGB anyway ([`is_srgb`]).
+pub(crate) fn matters_in(profile: &[u8], format: ImageFormat) -> bool {
+    !(matches!(format, ImageFormat::Avif | ImageFormat::Heif) && is_srgb(profile))
 }
 
 /// `metadata` as it may be embedded beside `pixels` written as `format`: unchanged, unless its profile is for another
 /// colour model than the file will hold — a grayscale photograph's `GRAY` profile after colourisation made it RGB, or
 /// beside grayscale-with-alpha written as TIFF, which `rust-sak` expands to RGBA (see [`written_in_colour`]) — in which
 /// case that profile is left out. Borrowed whenever nothing is left out, which is every ordinary export.
-pub(super) fn embeddable<'a>(metadata: &'a Metadata, pixels: &DynamicImage, format: ImageFormat) -> Cow<'a, Metadata> {
+pub(crate) fn embeddable<'a>(metadata: &'a Metadata, pixels: &DynamicImage, format: ImageFormat) -> Cow<'a, Metadata> {
     match &metadata.icc_profile {
         Some(profile) if !fits(profile, written_in_colour(format, pixels)) => {
             let mut fitting = metadata.clone();
@@ -68,12 +93,14 @@ pub(super) fn embeddable<'a>(metadata: &'a Metadata, pixels: &DynamicImage, form
     }
 }
 
-/// Records, once, that the profile `metadata` carried did not reach a file written as `format`: either because the
-/// format cannot hold one (BMP, GIF, AVIF and HEIF today) or because it did not describe the pixels. A warning rather
-/// than a refusal — the file is still the photograph — and silent when there was no profile to lose.
+/// Records, once, that the profile `metadata` carried did not reach a file written as `format`: because the format
+/// cannot hold one (BMP, GIF, AVIF and HEIF today), because it did not describe the pixels, or because the encoder could
+/// not write it (a profile too large for the format). A warning rather than a refusal — the file is still the
+/// photograph — and silent when there was no profile to lose, or when it was plain sRGB left out of an AVIF or HEIF,
+/// which reads as sRGB without it ([`matters_in`]).
 pub(super) fn warn_if_dropped(metadata: &Metadata, embedded: Embedded, format: ImageFormat, path: Option<&Path>) {
     let Some(profile) = &metadata.icc_profile else { return };
-    if embedded.icc_profile {
+    if embedded.icc_profile || !matters_in(profile, format) {
         return;
     }
 
@@ -176,6 +203,26 @@ mod tests {
         assert!(embeddable(&metadata, &luma, ImageFormat::Tiff).icc_profile.is_some());
         assert!(embeddable(&metadata, &luma_alpha, ImageFormat::Png).icc_profile.is_some());
         assert!(embeddable(&metadata, &luma_alpha, ImageFormat::Jpeg).icc_profile.is_some());
+    }
+
+    #[test]
+    fn plain_srgb_is_known_by_its_name_and_only_matters_outside_avif_and_heif() {
+        use crate::image::test_support::{rgb_profile_named, srgb_profile};
+
+        for name in ["sRGB IEC61966-2.1", "sRGB IEC61966-2-1 black scaled", "sRGB built-in", "sRGB2014", "sRGB"] {
+            assert!(is_srgb(&rgb_profile_named(name, 0)), "{name}");
+        }
+        for name in ["Display P3", "sRGB linear", "Adobe RGB (1998)", "ProPhoto sRGB-ish"] {
+            assert!(!is_srgb(&rgb_profile_named(name, 0)), "{name}");
+        }
+        let mut gray = srgb_profile(0);
+        gray[16..20].copy_from_slice(b"GRAY");
+        assert!(!is_srgb(&gray), "a grayscale profile is not sRGB, whatever it says");
+        assert!(!is_srgb(DISPLAY_P3));
+
+        let srgb = srgb_profile(0);
+        assert!(!matters_in(&srgb, ImageFormat::Avif) && !matters_in(&srgb, ImageFormat::Heif));
+        assert!(matters_in(&srgb, ImageFormat::Gif) && matters_in(DISPLAY_P3, ImageFormat::Avif));
     }
 
     #[test]
