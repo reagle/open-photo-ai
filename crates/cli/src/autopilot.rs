@@ -1,19 +1,22 @@
-//! Which model autopilot runs each family with: the bare flag's default, or what the family's `OPAI_AP_*` variable
-//! names, or nothing at all where it says `off`.
+//! Which model autopilot runs each family with: what the family's `OPAI_AP_*` variable names, or else what the GUI's
+//! saved settings name for it, or else the bare flag's default — or nothing at all where the variable says `off` or,
+//! with no variable, the GUI's settings say Autopilot may not suggest the family.
 //!
 //! Read once, at startup and only under `--autopilot`, through a lookup the caller hands in, so the tests read a map
 //! and nothing here touches the process environment. Only this front end reads these variables: the GUI answers the
-//! same question from its own settings.
+//! same question from its own settings, and publishes them for this one (see `crate::settings`).
 
 use std::ffi::OsString;
 
 use clap::error::ErrorKind;
 use clap::{CommandFactory, ValueEnum};
 use opai::Family;
+use opai::settings::SharedSettings;
 
 use crate::args::{
     Args, BalanceModel, ColorizationModel, DenoiseModel, FaceModel, LightModel, SharpenModel, UpscaleModel,
 };
+use crate::settings::Source;
 
 /// The word that leaves a family out of the analysis. No model is named `off`, so it is free.
 const OFF: &str = "off";
@@ -61,7 +64,7 @@ family_model!(BalanceModel, Family::ColorBalance, "OPAI_AP_COLOR", BalanceModel:
 family_model!(SharpenModel, Family::Sharpen, "OPAI_AP_SHARPEN", SharpenModel::Moscow, sharpen);
 family_model!(UpscaleModel, Family::Upscale, "OPAI_AP_UPSCALE", UpscaleModel::Tokyo, upscale);
 
-/// Autopilot's model for every family, in the library's apply order: `None` where the family's variable says `off`.
+/// Autopilot's model for every family, in the library's apply order: `None` where the family is switched off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AutopilotModels {
     pub denoise: Option<DenoiseModel>,
@@ -71,6 +74,8 @@ pub struct AutopilotModels {
     pub color_balance: Option<BalanceModel>,
     pub sharpen: Option<SharpenModel>,
     pub upscale: Option<UpscaleModel>,
+    /// Where each family's choice came from, in the library's apply order.
+    pub sources: [Source; 7],
 }
 
 impl Default for AutopilotModels {
@@ -83,27 +88,64 @@ impl Default for AutopilotModels {
             color_balance: Some(BalanceModel::DEFAULT),
             sharpen: Some(SharpenModel::DEFAULT),
             upscale: Some(UpscaleModel::DEFAULT),
+            sources: [Source::Default; 7],
         }
     }
 }
 
 impl AutopilotModels {
-    /// The seven `OPAI_AP_*` variables, each read through `lookup`.
+    /// The seven `OPAI_AP_*` variables, each read through `lookup`, over what `gui` saved for the family.
     ///
     /// # Errors
     ///
     /// A usage error, as a bad flag value is one, for the first variable that is neither empty, `off`, nor a model of
-    /// its family, naming the variable and the value and listing what it accepts.
-    pub fn read(lookup: impl Fn(&str) -> Option<OsString>) -> Result<Self, clap::Error> {
+    /// its family, naming the variable and the value and listing what it accepts. Nothing the GUI saved is an error.
+    pub fn read(lookup: impl Fn(&str) -> Option<OsString>, gui: Option<&SharedSettings>) -> Result<Self, clap::Error> {
+        let (denoise, dn) = read_one(&lookup, gui)?;
+        let (face_recovery, fr) = read_one(&lookup, gui)?;
+        let (colorization, cl) = read_one(&lookup, gui)?;
+        let (light_adjustment, la) = read_one(&lookup, gui)?;
+        let (color_balance, cb) = read_one(&lookup, gui)?;
+        let (sharpen, sh) = read_one(&lookup, gui)?;
+        let (upscale, up) = read_one(&lookup, gui)?;
+
         Ok(Self {
-            denoise: read_one(&lookup)?,
-            face_recovery: read_one(&lookup)?,
-            colorization: read_one(&lookup)?,
-            light_adjustment: read_one(&lookup)?,
-            color_balance: read_one(&lookup)?,
-            sharpen: read_one(&lookup)?,
-            upscale: read_one(&lookup)?,
+            denoise,
+            face_recovery,
+            colorization,
+            light_adjustment,
+            color_balance,
+            sharpen,
+            upscale,
+            sources: [dn, fr, cl, la, cb, sh, up],
         })
+    }
+
+    /// Each family in the library's apply order, with its model's display name or `None` where it is off, and where
+    /// the choice came from, worded for `--verbose`.
+    pub fn describe(&self) -> Vec<(Family, Option<&'static str>, String)> {
+        fn one<M: FamilyModel>(models: &AutopilotModels) -> (Family, Option<&'static str>, String) {
+            let label = M::choice(models).map(|model| {
+                let name = model.to_possible_value().expect("no model is skipped");
+                opai::VariantEntry::published(M::FAMILY, name.get_name()).map_or("?", |variant| variant.label)
+            });
+            (M::FAMILY, label, models.source::<M>().describe())
+        }
+
+        vec![
+            one::<DenoiseModel>(self),
+            one::<FaceModel>(self),
+            one::<ColorizationModel>(self),
+            one::<LightModel>(self),
+            one::<BalanceModel>(self),
+            one::<SharpenModel>(self),
+            one::<UpscaleModel>(self),
+        ]
+    }
+
+    /// Where the family `M`'s choice came from.
+    pub fn source<M: FamilyModel>(&self) -> Source {
+        M::FAMILY.applied_at().map_or(Source::Default, |index| self.sources[index])
     }
 
     /// The families not switched off, in the library's apply order: what the analysis is asked to look for.
@@ -133,36 +175,58 @@ impl AutopilotModels {
     }
 }
 
-/// The model `M`'s variable chooses, read through `lookup`: the bare flag's where it is unset or empty, `None` where
-/// it says `off`.
-fn read_one<M: FamilyModel>(lookup: impl Fn(&str) -> Option<OsString>) -> Result<Option<M>, clap::Error> {
+/// The model `M`'s variable chooses, read through `lookup`, and where the choice came from: `None` where it says
+/// `off`; where it is unset or empty, `None` where `gui` excludes the family or the model `gui` saved, and the bare
+/// flag's where `gui` says neither.
+fn read_one<M: FamilyModel>(
+    lookup: impl Fn(&str) -> Option<OsString>,
+    gui: Option<&SharedSettings>,
+) -> Result<(Option<M>, Source), clap::Error> {
     let Some(value) = lookup(M::VARIABLE).filter(|value| !value.is_empty()) else {
-        return Ok(Some(M::DEFAULT));
+        return Ok(from_gui::<M>(gui));
     };
+    let source = Source::Variable(M::VARIABLE);
 
     let text = value.to_str();
     if text.is_some_and(|text| text.eq_ignore_ascii_case(OFF)) {
-        return Ok(None);
+        return Ok((None, source));
     }
 
-    text.and_then(|text| M::from_str(text, true).ok()).map(Some).ok_or_else(|| {
-        let accepted: Vec<String> = M::value_variants()
-            .iter()
-            .filter_map(ValueEnum::to_possible_value)
-            .map(|value| value.get_name().to_owned())
-            .chain([OFF.to_owned()])
-            .collect();
+    text.and_then(|text| M::from_str(text, true).ok())
+        .map(|model| (Some(model), source))
+        .ok_or_else(|| {
+            let accepted: Vec<String> = M::value_variants()
+                .iter()
+                .filter_map(ValueEnum::to_possible_value)
+                .map(|value| value.get_name().to_owned())
+                .chain([OFF.to_owned()])
+                .collect();
 
-        Args::command().error(
-            ErrorKind::InvalidValue,
-            format!(
-                "invalid value '{}' for the environment variable {}\n  [possible values: {}]",
-                value.to_string_lossy(),
-                M::VARIABLE,
-                accepted.join(", ")
-            ),
-        )
-    })
+            Args::command().error(
+                ErrorKind::InvalidValue,
+                format!(
+                    "invalid value '{}' for the environment variable {}\n  [possible values: {}]",
+                    value.to_string_lossy(),
+                    M::VARIABLE,
+                    accepted.join(", ")
+                ),
+            )
+        })
+}
+
+/// What `gui` saved for the family `M`: off where Autopilot may not suggest it, its model where one resolves to a model
+/// this command names, and otherwise the bare flag's default.
+fn from_gui<M: FamilyModel>(gui: Option<&SharedSettings>) -> (Option<M>, Source) {
+    let Some(gui) = gui else { return (Some(M::DEFAULT), Source::Default) };
+
+    if gui.excludes(M::FAMILY) {
+        return (None, Source::Gui);
+    }
+
+    // The command line names every published model by its codename, which `every_published_model_is_named` holds.
+    gui.model(M::FAMILY)
+        .and_then(|choice| M::from_str(choice.codename, true).ok())
+        .map_or((Some(M::DEFAULT), Source::Default), |model| (Some(model), Source::Gui))
 }
 
 #[cfg(test)]
@@ -173,10 +237,87 @@ mod tests {
 
     /// Reads the variables from `pairs` alone.
     fn read(pairs: &[(&str, &str)]) -> Result<AutopilotModels, clap::Error> {
+        read_over(pairs, None)
+    }
+
+    /// Reads the variables from `pairs`, over `gui`.
+    fn read_over(pairs: &[(&str, &str)], gui: Option<&SharedSettings>) -> Result<AutopilotModels, clap::Error> {
         let map: HashMap<String, OsString> =
             pairs.iter().map(|(name, value)| ((*name).to_owned(), OsString::from(value))).collect();
 
-        AutopilotModels::read(|name| map.get(name).cloned())
+        AutopilotModels::read(|name| map.get(name).cloned(), gui)
+    }
+
+    /// What the GUI saves for a user who switched colour balance and colorization off and chose Osaka and Malmö.
+    fn saved() -> SharedSettings {
+        SharedSettings::from_gui(
+            "auto",
+            ["color_balance", "colorization"],
+            [("upscale", "osaka_int8"), ("denoise", "malmo_fp16")],
+        )
+    }
+
+    #[test]
+    fn the_guis_settings_choose_where_no_variable_does() {
+        let models = read_over(&[], Some(&saved())).expect("reads");
+
+        assert_eq!(models.color_balance, None);
+        assert_eq!(models.colorization, None);
+        assert_eq!(models.source::<BalanceModel>(), Source::Gui);
+        assert_eq!(models.model_for(), Some(UpscaleModel::Osaka));
+        assert_eq!(models.model_for(), Some(DenoiseModel::Malmo));
+        assert_eq!(models.source::<UpscaleModel>(), Source::Gui);
+        assert_eq!(models.model_for(), Some(SharpenModel::Moscow));
+        assert_eq!(models.source::<SharpenModel>(), Source::Default);
+        assert!(!models.families().contains(&Family::ColorBalance));
+        assert!(!models.families().contains(&Family::Colorization));
+
+        let described = models.describe();
+        assert_eq!(described[0], (Family::Denoise, Some("Malmö"), "from GUI settings".to_owned()));
+        assert_eq!(described[4], (Family::ColorBalance, None, "from GUI settings".to_owned()));
+        assert_eq!(described[5], (Family::Sharpen, Some("Moscow"), "default".to_owned()));
+    }
+
+    #[test]
+    fn a_variable_overrides_the_guis_settings() {
+        let models = read_over(
+            &[("OPAI_AP_COLOR", "saopaulo"), ("OPAI_AP_UPSCALE", "off"), ("OPAI_AP_DENOISE", "")],
+            Some(&saved()),
+        )
+        .expect("reads");
+
+        assert_eq!(models.model_for(), Some(BalanceModel::SaoPaulo));
+        assert_eq!(models.source::<BalanceModel>(), Source::Variable("OPAI_AP_COLOR"));
+        assert_eq!(models.model_for::<UpscaleModel>(), None);
+        assert_eq!(models.source::<UpscaleModel>(), Source::Variable("OPAI_AP_UPSCALE"));
+        assert_eq!(models.model_for(), Some(DenoiseModel::Malmo), "an empty variable leaves the GUI's choice");
+        assert_eq!(models.colorization, None, "a family no variable names stays as the GUI saved it");
+    }
+
+    #[test]
+    fn a_bad_variable_is_refused_whatever_the_gui_saved() {
+        let error = read_over(&[("OPAI_AP_COLOR", "paris")], Some(&saved())).expect_err("paris is not a balance model");
+
+        assert_eq!(error.kind(), ErrorKind::InvalidValue);
+    }
+
+    /// Every model the catalogue publishes is named by this command, so a model the GUI saved is never dropped here.
+    #[test]
+    fn every_published_model_is_named() {
+        fn check<M: FamilyModel>() {
+            let entry = opai::catalogue().iter().find(|entry| entry.family == M::FAMILY).expect("published");
+            for variant in &entry.variants {
+                assert!(M::from_str(variant.codename, true).is_ok(), "{:?} {}", M::FAMILY, variant.codename);
+            }
+        }
+
+        check::<DenoiseModel>();
+        check::<FaceModel>();
+        check::<ColorizationModel>();
+        check::<LightModel>();
+        check::<BalanceModel>();
+        check::<SharpenModel>();
+        check::<UpscaleModel>();
     }
 
     #[test]
