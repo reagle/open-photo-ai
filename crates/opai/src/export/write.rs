@@ -60,9 +60,11 @@ impl From<Cancelled> for WriteError {
 /// embedding its source's ICC colour profile, from the picture's [`metadata`](Picture::metadata), where `format` can
 /// hold it.
 ///
-/// **The EXIF, XMP and IPTC the picture carries are not written yet**: they are withheld through
-/// [`without_descriptive`](crate::image::without_descriptive) until the export rewrites the fields that would otherwise
-/// be false of the written pixels (dimensions, orientation, thumbnail, software).
+/// **The source's EXIF and IPTC are written too, rewritten to be true of the file**: Open Photo AI as the software, the
+/// export's time and offset, the written size, orientation 1 (the pixels were turned upright on decode), no thumbnail;
+/// everything else — capture time, camera, lens, exposure, location, the MakerNote where it can be kept
+/// without moving it — byte for byte, and of the IPTC block only the IPTC-IIM record and its digest. **The XMP is not
+/// written yet.** A block the format cannot hold is left out with a warning.
 ///
 /// Without [`overwrite`](WriteOptions::overwrite) a file already there is kept and the result takes the first free
 /// `_1` … `_999` name beside it; with it, the file is replaced once the new one is complete. **A write that does not
@@ -81,10 +83,10 @@ pub async fn write(
     options: WriteOptions,
 ) -> Result<Written, WriteError> {
     let pixels = picture.shared_pixels();
-    // The source photograph's colour profile, carried through every crop and enhancement by `Picture::derive`, is
-    // embedded wherever the format can hold it; `image::save` warns where it cannot. Its EXIF, XMP and IPTC are carried
-    // too, but withheld here until they are rewritten to be true of these pixels.
-    let metadata = Arc::new(image::without_descriptive(picture.metadata()));
+    // The source photograph's metadata, carried through every crop and enhancement by `Picture::derive`, as the export
+    // policy rewrites it for these pixels and this moment; `image::save` warns about whatever the format cannot hold.
+    let now = chrono::Local::now().fixed_offset();
+    let metadata = Arc::new(super::metadata::for_export(picture, format, now));
     let encode = recommended_encode_options(format, options.quality);
 
     write_with(destination, options, |path| image::save(pixels, metadata, path, format, Some(encode))).await
@@ -229,8 +231,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_exif_xmp_and_iptc_carried_are_not_yet_written_and_the_profile_is() {
-        use crate::image::test_support::{DISPLAY_P3, written_described};
+    async fn the_exif_and_iptc_are_written_the_xmp_is_not_yet_and_the_profile_is() {
+        use crate::image::test_support::{DISPLAY_P3, IPTC, written_described};
 
         let dir = tempfile::tempdir().expect("a temporary directory");
         let source = dir.path().join("described.jpg");
@@ -245,7 +247,17 @@ mod tests {
             let written = write(&loaded, &out, format, WriteOptions::default()).await.expect("written");
 
             let read = rust_sak::image::metadata_bytes(&std::fs::read(&written.path).expect("readable"));
-            assert_eq!((read.exif, read.xmp, read.iptc), (None, None, None), "{format:?}");
+            let software = read
+                .exif
+                .as_deref()
+                .and_then(|exif| rust_sak::image::exif_field(exif, rust_sak::image::ExifIfd::Primary, 0x0131));
+            assert!(
+                matches!(&software, Some(rust_sak::image::ExifValue::Ascii(name)) if name.starts_with("Open Photo AI ")),
+                "{format:?}: {software:?}"
+            );
+            // IPTC has a place only in JPEG; XMP is not written yet anywhere.
+            assert_eq!(read.iptc.as_deref(), (format == ImageFormat::Jpeg).then_some(IPTC), "{format:?}");
+            assert_eq!(read.xmp, None, "{format:?}");
             assert_eq!(read.icc_profile.as_deref(), Some(DISPLAY_P3), "{format:?}");
         }
     }

@@ -12,6 +12,8 @@
 //!   without overwriting, or a hidden name renamed over the destination on [`Claim::commit`] with it — and giving it
 //!   back when the write does not finish.
 //! - [`mod@write`]: the claim, the save and the commit together ([`write()`]), which is how a front end writes one.
+//!   It embeds the source's metadata as the export policy rewrites it: the EXIF with every field true of the file and
+//!   its MakerNote kept where safe, the IPTC-IIM, and the ICC profile; the XMP not yet.
 //!
 //! # Why this sits beside `image` and not inside it
 //!
@@ -21,6 +23,7 @@
 
 pub mod claim;
 pub mod format;
+mod metadata;
 pub mod name;
 pub mod write;
 
