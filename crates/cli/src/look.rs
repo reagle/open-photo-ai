@@ -199,16 +199,19 @@ pub fn update_line(color: bool) -> String {
 }
 
 /// The summary's success line, uncoloured, or `None` when nothing was written: the file itself for one image, so a
-/// numbered name stays visible, and `output` as given for more.
-pub fn summary(written: &[PathBuf], output: &Path) -> Option<String> {
-    match written {
-        [] => None,
-        [file] => Some(format!("✨ Image enhanced successfully; file saved at {}", file.display())),
-        _ => Some(format!(
+/// numbered name stays visible, and for more `output` as given, or, without one, that each was saved beside its source.
+pub fn summary(written: &[PathBuf], output: Option<&Path>) -> Option<String> {
+    match (written, output) {
+        ([], _) => None,
+        ([file], _) => Some(format!("✨ Image enhanced successfully; file saved at {}", file.display())),
+        (_, Some(output)) => Some(format!(
             "✨ {} images enhanced successfully; files saved under {}",
             written.len(),
             output.display()
         )),
+        (_, None) => {
+            Some(format!("✨ {} images enhanced successfully; files saved beside their sources", written.len()))
+        }
     }
 }
 
@@ -531,16 +534,29 @@ mod tests {
 
     #[test]
     fn the_summary_names_the_file_for_one_image_and_the_output_for_more() {
-        let output = Path::new("out");
+        let output = Some(Path::new("out"));
 
         assert_eq!(summary(&[], output), None);
         assert_eq!(
-            summary(&["out_1.png".into()], Path::new("out.png")).as_deref(),
+            summary(&["out_1.png".into()], Some(Path::new("out.png"))).as_deref(),
             Some("✨ Image enhanced successfully; file saved at out_1.png")
         );
         assert_eq!(
             summary(&["out/a.png".into(), "out/b.png".into(), "out/c.png".into()], output).as_deref(),
             Some("✨ 3 images enhanced successfully; files saved under out")
+        );
+    }
+
+    #[test]
+    fn without_an_output_the_summary_names_the_file_for_one_image_and_says_beside_for_more() {
+        assert_eq!(summary(&[], None), None);
+        assert_eq!(
+            summary(&["photo_opai.jpg".into()], None).as_deref(),
+            Some("✨ Image enhanced successfully; file saved at photo_opai.jpg")
+        );
+        assert_eq!(
+            summary(&["photos/a_opai.jpg".into(), "photos/2024/b_opai.jpg".into()], None).as_deref(),
+            Some("✨ 2 images enhanced successfully; files saved beside their sources")
         );
     }
 
