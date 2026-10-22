@@ -8,6 +8,7 @@ use rust_sak::crypto::xxh3_bytes;
 use rust_sak::image::{Metadata, decode_bytes, decode_raw_bytes, metadata_bytes};
 
 use super::error::{self, ImageIoError};
+use super::fidelity::Fidelity;
 use super::picture::Picture;
 use super::raw;
 use crate::task::spawn_blocking;
@@ -96,19 +97,26 @@ fn read(path: &Path) -> Result<Picture, ImageIoError> {
     let pixels = decoded.map_err(ImageIoError::decode(path))?;
 
     // A developed RAW is sRGB whatever the camera embedded, so it carries no profile; its EXIF and XMP are a later
-    // slice's, read from the RAW container and its sidecar.
-    let metadata = if raw_extension.is_none() { metadata_of(path, &bytes, &pixels) } else { Metadata::default() };
+    // slice's, read from the RAW container and its sidecar. Its fidelity is its pixels': 16-bit, SDR.
+    let (metadata, fidelity) = if raw_extension.is_none() {
+        metadata_of(path, &bytes, &pixels)
+    } else {
+        (Metadata::default(), Fidelity::of_pixels(&pixels))
+    };
 
-    Ok(Picture::new(path, Arc::new(pixels), identity).with_metadata(metadata))
+    Ok(Picture::new(path, Arc::new(pixels), identity).with_metadata(metadata).with_fidelity(fidelity))
 }
 
-/// Everything `bytes` holds beside its pixels, with the ICC profile left out if it does not describe `pixels`.
+/// Everything `bytes` holds beside its pixels, with the ICC profile left out if it does not describe `pixels`, and what
+/// of it an export can lose.
 ///
-/// Never a reason to refuse the photograph: `metadata_bytes` answers a block it cannot read with `None`.
-fn metadata_of(path: &Path, bytes: &[u8], pixels: &DynamicImage) -> Metadata {
+/// Never a reason to refuse the photograph: `metadata_bytes` answers a block it cannot read with `None`, and
+/// [`Fidelity::read`] reads what it cannot as nothing to lose.
+fn metadata_of(path: &Path, bytes: &[u8], pixels: &DynamicImage) -> (Metadata, Fidelity) {
     let mut metadata = metadata_bytes(bytes);
+    let fidelity = Fidelity::read(bytes, pixels.color(), metadata.icc_profile.as_deref());
     metadata.icc_profile = metadata.icc_profile.take().and_then(|profile| fitting(path, profile, pixels));
-    metadata
+    (metadata, fidelity)
 }
 
 /// `profile`, if it describes `pixels`; otherwise `None`, and the drop is logged.
@@ -584,5 +592,71 @@ mod tests {
 
         assert_eq!(plain.metadata(), &Metadata::default());
         assert_eq!(raw.metadata(), &Metadata::default());
+    }
+
+    #[test]
+    fn an_ultra_hdr_jpeg_is_recorded_as_8_bit_hdr_with_a_gain_map() {
+        use crate::image::test_support::written_ultra_hdr;
+        use rust_sak::image::Hdr;
+
+        let dir = tempdir().expect("a temporary directory");
+        let loaded = load_blocking(write_fixture(dir.path(), "hawk.jpg", &written_ultra_hdr())).expect("decodable");
+
+        assert_eq!(loaded.fidelity().hdr, Some(Hdr::GainMap));
+        assert_eq!(loaded.fidelity().depth, crate::image::Depth { bits: 8, float: false });
+        assert_eq!(loaded.fidelity().discarded, None);
+        assert_eq!(loaded.metadata().icc_profile.as_deref(), Some(DISPLAY_P3));
+    }
+
+    #[test]
+    fn a_16_bit_png_is_recorded_as_16_bit_sdr_and_a_raw_as_its_developed_16_bits() {
+        let pixels = DynamicImage::ImageRgb16(crate::image::test_support::sample_image().to_rgb16());
+        let mut png = Vec::new();
+        rust_sak::image::encode_writer(&pixels, &mut png, ImageFormat::Png, None).expect("encodable");
+        let dir = tempdir().expect("a temporary directory");
+
+        for name in ["deep.png", "DSC_0001.dng"] {
+            let bytes = if name.ends_with("png") { png.clone() } else { written_dng() };
+            let loaded = load_blocking(write_fixture(dir.path(), name, &bytes)).expect("decodable");
+
+            assert_eq!(loaded.fidelity().depth, crate::image::Depth { bits: 16, float: false }, "{name}");
+            assert_eq!(loaded.fidelity().hdr, None, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_truncated_mpf_segment_loads_and_is_not_hdr() {
+        use crate::image::test_support::with_app2;
+
+        let bytes = with_app2(&written_jpeg(), b"MPF\0MM\0\x2a\0\0\0\x08\0");
+        let dir = tempdir().expect("a temporary directory");
+
+        let loaded = load_blocking(write_fixture(dir.path(), "cut.jpg", &bytes)).expect("still decodable");
+
+        assert_eq!(loaded.fidelity().hdr, None);
+        assert_eq!(loaded.dimensions(), FIXTURE_SIZE);
+    }
+
+    #[test]
+    fn a_cmyk_profile_the_load_drops_is_recorded_as_discarded() {
+        let mut cmyk = DISPLAY_P3.to_vec();
+        cmyk[16..20].copy_from_slice(b"CMYK");
+        let mut metadata = Metadata::default();
+        metadata.icc_profile = Some(cmyk);
+        let mut bytes = Vec::new();
+        rust_sak::image::encode_writer_with(
+            &crate::image::test_support::sample_image(),
+            &mut bytes,
+            ImageFormat::Jpeg,
+            None,
+            &metadata,
+        )
+        .expect("encodable");
+        let dir = tempdir().expect("a temporary directory");
+
+        let loaded = load_blocking(write_fixture(dir.path(), "cmyk.jpg", &bytes)).expect("decodable");
+
+        assert_eq!(loaded.metadata().icc_profile, None);
+        assert_eq!(loaded.fidelity().discarded.as_ref().map(|d| d.colour_space.as_str()), Some("CMYK"));
     }
 }
