@@ -41,11 +41,22 @@
 //! **JPEG, PNG, TIFF and WebP**. **BMP, GIF, AVIF and HEIF** are written without it, and a warning naming the format
 //! and the profile is logged. A developed RAW carries none, its pixels being sRGB.
 //!
+//! # EXIF, XMP and IPTC are carried, not yet written
+//!
+//! [`fn@load`] also keeps the EXIF block, the XMP packet (a JPEG's extended XMP joined in) and the IPTC (Photoshop
+//! `APP13`) block a **JPEG**, **PNG** or **WebP** holds, byte for byte, on the same [`Metadata`], and
+//! [`Picture::derive`] carries them as it carries the profile. TIFF, AVIF, HEIF, BMP, GIF and camera RAW carry none yet.
+//! **None of the three is written yet**: written unchanged they would state the source's dimensions, thumbnail,
+//! orientation and software for different pixels, so [`export::write`](fn@crate::export::write) withholds them through
+//! [`without_descriptive`] until it rewrites them, and a preview rendition always does. [`fn@save`] and [`fn@encode`]
+//! themselves embed whatever [`Metadata`] they are handed.
+//!
 //! # What is not here
 //!
 //! No caching: the identity is designed to key one, and the cache itself lives in `crate::cache`. **No colour is
 //! converted**: the profile is a label on unchanged pixel values, which the models see exactly as before. No coded
-//! (CICP/`nclx`) colour descriptions, no profile in AVIF or HEIF yet, and no EXIF orientation.
+//! (CICP/`nclx`) colour descriptions, no profile in AVIF or HEIF yet, and **no EXIF orientation is applied**: a JPEG
+//! tagged to be rotated is held and enhanced in the frame it was stored in.
 
 // Both forms exist because the GUI's runtime is shared with the window and the IPC plumbing: a decode is tens of
 // milliseconds for a phone photograph and seconds for a 100-megapixel scan, and inline it would stop the event loop
@@ -72,7 +83,12 @@
 // pixels is dropped (`profile.rs`), and that a profile the target format cannot hold is a warning rather than a
 // refusal. Converting between colour spaces is deliberately absent: it changes what the models are fed, and is a
 // later slice of the colour series. EXIF orientation belongs to the metadata series.
+//
+// The EXIF, XMP and IPTC blocks are read and spliced by `rust-sak` too (`metadata_bytes`, `encode_writer_with`), which
+// carries them as opaque bytes; which of their fields survive an export and how the rest are rewritten is this crate's
+// policy, and lands in `export::write` with the `preserve-metadata` series' later slices.
 
+mod descriptive;
 mod encode;
 mod error;
 mod extensions;
@@ -89,6 +105,7 @@ mod test_log;
 #[cfg(test)]
 pub(crate) mod test_support;
 
+pub use descriptive::without_descriptive;
 pub use encode::{encode, encode_blocking};
 pub use error::ImageIoError;
 pub use extensions::{extensions_of, input_extensions};

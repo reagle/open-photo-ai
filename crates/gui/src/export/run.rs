@@ -237,7 +237,7 @@ mod tests {
     /// What a fake enhancer hands back: `pixels` at `identity`, on the source's own path.
     fn enhanced(source: &Picture, pixels: image::DynamicImage, identity: &str) -> Enhanced {
         Enhanced {
-            picture: Picture::new(source.path(), pixels, identity),
+            picture: source.derive(pixels, identity),
             providers: no_providers(),
             faces: opai::ChainFaces::NotAsked,
         }
