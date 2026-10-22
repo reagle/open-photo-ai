@@ -138,12 +138,18 @@ describe("formatLoss", () => {
     const words = (loss: Loss) => formatLoss(english, loss);
     const eight = { bits: 8, float: false };
 
-    it("words an HDR loss by how the source declared it", () => {
-        expect(words({ kind: "hdr", hdr: "gainMap", format: "JPEG" })).toBe(
-            "HDR gain map dropped: JPEG output is SDR only for now",
+    it("words an HDR loss to the format by how the source declared it", () => {
+        expect(words({ kind: "hdr", hdr: "gainMap", format: "PNG", cause: "format" })).toBe(
+            "HDR gain map dropped: PNG output is SDR only for now",
         );
-        expect(words({ kind: "hdr", hdr: "pq", format: "PNG" })).toBe(
+        expect(words({ kind: "hdr", hdr: "pq", format: "PNG", cause: "format" })).toBe(
             "HDR (PQ) dropped: PNG output is SDR only for now",
+        );
+    });
+
+    it("words a gain map a JPEG could not carry", () => {
+        expect(words({ kind: "hdr", hdr: "gainMap", format: "JPEG", cause: "notCarried" })).toBe(
+            "HDR gain map dropped: it could not be carried",
         );
     });
 
