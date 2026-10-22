@@ -225,6 +225,21 @@
             "ended_other": "{{written}} av {{count}} skrivna",
             "endedFailed_one": "{{written}} av {{count}} skrivna, {{failed}} misslyckades",
             "endedFailed_other": "{{written}} av {{count}} skrivna, {{failed}} misslyckades"
+        },
+        "loss": {
+            "notice": "{{count}} av {{total}} bilder förlorar kvalitet i det här formatet. Håll pekaren över varningen på en rad för att se vad.",
+            "warning": "Kvalitetsförlust i det här formatet",
+            "hdrGainMap": "HDR-förstärkningskarta borttagen: {{format}} skrivs tills vidare bara som SDR",
+            "hdrTransfer": "HDR ({{transfer}}) borttaget: {{format}} skrivs tills vidare bara som SDR",
+            "depth": "{{from}} → {{to}} i {{format}}",
+            "bits": "{{bits}} bitar",
+            "bitsFloat": "{{bits}} bitar flyttal",
+            "profileFormat": "{{profile}}-profilen bäddas inte in i {{format}}",
+            "profileColourModel": "{{profile}}-profilen bäddas inte in i {{format}}: den är för {{colourSpace}}, inte för filens färger",
+            "profileDiscarded": "{{profile}}-profilen togs bort: den är för {{colourSpace}}, inte för bildens pixlar",
+            "profileNotWritten": "{{profile}}-profilen bäddas inte in i {{format}}: kodaren kunde inte skriva den",
+            "profileCoded": "{{profile}}-färgbeskrivningen skrivs inte i {{format}}",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {

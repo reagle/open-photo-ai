@@ -237,6 +237,21 @@
             "endedFailed_few": "Записано {{written}} из {{count}}, с ошибкой: {{failed}}",
             "endedFailed_many": "Записано {{written}} из {{count}}, с ошибкой: {{failed}}",
             "endedFailed_other": "Записано {{written}} из {{count}}, с ошибкой: {{failed}}"
+        },
+        "loss": {
+            "notice": "{{count}} из {{total}} изображений потеряют качество в этом формате. Наведите указатель на предупреждение в строке, чтобы увидеть, что именно.",
+            "warning": "Потеря качества в этом формате",
+            "hdrGainMap": "Карта усиления HDR удалена: {{format}} пока записывается только в SDR",
+            "hdrTransfer": "HDR ({{transfer}}) удалён: {{format}} пока записывается только в SDR",
+            "depth": "{{from}} → {{to}} в {{format}}",
+            "bits": "{{bits}} бит",
+            "bitsFloat": "{{bits}} бит с плавающей запятой",
+            "profileFormat": "Профиль {{profile}} не встроен в {{format}}",
+            "profileColourModel": "Профиль {{profile}} не встроен в {{format}}: он предназначен для {{colourSpace}}, а не для цветов файла",
+            "profileDiscarded": "Профиль {{profile}} отброшен: он предназначен для {{colourSpace}}, а не для пикселей изображения",
+            "profileNotWritten": "Профиль {{profile}} не встроен в {{format}}: кодировщик не смог его записать",
+            "profileCoded": "Описание цвета {{profile}} не записано в {{format}}",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {

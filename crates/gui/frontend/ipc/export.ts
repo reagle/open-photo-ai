@@ -6,7 +6,7 @@ import { call } from "./invoke";
 import { once } from "./once";
 
 // Written a second time in `crates/gui/src/export/`, as `#[tauri::command]` function names: the first two and the
-// last two in `mod.rs`, then `directory.rs` and `written.rs`. A rename on one side alone is not a type error but an
+// last three in `mod.rs`, then `directory.rs` and `written.rs`. A rename on one side alone is not a type error but an
 // `invoke` that rejects at runtime: `export.test.ts` pins this half, and `generate_handler![]` the Rust one by
 // refusing to compile against a function that does not exist.
 const EXPORT_COMMAND = "export";
@@ -15,6 +15,7 @@ const PICK_DIRECTORY_COMMAND = "pick_directory";
 const REVEAL_EXPORT_COMMAND = "reveal_export";
 const EXPORT_FORMATS_COMMAND = "export_formats";
 const EXPORT_NAMES_COMMAND = "export_names";
+const EXPORT_LOSSES_COMMAND = "export_losses";
 
 /**
  * The event an export's reports arrive under, written a second time in `crates/gui/src/export/progress.rs` as
@@ -93,6 +94,40 @@ export type ExportName = {
     extension: string;
 };
 
+/** Bits per channel, and whether the samples are floating point. Rust's `opai::image::Depth`. */
+export type Depth = { bits: number; float: boolean };
+
+/**
+ * One thing a written file loses against its source, as Rust's `opai::export::Loss` serializes it: tagged by `kind`,
+ * with what a translation needs to word it - see `formatLoss` in `lib/export.ts`. `format` is the library's name for
+ * the format written (`JPEG`, `HEIF`), not a {@link ExportFormat}.
+ */
+export type Loss =
+    /** An HDR source written as SDR, which every format is for now. */
+    | { kind: "hdr"; hdr: "gainMap" | "pq" | "hlg" | "other"; format: string }
+    /** Fewer bits per channel than the source, or integers where it had floats. */
+    | { kind: "depth"; from: Depth; to: Depth; format: string }
+    /** The source's colour profile, or its coded colour description, is not in the file. */
+    | {
+          kind: "profile";
+          /** The profile's own description (`Display P3`), or `null` where it has none. */
+          profile: string | null;
+          /** Its colour space (`RGB`, `GRAY`, `CMYK`), empty for a coded description. */
+          colourSpace: string;
+          format: string;
+          /**
+           * `format`: the format cannot hold one; `colourModel`: it is for another colour model than the file;
+           * `discarded`: the source's profile did not describe its own pixels and was dropped on opening;
+           * `coded`: the source described its colours with CICP rather than a profile, which nothing writes yet;
+           * `notWritten`: the format holds one, but the encoder could not write this one (too large for it) - known
+           * only once the file is written, so never in a prediction.
+           */
+          cause: "format" | "colourModel" | "discarded" | "coded" | "notWritten";
+      };
+
+/** What one queued file will lose in its chosen format, as {@link exportLosses} answers it. */
+export type ExportLosses = { path: string; losses: Loss[] };
+
 /** Where an export is written, and how. */
 export type ExportRequest = {
     /** What the file is called, where it goes and what it is written as. */
@@ -122,6 +157,8 @@ export type Exported =
           path: string;
           /** How many bytes were written. */
           bytes: number;
+          /** What the file lost against its source, as Rust assessed the write; empty when nothing was lost. */
+          losses: Loss[];
       }
     /** The export was stopped before its file was written. Nothing is left at any name it tried. */
     | { outcome: "stopped" };
@@ -196,6 +233,17 @@ export const exportImage = (
  */
 export const exportNames = (paths: readonly string[], naming: ExportNaming) =>
     call<ExportName[]>(EXPORT_NAMES_COMMAND, { paths, naming: exportNaming(naming) });
+
+/**
+ * What each of `paths` will lose against itself when exported under `naming` - HDR, bit depth, its colour profile - in
+ * the order asked, so the dialog can warn while the format can still be changed.
+ *
+ * **The rule is Rust's**, the same assessment an export answers with. Unlike {@link exportNames} this reads each
+ * file's header, so it is asked when the queue or the format choice changes, not on every keystroke. A file Rust
+ * cannot read answers no loss; its export reports its own failure. Nothing can fail on the Rust side.
+ */
+export const exportLosses = (paths: readonly string[], naming: ExportNaming) =>
+    call<ExportLosses[]>(EXPORT_LOSSES_COMMAND, { paths, naming: exportNaming(naming) });
 
 // Kept because the Rust side answers from a table fixed at compile time, as the catalogue is.
 const formats = once(() => call<ExportFormats>(EXPORT_FORMATS_COMMAND));

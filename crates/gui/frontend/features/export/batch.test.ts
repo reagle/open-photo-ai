@@ -210,12 +210,27 @@ describe("the order", () => {
         await exporting[0]?.fail({ kind: "write", path: "/x.png", message: "Permission denied" });
         expect(exporting.map(({ source }) => source)).toEqual([SUNSET.identity, HOLIDAY.identity]);
 
-        await exporting[1]?.answer({ outcome: "exported", path: "/Users/someone/Pictures/holiday_1.png", bytes: 10 });
-        await exporting[2]?.answer({ outcome: "exported", path: "/Users/someone/Pictures/third.png", bytes: 20 });
+        await exporting[1]?.answer({
+            outcome: "exported",
+            path: "/Users/someone/Pictures/holiday_1.png",
+            bytes: 10,
+            losses: [],
+        });
+        await exporting[2]?.answer({
+            outcome: "exported",
+            path: "/Users/someone/Pictures/third.png",
+            bytes: 20,
+            losses: [],
+        });
         await done;
 
         expect(stages()).toEqual(["failed", "done", "done"]);
-        expect(row(HOLIDAY)).toEqual({ stage: "done", path: "/Users/someone/Pictures/holiday_1.png", bytes: 10 });
+        expect(row(HOLIDAY)).toEqual({
+            stage: "done",
+            path: "/Users/someone/Pictures/holiday_1.png",
+            bytes: 10,
+            losses: [],
+        });
         expect(batch().phase).toBe("ended");
 
         // Run to the end, a failed file included: `exported` counts what was written.
@@ -230,7 +245,12 @@ describe("the order", () => {
 
         void run([HOLIDAY, SUNSET], chosen);
         await settle();
-        await exporting[0]?.answer({ outcome: "exported", path: "/exports/new-holiday-opai.webp", bytes: 1 });
+        await exporting[0]?.answer({
+            outcome: "exported",
+            path: "/exports/new-holiday-opai.webp",
+            bytes: 1,
+            losses: [],
+        });
 
         expect(exporting.map(({ request }) => request)).toEqual([
             expect.objectContaining({ naming: chosen, overwrite: false }),
@@ -279,7 +299,7 @@ describe("the order", () => {
 
         const done = run([unreadable, HOLIDAY]);
         await settle();
-        await exporting[0]?.answer({ outcome: "exported", path: "/h.png", bytes: 1 });
+        await exporting[0]?.answer({ outcome: "exported", path: "/h.png", bytes: 1, losses: [] });
         await done;
 
         expect(row(unreadable)).toEqual({ stage: "failed", reason: "Couldn't read this image." });
@@ -291,7 +311,7 @@ describe("Abort", () => {
     it("during enhancing stops the export, leaves its row and the rest Queued, and starts nothing more", async () => {
         const done = run([HOLIDAY, SUNSET, THIRD]);
         await settle();
-        await exporting[0]?.answer({ outcome: "exported", path: "/h.png", bytes: 1 });
+        await exporting[0]?.answer({ outcome: "exported", path: "/h.png", bytes: 1, losses: [] });
 
         batch().abort();
         expect(stopped).toHaveBeenCalledExactlyOnceWith(exporting[1]?.run);
@@ -317,7 +337,7 @@ describe("Abort", () => {
         routeProgress({ run: exporting[0]?.run ?? "", phase: "writing" });
 
         batch().abort();
-        await exporting[0]?.answer({ outcome: "exported", path: "/h.png", bytes: 1 });
+        await exporting[0]?.answer({ outcome: "exported", path: "/h.png", bytes: 1, losses: [] });
         await done;
 
         expect(stages()).toEqual(["done", "queued"]);
@@ -356,7 +376,7 @@ describe("Autopilot at export", () => {
         expect(exporting[0]?.operations).toEqual(written);
         expect(row(SUNSET)).toEqual({ stage: "enhancing", fraction: 0 });
 
-        await exporting[0]?.answer({ outcome: "exported", path: "/s.png", bytes: 1 });
+        await exporting[0]?.answer({ outcome: "exported", path: "/s.png", bytes: 1, losses: [] });
         await done;
     });
 
@@ -395,7 +415,7 @@ describe("Autopilot at export", () => {
         expect(notice).not.toHaveBeenCalled();
         expect(exporting.map(({ source }) => source)).toEqual([HOLIDAY.identity]);
 
-        await exporting[0]?.answer({ outcome: "exported", path: "/h.png", bytes: 1 });
+        await exporting[0]?.answer({ outcome: "exported", path: "/h.png", bytes: 1, losses: [] });
         await done;
     });
 
@@ -418,7 +438,7 @@ describe("Autopilot at export", () => {
         expect(exporting[0]?.operations).toEqual(useEnhancementStore.getState().enhancements.get(SUNSET.path));
         expect(exporting[0]?.operations.map(({ family }) => family)).toEqual(["upscale"]);
 
-        await exporting[0]?.answer({ outcome: "exported", path: "/s.png", bytes: 1 });
+        await exporting[0]?.answer({ outcome: "exported", path: "/s.png", bytes: 1, losses: [] });
         await done;
     });
 
@@ -462,8 +482,8 @@ describe("the quality", () => {
     it("is the committed one for every file", async () => {
         const done = run([HOLIDAY, SUNSET], settings({ format: "webp" }), { ...PUBLISHED_QUALITY, webp: 70 });
         await settle();
-        await exporting[0]?.answer({ outcome: "exported", path: "/h.webp", bytes: 1 });
-        await exporting[1]?.answer({ outcome: "exported", path: "/s.webp", bytes: 1 });
+        await exporting[0]?.answer({ outcome: "exported", path: "/h.webp", bytes: 1, losses: [] });
+        await exporting[1]?.answer({ outcome: "exported", path: "/s.webp", bytes: 1, losses: [] });
         await done;
 
         expect(exporting.map(({ request }) => request.quality)).toEqual([70, 70]);
@@ -474,8 +494,8 @@ describe("the quality", () => {
 
         const done = run([THIRD, SUNSET], settings({ format: "preserve" }), quality);
         await settle();
-        await exporting[0]?.answer({ outcome: "exported", path: "/t.jpg", bytes: 1 });
-        await exporting[1]?.answer({ outcome: "exported", path: "/s.tiff", bytes: 1 });
+        await exporting[0]?.answer({ outcome: "exported", path: "/t.jpg", bytes: 1, losses: [] });
+        await exporting[1]?.answer({ outcome: "exported", path: "/s.tiff", bytes: 1, losses: [] });
         await done;
 
         // The JPEG is written as JPEG, at JPEG's quality. A RAW source is written as TIFF, which takes no quality, and
@@ -490,7 +510,7 @@ describe("the quality", () => {
     it("is sent for no format the user never moved, which Rust writes at its published default", async () => {
         const done = run([HOLIDAY], settings({ format: "webp" }), {});
         await settle();
-        await exporting[0]?.answer({ outcome: "exported", path: "/h.webp", bytes: 1 });
+        await exporting[0]?.answer({ outcome: "exported", path: "/h.webp", bytes: 1, losses: [] });
         await done;
 
         expect(exporting[0]?.request).not.toHaveProperty("quality");
@@ -519,9 +539,9 @@ describe("the progress", () => {
         routeProgress({ run: name, phase: "writing" });
         expect(row(HOLIDAY)).toEqual({ stage: "writing" });
 
-        await exporting[0]?.answer({ outcome: "exported", path: "/h.png", bytes: 3 });
+        await exporting[0]?.answer({ outcome: "exported", path: "/h.png", bytes: 3, losses: [] });
         routeProgress({ run: name, phase: "writing" });
 
-        expect(row(HOLIDAY)).toEqual({ stage: "done", path: "/h.png", bytes: 3 });
+        expect(row(HOLIDAY)).toEqual({ stage: "done", path: "/h.png", bytes: 3, losses: [] });
     });
 });

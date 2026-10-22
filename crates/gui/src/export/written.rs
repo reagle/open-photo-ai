@@ -103,7 +103,7 @@ mod tests {
     use crate::enhance::EnhanceError;
 
     fn exported(path: &str) -> Result<Exported, ExportError> {
-        Ok(Exported::Exported { path: path.to_string(), bytes: 42 })
+        Ok(Exported::Exported { path: path.to_string(), bytes: 42, losses: Vec::new() })
     }
 
     #[test]

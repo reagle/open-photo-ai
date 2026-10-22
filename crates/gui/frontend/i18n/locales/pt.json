@@ -225,6 +225,21 @@
             "ended_other": "{{written}} de {{count}} gravados",
             "endedFailed_one": "{{written}} de {{count}} gravados, {{failed}} com falha",
             "endedFailed_other": "{{written}} de {{count}} gravados, {{failed}} com falha"
+        },
+        "loss": {
+            "notice": "{{count}} de {{total}} imagens perderão qualidade neste formato. Passe o ponteiro sobre o aviso de uma linha para ver o quê.",
+            "warning": "Perda de qualidade neste formato",
+            "hdrGainMap": "Mapa de ganho HDR descartado: por enquanto {{format}} é gravado apenas em SDR",
+            "hdrTransfer": "HDR ({{transfer}}) descartado: por enquanto {{format}} é gravado apenas em SDR",
+            "depth": "{{from}} → {{to}} em {{format}}",
+            "bits": "{{bits}} bits",
+            "bitsFloat": "{{bits}} bits de ponto flutuante",
+            "profileFormat": "Perfil {{profile}} não incorporado em {{format}}",
+            "profileColourModel": "Perfil {{profile}} não incorporado em {{format}}: ele é para {{colourSpace}}, não para as cores do arquivo",
+            "profileDiscarded": "Perfil {{profile}} descartado: ele é para {{colourSpace}}, não para os pixels da imagem",
+            "profileNotWritten": "Perfil {{profile}} não incorporado em {{format}}: o codificador não conseguiu gravá-lo",
+            "profileCoded": "Descrição de cor {{profile}} não gravada em {{format}}",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {

@@ -40,6 +40,6 @@ pub use claim::{Claim, claim};
 pub use format::{
     ExportFormat, ExportFormats, FormatCapability, FormatChoice, QualityRange, UnknownFormat, capabilities,
 };
-pub use loss::{Loss, ProfileCause, losses};
+pub use loss::{Loss, ProfileCause, losses, predict_blocking};
 pub use name::{Named, Naming, destination_for, name_for};
 pub use write::{WriteError, WriteOptions, Written, write};

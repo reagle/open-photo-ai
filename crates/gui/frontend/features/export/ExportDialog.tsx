@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { routeProgress } from "@/features/export/batch";
 import { ExportQueue } from "@/features/export/ExportQueue";
 import { ExportSettingsPanel } from "@/features/export/ExportSettingsPanel";
+import { useExportLosses } from "@/features/export/useExportLosses";
 import { useExportNames } from "@/features/export/useExportNames";
 import { onExportProgress } from "@/ipc/export";
 import { exportNaming, groupByChain } from "@/lib/export";
@@ -42,7 +43,8 @@ const Summary = () => {
  *
  * **Mounted while open.** The queue is snapshotted as it mounts - the picked records in drawer order, grouped by
  * chain - and does not change while it is open. One progress subscription is held for its life, and what each file
- * is exported as is asked of Rust here, once for the whole queue, and handed to the rows and the settings column.
+ * is exported as is asked of Rust here, once for the whole queue, and handed to the rows and the settings column; so
+ * is what each will lose in the chosen format, which the queue warns of before Save.
  *
  * **It cannot be dismissed while the batch runs**: no close box, and Escape is refused. A click outside never closes
  * it. The one way out of a running batch is Abort. Unmounting aborts anyway, for a window that goes away under it.
@@ -54,6 +56,7 @@ export const ExportDialog = ({ onClose }: { onClose: () => void }) => {
     const queue = useExportBatchStore((state) => state.queue);
     const naming = useExportSettingsStore(useShallow(exportNaming));
     const names = useExportNames(queue, naming);
+    const losses = useExportLosses(queue, naming.format);
 
     // Before paint, so the first frame drawn is this dialog's queue rather than the last one's.
     useLayoutEffect(() => {
@@ -109,7 +112,7 @@ export const ExportDialog = ({ onClose }: { onClose: () => void }) => {
                 />
 
                 <div className="flex min-h-0 flex-1">
-                    <ExportQueue names={names} />
+                    <ExportQueue names={names} losses={losses} />
                     <ExportSettingsPanel names={names} onClose={onClose} />
                 </div>
             </DialogContent>

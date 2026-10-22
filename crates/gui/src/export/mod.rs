@@ -4,7 +4,7 @@
 //! settings' naming as the window sends it, and what [`export_names`] answers; the rule itself — formats, names,
 //! claiming a destination — is `opai::export`'s. [`mod@progress`] is the event an export reports on. [`mod@written`]
 //! is the record of what was written, and the reveal it gates; [`mod@directory`] is the folder picker the window
-//! browses with.
+//! browses with. [`mod@losses`] is what [`export_losses`] answers: what each queued file will lose in its format.
 //!
 //! # Why this is its own module and not part of `enhance`
 //!
@@ -21,13 +21,16 @@ use crate::enhance::{EnhanceError, Processor, Requested};
 use crate::images::{Crop, Opened};
 use crate::setup::Setup;
 use crate::stops::Stops;
+use crate::task::spawn_blocking;
 
 pub(crate) mod directory;
+mod losses;
 mod names;
 mod progress;
 mod run;
 pub(crate) mod written;
 
+pub(crate) use losses::ExportLosses;
 pub(crate) use names::ExportName;
 use names::ExportNaming;
 use opai::export::ExportFormats;
@@ -128,6 +131,41 @@ pub(crate) fn export_formats(traceparent: Traceparent) -> ExportFormats {
 #[tauri::command]
 pub(crate) fn export_names(paths: Vec<String>, naming: ExportNaming, traceparent: Traceparent) -> Vec<ExportName> {
     traced_sync(command_span!("export_names", traceparent), || names::names(paths, &naming))
+}
+
+// The command's name is written once more, in `frontend/ipc/export.ts`.
+/// What each of `paths` will lose against itself when exported under `naming` — HDR, bit depth, its colour profile —
+/// in the order asked, so the export dialog can warn before Save while the format can still be changed.
+///
+/// A separate command from [`export_names`], which is pure and asked on every keystroke of a prefix: this one reads
+/// each file's header, on a blocking thread, and is asked only when the queue or the format choice changes. A file that
+/// cannot be read answers no loss; its export reports its own failure. **Only files this application opened are read**
+/// ([`Opened`]); any other path answers no loss untouched. Nothing here can fail.
+#[tauri::command]
+pub(crate) async fn export_losses(
+    app: tauri::AppHandle,
+    paths: Vec<String>,
+    naming: ExportNaming,
+    traceparent: Traceparent,
+) -> Vec<ExportLosses> {
+    use tauri::Manager;
+
+    traced(command_span!("export_losses", traceparent), async move {
+        // Decided here, where the registry is in reach, so the blocking thread holds nothing borrowed. The handle
+        // rather than a `State` argument, which an `async` command could only take by answering a `Result`.
+        let opened = app.state::<Opened>();
+        let admitted: std::collections::HashSet<String> =
+            paths.iter().filter(|path| opened.knows(std::path::Path::new(path))).cloned().collect();
+        spawn_blocking(move || {
+            losses::losses(paths, &naming, |path| admitted.contains(path.to_string_lossy().as_ref()))
+        })
+        .await
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "the losses of the export queue could not be predicted");
+            Vec::new()
+        })
+    })
+    .await
 }
 
 // The command's name is written once more, in `frontend/ipc/export.ts`.
