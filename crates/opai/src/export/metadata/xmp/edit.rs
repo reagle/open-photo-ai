@@ -256,9 +256,22 @@ impl Xmp {
         self.remove_where(|uri, name| uri == ns && name == local);
     }
 
-    /// Removes every property in namespace `ns`.
+    /// Removes every property in namespace `ns`, and then each declaration of it that nothing in its scope uses any
+    /// more — so a packet that described a gain map no longer declares the gain-map namespace, which a reader may take
+    /// as the claim itself.
     pub(crate) fn remove_namespace(&mut self, ns: &str) {
         self.remove_where(|uri, _| uri == ns);
+        self.remove_namespace_if_unused(ns);
+    }
+
+    /// Removes each declaration of `ns` that nothing in its scope uses: on a description, on `rdf:RDF`, on
+    /// `x:xmpmeta`, or anywhere else in the packet.
+    fn remove_namespace_if_unused(&mut self, ns: &str) {
+        remove_unused_declarations(&mut self.nodes, ns);
+        // The declarations in scope at `rdf:RDF` may be among those removed; its path is not changed.
+        if let Some((_, scope)) = find_rdf(&self.nodes, &Scope::default(), &mut Vec::new()) {
+            self.scope = scope;
+        }
     }
 
     fn remove_where(&mut self, matches: impl Fn(&str, &str) -> bool) {
@@ -423,6 +436,40 @@ fn find_rdf(nodes: &[Node], scope: &Scope, path: &mut Vec<usize>) -> Option<(Vec
         path.pop();
     }
     None
+}
+
+/// Removes from each element under `nodes` its declarations of `ns` that nothing in their scope uses.
+fn remove_unused_declarations(nodes: &mut [Node], ns: &str) {
+    for node in nodes {
+        let Node::Element(element) = node else { continue };
+        let unused: Vec<String> = element
+            .attributes()
+            .iter()
+            .filter_map(|(name, value)| {
+                let prefix = name.strip_prefix("xmlns:")?;
+                let declared = tree::decode(value).is_ok_and(|uri| uri == ns);
+                (declared && !uses_prefix(element, prefix)).then(|| name.clone())
+            })
+            .collect();
+        if !unused.is_empty() {
+            element.attributes_mut().retain(|(name, _)| !unused.contains(name));
+        }
+        remove_unused_declarations(&mut element.children, ns);
+    }
+}
+
+/// Whether `element` or anything inside it names an element or an attribute under `prefix` as `element` binds it (its
+/// declarations aside, and nothing below a redeclaration of `prefix`).
+fn uses_prefix(element: &Element, prefix: &str) -> bool {
+    let under = |name: &str| name.strip_prefix(prefix).is_some_and(|rest| rest.starts_with(':'));
+    let redeclares =
+        |child: &Element| child.attributes().iter().any(|(name, _)| name.strip_prefix("xmlns:") == Some(prefix));
+    under(&element.name)
+        || element.attributes().iter().any(|(name, _)| under(name))
+        || element
+            .children
+            .iter()
+            .any(|node| matches!(node, Node::Element(child) if !redeclares(child) && uses_prefix(child, prefix)))
 }
 
 /// The text of an element holding only text, decoded.
