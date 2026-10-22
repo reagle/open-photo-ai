@@ -31,6 +31,8 @@ use opai::{Analysis, Fidelity, ParameterKind, Subject};
 // What this slice added: the catalogue's inverse - the refusal a lookup or a build answers with, and the per-run
 // values a build is handed - reached only through the crate root, as a front end reaches them.
 use opai::{BuildError, ParameterValues};
+// The colour series: what a picture carries beside its pixels.
+use opai::image::Metadata;
 // The vocabulary a run is asked for and reports in, and — added by the cache slice — what a front end reads to find
 // out what is behind the store a run may use.
 use opai::{
@@ -782,7 +784,8 @@ fn image_io_is_reachable_from_the_crate_root() {
     // The format is an argument and the settings are per format, both named from the crate root.
     let format: ImageFormat = ImageFormat::Jpeg;
     let options: Option<EncodeOptions> = Some(EncodeOptions::Jpeg { quality: 90 });
-    let written: u64 = opai::image::save_blocking(&picture, &destination, format, options).expect("writable");
+    let written: u64 =
+        opai::image::save_blocking(&picture, &Metadata::default(), &destination, format, options).expect("writable");
     assert!(written > 0);
 
     // Described without being decoded, and then decoded, both agreeing about the picture.
@@ -799,6 +802,14 @@ fn image_io_is_reachable_from_the_crate_root() {
     let rebuilt = Picture::new(loaded.path(), loaded.shared_pixels(), loaded.identity());
     assert_eq!(rebuilt.identity(), loaded.identity());
 
+    // What the file carried beside its pixels, nameable from outside, and the constructor every derived picture is
+    // built with, which keeps it.
+    let metadata: &Metadata = loaded.metadata();
+    assert_eq!(metadata.icc_profile, None, "this JPEG was written with no profile");
+    let derived = loaded.derive(loaded.shared_pixels(), "0123456789abcdef");
+    assert_eq!(derived.metadata(), loaded.metadata());
+    let _: Picture = rebuilt.with_metadata(Metadata::default());
+
     // The identity without the decode, which is what a file listing is built on: the same value the loaded picture
     // above carries, for a file that was never opened.
     let named: String = opai::image::identity_blocking(&destination).expect("readable");
@@ -806,10 +817,12 @@ fn image_io_is_reachable_from_the_crate_root() {
 
     // The same encode `save_blocking` performs, with no file at the end of it — what a preview streamed to a window
     // needs. Its failure is the one variant of `ImageIoError` that names no path, there being none.
-    let bytes: Vec<u8> = opai::image::encode_blocking(loaded.pixels(), ImageFormat::Jpeg, options).expect("encodable");
+    let bytes: Vec<u8> = opai::image::encode_blocking(loaded.pixels(), loaded.metadata(), ImageFormat::Jpeg, options)
+        .expect("encodable");
     assert!(!bytes.is_empty());
     let mismatched: ImageIoError =
-        opai::image::encode_blocking(loaded.pixels(), ImageFormat::Png, options).expect_err("JPEG options, PNG");
+        opai::image::encode_blocking(loaded.pixels(), loaded.metadata(), ImageFormat::Png, options)
+            .expect_err("JPEG options, PNG");
     assert!(
         matches!(mismatched, ImageIoError::Encode { .. }),
         "expected an encode refusal, got {mismatched:?}"
@@ -903,9 +916,15 @@ async fn the_asynchronous_image_operations_are_reachable_from_the_crate_root() {
     let dir = tempfile::tempdir().expect("a temporary directory");
     let destination = dir.path().join("blank.png");
 
-    let written = opai::image::save(std::sync::Arc::clone(&picture), &destination, ImageFormat::Png, None)
-        .await
-        .expect("writable");
+    let written = opai::image::save(
+        std::sync::Arc::clone(&picture),
+        std::sync::Arc::default(),
+        &destination,
+        ImageFormat::Png,
+        None,
+    )
+    .await
+    .expect("writable");
     assert!(written > 0);
 
     let info = opai::image::probe(&destination).await.expect("the header is readable");
@@ -917,7 +936,9 @@ async fn the_asynchronous_image_operations_are_reachable_from_the_crate_root() {
     let named = opai::image::identity(&destination).await.expect("readable");
     assert_eq!(named, loaded.identity());
 
-    let bytes = opai::image::encode(loaded.shared_pixels(), ImageFormat::Png, None).await.expect("encodable");
+    let bytes = opai::image::encode(loaded.shared_pixels(), loaded.shared_metadata(), ImageFormat::Png, None)
+        .await
+        .expect("encodable");
     assert_eq!(
         bytes,
         std::fs::read(&destination).expect("readable"),

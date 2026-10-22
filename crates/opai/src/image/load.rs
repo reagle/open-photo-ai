@@ -3,8 +3,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use ::image::DynamicImage;
 use rust_sak::crypto::xxh3_bytes;
-use rust_sak::image::{decode_bytes, decode_raw_bytes};
+use rust_sak::image::{Metadata, decode_bytes, decode_raw_bytes, icc_profile_bytes};
 
 use super::error::{self, ImageIoError};
 use super::picture::Picture;
@@ -27,8 +28,16 @@ pub async fn load(path: impl Into<PathBuf>) -> Result<Picture, ImageIoError> {
 
 /// Reads and decodes the image at `path`, on the calling thread.
 ///
-/// The result carries the pixels, the path they came from, and the XXH3-64 of the whole of the file's bytes. See
-/// [`Picture`] for what that identity promises.
+/// The result carries the pixels, the path they came from, the XXH3-64 of the whole of the file's bytes, and the ICC
+/// colour profile the file embeds, byte for byte. See [`Picture`] for what that identity promises.
+///
+/// # The colour profile
+///
+/// Read from the same buffer as the pixels, for every format that can carry one (JPEG, PNG, TIFF, WebP, AVIF, HEIF).
+/// **No colour is converted**: the pixels are exactly what they would be without it, and the profile is the label that
+/// says what they mean. A file with no profile, or only coded (`nclx`) colour values, has none; so does a developed RAW,
+/// whose pixels are sRGB. A profile for a different colour model than the decoded pixels — a CMYK profile on a JPEG
+/// the decoder turned into RGB — no longer describes them, so it is dropped and the drop is logged.
 ///
 /// The format is read from the content's magic bytes, not from the file's name, so a JPEG saved as `.png` decodes as
 /// the JPEG it is. Camera RAW is the exception and routes on the extension; see [`is_raw`](super::is_raw).
@@ -78,19 +87,52 @@ fn read(path: &Path) -> Result<Picture, ImageIoError> {
     let decoded = if raw_extension.is_some() { decode_raw_bytes(&bytes) } else { decode_bytes(&bytes) };
     let pixels = decoded.map_err(ImageIoError::decode(path))?;
 
-    Ok(Picture::new(path, Arc::new(pixels), identity))
+    // A developed RAW is sRGB whatever the camera embedded, so it carries no profile.
+    let mut metadata = Metadata::default();
+    if raw_extension.is_none() {
+        metadata.icc_profile = profile_of(path, &bytes, &pixels);
+    }
+
+    Ok(Picture::new(path, Arc::new(pixels), identity).with_metadata(metadata))
+}
+
+/// The ICC profile embedded in `bytes`, if there is one and it describes `pixels`.
+///
+/// Never a reason to refuse the photograph: the pixels decoded, and a profile that cannot be read is no profile. The
+/// header has already parsed once, so a failure here is not expected, and is recorded at `debug` if it happens.
+fn profile_of(path: &Path, bytes: &[u8], pixels: &DynamicImage) -> Option<Vec<u8>> {
+    let profile = match icc_profile_bytes(bytes) {
+        Ok(profile) => profile?,
+        Err(error) => {
+            tracing::debug!(op = "load", path = %path.display(), %error, "the colour profile could not be read");
+            return None;
+        }
+    };
+
+    if super::profile::describes(&profile, pixels) {
+        return Some(profile);
+    }
+
+    tracing::warn!(
+        op = "load",
+        path = %path.display(),
+        profile = super::profile::description(&profile).unwrap_or_default(),
+        colour_space = super::profile::colour_space(&profile).unwrap_or_default(),
+        "colour profile dropped: it does not describe the decoded pixels"
+    );
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::image::test_support::{
-        BLUE, DNG_FIXTURE_SIZE, FIXTURE_SIZE, GREEN, RED, channel_means, minimal_dng, on_a_dead_runtime, write_fixture,
-        written_dng, written_jpeg, written_png,
+        BLUE, DISPLAY_P3, DNG_FIXTURE_SIZE, FIXTURE_SIZE, GREEN, RED, channel_means, minimal_dng, on_a_dead_runtime,
+        write_fixture, written_dng, written_jpeg, written_p3, written_png,
     };
 
     use rust_sak::crypto::xxh3_file;
-    use rust_sak::image::ImageError;
+    use rust_sak::image::{ImageError, ImageFormat};
     use tempfile::tempdir;
 
     #[test]
@@ -404,5 +446,75 @@ mod tests {
         let (log, outcome) = records_of_blocking("info", || load_blocking(&readable));
         assert!(outcome.is_ok());
         assert!(!log.contains("msg="), "a success was recorded:\n{log}");
+    }
+
+    #[test]
+    fn a_display_p3_jpeg_keeps_its_profile_byte_for_byte_and_its_pixels_unconverted() {
+        let dir = tempdir().expect("a temporary directory");
+        let tagged =
+            load_blocking(write_fixture(dir.path(), "p3.jpg", &written_p3(ImageFormat::Jpeg))).expect("decodable");
+        let plain = load_blocking(write_fixture(dir.path(), "plain.jpg", &written_jpeg())).expect("decodable");
+
+        assert_eq!(tagged.metadata().icc_profile.as_deref(), Some(DISPLAY_P3));
+        // The profile is a label: the same encoder with and without it decodes to the same values.
+        assert_eq!(tagged.pixels(), plain.pixels(), "reading the profile changed the pixels");
+        assert_eq!(plain.metadata().icc_profile, None);
+    }
+
+    #[test]
+    fn every_format_that_can_carry_a_profile_reports_it() {
+        let dir = tempdir().expect("a temporary directory");
+        for format in [ImageFormat::Jpeg, ImageFormat::Png, ImageFormat::Tiff, ImageFormat::WebP] {
+            let path = write_fixture(dir.path(), &format!("p3.{}", format.extension()), &written_p3(format));
+            let loaded = load_blocking(&path).unwrap_or_else(|err| panic!("{format:?}: {err}"));
+            assert_eq!(loaded.metadata().icc_profile.as_deref(), Some(DISPLAY_P3), "{format:?}");
+        }
+    }
+
+    #[test]
+    fn a_png_without_a_profile_reports_none() {
+        let dir = tempdir().expect("a temporary directory");
+        let loaded = load_blocking(write_fixture(dir.path(), "plain.png", &written_png())).expect("decodable");
+
+        assert_eq!(loaded.metadata(), &Metadata::default());
+    }
+
+    #[test]
+    fn a_developed_raw_reports_no_profile() {
+        let dir = tempdir().expect("a temporary directory");
+        let loaded = load_blocking(write_fixture(dir.path(), "DSC_0001.dng", &written_dng())).expect("decodable");
+
+        assert_eq!(loaded.metadata().icc_profile, None);
+    }
+
+    #[test]
+    fn a_profile_for_another_colour_model_is_dropped_and_the_drop_is_logged() {
+        use crate::logging::{field, records, records_of_blocking};
+
+        // A CMYK profile on an RGB JPEG: the decoder hands back RGB, which the profile does not describe.
+        let mut cmyk = DISPLAY_P3.to_vec();
+        cmyk[16..20].copy_from_slice(b"CMYK");
+        let mut metadata = Metadata::default();
+        metadata.icc_profile = Some(cmyk);
+        let mut bytes = Vec::new();
+        rust_sak::image::encode_writer_with(
+            &crate::image::test_support::sample_image(),
+            &mut bytes,
+            ImageFormat::Jpeg,
+            None,
+            &metadata,
+        )
+        .expect("encodable");
+        let dir = tempdir().expect("a temporary directory");
+        let path = write_fixture(dir.path(), "cmyk-profile.jpg", &bytes);
+
+        let (log, loaded) = records_of_blocking("info", || load_blocking(&path));
+        let loaded = loaded.expect("the photograph still loads");
+
+        assert_eq!(loaded.metadata().icc_profile, None);
+        let message = "colour profile dropped: it does not describe the decoded pixels";
+        let [record] = records(&log, message)[..] else { panic!("expected one record:\n{log}") };
+        assert_eq!(field(record, "colour_space"), Some("CMYK"), "{record}");
+        assert!(record.contains("level=WARN"), "{record}");
     }
 }

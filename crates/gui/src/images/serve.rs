@@ -368,7 +368,11 @@ fn render(pixels: Pixels, asked: &Asked) -> Result<Rendition, Refusal> {
 
     // Nothing is wrong with the file — it loaded. Reported as unreadable all the same: from the window's side the
     // outcome is the same, and there's no third answer the spec asks for. Not logged: `opai` records the failure.
-    let bytes = opai::image::encode_blocking(&bounded, format, options).map_err(|_| Refusal::Unreadable)?;
+    // With the photograph's colour profile, so the webview shows a Display P3 photograph — and its enhanced result,
+    // which keeps the source's profile — in its own colours, matching the exported file (design.md D5 of
+    // `add-color-1-icc-profile`). The window does the conversion to the display; no colour code is here.
+    let bytes =
+        opai::image::encode_blocking(&bounded, picture.metadata(), format, options).map_err(|_| Refusal::Unreadable)?;
 
     Ok(Rendition { bytes: bytes.into(), media_type })
 }
@@ -493,7 +497,8 @@ mod tests {
         let path = dir.path().join(name);
         let pixels = DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(width, height, image::Rgba([255, 0, 0, 0])));
 
-        opai::image::save_blocking(&pixels, &path, ImageFormat::Png, None).expect("writable");
+        opai::image::save_blocking(&pixels, &opai::image::Metadata::default(), &path, ImageFormat::Png, None)
+            .expect("writable");
         path
     }
 
@@ -1037,6 +1042,43 @@ mod tests {
         identity.to_string()
     }
 
+    #[test]
+    fn a_display_p3_photograph_and_its_enhanced_result_are_served_with_its_profile() {
+        use crate::test_support::{DISPLAY_P3, display_p3};
+
+        let dir = tempdir().expect("a temporary directory");
+        let path = dir.path().join("p3.jpg");
+        let pixels = DynamicImage::ImageRgb8(image::RgbImage::from_fn(400, 200, |x, y| {
+            image::Rgb([(x % 256) as u8, (y % 256) as u8, 120])
+        }));
+        opai::image::save_blocking(&pixels, &display_p3(), &path, ImageFormat::Jpeg, None).expect("writable");
+        let opened = Opened::default();
+        let identity = admit(&opened, &path);
+
+        for bound in [0, 100] {
+            let (rendition, _) = rendered(&opened, &identity, bound);
+            let profile = rust_sak::image::icc_profile_bytes(&rendition.bytes).expect("a readable header");
+            assert_eq!(profile.as_deref(), Some(DISPLAY_P3), "the {bound}-bounded rendition lost the profile");
+        }
+
+        // A held result, with the profile its source handed it through `derive`, served as JPEG and, with alpha,
+        // as PNG.
+        let runs = crate::enhance::Runs::default();
+        let source = opai::Picture::new("/pictures/p3.jpg", pixels.clone(), SOURCE).with_metadata(display_p3());
+        for (run, identity, result) in [
+            ("run-1", "aaaaaaaaaaaaaaaa", pixels.clone()),
+            ("run-2", "bbbbbbbbbbbbbbbb", DynamicImage::ImageRgba8(pixels.to_rgba8())),
+        ] {
+            runs.start(run, SOURCE);
+            assert!(runs.finish(run, source.derive(result, identity)));
+            for bound in [0, 100] {
+                let (rendition, _) = rendered_result(&runs, identity, bound);
+                let profile = rust_sak::image::icc_profile_bytes(&rendition.bytes).expect("a readable header");
+                assert_eq!(profile.as_deref(), Some(DISPLAY_P3), "{} at {bound}", rendition.media_type);
+            }
+        }
+    }
+
     /// The rendition a held result is asked for at `bound`, and the picture it decodes back to.
     fn rendered_result(runs: &crate::enhance::Runs, identity: &str, bound: u32) -> (Rendition, DynamicImage) {
         rendered_from(&Opened::default(), runs, identity, bound)
@@ -1387,7 +1429,8 @@ mod tests {
         let deep = DynamicImage::ImageRgb16(image::ImageBuffer::from_fn(80, 60, |x, y| {
             image::Rgb([(x * 800) as u16, (y * 1000) as u16, 30_000])
         }));
-        opai::image::save_blocking(&deep, &path, ImageFormat::Png, None).expect("writable");
+        opai::image::save_blocking(&deep, &opai::image::Metadata::default(), &path, ImageFormat::Png, None)
+            .expect("writable");
 
         // The fixture really is 16-bit once loaded back, or the narrowing below was never asked for.
         assert!(

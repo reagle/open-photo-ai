@@ -47,3 +47,10 @@ opt-level = 2
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# Every crate pins `rust-sak` at vegidio's tag; this one entry redirects that pin, for the whole graph, to a fork tag
+# carrying the ICC profile read/embed (`icc_profile_bytes`, `Metadata`, `encode_*_with`) that `add-color-1-icc-profile`
+# needs. `26.10.6-color.1` is 26.10.6 plus that one commit, so nothing else changes. Once upstream releases it, delete
+# this section and move the four `tag = "26.10.6"` pins to that release.
+[patch."https://github.com/vegidio/rust-sak"]
+rust-sak = { git = "https://github.com/reagle/rust-sak", tag = "26.10.6-color.1" }

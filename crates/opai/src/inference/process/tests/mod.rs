@@ -1,6 +1,7 @@
 //! The chain's tests, and the fake backend and fixtures every group of them runs against.
 
 mod cache;
+mod colour;
 mod entry;
 mod faces;
 mod identity;

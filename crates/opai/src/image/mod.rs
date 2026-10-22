@@ -34,10 +34,18 @@
 //! What differs is what survives the write. **PNG, TIFF, AVIF and HEIF keep 16 bits per channel; BMP, GIF, JPEG and
 //! WebP are 8-bit**, so a RAW exported to one of those four comes back at 8.
 //!
+//! # The colour profile travels with the pixels
+//!
+//! [`fn@load`] keeps the ICC profile a file embeds, byte for byte, on the [`Picture`]'s [`Metadata`]; every picture
+//! derived from it through [`Picture::derive`] keeps it too; and [`fn@save`] and [`fn@encode`] embed it again in
+//! **JPEG, PNG, TIFF and WebP**. **BMP, GIF, AVIF and HEIF** are written without it, and a warning naming the format
+//! and the profile is logged. A developed RAW carries none, its pixels being sRGB.
+//!
 //! # What is not here
 //!
-//! No caching: the identity is designed to key one, and the cache itself lives in `crate::cache`. No colour
-//! management, EXIF orientation or ICC profiles.
+//! No caching: the identity is designed to key one, and the cache itself lives in `crate::cache`. **No colour is
+//! converted**: the profile is a label on unchanged pixel values, which the models see exactly as before. No coded
+//! (CICP/`nclx`) colour descriptions, no profile in AVIF or HEIF yet, and no EXIF orientation.
 
 // Both forms exist because the GUI's runtime is shared with the window and the IPC plumbing: a decode is tens of
 // milliseconds for a phone photograph and seconds for a 100-megapixel scan, and inline it would stop the event loop
@@ -59,8 +67,11 @@
 // JPEG that predates the sensor — and lives in `rust-sak`'s encode dispatch, where every consumer gets it; nothing in
 // this module converts pixels before handing them over.
 //
-// Colour management, EXIF orientation and ICC profiles are absent because neither the reference nor `rust-sak`
-// handles them today, so nothing here differs either way.
+// The ICC profile is read and embedded by `rust-sak` (`icc_profile_bytes`, `encode_writer_with`), which is where codec
+// work belongs; what this module decides is the policy around it — that a profile for another colour model than the
+// pixels is dropped (`profile.rs`), and that a profile the target format cannot hold is a warning rather than a
+// refusal. Converting between colour spaces is deliberately absent: it changes what the models are fed, and is a
+// later slice of the colour series. EXIF orientation belongs to the metadata series.
 
 mod encode;
 mod error;
@@ -69,13 +80,14 @@ mod identity;
 mod load;
 mod picture;
 mod probe;
+mod profile;
 mod raw;
 mod recommended;
 mod save;
 #[cfg(test)]
 mod test_log;
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 
 pub use encode::{encode, encode_blocking};
 pub use error::ImageIoError;
@@ -100,9 +112,12 @@ pub use save::{save, save_blocking};
 // `RawFormat` is one of its fields. `rust_sak::image::is_raw_bytes` is deliberately **not** among them — it answers
 // `true` for a plain TIFF, so it cannot route between the RAW and the TIFF decoder, and [`is_raw`] is the function
 // that can. Keeping it off this surface stops it being reached for.
+//
+// `Metadata` and `Embedded` for the same reason again: [`Picture::metadata`] hands back a `Metadata`, and a caller
+// building a picture of its own with [`Picture::with_metadata`] has to be able to name one.
 pub use rust_sak::image::{
-    Chroma, EncodeOptions, ImageError, ImageFormat, ImageInfo, PngCompression, PngFilter, Preset, RawFormat,
-    RawImageInfo,
+    Chroma, Embedded, EncodeOptions, ImageError, ImageFormat, ImageInfo, Metadata, PngCompression, PngFilter, Preset,
+    RawFormat, RawImageInfo,
 };
 
 #[cfg(test)]
@@ -135,7 +150,7 @@ mod tests {
         for format in EVERY_FORMAT {
             let destination = dir.path().join(format!("round-trip.{}", format.extension()));
 
-            let written = save_blocking(&sample_image(), &destination, format, None)
+            let written = save_blocking(&sample_image(), &Metadata::default(), &destination, format, None)
                 .unwrap_or_else(|err| panic!("{format:?} could not be written: {err}"));
             assert!(written > 0, "{format:?} reported success having written nothing");
 
@@ -161,10 +176,10 @@ mod tests {
             let asynchronous = dir.path().join(format!("async.{extension}"));
             let blocking = dir.path().join(format!("blocking.{extension}"));
 
-            let written_asynchronously = save(Arc::clone(&pixels), &asynchronous, format, None)
+            let written_asynchronously = save(Arc::clone(&pixels), Arc::default(), &asynchronous, format, None)
                 .await
                 .unwrap_or_else(|err| panic!("{format:?} could not be written asynchronously: {err}"));
-            let written_blocking = save_blocking(&pixels, &blocking, format, None)
+            let written_blocking = save_blocking(&pixels, &Metadata::default(), &blocking, format, None)
                 .unwrap_or_else(|err| panic!("{format:?} could not be written: {err}"));
 
             assert_eq!(written_asynchronously, written_blocking, "{format:?} wrote a different number of bytes");
@@ -213,7 +228,7 @@ mod tests {
 
         for format in EVERY_FORMAT {
             let destination = dir.path().join(format!("developed.{}", format.extension()));
-            let written = save_blocking(source.pixels(), &destination, format, None)
+            let written = save_blocking(source.pixels(), &Metadata::default(), &destination, format, None)
                 .unwrap_or_else(|err| panic!("{format:?} refused a 16-bit picture: {err}"));
             assert!(written > 0, "{format:?} reported success having written nothing");
 

@@ -132,9 +132,15 @@ async fn colorizes_on(
 
     // Kept where it can be looked at: a swapped plane or a wrong normalisation is a photograph rather than a number.
     let keep = std::env::temp_dir().join(format!("opai-live-{codename}-{precision:?}-{provider}.png"));
-    crate::image::save(produced.shared_pixels(), &keep, rust_sak::image::ImageFormat::Png, None)
-        .await
-        .expect("a result must encode to PNG");
+    crate::image::save(
+        produced.shared_pixels(),
+        produced.shared_metadata(),
+        &keep,
+        rust_sak::image::ImageFormat::Png,
+        None,
+    )
+    .await
+    .expect("a result must encode to PNG");
     println!("         inspect at {}", keep.display());
 
     produced
