@@ -8,6 +8,7 @@
 - [Where the results go](#where-the-results-go)
 - [Enhancements](#enhancements)
 - [Autopilot](#autopilot)
+- [GUI settings](#gui-settings)
 - [Processing order](#processing-order)
 - [Supported formats](#supported-formats)
 - [What happens during a run](#what-happens-during-a-run)
@@ -123,13 +124,17 @@ Replaces a file that already exists at a destination instead of [numbering](#num
 
 Names, on each written image's line, the enhancements it received: each model, its strength, bias or upscale factor, and whether the [run cache](#run-cache) served them, as in `🖼️ [100%] Enhancements applied to photo.jpg: Denoise Stockholm strength 100, Upscale Tokyo 2x`. Without it, the line ends with the path. It has no short form: `-v` prints the version. See [Terminal output](#terminal-output).
 
+### `--no-gui-settings`
+
+Ignores the [GUI's saved settings](#gui-settings) for this run: every setting you don't give on the command line is the built-in default.
+
 ### `--autopilot`, `--ap`
 
 Analyses each image and applies the enhancements it calls for, instead of the ones you name. It can't be combined with the enhancement flags or their options. See [Autopilot](#autopilot).
 
-### `-q, --quality <hd|sd>` (default: `hd`)
+### `-q, --quality <hd|sd>` (default: `hd`, or the GUI's)
 
-Picks which build of each model to run. It applies to **every** enhancement in the command.
+Picks which build of each model to run. It applies to **every** enhancement in the command. Without it, each enhancement runs at the quality of the model chosen for it in the [GUI's settings](#gui-settings), and at `hd` where none was chosen, so one run can mix `hd` and `sd`; the processor line then reads `quality mixed`.
 
 | Quality      | Most models | Osaka (upscale) | Trade-off                                     |
 |--------------|-------------|-----------------|-----------------------------------------------|
@@ -138,9 +143,9 @@ Picks which build of each model to run. It applies to **every** enhancement in t
 
 The value is case-insensitive (`-q SD` works).
 
-### `-p, --processor <PROCESSOR>` (default: `auto`)
+### `-p, --processor <PROCESSOR>` (default: `auto`, or the GUI's)
 
-Picks the hardware every model of the run is asked to run on, face detection included. Which values exist depends on the operating system `opai` was built for:
+Picks the hardware every model of the run is asked to run on, face detection included. Without it, the processor chosen in the [GUI's settings](#gui-settings) is used, or `auto`. Which values exist depends on the operating system `opai` was built for:
 
 | Processor        | Runs on                                                                              | macOS | Windows / Linux |
 |------------------|--------------------------------------------------------------------------------------|:-----:|:---------------:|
@@ -153,7 +158,7 @@ Picks the hardware every model of the run is asked to run on, face detection inc
 
 The value is case-insensitive (`-p CPU` and `--processor WebGPU` work). `opai --help` lists only the values your build accepts, and any other value is refused straight away, before anything is installed.
 
-A value your build accepts is then checked against what **this machine** offers, once [dependencies are installed](#what-happens-during-a-run). This is the same check the GUI uses to build its list of processors: CUDA needs a supported NVIDIA GPU and driver, TensorRT also needs a GPU that can run it, CoreML needs macOS 12 or newer, and WebGPU needs a GPU the runtime can reach. If the machine doesn't offer the processor, the run stops with one line naming the processors it does offer, for example `🧨 the processor webgpu is not available on this machine; use auto, cpu or coreml`, and exits with [code 2](#exit-codes). No image is loaded and nothing is written.
+A value your build accepts is then checked against what **this machine** offers, once [dependencies are installed](#what-happens-during-a-run). This is the same check the GUI uses to build its list of processors: CUDA needs a supported NVIDIA GPU and driver, TensorRT also needs a GPU that can run it, CoreML needs macOS 12 or newer, and WebGPU needs a GPU the runtime can reach. If the machine doesn't offer the processor, the run stops with one line naming the processors it does offer, for example `🧨 the processor webgpu is not available on this machine; use auto, cpu or coreml`, and exits with [code 2](#exit-codes). No image is loaded and nothing is written. A processor that comes from the [GUI's settings](#gui-settings) is never refused: if this build or this machine doesn't offer it, the run uses `auto` and the [log file](#log-file) records a warning.
 
 ## Where the results go
 
@@ -396,7 +401,7 @@ opai photos --ap -o enhanced
 
 ### Choosing the models
 
-Each enhancement runs with its default model unless an environment variable names another one:
+Each enhancement runs with its default model unless an environment variable names another one, or, where the variable isn't set, the [GUI's settings](#gui-settings) choose a model or switch the enhancement off for Autopilot:
 
 | Enhancement      | Environment variable    | Default model | Accepted values                       |
 |------------------|-------------------------|---------------|---------------------------------------|
@@ -426,6 +431,44 @@ OPAI_AP_SHARPEN=off OPAI_AP_FACE=off OPAI_AP_DENOISE=malmo opai photos --ap -o o
     [possible values: kyoto, osaka, tokyo, saitama, off]
   ```
 - The variables are read **only with `--ap`**. Without it they're ignored and not checked: `OPAI_AP_UPSCALE=paris opai photo.jpg --up -o out.png` upscales with Tokyo. The GUI never reads them; its Autopilot uses the models chosen in its settings.
+
+## GUI settings
+
+`opai` follows the settings you saved in the GUI, for the settings it has a flag or variable for: the processor, the quality of each enhancement, and, with [`--ap`](#autopilot), each enhancement's model and whether Autopilot may suggest it. You don't need shell aliases or `OPAI_AP_*` variables to make the command line match the GUI.
+
+Every time the GUI starts, and every time you **Save** a change to one of these settings, it writes them to `gui-settings.json` in the application's configuration directory, beside its [log file](#log-file):
+
+| OS      | File                                                                 |
+|---------|----------------------------------------------------------------------|
+| macOS   | `~/Library/Application Support/io.vinicius.opai/gui-settings.json`   |
+| Windows | `%APPDATA%\io.vinicius.opai\gui-settings.json`                       |
+| Linux   | `~/.config/io.vinicius.opai/gui-settings.json`                       |
+
+`opai` reads it at startup. Each setting comes from the first of these that gives one:
+
+| Setting                         | 1. Flag            | 2. Variable  | 3. GUI settings                                               | 4. Default            |
+|---------------------------------|--------------------|--------------|---------------------------------------------------------------|-----------------------|
+| Processor                       | `-p`               |              | The GUI's processor                                           | `auto`                |
+| Quality of each enhancement     | `-q` (all of them) |              | The quality (HD or SD) of the model chosen for it             | `hd`                  |
+| Autopilot's model (with `--ap`) |                    | `OPAI_AP_*`  | The model chosen for it, or `off` where Autopilot may not suggest it | The [default model](#choosing-the-models) |
+
+```bash
+# The GUI has every model at SD and Color Balance and Colorization off for Autopilot:
+opai photos --ap -o out                        # SD, no colour balance, no colorization
+opai photos --ap -q hd -o out                  # HD instead
+OPAI_AP_COLOR=rio opai photos --ap -o out      # colour balance back on, with Rio
+opai photos --ap --no-gui-settings -o out      # the built-in defaults, as if the GUI had never run
+```
+
+- The bare enhancement flags keep their own default models: `--up` runs Tokyo whatever the GUI chose. Only the quality comes from the GUI for them.
+- With [`--verbose`](#--verbose), the processor line says where each value came from, and with `--ap` a second line lists each enhancement's model or `off` and its source:
+
+  ```
+  🧠 Running inference using the processor Auto (from GUI settings); quality SD (from GUI settings)
+  🤖 Autopilot models: Denoise Stockholm (from GUI settings), Face Recovery Athens (from GUI settings), Colorize off (from GUI settings), ...
+  ```
+- The file never stops a run. If it's missing, `opai` uses its defaults. If it can't be read, isn't a settings file, or comes from a newer version, it's ignored and the [log file](#log-file) records why. A single entry naming a model or processor that doesn't exist is ignored on its own.
+- `opai` never writes the file, and the GUI never reads it back: the GUI's own settings stay the source of truth. Export settings, language and background aren't shared.
 
 ## Processing order
 

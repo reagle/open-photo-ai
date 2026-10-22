@@ -9,6 +9,7 @@ use opai::Scale;
 use opai::export::{ExportFormat, FormatChoice};
 
 use crate::autopilot::AutopilotModels;
+use crate::settings::{self, Qualities, Settings};
 
 /// Enhance photographs with Open Photo AI.
 ///
@@ -43,14 +44,19 @@ pub struct Args {
     #[arg(long = "autopilot", visible_alias = "ap", conflicts_with = "Selection")]
     pub autopilot: bool,
 
-    /// `hd` runs every model at its higher-fidelity build, `sd` at its lighter, faster one.
-    #[arg(long, short = 'q', value_enum, default_value_t = Quality::Hd, ignore_case = true)]
-    pub quality: Quality,
+    /// `hd` runs every model at its higher-fidelity build, `sd` at its lighter, faster one. Without it, each family
+    /// runs at the quality of its model in the GUI's saved settings, or `hd`.
+    #[arg(long, short = 'q', value_enum, ignore_case = true)]
+    pub quality: Option<Quality>,
 
-    /// The hardware to run on: `auto` (the best this machine has; the default), or one processor by name. One this
-    /// machine does not offer is refused once initialization has finished.
-    #[arg(long, short = 'p', value_enum, default_value_t = Processor::Auto, ignore_case = true)]
-    pub processor: Processor,
+    /// The hardware to run on: `auto` (the best this machine has), or one processor by name. Without it, the GUI's
+    /// saved processor, or `auto`. One this machine does not offer is refused once initialization has finished.
+    #[arg(long, short = 'p', value_enum, ignore_case = true)]
+    pub processor: Option<Processor>,
+
+    /// Ignore the GUI's saved settings for this run: every setting not given here is the built-in default.
+    #[arg(long)]
+    pub no_gui_settings: bool,
 
     /// Take a directory input's whole tree, not only the images directly inside it.
     #[arg(long, short = 'r')]
@@ -97,6 +103,23 @@ pub struct Args {
     /// `--autopilot` only, and `None` otherwise.
     #[arg(skip)]
     pub autopilot_models: Option<AutopilotModels>,
+
+    /// The processor and the qualities the run uses, and where each came from: resolved by [`parse_from`] from the
+    /// flags alone, and by [`parse`] over the GUI's saved settings too.
+    #[arg(skip)]
+    pub settings: Settings,
+}
+
+impl Args {
+    /// The processor the run asks for: `-p`, or the GUI's, or `auto`.
+    pub const fn processor(&self) -> Processor {
+        self.settings.processor.value
+    }
+
+    /// The quality each family runs at.
+    pub const fn qualities(&self) -> &Qualities {
+        &self.settings.qualities
+    }
 }
 
 /// The upscale models, as the command line names them.
@@ -181,6 +204,15 @@ impl Quality {
             Self::Sd => 1,
         }
     }
+
+    /// The quality a precision's `position` among a model's published ones names, or `None` past the second.
+    pub const fn at(position: usize) -> Option<Self> {
+        match position {
+            0 => Some(Self::Hd),
+            1 => Some(Self::Sd),
+            _ => None,
+        }
+    }
 }
 
 // `#[cfg]` is resolved before `ValueEnum` expands, so a value no machine running this OS could ever offer is missing
@@ -241,11 +273,26 @@ impl From<Processor> for opai::ExecutionProvider {
 /// Read through `wild`, which expands the wildcards `cmd` and PowerShell leave as written, and on every other platform
 /// hands the arguments over unchanged. Under `--autopilot`, the `OPAI_AP_*` variables are read here too, so a bad one
 /// is refused as a bad flag is, before anything is installed; without it they are not looked at.
+///
+/// The GUI's saved settings are read here too, unless `--no-gui-settings` is given, and rank below every flag and
+/// variable; a file that cannot be read is recorded in the log and ignored. See [`crate::settings`].
 pub fn parse() -> Args {
     let mut args = parse_from(wild::args_os()).unwrap_or_else(|error| error.exit());
 
+    let (gui, gui_file) = if args.no_gui_settings {
+        (None, settings::GuiFile::NotRead)
+    } else {
+        settings::load(
+            || opai::settings::path(opai::APP_NAME).map_err(|error| error.to_string()),
+            opai::settings::read_at,
+        )
+    };
+
+    args.settings = Settings { gui_file, ..Settings::resolve(args.quality, args.processor, gui.as_ref()) };
+
     if args.autopilot {
-        let models = AutopilotModels::read(|name| std::env::var_os(name)).unwrap_or_else(|error| error.exit());
+        let models =
+            AutopilotModels::read(|name| std::env::var_os(name), gui.as_ref()).unwrap_or_else(|error| error.exit());
         args.autopilot_models = Some(models);
     }
 
@@ -387,7 +434,8 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let args = Args::try_parse_from(arguments)?;
+    let mut args = Args::try_parse_from(arguments)?;
+    args.settings = Settings::resolve(args.quality, args.processor, None);
 
     // Not a clap `ArgGroup`: its refusal lists the group's members as "required arguments", where what the user needs
     // to hear is that an enhancement is.
@@ -482,7 +530,7 @@ mod tests {
         assert_eq!(args.inputs, [PathBuf::from("photo.jpg")]);
         assert_eq!(args.selection.upscale, Some(UpscaleModel::Tokyo));
         assert_eq!(args.selection.face_recovery, Some(FaceModel::Athens));
-        assert_eq!(args.quality, Quality::Hd);
+        assert_eq!(args.qualities().uniform(), Some(Quality::Hd));
         assert_eq!(args.selection.scale, None);
         assert_eq!(args.output, Some(PathBuf::from("out.png")));
     }
@@ -499,7 +547,7 @@ mod tests {
 
         assert_eq!(args.selection.upscale, Some(UpscaleModel::Tokyo));
         assert_eq!(args.selection.face_recovery, Some(FaceModel::Athens));
-        assert_eq!(args.quality, Quality::Sd);
+        assert_eq!(args.qualities().uniform(), Some(Quality::Sd));
     }
 
     #[test]
@@ -508,7 +556,7 @@ mod tests {
 
         assert_eq!(args.selection.upscale, Some(UpscaleModel::Osaka));
         assert_eq!(args.selection.face_recovery, Some(FaceModel::Santorini));
-        assert_eq!(args.quality, Quality::Sd);
+        assert_eq!(args.qualities().uniform(), Some(Quality::Sd));
 
         for (name, model) in [
             ("kyoto", UpscaleModel::Kyoto),
@@ -941,20 +989,20 @@ mod tests {
     fn no_processor_is_auto() {
         let args = parse("opai photo.jpg --up -o out.png").expect("parses");
 
-        assert_eq!(args.processor, Processor::Auto);
+        assert_eq!(args.processor(), Processor::Auto);
     }
 
     #[test]
     fn a_processor_is_taken_whatever_its_case() {
         let args = parse("opai photo.jpg --up -p CPU -o out.png").expect("parses");
-        assert_eq!(args.processor, Processor::Cpu);
+        assert_eq!(args.processor(), Processor::Cpu);
 
         let args = parse("opai photo.jpg --up --processor WebGPU -o out.png").expect("parses");
-        assert_eq!(args.processor, Processor::WebGpu);
+        assert_eq!(args.processor(), Processor::WebGpu);
 
         for name in PROCESSORS {
             let args = parse(&format!("opai photo.jpg --up -p {} -o out.png", name.to_uppercase())).expect(name);
-            assert_eq!(args.processor.name(), name);
+            assert_eq!(args.processor().name(), name);
         }
     }
 
@@ -963,17 +1011,17 @@ mod tests {
     fn coreml_is_a_processor_on_macos() {
         let args = parse("opai photo.jpg --up -p coreml -o out.png").expect("parses");
 
-        assert_eq!(args.processor, Processor::CoreMl);
+        assert_eq!(args.processor(), Processor::CoreMl);
     }
 
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn cuda_and_tensorrt_are_processors_off_macos() {
         let args = parse("opai photo.jpg --up -p cuda -o out.png").expect("parses");
-        assert_eq!(args.processor, Processor::Cuda);
+        assert_eq!(args.processor(), Processor::Cuda);
 
         let args = parse("opai photo.jpg --up -p TensorRT -o out.png").expect("parses");
-        assert_eq!(args.processor, Processor::TensorRt);
+        assert_eq!(args.processor(), Processor::TensorRt);
     }
 
     #[test]

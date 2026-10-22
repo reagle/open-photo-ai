@@ -61,6 +61,7 @@ mod look;
 mod output;
 mod progress;
 mod run;
+mod settings;
 #[cfg(test)]
 mod test_support;
 mod update;

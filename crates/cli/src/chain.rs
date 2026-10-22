@@ -11,6 +11,7 @@ use opai::{
 
 use crate::args::{Quality, Selection};
 use crate::autopilot::{AutopilotModels, FamilyModel};
+use crate::settings::Qualities;
 
 /// What a run will do, and what the user should be told about it before it starts.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,42 +94,42 @@ enum Parameter {
     Scale(Scale),
 }
 
-/// The chain `selection` asks for at `quality` over a `width` x `height` photograph.
+/// The chain `selection` asks for, each family at its quality in `qualities`, over a `width` x `height` photograph.
 ///
 /// An upscale with no scale runs at the factor the photograph needs, and is left out with a note where it needs
 /// none. Every face recovery restores nobody until the faces are found and handed to it.
-pub fn plan(selection: &Selection, quality: Quality, width: u32, height: u32) -> Plan {
+pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u32) -> Plan {
     let mut built = Vec::new();
     let mut notes = Vec::new();
 
     if let Some(model) = selection.denoise {
-        built.push(build(model, quality, Parameter::Strength(selection.denoise_strength)));
+        built.push(build(model, qualities, Parameter::Strength(selection.denoise_strength)));
     }
 
     if let Some(model) = selection.face_recovery {
         // Maximum fidelity: as close to the original face as the model goes, which is what the catalogue publishes.
-        built.push(build(model, quality, Parameter::None));
+        built.push(build(model, qualities, Parameter::None));
     }
 
     if let Some(model) = selection.colorization {
-        built.push(build(model, quality, Parameter::None));
+        built.push(build(model, qualities, Parameter::None));
     }
 
     if let Some(model) = selection.light_adjustment {
-        built.push(build(model, quality, Parameter::Bias(selection.light_bias)));
+        built.push(build(model, qualities, Parameter::Bias(selection.light_bias)));
     }
 
     if let Some(model) = selection.color_balance {
-        built.push(build(model, quality, Parameter::Bias(selection.balance_bias)));
+        built.push(build(model, qualities, Parameter::Bias(selection.balance_bias)));
     }
 
     if let Some(model) = selection.sharpen {
-        built.push(build(model, quality, Parameter::Strength(selection.sharpen_strength)));
+        built.push(build(model, qualities, Parameter::Strength(selection.sharpen_strength)));
     }
 
     if let Some(model) = selection.upscale {
         match selection.scale.or_else(|| opai::suggested_scale(width, height)) {
-            Some(scale) => built.push(build(model, quality, Parameter::Scale(scale))),
+            Some(scale) => built.push(build(model, qualities, Parameter::Scale(scale))),
             None => notes.push(format!(
                 "the upscale was skipped: the photograph is already large enough ({width}x{height}); \
                  pass --scale to upscale it anyway"
@@ -140,12 +141,13 @@ pub fn plan(selection: &Selection, quality: Quality, width: u32, height: u32) ->
     Plan { operations, applied, notes }
 }
 
-/// The operation `model` names at `quality`, built by the library's catalogue at the parameters that model's row
+/// The operation `model` names at its family's quality in `qualities`, built by the library's catalogue at the parameters that model's row
 /// publishes as defaults with `parameter` set over them, and its description, from the values it was built with.
 ///
 /// `quality` picks a build by its position in the row's precisions, so a model published at other precisions than
 /// FP32 and FP16 — Osaka, at FP16 and INT8 — needs no case of its own.
-fn build<M: FamilyModel>(model: M, quality: Quality, parameter: Parameter) -> (Operation, Applied) {
+fn build<M: FamilyModel>(model: M, qualities: &Qualities, parameter: Parameter) -> (Operation, Applied) {
+    let quality: Quality = qualities.of(M::FAMILY);
     let name = model.to_possible_value().expect("no model is skipped");
     let variant =
         VariantEntry::published(M::FAMILY, name.get_name()).expect("every model the command line names is published");
@@ -220,6 +222,7 @@ mod tests {
 
     use super::*;
     use crate::args::{Args, parse_from};
+    use crate::settings::Source;
 
     fn args(line: &str) -> Args {
         parse_from(line.split_whitespace()).unwrap_or_else(|error| panic!("{line}: {error}"))
@@ -228,7 +231,7 @@ mod tests {
     /// The chain the command line `line` asks for over a `width` x `height` photograph.
     fn plan(line: &str, width: u32, height: u32) -> Plan {
         let args = args(line);
-        super::plan(&args.selection, args.quality, width, height)
+        super::plan(&args.selection, args.qualities(), width, height)
     }
 
     fn scale(factor: f64) -> Scale {
@@ -413,7 +416,12 @@ mod tests {
         width: u32,
         height: u32,
     ) -> Plan {
-        super::plan(&Selection::from_suggestions(suggested, models), quality, width, height)
+        super::plan(
+            &Selection::from_suggestions(suggested, models),
+            &Qualities::all(quality, Source::Default),
+            width,
+            height,
+        )
     }
 
     #[test]
@@ -430,7 +438,10 @@ mod tests {
         ];
 
         for quality in ["hd", "sd"] {
-            let parsed = args(&format!("opai photo.jpg --up -q {quality} -o out.png")).quality;
+            let parsed = args(&format!("opai photo.jpg --up -q {quality} -o out.png"))
+                .qualities()
+                .uniform()
+                .expect("one quality");
             for (suggestion, flag) in cases {
                 let expected = plan(&format!("opai photo.jpg {flag} -q {quality} -o out.png"), 1000, 800);
 
@@ -440,8 +451,26 @@ mod tests {
     }
 
     #[test]
+    fn each_family_runs_at_its_own_quality_from_the_guis_settings() {
+        let gui = opai::settings::SharedSettings::from_gui("auto", [], [("upscale", "tokyo_fp16")]);
+        let mut args = args("opai photo.jpg --dn --up --scale 2 -o out.png");
+        args.settings = crate::settings::Settings::resolve(args.quality, args.processor, Some(&gui));
+
+        let plan = super::plan(&args.selection, args.qualities(), 1000, 800);
+
+        assert_eq!(
+            plan.operations,
+            vec![
+                Denoise::stockholm(FloatPrecision::Fp32, strength(1.0)),
+                Upscale::tokyo(FloatPrecision::Fp16, scale(2.0)),
+            ]
+        );
+    }
+
+    #[test]
     fn a_model_chosen_through_the_environment_runs_at_the_quality_asked_for() {
-        let models = AutopilotModels::read(|name| (name == "OPAI_AP_UPSCALE").then(|| "osaka".into())).expect("reads");
+        let models =
+            AutopilotModels::read(|name| (name == "OPAI_AP_UPSCALE").then(|| "osaka".into()), None).expect("reads");
 
         let plan = autopilot(&[Suggestion::Upscale { scale: scale(4.0) }], &models, Quality::Sd, 1000, 800);
 
