@@ -10,7 +10,15 @@
 //! | `xmp:ModifyDate`, `xmp:MetadataDate` | the export time |
 //! | `tiff:Software`, `tiff:DateTime`, `tiff:ImageWidth`, `tiff:ImageLength`, `exif:PixelXDimension`, `exif:PixelYDimension` | replaced where present, as the EXIF's are |
 //! | `tiff:Orientation` | 1 for camera RAW, where present; kept otherwise |
-//! | `crs:*`, `hdrgm:*`, `Container:*`, `Item:*`, `xmpNote:HasExtendedXMP` | dropped |
+//! | `crs:*`, `xmpNote:HasExtendedXMP` | dropped |
+//! | `hdrgm:*`, `Container:*`, `Item:*` | dropped, unless the export writes the gain map (below) |
+//!
+//! **With the gain map written** (a JPEG export of a gain-map JPEG, [`Context::gain_map`]), what describes it is kept:
+//! the `hdrgm:` properties as written, and a `Container:Directory` with its `Primary` item (its optional `Item:Length`
+//! removed: the primary's length is not known while its XMP is written) and its `GainMap` item (its `Item:Length` set to
+//! the written gain map's), every `Item:Padding` removed (the file is tightly packed), and every other item — a Motion
+//! Photo's video, a depth map — removed with the `GCamera:MotionPhoto*` properties, since none is carried. A directory
+//! without a `GainMap` item is dropped whole. Neither form is invented where the source lacked it.
 //!
 //! Everything else is carried as written. For a PNG or WebP export, which cannot hold IPTC-IIM, the source's IPTC Core
 //! values are added as the XMP properties the IPTC Photo Metadata Standard maps them to, where the XMP lacks them.
@@ -51,6 +59,8 @@ pub(crate) struct Context<'a> {
     pub(crate) exif: Option<&'a [u8]>,
     /// The source's IPTC-IIM, to map into the XMP, for an export that cannot hold IIM itself.
     pub(crate) iim: Option<&'a Iim>,
+    /// The length of the gain-map JPEG the export writes after the primary, if it writes one.
+    pub(crate) gain_map: Option<usize>,
 }
 
 /// The XMP to write: `packet` rewritten for `context`; a new packet when the source had none but carried EXIF or
@@ -82,8 +92,14 @@ fn apply(xmp: &mut Xmp, context: &Context<'_>) {
     let now = iso(context.now);
 
     // What would be false of the export, or describes what it does not carry.
-    for namespace in [ns::CRS, ns::HDRGM, ns::CONTAINER, ns::ITEM] {
-        xmp.remove_namespace(namespace);
+    xmp.remove_namespace(ns::CRS);
+    match context.gain_map {
+        Some(length) => keep_gain_map(xmp, length),
+        None => {
+            for namespace in [ns::HDRGM, ns::CONTAINER, ns::ITEM] {
+                xmp.remove_namespace(namespace);
+            }
+        }
     }
     xmp.remove(ns::XMP_NOTE, "HasExtendedXMP");
 
@@ -158,6 +174,35 @@ fn apply(xmp: &mut Xmp, context: &Context<'_>) {
     if let Some(iim) = context.iim {
         map_iim(xmp, iim);
     }
+}
+
+/// The gain-map description of a primary whose gain map is written after it, `length` bytes long: `hdrgm:` kept, and
+/// the `Container:Directory` reduced to the primary and the gain map with the gain map's true length. See the module
+/// documentation.
+fn keep_gain_map(xmp: &mut Xmp, length: usize) {
+    let mut has_gain_map = false;
+    let semantic = (ns::ITEM, "Semantic");
+    let found = xmp.edit_seq(ns::CONTAINER, "Directory", |item| {
+        item.remove(ns::ITEM, "Padding");
+        match item.get(semantic.0, semantic.1).as_deref() {
+            Some("Primary") => {
+                item.remove(ns::ITEM, "Length");
+                true
+            }
+            Some("GainMap") if !has_gain_map => {
+                has_gain_map = item.set(ns::ITEM, "Length", &length.to_string(), semantic);
+                has_gain_map
+            }
+            _ => false,
+        }
+    });
+    if found && !has_gain_map {
+        // A directory that does not locate the gain map would mislead a reader that trusts it over the MPF index.
+        xmp.remove_namespace(ns::CONTAINER);
+        xmp.remove_namespace(ns::ITEM);
+    }
+    xmp.remove_starting(ns::GCAMERA, "MotionPhoto");
+    xmp.remove_namespace_if_unused(ns::GCAMERA);
 }
 
 /// How each IPTC Core dataset of record 2 is written in XMP, by the IPTC Photo Metadata Standard.

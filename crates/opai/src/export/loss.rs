@@ -7,8 +7,9 @@
 //! reports it embedded, which only the write can know: a profile too large for the format
 //! ([`ProfileCause::NotWritten`]).
 //!
-//! Each kind is one place to change when a later slice of the colour series stops losing it: HDR output (Ultra HDR),
-//! a chosen depth, profiles in AVIF and HEIF.
+//! Each kind is one place to change when a later slice of the colour series stops losing it: HDR in formats other than
+//! JPEG, a chosen depth, profiles in AVIF and HEIF. A gain-map JPEG written as JPEG with its gain map carried loses no
+//! HDR (the Ultra HDR slice).
 
 use std::fmt;
 use std::path::Path;
@@ -19,7 +20,7 @@ use serde::{Serialize, Serializer};
 use rust_sak::image::Embedded;
 
 use crate::image::profile::{colour_space, description, fits, matters_in, writes_colour};
-use crate::image::{Depth, Fidelity, Hdr, ImageFormat, ImageIoError, Picture, is_raw};
+use crate::image::{Depth, Fidelity, GainMap, Hdr, ImageFormat, ImageIoError, Picture, is_raw};
 
 /// One thing a written file lost against its source.
 ///
@@ -29,7 +30,8 @@ use crate::image::{Depth, Fidelity, Hdr, ImageFormat, ImageIoError, Picture, is_
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Loss {
-    /// The source is HDR and the file is SDR: no format is written as HDR yet.
+    /// The source is HDR and the file is SDR: only a gain-map JPEG written as JPEG keeps its HDR, by carrying its gain
+    /// map.
     Hdr {
         /// How the source declared HDR, serialized as `gainMap`, `pq` or `hlg`.
         #[serde(serialize_with = "hdr_name")]
@@ -37,6 +39,8 @@ pub enum Loss {
         /// What the file is written as.
         #[serde(serialize_with = "format_name")]
         format: ImageFormat,
+        /// Why it is lost.
+        cause: HdrCause,
     },
     /// The file holds fewer bits per channel than the source, or integers where it had floats.
     Depth {
@@ -62,6 +66,17 @@ pub enum Loss {
     },
 }
 
+/// Why a [`Loss::Hdr`] happened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HdrCause {
+    /// The format is written as SDR only: every format for PQ and HLG, every format but JPEG for a gain map.
+    Format,
+    /// A gain-map JPEG written as JPEG whose gain map could not be carried: it could not be read at load, or could not
+    /// be prepared at export.
+    NotCarried,
+}
+
 /// Why a [`Loss::Profile`] happened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -84,10 +99,13 @@ pub enum ProfileCause {
 impl fmt::Display for Loss {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Hdr { hdr: Hdr::GainMap, format } => {
+            Self::Hdr { hdr: Hdr::GainMap, cause: HdrCause::NotCarried, .. } => {
+                write!(f, "HDR gain map dropped: it could not be carried")
+            }
+            Self::Hdr { hdr: Hdr::GainMap, format, .. } => {
                 write!(f, "HDR gain map dropped: {} output is SDR only for now", format.name())
             }
-            Self::Hdr { hdr, format } => {
+            Self::Hdr { hdr, format, .. } => {
                 write!(f, "HDR ({}) dropped: {} output is SDR only for now", hdr.name(), format.name())
             }
             Self::Depth { from, to, format } => write!(f, "{from} → {to} in {}", format.name()),
@@ -127,10 +145,16 @@ impl Loss {
 }
 
 /// What writing `picture` as `format` loses against the file it came from, in the order HDR, depth, profile; empty
-/// when nothing is lost. Asked before the write, from the picture's [`fidelity`](Picture::fidelity) and
-/// [`metadata`](Picture::metadata), so it costs no encode.
+/// when nothing is lost. Asked before the write, from the picture's [`fidelity`](Picture::fidelity),
+/// [`metadata`](Picture::metadata) and [`gain_map`](Picture::gain_map), so it costs no encode.
 pub fn losses(picture: &Picture, format: ImageFormat) -> Vec<Loss> {
-    assess(picture.fidelity(), picture.metadata().icc_profile.as_deref(), picture.pixels().color(), format)
+    losses_carrying(picture, format, picture.gain_map().is_some())
+}
+
+/// [`losses`], with whether the gain map is written given: what [`write`](fn@super::write) answers once it knows.
+pub(crate) fn losses_carrying(picture: &Picture, format: ImageFormat, gain_map: bool) -> Vec<Loss> {
+    let profile = picture.metadata().icc_profile.as_deref();
+    assess(picture.fidelity(), profile, picture.pixels().color(), format, gain_map)
 }
 
 /// `predicted` — [`losses`] of `picture` as `format` — made to agree with what the encoder reports it `embedded`: a
@@ -169,14 +193,19 @@ pub(crate) fn reconcile(
 /// they are at the source's own depth. A camera RAW is judged by its extension, without reading it: it develops to
 /// 16-bit sRGB with no profile.
 ///
+/// Whether the gain map will be carried is judged from its MPF image's header, as the load judges it, without decoding
+/// it.
+///
 /// **Only what the prediction needs is read** ([`header`]): a JPEG up to its first scan and a PNG up to its first
 /// image data, where every block it reads lies; another format whole. A format change in the export dialog asks again
-/// for every queued file, so a 30 MB JPEG costs its few kilobytes of header each time rather than its 30 MB.
+/// for every queued file, so a 30 MB JPEG costs its few kilobytes of header each time rather than its 30 MB. A gain-map
+/// JPEG asked about as JPEG is the exception, read whole: its gain map lies after the primary image.
 ///
 /// A lower bound: it may miss a loss but never names one the write will not have. An enhancement that narrows the
 /// depth or changes the colour model is not foreseen (a grayscale photograph colourised loses its `GRAY` profile to the
-/// colour model, which is not predicted), nor a profile the encoder cannot write ([`ProfileCause::NotWritten`]). The
-/// losses [`write`](fn@super::write) answers are what was actually written.
+/// colour model, which is not predicted), nor a profile the encoder cannot write ([`ProfileCause::NotWritten`]), nor a
+/// gain map that passes its header check and then fails to decode or encode. The losses [`write`](fn@super::write)
+/// answers are what was actually written.
 ///
 /// # Errors
 ///
@@ -185,10 +214,14 @@ pub(crate) fn reconcile(
 pub fn predict_blocking(path: impl AsRef<Path>, format: ImageFormat) -> Result<Vec<Loss>, ImageIoError> {
     let path = path.as_ref();
     if is_raw(path) {
-        return Ok(assess(&Fidelity::of_colour(ColorType::Rgb16), None, ColorType::Rgb16, format));
+        return Ok(assess(&Fidelity::of_colour(ColorType::Rgb16), None, ColorType::Rgb16, format, false));
     }
 
-    let bytes = header(path).map_err(ImageIoError::read(path))?;
+    let mut bytes = header(path).map_err(ImageIoError::read(path))?;
+    // Whether the gain map is carried decides only a gain-map JPEG written as JPEG, and it lies after the primary.
+    if format == ImageFormat::Jpeg && rust_sak::image::hdr_bytes(&bytes) == Some(Hdr::GainMap) {
+        bytes = std::fs::read(path).map_err(ImageIoError::read(path))?;
+    }
     predict_from(&bytes, path, format)
 }
 
@@ -199,8 +232,11 @@ fn predict_from(bytes: &[u8], path: &Path, format: ImageFormat) -> Result<Vec<Lo
     let fidelity = Fidelity::read_with(Some(&info), bytes, info.color_type, profile.as_deref());
     // The load keeps only a profile that describes the decoded pixels; the one it drops is `fidelity.discarded`.
     let carried = profile.filter(|profile| fits(profile, info.color_type.has_color()));
+    let gain_map = rust_sak::image::metadata_bytes(bytes)
+        .gain_map
+        .is_some_and(|gain_map| GainMap::plausible(&gain_map, (info.width, info.height)).is_ok());
 
-    Ok(assess(&fidelity, carried.as_deref(), info.color_type, format))
+    Ok(assess(&fidelity, carried.as_deref(), info.color_type, format, gain_map))
 }
 
 /// How much more of a file [`header`] reads at a time.
@@ -295,13 +331,24 @@ fn png_header_end(bytes: &[u8]) -> Option<usize> {
     }
 }
 
-/// [`losses`] for pixels of `colour` carrying `profile`, from a source of `fidelity`.
-pub(crate) fn assess(fidelity: &Fidelity, profile: Option<&[u8]>, colour: ColorType, format: ImageFormat) -> Vec<Loss> {
+/// [`losses`] for pixels of `colour` carrying `profile`, from a source of `fidelity`, with or without its `gain_map`.
+pub(crate) fn assess(
+    fidelity: &Fidelity,
+    profile: Option<&[u8]>,
+    colour: ColorType,
+    format: ImageFormat,
+    gain_map: bool,
+) -> Vec<Loss> {
     let mut losses = Vec::new();
 
-    // Always lost, for now: nothing is written as HDR until the Ultra HDR slice.
-    if let Some(hdr) = fidelity.hdr {
-        losses.push(Loss::Hdr { hdr, format });
+    // Kept only by a gain-map JPEG written as JPEG with its gain map; PQ and HLG are not written as HDR yet.
+    match (fidelity.hdr, format) {
+        (None, _) => {}
+        (Some(Hdr::GainMap), ImageFormat::Jpeg) if gain_map => {}
+        (Some(hdr @ Hdr::GainMap), ImageFormat::Jpeg) => {
+            losses.push(Loss::Hdr { hdr, format, cause: HdrCause::NotCarried });
+        }
+        (Some(hdr), _) => losses.push(Loss::Hdr { hdr, format, cause: HdrCause::Format }),
     }
 
     let to = written_depth(format, colour);
@@ -405,18 +452,42 @@ mod tests {
             .with_fidelity(fidelity)
     }
 
+    /// A gain-map JPEG as loaded: HDR by its gain map, with the gain map carried.
     fn ultra_hdr() -> Picture {
+        use crate::image::test_support::{FIXTURE_SIZE, gain_map_jpeg};
+
         let mut fidelity = Fidelity::of_colour(ColorType::Rgb8);
         fidelity.hdr = Some(Hdr::GainMap);
-        picture(sample_image(), fidelity, Some(DISPLAY_P3))
+        let gain_map = GainMap::read(&gain_map_jpeg(FIXTURE_SIZE, 3), FIXTURE_SIZE).expect("readable");
+        picture(sample_image(), fidelity, Some(DISPLAY_P3)).with_gain_map(Some(gain_map))
     }
 
     #[test]
-    fn an_ultra_hdr_jpeg_written_as_jpeg_loses_only_its_hdr() {
-        let losses = losses(&ultra_hdr(), ImageFormat::Jpeg);
+    fn an_ultra_hdr_jpeg_written_as_jpeg_with_its_gain_map_loses_nothing() {
+        assert_eq!(losses(&ultra_hdr(), ImageFormat::Jpeg), []);
+    }
 
-        assert_eq!(losses, [Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Jpeg }]);
-        assert_eq!(losses[0].to_string(), "HDR gain map dropped: JPEG output is SDR only for now");
+    #[test]
+    fn an_ultra_hdr_jpeg_whose_gain_map_is_not_carried_loses_its_hdr_in_jpeg_too() {
+        let without = ultra_hdr().with_gain_map(None);
+
+        let losses = losses(&without, ImageFormat::Jpeg);
+
+        assert_eq!(
+            losses,
+            [Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Jpeg, cause: HdrCause::NotCarried }]
+        );
+        assert_eq!(losses[0].to_string(), "HDR gain map dropped: it could not be carried");
+        // And the write's own answer, once a gain map the picture carries could not be prepared.
+        assert_eq!(losses_carrying(&ultra_hdr(), ImageFormat::Jpeg, false), losses);
+    }
+
+    #[test]
+    fn an_ultra_hdr_jpeg_written_as_png_loses_its_hdr_to_the_format() {
+        let losses = losses(&ultra_hdr(), ImageFormat::Png);
+
+        assert_eq!(losses, [Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Png, cause: HdrCause::Format }]);
+        assert_eq!(losses[0].to_string(), "HDR gain map dropped: PNG output is SDR only for now");
     }
 
     #[test]
@@ -550,8 +621,14 @@ mod tests {
 
     #[test]
     fn a_loss_serializes_tagged_by_kind_for_a_front_end_to_word() {
-        let hdr = serde_json::to_value(Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Heif }).expect("JSON");
-        assert_eq!(hdr, serde_json::json!({ "kind": "hdr", "hdr": "gainMap", "format": "HEIF" }));
+        let hdr = Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Heif, cause: HdrCause::Format };
+        let hdr = serde_json::to_value(hdr).expect("JSON");
+        assert_eq!(hdr, serde_json::json!({ "kind": "hdr", "hdr": "gainMap", "format": "HEIF", "cause": "format" }));
+        let not_carried = Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Jpeg, cause: HdrCause::NotCarried };
+        assert_eq!(
+            serde_json::to_value(not_carried).expect("JSON"),
+            serde_json::json!({ "kind": "hdr", "hdr": "gainMap", "format": "JPEG", "cause": "notCarried" })
+        );
 
         let depth = serde_json::to_value(Loss::Depth { from: SIXTEEN, to: EIGHT, format: ImageFormat::Jpeg });
         assert_eq!(
@@ -581,7 +658,9 @@ mod tests {
 
     #[test]
     fn a_prediction_from_the_file_agrees_with_the_assessment_of_the_loaded_picture() {
-        use crate::image::test_support::{write_fixture, written_jpeg, written_p3, written_ultra_hdr};
+        use crate::image::test_support::{
+            truncated_ultra_hdr, write_fixture, written_jpeg, written_p3, written_ultra_hdr, written_ultra_hdr_of,
+        };
 
         let dir = tempfile::tempdir().expect("a temporary directory");
         let mut deep = Vec::new();
@@ -597,6 +676,9 @@ mod tests {
             write_fixture(dir.path(), "deep.png", &deep),
             write_fixture(dir.path(), "plain.jpg", &written_jpeg()),
             write_fixture(dir.path(), "p3.jpg", &written_p3(ImageFormat::Jpeg)),
+            write_fixture(dir.path(), "cut.jpg", &truncated_ultra_hdr()),
+            write_fixture(dir.path(), "large.jpg", &written_ultra_hdr_of((32, 24), (32, 25), 1)),
+            write_fixture(dir.path(), "quarter.jpg", &written_ultra_hdr_of((40, 32), (10, 8), 1)),
         ];
 
         for path in &files {
@@ -610,11 +692,22 @@ mod tests {
                 );
             }
         }
+        let hdr = |format, cause| [Loss::Hdr { hdr: Hdr::GainMap, format, cause }];
+        assert_eq!(predict_blocking(&files[0], ImageFormat::Jpeg).expect("readable"), []);
         assert_eq!(
-            predict_blocking(&files[0], ImageFormat::Jpeg).expect("readable"),
-            [Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Jpeg }]
+            predict_blocking(&files[0], ImageFormat::Png).expect("readable"),
+            hdr(ImageFormat::Png, HdrCause::Format)
         );
         assert_eq!(predict_blocking(&files[2], ImageFormat::Jpeg).expect("readable"), []);
+        for cut in [&files[4], &files[5]] {
+            assert_eq!(
+                predict_blocking(cut, ImageFormat::Jpeg).expect("readable"),
+                hdr(ImageFormat::Jpeg, HdrCause::NotCarried),
+                "{}",
+                cut.display()
+            );
+        }
+        assert_eq!(predict_blocking(&files[6], ImageFormat::Jpeg).expect("readable"), []);
     }
 
     #[test]
@@ -764,10 +857,15 @@ mod tests {
                         .push(format!("{format:?} from {:?}: predicted {predicted}, wrote {written}", pixels.color()));
                 }
 
-                let profile_lost =
-                    assess(&Fidelity::of_pixels(pixels), metadata.icc_profile.as_deref(), pixels.color(), format)
-                        .iter()
-                        .any(|loss| matches!(loss, Loss::Profile { .. }));
+                let profile_lost = assess(
+                    &Fidelity::of_pixels(pixels),
+                    metadata.icc_profile.as_deref(),
+                    pixels.color(),
+                    format,
+                    false,
+                )
+                .iter()
+                .any(|loss| matches!(loss, Loss::Profile { .. }));
                 let embedded = metadata_bytes(&bytes).icc_profile.is_some();
                 if profile_lost == embedded {
                     drifted.push(format!(

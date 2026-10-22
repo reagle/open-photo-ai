@@ -8,6 +8,7 @@ use ::image::DynamicImage;
 use rust_sak::image::Metadata;
 
 use super::fidelity::Fidelity;
+use super::gain_map::GainMap;
 
 /// A decoded image together with where its pixels came from and the identity that describes them.
 ///
@@ -47,6 +48,13 @@ use super::fidelity::Fidelity;
 /// like the metadata, so an export compares what it writes against the file the user chose; see
 /// [`export::losses`](crate::export::losses).
 ///
+/// # Gain map
+///
+/// [`gain_map`](Self::gain_map) is an Ultra HDR / ISO 21496-1 JPEG's gain map, decoded by [`load`](fn@super::load), which
+/// an export writes back as an Ultra HDR JPEG. It always covers the scene the pixels cover: [`derive`](Self::derive)
+/// keeps it, because an enhancement — fresh or served from the run cache — does not move the frame, and a crop, which
+/// does, replaces it with a reframed copy through [`with_gain_map`](Self::with_gain_map). [`Picture::new`] has none.
+///
 /// # Cost of cloning
 ///
 /// Cloning shares the pixels and the metadata rather than copying them, which after an 8x upscale is the difference
@@ -68,6 +76,8 @@ pub struct Picture {
     metadata: Arc<Metadata>,
     /// What the source file held that a written file can lose, shared like the metadata.
     fidelity: Arc<Fidelity>,
+    /// The source's HDR gain map, covering what `pixels` cover; shared like the pixels.
+    gain_map: Option<Arc<GainMap>>,
 }
 
 impl Picture {
@@ -83,7 +93,14 @@ impl Picture {
     pub fn new(path: impl Into<PathBuf>, pixels: impl Into<Arc<DynamicImage>>, identity: impl Into<String>) -> Self {
         let pixels = pixels.into();
         let fidelity = Arc::new(Fidelity::of_pixels(&pixels));
-        Self { path: path.into(), pixels, identity: identity.into(), metadata: Arc::default(), fidelity }
+        Self {
+            path: path.into(),
+            pixels,
+            identity: identity.into(),
+            metadata: Arc::default(),
+            fidelity,
+            gain_map: None,
+        }
     }
 
     /// This picture with `metadata` in place of what it carried — how [`load`](fn@super::load) attaches what the file
@@ -100,7 +117,15 @@ impl Picture {
         Self { fidelity: Arc::new(fidelity), ..self }
     }
 
-    /// A picture computed from this one: `pixels` under `identity`, keeping this picture's path, metadata and fidelity.
+    /// This picture with `gain_map` in place of the one it carried — how [`load`](fn@super::load) attaches the gain map it
+    /// decoded, and how a crop attaches the gain map it reframed. `None` drops it.
+    #[must_use]
+    pub fn with_gain_map(self, gain_map: Option<GainMap>) -> Self {
+        Self { gain_map: gain_map.map(Arc::new), ..self }
+    }
+
+    /// A picture computed from this one: `pixels` under `identity`, keeping this picture's path, metadata, fidelity and
+    /// gain map.
     ///
     /// **The one way to build a derived picture**, so that a crop, an enhancement or a cache hit cannot forget the
     /// source's colour profile. The pairing of `pixels` and `identity` is the caller's, exactly as for
@@ -112,6 +137,7 @@ impl Picture {
             identity: identity.into(),
             metadata: Arc::clone(&self.metadata),
             fidelity: Arc::clone(&self.fidelity),
+            gain_map: self.gain_map.clone(),
         }
     }
 
@@ -152,6 +178,16 @@ impl Picture {
     /// What the source file held that a written file can lose; see the type's documentation.
     pub fn fidelity(&self) -> &Fidelity {
         &self.fidelity
+    }
+
+    /// The source's HDR gain map, if it had one that could be read; see the type's documentation.
+    pub fn gain_map(&self) -> Option<&GainMap> {
+        self.gain_map.as_deref()
+    }
+
+    /// The gain map as a shared handle, for the asynchronous export. A refcount bump, not a copy.
+    pub fn shared_gain_map(&self) -> Option<Arc<GainMap>> {
+        self.gain_map.clone()
     }
 
     /// The image's width and height, in pixels.
@@ -250,6 +286,24 @@ mod tests {
 
         assert_eq!(derived.fidelity(), &fidelity);
         assert_eq!(derived.fidelity().depth, Depth { bits: 8, float: false });
+    }
+
+    #[test]
+    fn a_new_picture_has_no_gain_map_and_a_derived_one_keeps_its_sources() {
+        use crate::image::test_support::gain_map_jpeg;
+
+        let source = Picture::new("/pictures/hawk.jpg", image_of(32, 24), "cafebabecafebabe");
+        assert!(source.gain_map().is_none());
+
+        let gain_map = GainMap::read(&gain_map_jpeg((8, 6), 3), (32, 24)).expect("readable");
+        let source = source.with_gain_map(Some(gain_map));
+        // An enhancement's result at twice the size, and a derivation of that.
+        let derived = source.derive(image_of(64, 48), "0123456789abcdef").derive(image_of(64, 48), "f00df00df00df00d");
+
+        let (kept, original) = (derived.shared_gain_map().expect("kept"), source.shared_gain_map().expect("carried"));
+        assert!(Arc::ptr_eq(&kept, &original), "shared, not copied");
+        assert_eq!(kept.pixels().width(), 8, "an enhancement does not resample it");
+        assert!(derived.with_gain_map(None).gain_map().is_none());
     }
 
     #[test]

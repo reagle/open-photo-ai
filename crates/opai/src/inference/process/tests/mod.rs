@@ -4,6 +4,7 @@ mod cache;
 mod colour;
 mod entry;
 mod faces;
+mod gain_map;
 mod identity;
 mod log;
 mod metadata;
