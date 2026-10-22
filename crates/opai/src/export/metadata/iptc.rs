@@ -39,6 +39,75 @@ pub(crate) fn filter(block: &[u8], source: &Path) -> Option<Vec<u8>> {
     }
 }
 
+/// The IPTC-IIM record of a Photoshop block, decoded: `(record, dataset, text)` in stored order.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Iim(Vec<(u8, u8, String)>);
+
+impl Iim {
+    /// Every value of application-record dataset `number` (record 2), in order.
+    pub(crate) fn all(&self, number: u8) -> Vec<String> {
+        self.0
+            .iter()
+            .filter(|(record, dataset, _)| (*record, *dataset) == (2, number))
+            .map(|(.., text)| text.clone())
+            .collect()
+    }
+
+    /// The first value of application-record dataset `number`.
+    pub(crate) fn first(&self, number: u8) -> Option<String> {
+        self.all(number).into_iter().next()
+    }
+}
+
+/// The IPTC-IIM record in `block`'s resource `0x0404`, or `None` when there is none or it does not walk.
+///
+/// Each dataset is `0x1C`, a record number, a dataset number, a big-endian 16-bit length and the data; an extended
+/// (32-bit) length is refused, since no text dataset needs one. Text is UTF-8 when dataset 1:90 says so (`ESC % G`),
+/// otherwise UTF-8 if it is valid and Latin-1 if not, which is what readers in practice assume.
+pub(crate) fn iim(block: &[u8]) -> Option<Iim> {
+    let resource = resources(block)?
+        .into_iter()
+        .find(|resource| resource.id == IIM && resource.signature == *b"8BIM")?;
+    let data = resource_data(resource.bytes)?;
+
+    let mut raw = Vec::new();
+    let mut at = 0;
+    while at < data.len() {
+        if data[at] != 0x1C {
+            // Trailing padding is zeros; anything else is not a dataset.
+            if data[at..].iter().all(|&byte| byte == 0) {
+                break;
+            }
+            return None;
+        }
+        let record = *data.get(at + 1)?;
+        let number = *data.get(at + 2)?;
+        let length = u16::from_be_bytes(data.get(at + 3..at + 5)?.try_into().ok()?);
+        if length & 0x8000 != 0 {
+            return None;
+        }
+        let value = data.get(at + 5..at + 5 + usize::from(length))?;
+        raw.push((record, number, value));
+        at += 5 + usize::from(length);
+    }
+
+    let utf8 = raw.iter().any(|(record, number, value)| (*record, *number) == (1, 90) && *value == b"\x1b%G");
+    let text = |value: &[u8]| match std::str::from_utf8(value) {
+        Ok(text) => text.to_owned(),
+        Err(_) if utf8 => String::from_utf8_lossy(value).into_owned(),
+        Err(_) => value.iter().map(|&byte| char::from(byte)).collect(),
+    };
+    Some(Iim(raw.into_iter().map(|(record, number, value)| (record, number, text(value))).collect()))
+}
+
+/// A resource's data, from its whole bytes.
+fn resource_data(bytes: &[u8]) -> Option<&[u8]> {
+    let name = usize::from(*bytes.get(6)?);
+    let size_at = 6 + 1 + name + ((1 + name) & 1);
+    let size = usize::try_from(u32::from_be_bytes(bytes.get(size_at..size_at + 4)?.try_into().ok()?)).ok()?;
+    bytes.get(size_at + 4..(size_at + 4).checked_add(size)?)
+}
+
 /// One image resource: its signature, ID, and its whole bytes, header and padding included.
 struct Resource<'a> {
     signature: [u8; 4],
@@ -129,6 +198,30 @@ mod tests {
     }
 
     #[test]
+    fn the_iim_record_is_read_with_its_character_set() {
+        let utf8 = [
+            &b"\x1c\x01\x5a\x00\x03\x1b%G"[..],
+            b"\x1c\x02\x19\x00\x04hawk",
+            b"\x1c\x02\x19\x00\x05caf\xc3\xa9",
+        ]
+        .concat();
+        let block = resource(IIM, b"", &utf8);
+        let record = iim(&block).expect("a record");
+        assert_eq!(record.all(25), ["hawk", "café"]);
+        assert_eq!(record.first(120), None);
+
+        // Without 1:90, bytes that are not UTF-8 are Latin-1.
+        let latin1 = resource(IIM, b"", b"\x1c\x02\x78\x00\x04caf\xe9");
+        assert_eq!(iim(&latin1).expect("a record").first(120).as_deref(), Some("café"));
+
+        // A dataset that overruns, an extended length, or a stray byte: no record.
+        assert_eq!(iim(&resource(IIM, b"", b"\x1c\x02\x19\x00\x09hawk")), None);
+        assert_eq!(iim(&resource(IIM, b"", b"\x1c\x02\x19\x80\x04hawk")), None);
+        assert_eq!(iim(&resource(IIM, b"", b"\x1c\x02\x19\x00\x04hawkX")), None);
+        assert_eq!(iim(&resource(0x040C, b"", b"\x1c\x02\x19\x00\x04hawk")), None);
+    }
+
+    #[test]
     fn truncations_and_byte_flips_never_panic() {
         let block = [
             resource(IIM, b"name", b"\x1c\x02\x19\x00\x04hawk"),
@@ -138,12 +231,14 @@ mod tests {
         .concat();
         for len in 0..block.len() {
             let _ = filter(&block[..len], source());
+            let _ = iim(&block[..len]);
         }
         let mut flipped = block.clone();
         for at in 0..flipped.len() {
-            for value in [0x00, 0xFF, flipped[at] ^ 0x01] {
+            for value in [0x00, 0xFF, 0x1C, 0x80, flipped[at] ^ 0x01] {
                 let original = std::mem::replace(&mut flipped[at], value);
                 let _ = filter(&flipped, source());
+                let _ = iim(&flipped);
                 flipped[at] = original;
             }
         }
