@@ -206,15 +206,16 @@ pub(crate) fn cropped(picture: &Picture, crop: Crop) -> Picture {
         // nothing, and without this rule that would mint a new identity for identical pixels and re-run a chain
         // that had already been computed.
         Cow::Borrowed(_) => picture.clone(),
-        // `opai::Picture::new` is documented as the single reviewed place a caller pairs pixels it computed itself
-        // with the identity it derived for them, and this is that case. Folding through the same
+        // `opai::Picture::derive` pairs pixels a caller computed itself with the identity it derived for them, and
+        // keeps the source's path and metadata — so a cropped Display P3 photograph is still exported, and previewed,
+        // as Display P3. Folding through the same
         // `rust_sak::crypto::xxh3_string` every derived identity in this project is folded with is what makes a
         // framed picture indistinguishable from any other picture to the run cache `opai::process` keys on, and
         // what spares this the reference's two hand-synchronised token formats.
         //
         // The path is the source's own: these pixels came from that file, and `Picture`'s path is documented as
         // where the pixels came from rather than where anything is going.
-        Cow::Owned(framed) => Picture::new(picture.path(), framed, identity_of(picture.identity(), crop)),
+        Cow::Owned(framed) => picture.derive(framed, identity_of(picture.identity(), crop)),
     }
 }
 
@@ -488,6 +489,18 @@ mod tests {
         assert_eq!((vanishing.width(), vanishing.height()), (1, 1), "a framing was scaled out of existence");
         assert_eq!((vanishing.left, vanishing.top), (1, 1), "the origin was not scaled with the rectangle");
     }
+    #[test]
+    fn a_cropped_display_p3_picture_keeps_its_profile() {
+        let source = picture_of(40, 30).with_metadata(crate::test_support::display_p3());
+        let crop = Crop::new(4, 3, 20, 10, 90, true, false).expect("legal");
+
+        let cropped = cropped(&source, crop);
+
+        assert_ne!(cropped.identity(), source.identity(), "the framing changed nothing");
+        assert_eq!(cropped.metadata().icc_profile.as_deref(), Some(crate::test_support::DISPLAY_P3));
+        assert!(Arc::ptr_eq(&cropped.shared_metadata(), &source.shared_metadata()), "the profile was copied");
+    }
+
     /// A picture whose every pixel is distinguishable from every other, so a flip, a turn or a cut that
     /// went the wrong way shows up as a different picture rather than as the same one.
     fn picture_of(width: u32, height: u32) -> Picture {

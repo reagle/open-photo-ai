@@ -137,7 +137,7 @@ mod tests {
             assert_eq!(options.format(), format);
 
             let destination = dir.path().join(format!("recommended.{}", format.extension()));
-            save_blocking(&sample_image(), &destination, format, Some(options))
+            save_blocking(&sample_image(), &crate::image::Metadata::default(), &destination, format, Some(options))
                 .unwrap_or_else(|error| panic!("{format:?} refused its own recommended settings: {error}"));
         }
     }

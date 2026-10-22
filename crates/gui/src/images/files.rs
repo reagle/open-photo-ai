@@ -774,8 +774,14 @@ mod tests {
             .iter()
             .map(|name| {
                 let path = dir.path().join(name);
-                opai::image::save_blocking(&image::DynamicImage::new_rgb8(4, 3), &path, opai::ImageFormat::Png, None)
-                    .expect("writable");
+                opai::image::save_blocking(
+                    &image::DynamicImage::new_rgb8(4, 3),
+                    &opai::image::Metadata::default(),
+                    &path,
+                    opai::ImageFormat::Png,
+                    None,
+                )
+                .expect("writable");
                 path
             })
             .collect();

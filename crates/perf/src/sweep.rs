@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 
 use opai::{
     CancellationToken, Detection, Enhanced, ExecuteOptions, ExecutionProvider, Faces, InferenceError, OnInference,
-    Opai, Picture, ProcessOptions, ProviderReport,
+    Opai, ProcessOptions, ProviderReport,
 };
 
 use crate::cli::Options;
@@ -539,7 +539,7 @@ async fn run(
 ) -> Result<Enhanced, InferenceError> {
     // The same pixels behind an `Arc`, under an identity of this run's own. There is nothing to restore and nothing
     // to leak, which is what the reference needs a deferred restore and a comment about early returns for.
-    let picture = Picture::new(input.picture.path(), input.picture.shared_pixels(), identity);
+    let picture = input.picture.derive(input.picture.shared_pixels(), identity);
 
     let process = ProcessOptions {
         provider: options.provider,

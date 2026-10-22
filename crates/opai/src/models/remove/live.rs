@@ -134,7 +134,7 @@ async fn removes_on(opai: &Opai, source: &Picture, provider: ExecutionProvider) 
     assert_eq!(kept, 0.0, "pixels far from the tag changed");
 
     let keep = kept_dir(NAME).join(format!("removed-{provider}.png"));
-    crate::image::save(produced.shared_pixels(), &keep, ImageFormat::Png, None)
+    crate::image::save(produced.shared_pixels(), produced.shared_metadata(), &keep, ImageFormat::Png, None)
         .await
         .expect("the result encodes");
     println!("  inspect at {}", keep.display());

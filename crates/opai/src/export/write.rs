@@ -9,11 +9,11 @@ use super::claim::claim;
 use crate::image::{self, ImageFormat, ImageIoError, Picture, recommended_encode_options};
 use crate::task::{Cancelled, spawn_blocking};
 
-/// How [`write`] writes.
+/// How [`write()`] writes.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct WriteOptions {
     /// The encoder quality, or `None` for the format's default — see
-    /// [`recommended_encode_options`](crate::image::recommended_encode_options).
+    /// [`crate::image::recommended_encode_options`].
     pub quality: Option<f64>,
     /// Replace a file already at the destination once the new one is complete, rather than numbering the result
     /// `_1`, `_2`, … beside it.
@@ -22,7 +22,7 @@ pub struct WriteOptions {
     pub create_parent: bool,
 }
 
-/// What [`write`] wrote.
+/// What [`write()`] wrote.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Written {
     /// Where it went: the destination, or the numbered name beside it.
@@ -31,7 +31,7 @@ pub struct Written {
     pub bytes: u64,
 }
 
-/// Why [`write`] wrote nothing.
+/// Why [`write()`] wrote nothing.
 #[derive(Debug, thiserror::Error)]
 pub enum WriteError {
     /// The destination's directory could not be created, or no name could be held or kept. The filesystem's error
@@ -55,7 +55,9 @@ impl From<Cancelled> for WriteError {
     }
 }
 
-/// Writes `picture` to `destination` as `format`, at the library's recommended settings for it and `options`' quality.
+/// Writes `picture` to `destination` as `format`, at the library's recommended settings for it and `options`' quality,
+/// embedding the picture's [`metadata`](Picture::metadata) — its source's ICC colour profile — where `format` can hold
+/// it.
 ///
 /// Without [`overwrite`](WriteOptions::overwrite) a file already there is kept and the result takes the first free
 /// `_1` … `_999` name beside it; with it, the file is replaced once the new one is complete. **A write that does not
@@ -74,9 +76,12 @@ pub async fn write(
     options: WriteOptions,
 ) -> Result<Written, WriteError> {
     let pixels = picture.shared_pixels();
+    // The source photograph's colour profile, carried through every crop and enhancement by `Picture::derive`, is
+    // embedded wherever the format can hold it; `image::save` warns where it cannot.
+    let metadata = picture.shared_metadata();
     let encode = recommended_encode_options(format, options.quality);
 
-    write_with(destination, options, |path| image::save(pixels, path, format, Some(encode))).await
+    write_with(destination, options, |path| image::save(pixels, metadata, path, format, Some(encode))).await
 }
 
 /// [`write`] with the encoding left to `save`, which is handed the path to write into and answers the bytes written.
