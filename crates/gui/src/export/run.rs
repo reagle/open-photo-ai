@@ -206,7 +206,7 @@ pub(crate) async fn export_with<E: Enhancer>(
 
     // The folder is not created: one the user removed since choosing it fails the export rather than reappearing.
     let options = WriteOptions { quality: request.quality, overwrite: request.overwrite, create_parent: false };
-    let Written { path: written, bytes } =
+    let Written { path: written, bytes, .. } =
         write(&picture, &destination, format.into(), options).await.map_err(|error| {
             let message = match error {
                 WriteError::Unwritable { source, .. } => source.to_string(),

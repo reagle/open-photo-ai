@@ -441,13 +441,23 @@ Camera RAW files are developed to 16 bits per channel before processing. Some ot
 
 With an output **file**, the format is the one its extension names. With an output **directory**, it's chosen by [`--format`](#--format-format-default-preserve). The quality and compression settings are the same ones the GUI uses when exporting. They can't currently be changed from the CLI.
 
-**Bit depth:** the output keeps the bit depth of the input. A 16-bit source (a 16-bit PNG/TIFF or any camera RAW) produces a 16-bit result, saved as 16-bit if the output format supports it. For RAW files, use PNG, TIFF, AVIF or HEIF to keep the extra depth.
+**Bit depth:** the output keeps the bit depth of the input. A 16-bit source (a 16-bit PNG/TIFF or any camera RAW) produces a 16-bit result, saved as 16-bit if the output format supports it. For RAW files, use PNG or TIFF to keep the extra depth: AVIF and HEIF are written at 8 bits for now.
 
 **Transparency is not kept.** Transparent areas are filled with black during processing.
 
 **Colour profile:** if the input embeds an ICC colour profile (a Display P3 photograph from a phone or camera, an Adobe RGB scan), the result embeds the same profile when it is written as JPEG, PNG, TIFF or WebP, so it shows in the same colours as the input. BMP, GIF, AVIF and HEIF results are written without it for now, and the [log file](#log-file) records a warning naming the format. Colours are not converted: the profile is carried over unchanged, and an input without one produces a result without one. Camera RAW inputs have none.
 
 **Metadata:** the result keeps the input's EXIF — capture date and time zone, camera, lens and exposure, GPS location, copyright and the rest — and its XMP — rating, label, keywords and their hierarchy, title, caption, creator, rights and edit history — whenever it is written as JPEG, PNG or WebP, and its IPTC (keywords, caption, creator, copyright) when it is written as JPEG; a PNG or WebP result carries the IPTC values in its XMP instead. There is no option to strip it, location included. A few fields are rewritten so that they stay true of the result: the software becomes `Open Photo AI <version> (<date>)`, the modification time and its offset become the time of the export, the pixel dimensions become the result's, the orientation says "upright" because the result is saved the right way up, the embedded thumbnail is removed (it would show the unenhanced, uncropped input), the result gets a new XMP document ID that names the input as its source, and the edit history gains an Open Photo AI entry. Lightroom's develop settings (`crs:`) are dropped, since Lightroom would apply them again to the already developed result. The camera's private MakerNote is kept byte for byte; in the rare case that the rewritten EXIF would not fit a JPEG, it is left out and the [log file](#log-file) says so. Nothing is written for BMP, GIF, TIFF, AVIF or HEIF results yet; the log file records a warning naming the format. Camera RAW inputs carry no metadata over yet.
+
+**What a result loses is shown.** When a result holds less than its input, the command always says so on the terminal, with one line per affected input:
+
+```text
+⚠️ hawk.jpg: HDR gain map dropped: JPEG output is SDR only for now
+⚠️ scan.tif: 16-bit → 8-bit in JPEG
+⚠️ phone.jpg: Display P3 profile not embedded in AVIF
+```
+
+It names an **HDR** input (an Ultra HDR / ISO 21496-1 gain-map JPEG, or a PQ or HLG PNG, AVIF or HEIF) written as SDR, which every format is for now; **fewer bits per channel** than the input, or integer samples from a floating-point one; and a **colour profile** that is not in the result (the format cannot hold one, it is for another colour model, the encoder could not write it — a profile too large for the format — or the input carried a coded colour description such as Display P3 instead of a profile). A plain sRGB profile left out of an AVIF or HEIF result is not reported: those formats read as sRGB without one. Off a terminal the line follows that input's own line; on one it is printed once the progress view finishes, before the summary. With several inputs a count follows, such as `⚠️ 2 of 5 images lost something: 2 HDR, 1 bit depth`. Each loss is also recorded in the [log file](#log-file). **The exit status is unchanged:** a loss is a warning, and the result is still written. Not detected yet: AVIF and HEIF gain maps, and the private gain maps of older iPhones.
 
 ## What happens during a run
 

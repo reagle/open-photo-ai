@@ -31,8 +31,10 @@
 //! behind [`fn@save`] write it**. A format that cannot hold 16 bits narrows the picture rather than refusing it, so no
 //! export fails on the colour type of what was loaded.
 //!
-//! What differs is what survives the write. **PNG, TIFF, AVIF and HEIF keep 16 bits per channel; BMP, GIF, JPEG and
-//! WebP are 8-bit**, so a RAW exported to one of those four comes back at 8.
+//! What differs is what survives the write. **PNG and TIFF keep 16 bits per channel; BMP, GIF, JPEG and WebP are
+//! 8-bit, and so are AVIF and HEIF today** (their encoders take 16-bit pixels and write 8-bit files until a later slice
+//! encodes 10 and 12 bits), so a RAW exported to one of those six comes back at 8. An export says so:
+//! [`export::losses`](crate::export::losses).
 //!
 //! # The colour profile travels with the pixels
 //!
@@ -50,6 +52,19 @@
 //! format could not hold; deciding what is true of the file is [`export::write`](fn@crate::export::write)'s, which
 //! rewrites the EXIF and the XMP and filters the IPTC. A preview rendition carries none of the three, through
 //! [`without_descriptive`].
+//!
+//! # What a source holds that an export can lose
+//!
+//! [`fn@load`] also records, on the [`Picture`]'s [`Fidelity`], what the file held that a written file can lose: its
+//! true bits per channel (10 or 12 for such an AVIF or HEIF, not the 16 it decodes to) and whether its samples are
+//! float; whether it is **HDR** ([`Hdr`]: a JPEG gain map — an ISO 21496-1 marker, an MPF Gain Map entry or `hdrgm`
+//! XMP — or a PQ/HLG transfer declared by PNG `cICP`, AVIF/HEIF `nclx` or an ICC `cicp` tag); a profile the load
+//! discarded; and a coded colour description other than sRGB carried without a profile. Read from the bytes already in
+//! hand, without decoding, and never a reason to refuse the file. [`Picture::derive`] carries it like the metadata;
+//! [`export::losses`](crate::export::losses) compares a write against it.
+//!
+//! Not detected: AVIF and HEIF gain maps (`tmap` items), and Apple's earlier private gain maps (an MPF secondary image
+//! with no Gain Map type, ISO marker or `hdrgm` namespace) — such a file is recorded as SDR.
 //!
 //! # What is not here
 //!
@@ -92,11 +107,12 @@ mod descriptive;
 mod encode;
 mod error;
 mod extensions;
+mod fidelity;
 mod identity;
 mod load;
 mod picture;
 mod probe;
-mod profile;
+pub(crate) mod profile;
 mod raw;
 mod recommended;
 mod save;
@@ -109,12 +125,14 @@ pub use descriptive::without_descriptive;
 pub use encode::{encode, encode_blocking};
 pub use error::ImageIoError;
 pub use extensions::{extensions_of, input_extensions};
+pub use fidelity::{Depth, Discarded, Fidelity};
 pub use identity::{identity, identity_blocking};
 pub use load::{load, load_blocking};
 pub use picture::Picture;
 pub use probe::{identify_raw_blocking, probe, probe_blocking, probe_raw, probe_raw_blocking};
 pub use raw::is_raw;
 pub use recommended::{MAX_QUALITY, MIN_QUALITY, default_quality, recommended_encode_options};
+pub(crate) use save::save_embedding;
 pub use save::{save, save_blocking};
 
 // `rust-sak`'s own vocabulary, re-exported rather than restated. A caller has to name an `ImageFormat` to save and
@@ -132,9 +150,11 @@ pub use save::{save, save_blocking};
 //
 // `Metadata` and `Embedded` for the same reason again: [`Picture::metadata`] hands back a `Metadata`, and a caller
 // building a picture of its own with [`Picture::with_metadata`] has to be able to name one.
+//
+// `Hdr` because [`Fidelity::hdr`] is one.
 pub use rust_sak::image::{
-    Chroma, Embedded, EncodeOptions, ImageError, ImageFormat, ImageInfo, Metadata, PngCompression, PngFilter, Preset,
-    RawFormat, RawImageInfo,
+    Chroma, Embedded, EncodeOptions, Hdr, ImageError, ImageFormat, ImageInfo, Metadata, PngCompression, PngFilter,
+    Preset, RawFormat, RawImageInfo,
 };
 
 #[cfg(test)]

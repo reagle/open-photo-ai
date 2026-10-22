@@ -7,6 +7,8 @@ use std::sync::Arc;
 use ::image::DynamicImage;
 use rust_sak::image::Metadata;
 
+use super::fidelity::Fidelity;
+
 /// A decoded image together with where its pixels came from and the identity that describes them.
 ///
 /// This is the one description of "an image the application is working on" that inference, the per-operation cache
@@ -38,6 +40,13 @@ use rust_sak::image::Metadata;
 /// profile included). **Every picture derived from another keeps it**, through [`derive`](Self::derive), which is
 /// why a crop or an enhancement of a Display P3 photograph is still written as Display P3.
 ///
+/// # Fidelity
+///
+/// [`fidelity`](Self::fidelity) is what the source file held that a written file can lose — its depth, HDR, a colour
+/// description not carried as a profile — recorded by [`load`](fn@super::load) and kept by [`derive`](Self::derive)
+/// like the metadata, so an export compares what it writes against the file the user chose; see
+/// [`export::losses`](crate::export::losses).
+///
 /// # Cost of cloning
 ///
 /// Cloning shares the pixels and the metadata rather than copying them, which after an 8x upscale is the difference
@@ -57,6 +66,8 @@ pub struct Picture {
     /// What the source file carried beside the pixels, shared for the same reason the pixels are: the GUI clones
     /// pictures freely, and a large camera profile is hundreds of kilobytes.
     metadata: Arc<Metadata>,
+    /// What the source file held that a written file can lose, shared like the metadata.
+    fidelity: Arc<Fidelity>,
 }
 
 impl Picture {
@@ -67,10 +78,12 @@ impl Picture {
     /// through [`load`](fn@super::load), which derives both from the same bytes; this constructor exists for the cases
     /// that cannot.
     ///
-    /// The picture carries **no metadata**. Pixels computed from another picture are built with
-    /// [`derive`](Self::derive) instead, which keeps that picture's.
+    /// The picture carries **no metadata**, and its fidelity is the pixels' own (their depth, no HDR). Pixels computed
+    /// from another picture are built with [`derive`](Self::derive) instead, which keeps that picture's.
     pub fn new(path: impl Into<PathBuf>, pixels: impl Into<Arc<DynamicImage>>, identity: impl Into<String>) -> Self {
-        Self { path: path.into(), pixels: pixels.into(), identity: identity.into(), metadata: Arc::default() }
+        let pixels = pixels.into();
+        let fidelity = Arc::new(Fidelity::of_pixels(&pixels));
+        Self { path: path.into(), pixels, identity: identity.into(), metadata: Arc::default(), fidelity }
     }
 
     /// This picture with `metadata` in place of what it carried — how [`load`](fn@super::load) attaches what the file
@@ -80,7 +93,14 @@ impl Picture {
         Self { metadata: Arc::new(metadata), ..self }
     }
 
-    /// A picture computed from this one: `pixels` under `identity`, keeping this picture's path and metadata.
+    /// This picture with `fidelity` in place of what it recorded — how [`load`](fn@super::load) attaches what the file
+    /// held that an export can lose.
+    #[must_use]
+    pub fn with_fidelity(self, fidelity: Fidelity) -> Self {
+        Self { fidelity: Arc::new(fidelity), ..self }
+    }
+
+    /// A picture computed from this one: `pixels` under `identity`, keeping this picture's path, metadata and fidelity.
     ///
     /// **The one way to build a derived picture**, so that a crop, an enhancement or a cache hit cannot forget the
     /// source's colour profile. The pairing of `pixels` and `identity` is the caller's, exactly as for
@@ -91,6 +111,7 @@ impl Picture {
             pixels: pixels.into(),
             identity: identity.into(),
             metadata: Arc::clone(&self.metadata),
+            fidelity: Arc::clone(&self.fidelity),
         }
     }
 
@@ -126,6 +147,11 @@ impl Picture {
     /// [`encode`](fn@super::encode). A refcount bump, not a copy.
     pub fn shared_metadata(&self) -> Arc<Metadata> {
         Arc::clone(&self.metadata)
+    }
+
+    /// What the source file held that a written file can lose; see the type's documentation.
+    pub fn fidelity(&self) -> &Fidelity {
+        &self.fidelity
     }
 
     /// The image's width and height, in pixels.
@@ -206,6 +232,24 @@ mod tests {
         assert!(Arc::ptr_eq(&source.shared_metadata(), &derived.shared_metadata()));
         // And a derivation of a derivation still has it.
         assert_eq!(derived.derive(image_of(1, 1), "f00df00df00df00d").metadata(), source.metadata());
+    }
+
+    #[test]
+    fn a_new_picture_records_its_own_pixels_and_a_derived_one_keeps_its_sources_fidelity() {
+        use super::super::fidelity::Depth;
+        use rust_sak::image::Hdr;
+
+        let source = Picture::new("/pictures/hdr.jpg", DynamicImage::new_rgb16(4, 4), "cafebabecafebabe");
+        assert_eq!(source.fidelity(), &Fidelity::of_colour(::image::ColorType::Rgb16));
+
+        let mut fidelity = Fidelity::of_colour(::image::ColorType::Rgb8);
+        fidelity.hdr = Some(Hdr::GainMap);
+        let source = source.with_fidelity(fidelity.clone());
+        // An enhancement that comes back at another depth still answers for the source.
+        let derived = source.derive(image_of(8, 8), "0123456789abcdef").derive(image_of(2, 2), "f00df00df00df00d");
+
+        assert_eq!(derived.fidelity(), &fidelity);
+        assert_eq!(derived.fidelity().depth, Depth { bits: 8, float: false });
     }
 
     #[test]

@@ -9,6 +9,7 @@ use std::fmt::Display;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
+use opai::export::Loss;
 use opai::{ExecutionProvider, Family};
 use ratatui::crossterm::style::{Color as TermColor, Stylize};
 use ratatui::style::{Color, Modifier, Style};
@@ -222,6 +223,31 @@ pub fn failure(error: impl Display, color: bool) -> String {
     paint_bold(format!("🧨 {error}"), RED, color)
 }
 
+/// `⚠️ <path>: <loss>; <loss>`, yellow: what the result written from `path` lost against it, in the library's words.
+pub fn loss_line(path: &Path, losses: &[Loss], color: bool) -> String {
+    let words: Vec<String> = losses.iter().map(ToString::to_string).collect();
+    ansi(&format!("⚠️ {}: {}", path.display(), words.join("; ")), fg(YELLOW, color))
+}
+
+/// `⚠️ <n> of <total> images lost something: <n> HDR, <n> bit depth, <n> colour profile`, yellow, counting each image
+/// once per kind and naming only the kinds that occurred; `None` for a single image, whose line already said it all,
+/// and when nothing was lost. `lossy` holds each affected image's losses.
+pub fn loss_count(lossy: &[Vec<Loss>], total: usize, color: bool) -> Option<String> {
+    if total < 2 || lossy.is_empty() {
+        return None;
+    }
+
+    let kinds: Vec<String> = [("hdr", "HDR"), ("depth", "bit depth"), ("profile", "colour profile")]
+        .into_iter()
+        .filter_map(|(kind, name)| {
+            let count = lossy.iter().filter(|losses| losses.iter().any(|loss| loss.kind() == kind)).count();
+            (count > 0).then(|| format!("{count} {name}"))
+        })
+        .collect();
+    let text = format!("⚠️ {} of {total} images lost something: {}", lossy.len(), kinds.join(", "));
+    Some(ansi(&text, fg(YELLOW, color)))
+}
+
 /// The dependency line's mark once its install reads `100`: `✓`, green.
 pub fn done_mark(color: bool) -> Span<'static> {
     Span::styled("✓", fg(GREEN, color))
@@ -299,6 +325,42 @@ fn paint_bold(text: impl Display, (r, g, b): (u8, u8, u8), color: bool) -> Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn hdr() -> Loss {
+        Loss::Hdr { hdr: opai::image::Hdr::GainMap, format: opai::ImageFormat::Jpeg }
+    }
+
+    fn depth() -> Loss {
+        let (from, to) = (opai::image::Depth { bits: 16, float: false }, opai::image::Depth { bits: 8, float: false });
+        Loss::Depth { from, to, format: opai::ImageFormat::Jpeg }
+    }
+
+    #[test]
+    fn a_loss_line_names_the_input_and_each_loss_yellow_only_with_color() {
+        let path = Path::new("photos/hawk.jpg");
+        let text = "⚠️ photos/hawk.jpg: HDR gain map dropped: JPEG output is SDR only for now; 16-bit → 8-bit in JPEG";
+
+        assert_eq!(loss_line(path, &[hdr(), depth()], false), text);
+        let (r, g, b) = YELLOW;
+        assert_eq!(loss_line(path, &[hdr(), depth()], true), text.with(TermColor::Rgb { r, g, b }).to_string());
+    }
+
+    #[test]
+    fn a_loss_count_is_for_several_images_and_counts_each_image_once_per_kind() {
+        let lossy = [vec![hdr()], vec![hdr(), depth()]];
+
+        assert_eq!(
+            loss_count(&lossy, 3, false).as_deref(),
+            Some("⚠️ 2 of 3 images lost something: 2 HDR, 1 bit depth")
+        );
+        assert_eq!(loss_count(&lossy[..1], 1, false), None, "one image's line already said it");
+        assert_eq!(loss_count(&[], 5, false), None);
+        let (r, g, b) = YELLOW;
+        assert_eq!(
+            loss_count(&lossy[..1], 2, true),
+            Some("⚠️ 1 of 2 images lost something: 1 HDR".with(TermColor::Rgb { r, g, b }).to_string())
+        );
+    }
 
     fn plain(line: &Line<'_>) -> String {
         line.spans.iter().map(|span| span.content.as_ref()).collect()
