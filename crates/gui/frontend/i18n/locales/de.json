@@ -230,6 +230,7 @@
             "notice": "{{count}} von {{total}} Bildern verlieren in diesem Format an Qualität. Bewege den Zeiger über die Warnung in einer Zeile, um zu sehen, was.",
             "warning": "Qualitätsverlust in diesem Format",
             "hdrGainMap": "HDR-Gain-Map entfernt: {{format}} wird vorerst nur als SDR geschrieben",
+            "hdrGainMapNotCarried": "HDR-Gain-Map entfernt: sie konnte nicht übernommen werden",
             "hdrTransfer": "HDR ({{transfer}}) entfernt: {{format}} wird vorerst nur als SDR geschrieben",
             "depth": "{{from}} → {{to}} in {{format}}",
             "bits": "{{bits}} Bit",

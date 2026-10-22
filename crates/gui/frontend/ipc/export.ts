@@ -103,8 +103,12 @@ export type Depth = { bits: number; float: boolean };
  * the format written (`JPEG`, `HEIF`), not a {@link ExportFormat}.
  */
 export type Loss =
-    /** An HDR source written as SDR, which every format is for now. */
-    | { kind: "hdr"; hdr: "gainMap" | "pq" | "hlg" | "other"; format: string }
+    /**
+     * An HDR source written as SDR. `cause` is `format` where the format is written as SDR only (every format for PQ
+     * and HLG, every format but JPEG for a gain map), and `notCarried` where a gain-map JPEG written as JPEG could not
+     * carry its gain map.
+     */
+    | { kind: "hdr"; hdr: "gainMap" | "pq" | "hlg" | "other"; format: string; cause: "format" | "notCarried" }
     /** Fewer bits per channel than the source, or integers where it had floats. */
     | { kind: "depth"; from: Depth; to: Depth; format: string }
     /** The source's colour profile, or its coded colour description, is not in the file. */

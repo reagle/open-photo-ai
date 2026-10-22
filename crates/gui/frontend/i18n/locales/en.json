@@ -230,6 +230,7 @@
             "notice": "{{count}} of {{total}} images will lose quality in this format. Hover the warning on a row to see what.",
             "warning": "Quality lost in this format",
             "hdrGainMap": "HDR gain map dropped: {{format}} output is SDR only for now",
+            "hdrGainMapNotCarried": "HDR gain map dropped: it could not be carried",
             "hdrTransfer": "HDR ({{transfer}}) dropped: {{format}} output is SDR only for now",
             "depth": "{{from}} → {{to}} in {{format}}",
             "bits": "{{bits}}-bit",

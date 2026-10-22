@@ -166,7 +166,9 @@ describe("exportFormats", () => {
 
 describe("exportLosses", () => {
     it("calls the command Rust registers, by name, with the paths and only the naming's own fields", async () => {
-        const answer = [{ path: "/photos/hawk.jpg", losses: [{ kind: "hdr", hdr: "gainMap", format: "JPEG" }] }];
+        const answer = [
+            { path: "/photos/hawk.jpg", losses: [{ kind: "hdr", hdr: "gainMap", format: "PNG", cause: "format" }] },
+        ];
         invoked.mockResolvedValueOnce(answer);
         const settings = { prefix: "", suffix: "", format: "jpeg" as const, overwrite: false };
 

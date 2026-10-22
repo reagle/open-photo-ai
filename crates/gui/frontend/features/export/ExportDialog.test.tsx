@@ -402,7 +402,7 @@ describe("the quality", () => {
 });
 
 describe("the loss notice", () => {
-    const HDR: Loss = { kind: "hdr", hdr: "gainMap", format: "JPEG" };
+    const HDR: Loss = { kind: "hdr", hdr: "gainMap", format: "PNG", cause: "format" };
     const P3: Loss = { kind: "profile", profile: "Display P3", colourSpace: "RGB", format: "AVIF", cause: "format" };
     const notice = () => document.querySelector("[data-slot='export-loss-notice']");
 
