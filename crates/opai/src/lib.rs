@@ -197,6 +197,7 @@ mod progress;
 mod providers;
 mod runtime;
 mod sessions;
+pub mod settings;
 mod setup;
 mod task;
 pub mod telemetry;
