@@ -136,6 +136,8 @@ fn removing_a_namespace_takes_its_attributes_and_elements() {
     assert!(!text.contains("crs:Version") && !text.contains("crs:ToneCurvePV2012") && !text.contains("crs:HasCrop"));
     // The rest is still there and the packet still parses.
     assert!(text.contains("<rdf:li>animals|hawk</rdf:li>"));
+    // Nothing is left under `crs:`, so the namespace is no longer declared either.
+    assert!(!text.contains("camera-raw-settings"), "{text}");
     assert!(Xmp::parse(text.as_bytes()).is_ok());
 }
 
@@ -438,4 +440,54 @@ fn control_characters_from_iim_and_exif_never_reach_the_xmp() {
     assert!(text.contains("captionbell nul"), "{text}");
     assert!(text.contains("<rdf:li>keyword</rdf:li>"), "{text}");
     assert_eq!(xmp.get(ns::XMP, "CreatorTool").as_deref(), Some("Camera FW1.0"));
+}
+
+#[test]
+fn a_namespace_still_in_use_keeps_its_declaration() {
+    // `hdrgm:` removed, but a structure inside another property still spells something under that prefix: the
+    // declaration must stay, or the packet would no longer parse.
+    let packet = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/" hdrgm:Version="1.0"><dc:source rdf:parseType="Resource"><hdrgm:Odd>1</hdrgm:Odd></dc:source></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+    let mut xmp = Xmp::parse(packet.as_bytes()).unwrap();
+    xmp.remove_namespace(ns::HDRGM);
+    let text = String::from_utf8(xmp.to_bytes()).unwrap();
+
+    assert!(!text.contains("hdrgm:Version"), "{text}");
+    assert!(text.contains("xmlns:hdrgm="), "{text}");
+    assert!(Xmp::parse(text.as_bytes()).is_ok());
+}
+
+#[test]
+fn a_namespace_declared_above_the_descriptions_goes_once_unused() {
+    // Declared on `rdf:RDF` and again on `x:xmpmeta`: once the `hdrgm:` properties are gone, neither declaration may
+    // stay, or a reader that looks for the gain-map namespace anywhere would take the export for a gain-map image.
+    let packet = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/"><rdf:Description rdf:about="" hdrgm:Version="1.0"><dc:format>image/jpeg</dc:format></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+    let mut xmp = Xmp::parse(packet.as_bytes()).unwrap();
+    xmp.remove_namespace(ns::HDRGM);
+    let text = String::from_utf8(xmp.to_bytes()).unwrap();
+
+    assert!(!text.contains("hdr-gain-map") && !text.contains("hdrgm"), "{text}");
+    assert!(text.contains("xmlns:dc=") && text.contains("<dc:format>image/jpeg</dc:format>"), "{text}");
+    // The scope at `rdf:RDF` follows: properties can still be read and added.
+    let mut xmp = Xmp::parse(text.as_bytes()).unwrap();
+    assert_eq!(xmp.get(ns::DC, "format").as_deref(), Some("image/jpeg"));
+    xmp.set(ns::HDRGM, "Version", "1.0");
+    assert!(Xmp::parse(&xmp.to_bytes()).unwrap().has(ns::HDRGM, "Version"));
+}
+
+#[test]
+fn a_namespace_declared_above_the_descriptions_stays_while_any_description_uses_it() {
+    // A second description still holds an `hdrgm:` property under a redeclared prefix of another namespace: that is
+    // no use of the `rdf:RDF` declaration, but `crs:` in it is.
+    let packet = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"><rdf:Description rdf:about="" hdrgm:Version="1.0" crs:Version="15.0"/><rdf:Description rdf:about="" xmlns:hdrgm="urn:other"><hdrgm:Kept>1</hdrgm:Kept></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+    let mut xmp = Xmp::parse(packet.as_bytes()).unwrap();
+    xmp.remove_namespace(ns::HDRGM);
+    let text = String::from_utf8(xmp.to_bytes()).unwrap();
+
+    assert!(!text.contains("hdr-gain-map") && !text.contains("hdrgm:Version"), "{text}");
+    assert!(
+        text.contains(r#"xmlns:hdrgm="urn:other""#) && text.contains("<hdrgm:Kept>1</hdrgm:Kept>"),
+        "{text}"
+    );
+    assert!(text.contains("camera-raw-settings") && text.contains("crs:Version"), "{text}");
+    assert!(Xmp::parse(text.as_bytes()).is_ok());
 }
