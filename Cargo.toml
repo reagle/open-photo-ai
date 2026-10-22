@@ -49,8 +49,10 @@ opt-level = 2
 opt-level = 3
 
 # Every crate pins `rust-sak` at vegidio's tag; this one entry redirects that pin, for the whole graph, to a fork tag
-# carrying the ICC profile read/embed (`icc_profile_bytes`, `Metadata`, `encode_*_with`) that `add-color-1-icc-profile`
-# needs. `26.10.1-color.1` is 26.10.1 plus that one commit, so nothing else changes. Once upstream releases it, delete
-# this section and move the four `tag = "26.10.1"` pins to that release.
+# carrying what upstream has not released yet: the ICC profile read/embed (`icc_profile_bytes`, `Metadata`,
+# `encode_*_with`) that `add-color-1-icc-profile` needs, and the EXIF/XMP/IPTC read and splice (`metadata_bytes`, the
+# `exif`/`xmp`/`iptc` fields) that `preserve-metadata-1-capture` needs. `26.10.1-meta.1` is 26.10.1 plus those two
+# commits (`26.10.1-color.1` plus one), so nothing else changes. Once upstream releases them, delete this section and
+# move the four `tag = "26.10.1"` pins to that release.
 [patch."https://github.com/vegidio/rust-sak"]
-rust-sak = { git = "https://github.com/reagle/rust-sak", tag = "26.10.1-color.1" }
+rust-sak = { git = "https://github.com/reagle/rust-sak", tag = "26.10.1-meta.1" }

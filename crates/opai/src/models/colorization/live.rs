@@ -50,7 +50,7 @@ async fn gray_photograph() -> Picture {
 
     let gray = ImageBuffer::from_fn(width, height, |x, y| Rgb([u8::from_unit(lab::gray(sampler.rgb(x, y))); 3]));
 
-    Picture::new(source.path(), DynamicImage::ImageRgb8(gray), format!("{}-gray", source.identity()))
+    source.derive(DynamicImage::ImageRgb8(gray), format!("{}-gray", source.identity()))
 }
 
 /// The mean absolute difference in Lab L between `result` and `source`, and the mean Lab chroma of `result`.
