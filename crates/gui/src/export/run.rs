@@ -413,7 +413,7 @@ mod tests {
 
     /// `pixels` written to `path` as `format` and admitted beside the fixture's photograph, answering its identity.
     fn admit(fixture: &Fixture, path: &Path, pixels: &image::DynamicImage, format: opai::ImageFormat) -> String {
-        opai::image::save_blocking(pixels, path, format, None).expect("writable");
+        opai::image::save_blocking(pixels, &opai::image::Metadata::default(), path, format, None).expect("writable");
         tauri::async_runtime::block_on(crate::images::files::describe_and_admit(
             vec![path.to_path_buf()],
             &fixture.opened,

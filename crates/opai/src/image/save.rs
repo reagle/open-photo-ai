@@ -5,16 +5,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ::image::DynamicImage;
-use rust_sak::image::{EncodeOptions, ImageError, ImageFormat, encode_writer};
+use rust_sak::image::{EncodeOptions, ImageError, ImageFormat, Metadata, encode_writer_with};
 
 use super::error::{self, ImageIoError};
 use crate::task::spawn_blocking;
 use crate::telemetry::unit::{Unit, unit_span};
 
-/// Writes `pixels` to `destination` as `format`, without occupying the thread driving the caller.
+/// Writes `pixels` to `destination` as `format` with `metadata` embedded, without occupying the thread driving the
+/// caller.
 ///
-/// [`Picture::shared_pixels`](super::Picture::shared_pixels) is where the [`Arc`] comes from, a refcount bump rather
-/// than a copy.
+/// [`Picture::shared_pixels`](super::Picture::shared_pixels) and [`Picture::shared_metadata`](super::Picture::shared_metadata)
+/// are where the [`Arc`]s come from, refcount bumps rather than copies.
 ///
 /// See [`save_blocking`] for what it does; the two report the same result and the same errors.
 ///
@@ -24,16 +25,25 @@ use crate::telemetry::unit::{Unit, unit_span};
 /// could run.
 pub async fn save(
     pixels: Arc<DynamicImage>,
+    metadata: Arc<Metadata>,
     destination: impl Into<PathBuf>,
     format: ImageFormat,
     options: Option<EncodeOptions>,
 ) -> Result<u64, ImageIoError> {
     let destination = destination.into();
     // An `Arc` because `spawn_blocking` requires `'static`, and nothing borrowed can cross onto a blocking thread.
-    spawn_blocking::<_, ImageIoError, _>(move || save_blocking(&pixels, &destination, format, options)).await?
+    spawn_blocking::<_, ImageIoError, _>(move || save_blocking(&pixels, &metadata, &destination, format, options))
+        .await?
 }
 
 /// Writes `pixels` to `destination` as `format`, on the calling thread, and reports the bytes written.
+///
+/// # What is embedded
+///
+/// `metadata` is written beside the pixels where `format` can hold it — today the ICC colour profile, byte for byte, in
+/// JPEG, PNG, TIFF and WebP. Where it cannot (BMP, GIF, AVIF and HEIF), or where the profile is for another colour model
+/// than `pixels` are in, the file is still written without it and a warning naming the format and the profile is
+/// logged. [`Picture::metadata`](super::Picture::metadata) is what to pass; [`Metadata::default()`] embeds nothing.
 ///
 /// # The destination and the format are both the caller's
 ///
@@ -56,6 +66,7 @@ pub async fn save(
 ///   failure of this kind is **not** restored; only the mismatch above is checked early enough to promise that.
 pub fn save_blocking(
     pixels: &DynamicImage,
+    metadata: &Metadata,
     destination: impl AsRef<Path>,
     format: ImageFormat,
     options: Option<EncodeOptions>,
@@ -66,13 +77,14 @@ pub fn save_blocking(
 
     let span = unit_span!("image_save", path = %destination.display(), format = ?format);
     error::traced(Unit::ImageSave, span, || {
-        write(pixels, destination, format, options).inspect_err(error::unwritable(destination, format))
+        write(pixels, metadata, destination, format, options).inspect_err(error::unwritable(destination, format))
     })
 }
 
 /// [`save_blocking`]'s body, which leaves recording its failure to the public boundary.
 fn write(
     pixels: &DynamicImage,
+    metadata: &Metadata,
     destination: &Path,
     format: ImageFormat,
     options: Option<EncodeOptions>,
@@ -97,11 +109,16 @@ fn write(
     // To a writer rather than through `rust_sak::image::encode_file`, which routes on the extension and would silently
     // ignore the format it was given whenever the two disagreed — and the disagreement is precisely the case worth
     // being honest about.
-    encode_writer(pixels, &mut counted, format, options).map_err(ImageIoError::codec(destination))?;
+    let embeddable = super::profile::embeddable(metadata, pixels, format);
+    let embedded = encode_writer_with(pixels, &mut counted, format, options, &embeddable)
+        .map_err(ImageIoError::codec(destination))?;
 
     // The encoder is finished, but a `BufWriter` is not: up to its buffer of encoded image is still in memory, and
     // dropping it would swallow whatever the flush reported. A disk that filled on the last write is a failed save.
     counted.inner.flush().map_err(ImageIoError::write(destination))?;
+
+    // After the flush, so a save that failed is not also reported as having dropped its profile.
+    super::profile::warn_if_dropped(metadata, embedded, format, Some(destination));
 
     Ok(counted.written)
 }
@@ -139,7 +156,8 @@ mod tests {
         let dir = tempdir().expect("a temporary directory");
         let destination = dir.path().join("out.png");
 
-        let written = save_blocking(&sample_image(), &destination, ImageFormat::Png, None).expect("PNG is writable");
+        let written = save_blocking(&sample_image(), &Metadata::default(), &destination, ImageFormat::Png, None)
+            .expect("PNG is writable");
 
         assert!(written > 0, "nothing was written but the save reported success");
         assert_eq!(written, std::fs::metadata(&destination).expect("the file exists").len());
@@ -159,7 +177,8 @@ mod tests {
         let before = xxh3_file(&source).expect("the source is readable");
 
         let loaded = load_blocking(&source).expect("decodable");
-        save_blocking(loaded.pixels(), dir.path().join("enhanced.png"), ImageFormat::Png, None).expect("writable");
+        save_blocking(loaded.pixels(), &Metadata::default(), dir.path().join("enhanced.png"), ImageFormat::Png, None)
+            .expect("writable");
 
         assert_eq!(xxh3_file(&source).expect("the source is still readable"), before);
         assert_eq!(loaded.path(), source, "the loaded image's path followed the output");
@@ -171,7 +190,7 @@ mod tests {
         let dir = tempdir().expect("a temporary directory");
         let destination = dir.path().join("mislabelled.png");
 
-        save_blocking(&sample_image(), &destination, ImageFormat::Jpeg, None).expect("writable");
+        save_blocking(&sample_image(), &Metadata::default(), &destination, ImageFormat::Jpeg, None).expect("writable");
 
         let bytes = std::fs::read(&destination).expect("readable");
         assert_eq!(
@@ -190,6 +209,7 @@ mod tests {
 
         let error = save_blocking(
             &sample_image(),
+            &Metadata::default(),
             &destination,
             ImageFormat::Jpeg,
             Some(EncodeOptions::default_for(ImageFormat::Png)),
@@ -209,12 +229,13 @@ mod tests {
         let dir = tempdir().expect("a temporary directory");
         let destination = dir.path().join("out.jpg");
 
-        save_blocking(&sample_image(), &destination, ImageFormat::Jpeg, None).expect("writable");
+        save_blocking(&sample_image(), &Metadata::default(), &destination, ImageFormat::Jpeg, None).expect("writable");
         let before = std::fs::read(&destination).expect("readable");
         assert!(!before.is_empty(), "the fixture export wrote nothing");
 
         let error = save_blocking(
             &sample_image(),
+            &Metadata::default(),
             &destination,
             ImageFormat::Jpeg,
             Some(EncodeOptions::default_for(ImageFormat::Png)),
@@ -244,8 +265,9 @@ mod tests {
             let omitted = dir.path().join(format!("omitted.{}", format.extension()));
             let spelled_out = dir.path().join(format!("spelled-out.{}", format.extension()));
 
-            save_blocking(&image, &omitted, format, None).expect("writable");
-            save_blocking(&image, &spelled_out, format, Some(EncodeOptions::default_for(format))).expect("writable");
+            save_blocking(&image, &Metadata::default(), &omitted, format, None).expect("writable");
+            save_blocking(&image, &Metadata::default(), &spelled_out, format, Some(EncodeOptions::default_for(format)))
+                .expect("writable");
 
             assert_eq!(
                 std::fs::read(&omitted).expect("readable"),
@@ -264,6 +286,7 @@ mod tests {
 
         let coarse = save_blocking(
             &image,
+            &Metadata::default(),
             dir.path().join("coarse.jpg"),
             ImageFormat::Jpeg,
             Some(EncodeOptions::Jpeg { quality: 20 }),
@@ -271,6 +294,7 @@ mod tests {
         .expect("writable");
         let fine = save_blocking(
             &image,
+            &Metadata::default(),
             dir.path().join("fine.jpg"),
             ImageFormat::Jpeg,
             Some(EncodeOptions::Jpeg { quality: 95 }),
@@ -290,8 +314,8 @@ mod tests {
         let dir = tempdir().expect("a temporary directory");
         let destination = dir.path().join("no-such-directory").join("out.png");
 
-        let error =
-            save_blocking(&sample_image(), &destination, ImageFormat::Png, None).expect_err("the directory is absent");
+        let error = save_blocking(&sample_image(), &Metadata::default(), &destination, ImageFormat::Png, None)
+            .expect_err("the directory is absent");
 
         assert!(matches!(error, ImageIoError::Write { .. }), "expected a write failure, got {error:?}");
         assert!(error.to_string().contains("out.png"), "the message did not name the destination: {error}");
@@ -302,11 +326,13 @@ mod tests {
         let dir = tempdir().expect("a temporary directory");
         let pixels = Arc::new(sample_image());
 
-        let asynchronous = save(Arc::clone(&pixels), dir.path().join("async.png"), ImageFormat::Png, None)
-            .await
-            .expect("writable");
+        let asynchronous =
+            save(Arc::clone(&pixels), Arc::default(), dir.path().join("async.png"), ImageFormat::Png, None)
+                .await
+                .expect("writable");
         let blocking =
-            save_blocking(&pixels, dir.path().join("blocking.png"), ImageFormat::Png, None).expect("writable");
+            save_blocking(&pixels, &Metadata::default(), dir.path().join("blocking.png"), ImageFormat::Png, None)
+                .expect("writable");
 
         assert_eq!(asynchronous, blocking);
         assert_eq!(
@@ -321,7 +347,7 @@ mod tests {
         let dir = tempdir().expect("a temporary directory");
         let destination = dir.path().join("no-such-directory").join("out.png");
 
-        let error = save(Arc::new(sample_image()), &destination, ImageFormat::Png, None)
+        let error = save(Arc::new(sample_image()), Arc::default(), &destination, ImageFormat::Png, None)
             .await
             .expect_err("the directory is absent");
 
@@ -331,8 +357,13 @@ mod tests {
     #[test]
     fn a_runtime_that_shuts_down_before_the_write_runs_reports_cancellation() {
         let dir = tempdir().expect("a temporary directory");
-        let outcome =
-            on_a_dead_runtime(save(Arc::new(sample_image()), dir.path().join("out.png"), ImageFormat::Png, None));
+        let outcome = on_a_dead_runtime(save(
+            Arc::new(sample_image()),
+            Arc::default(),
+            dir.path().join("out.png"),
+            ImageFormat::Png,
+            None,
+        ));
 
         match outcome {
             Err(ImageIoError::Cancelled) => {}
@@ -350,22 +381,94 @@ mod tests {
         let dir = tempfile::tempdir().expect("a temporary directory");
         let unwritable = dir.path().join("no-such-folder").join("out.png");
 
-        let (log, outcome) =
-            records_of_blocking("info", || save_blocking(&sample_image(), &unwritable, ImageFormat::Png, None));
+        let (log, outcome) = records_of_blocking("info", || {
+            save_blocking(&sample_image(), &Metadata::default(), &unwritable, ImageFormat::Png, None)
+        });
         assert!(outcome.is_err());
         let record = the_one_failure(&log, "an image could not be written", "save");
         assert!(record.contains(&format!("path={}", as_written(&unwritable))), "{record}");
         assert!(field(record, "format").is_some(), "{record}");
 
-        let (log, outcome) =
-            recorded_async(super::save(Arc::new(sample_image()), unwritable.clone(), ImageFormat::Png, None));
+        let (log, outcome) = recorded_async(super::save(
+            Arc::new(sample_image()),
+            Arc::default(),
+            unwritable.clone(),
+            ImageFormat::Png,
+            None,
+        ));
         assert!(outcome.is_err());
         the_one_failure(&log, "an image could not be written", "save");
 
         let writable = dir.path().join("out.png");
-        let (log, outcome) =
-            records_of_blocking("info", || save_blocking(&sample_image(), &writable, ImageFormat::Png, None));
+        let (log, outcome) = records_of_blocking("info", || {
+            save_blocking(&sample_image(), &Metadata::default(), &writable, ImageFormat::Png, None)
+        });
         assert!(outcome.is_ok());
         assert!(!log.contains("msg="), "a success was recorded:\n{log}");
+    }
+
+    #[test]
+    fn the_profile_is_embedded_where_the_format_can_hold_it() {
+        use crate::image::test_support::{DISPLAY_P3, display_p3};
+
+        let dir = tempdir().expect("a temporary directory");
+        for format in [ImageFormat::Jpeg, ImageFormat::Png, ImageFormat::Tiff, ImageFormat::WebP] {
+            let destination = dir.path().join(format!("p3.{}", format.extension()));
+            save_blocking(&sample_image(), &display_p3(), &destination, format, None).expect("writable");
+
+            let read_back = load_blocking(&destination).expect("decodable");
+            assert_eq!(read_back.metadata().icc_profile.as_deref(), Some(DISPLAY_P3), "{format:?}");
+        }
+    }
+
+    #[test]
+    fn a_format_that_cannot_hold_the_profile_is_written_without_it_and_says_so() {
+        use crate::image::test_support::display_p3;
+        use crate::logging::{field, records, records_of_blocking};
+
+        let dir = tempdir().expect("a temporary directory");
+        let destination = dir.path().join("p3.avif");
+
+        let (log, written) = records_of_blocking("info", || {
+            save_blocking(&sample_image(), &display_p3(), &destination, ImageFormat::Avif, None)
+        });
+
+        assert!(written.expect("the AVIF is still written") > 0);
+        assert_eq!(load_blocking(&destination).expect("decodable").metadata().icc_profile, None);
+        let [record] = records(&log, "colour profile not embedded")[..] else {
+            panic!("expected one record:\n{log}")
+        };
+        assert!(record.contains("level=WARN"), "{record}");
+        assert_eq!(field(record, "format"), Some("AVIF"), "{record}");
+        assert_eq!(field(record, "profile"), Some("sP3"), "{record}");
+        assert_eq!(field(record, "op"), Some("save"), "{record}");
+
+        // No profile, nothing to warn about.
+        let (log, _) = records_of_blocking("info", || {
+            save_blocking(&sample_image(), &Metadata::default(), dir.path().join("plain.avif"), ImageFormat::Avif, None)
+        });
+        assert!(records(&log, "colour profile not embedded").is_empty(), "{log}");
+    }
+
+    #[test]
+    fn a_profile_for_another_colour_model_than_the_pixels_is_left_out() {
+        use crate::image::test_support::DISPLAY_P3;
+        use crate::logging::{records, records_of_blocking};
+
+        // A grayscale photograph's profile, on pixels colourisation has since made RGB.
+        let mut gray = DISPLAY_P3.to_vec();
+        gray[16..20].copy_from_slice(b"GRAY");
+        let mut metadata = Metadata::default();
+        metadata.icc_profile = Some(gray);
+        let dir = tempdir().expect("a temporary directory");
+        let destination = dir.path().join("colourised.png");
+
+        let (log, written) = records_of_blocking("info", || {
+            save_blocking(&sample_image(), &metadata, &destination, ImageFormat::Png, None)
+        });
+
+        written.expect("writable");
+        assert_eq!(load_blocking(&destination).expect("decodable").metadata().icc_profile, None);
+        assert_eq!(records(&log, "colour profile not embedded").len(), 1, "{log}");
     }
 }

@@ -156,7 +156,7 @@ async fn upscales_on(provider: ExecutionProvider) {
     // Kept out of the temporary directory so the seam can actually be looked at, which is half of what this run is
     // for: a hard edge would fall down the last column and along the last row, where the grid moved a tile back.
     let keep = std::env::temp_dir().join(format!("opai-live-kyoto-4x-{provider}.png"));
-    crate::image::save(result.shared_pixels(), &keep, ImageFormat::Png, None)
+    crate::image::save(result.shared_pixels(), result.shared_metadata(), &keep, ImageFormat::Png, None)
         .await
         .expect("a result must encode to PNG");
     println!("  inspect the seam at {}", keep.display());
@@ -233,7 +233,7 @@ async fn an_eight_times_sixteen_bit_result_survives_the_avif_and_heif_encoders()
     // Both encoders, at 16 bits, over the real result — which is the path that had never been exercised.
     for (format, extension) in [(ImageFormat::Avif, "avif"), (ImageFormat::Heif, "heif")] {
         let destination = root.path().join(format!("upscaled.{extension}"));
-        let written = crate::image::save(result.shared_pixels(), &destination, format, None)
+        let written = crate::image::save(result.shared_pixels(), result.shared_metadata(), &destination, format, None)
             .await
             .unwrap_or_else(|err| panic!("a 16-bit result did not encode to {extension}: {err}"));
 
@@ -243,7 +243,7 @@ async fn an_eight_times_sixteen_bit_result_survives_the_avif_and_heif_encoders()
 
     // Kept out of the temporary directory so the seam can actually be looked at, which is what this run is for.
     let keep = std::env::temp_dir().join("opai-live-kyoto-8x.png");
-    crate::image::save(result.shared_pixels(), &keep, ImageFormat::Png, None)
+    crate::image::save(result.shared_pixels(), result.shared_metadata(), &keep, ImageFormat::Png, None)
         .await
         .expect("a 16-bit result must encode to PNG");
     println!("  inspect the seam at {}", keep.display());

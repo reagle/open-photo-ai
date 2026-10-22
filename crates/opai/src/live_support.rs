@@ -261,7 +261,7 @@ impl StrengthFamily {
                 let keep =
                     std::env::temp_dir().join(format!("opai-live-{codename}-{precision:?}-{provider}-t{strength}.png"));
 
-                crate::image::save(produced.shared_pixels(), &keep, ImageFormat::Png, None)
+                crate::image::save(produced.shared_pixels(), produced.shared_metadata(), &keep, ImageFormat::Png, None)
                     .await
                     .expect("a result must encode to PNG");
                 println!("  inspect at {}", keep.display());
