@@ -35,6 +35,10 @@
             "export": {
                 "title": "导出",
                 "description": "有损格式的质量。数值越低文件越小；不同格式之间的刻度不可比较。"
+            },
+            "keyboard": {
+                "title": "键盘",
+                "description": "用于缩放、适合窗口和显示原图的按键。点击保存后生效。"
             }
         },
         "app": {
@@ -109,7 +113,28 @@
             },
             "autopilotLabel": "自动优化：{{name}}"
         },
-        "reset": "恢复默认设置"
+        "reset": "恢复默认设置",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "放大",
+                "zoomOut": "缩小",
+                "fit": "适合窗口",
+                "showOriginal": "按住时显示原图"
+            },
+            "add": "添加快捷键",
+            "addLabel": "为{{action}}添加快捷键",
+            "recording": "请按键…",
+            "prompt": "请按下{{action}}的按键，或按 Escape 取消。",
+            "none": "无快捷键",
+            "remove": "移除 {{binding}}，{{action}}",
+            "refused": {
+                "navigation": "{{binding}} 保留用于在窗口中移动。",
+                "system": "{{binding}} 被系统占用。"
+            },
+            "conflict": "{{binding}} 已被{{action}}使用。",
+            "useHere": "改为在此使用",
+            "space": "空格"
+        }
     },
     "navbar": {
         "about": "关于",

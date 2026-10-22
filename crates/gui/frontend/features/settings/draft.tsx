@@ -14,7 +14,7 @@ export type SettingsDraft = {
 // copy, and a reader that does not get one reads drafts silently - the canvas, the inference run and
 // the add menu among them. A draft that never leaves the dialog has no such readers to miss.
 //
-// A context rather than props threaded through four section components: the rows are built from a
+// A context rather than props threaded through the page components: the rows are built from a
 // table in `SettingsDialog`, so there is no call site to thread through.
 /**
  * Where a settings row reads and writes, which is the dialog rather than the store.

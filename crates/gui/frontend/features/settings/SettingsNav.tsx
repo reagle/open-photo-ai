@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { SETTINGS_PAGES, type SettingsPageId } from "./pages.ts";
 
-/** The column on the left: the four pages, one of them current. Choosing one shows it in the pane. */
+/** The column on the left: the five pages, one of them current. Choosing one shows it in the pane. */
 export const SettingsNav = ({
     active,
     onSelect,

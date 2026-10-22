@@ -1,5 +1,5 @@
 import type { ParseKeys } from "i18next";
-import { Cpu, type LucideIcon, SlidersHorizontal, Sparkles, Upload } from "lucide-react";
+import { Cpu, Keyboard, type LucideIcon, SlidersHorizontal, Sparkles, Upload } from "lucide-react";
 import type { SettingsData } from "@/stores/settings";
 
 /** One page of the settings surface: what the nav draws for it, what it opens with, and what it holds. */
@@ -16,7 +16,7 @@ export type SettingsPage = {
 
 // One table read by the nav, the page pane and Reset, so the three cannot disagree about which page a
 // preference is on. The icons are the ones the design's paths draw.
-/** The four pages, in the order the nav lists them. The surface opens on the first. */
+/** The five pages, in the order the nav lists them. The surface opens on the first. */
 export const SETTINGS_PAGES = [
     {
         id: "general",
@@ -46,11 +46,19 @@ export const SETTINGS_PAGES = [
         descriptionKey: "settings.pages.export.description",
         keys: ["quality"],
     },
+    // Last: the page least often visited, and every page before it keeps its place.
+    {
+        id: "keyboard",
+        icon: Keyboard,
+        titleKey: "settings.pages.keyboard.title",
+        descriptionKey: "settings.pages.keyboard.description",
+        keys: ["shortcuts"],
+    },
 ] as const satisfies readonly SettingsPage[];
 
 // `as const satisfies` above rather than a `SettingsPage[]` annotation, which is what makes this a
 // union of literals rather than `string` - so the page bodies in `SettingsDialog` can be total over it.
-/** The id of a page, as a union of the four the table declares. */
+/** The id of a page, as a union of the five the table declares. */
 export type SettingsPageId = (typeof SETTINGS_PAGES)[number]["id"];
 
 /**
