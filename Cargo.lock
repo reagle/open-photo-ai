@@ -4353,6 +4353,7 @@ dependencies = [
  "libloading 0.8.9",
  "objc2-foundation",
  "ort",
+ "quick-xml",
  "rand_chacha 0.10.0",
  "rand_core 0.10.1",
  "rust-sak",
@@ -4364,6 +4365,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

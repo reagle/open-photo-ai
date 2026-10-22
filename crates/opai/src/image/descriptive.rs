@@ -1,4 +1,5 @@
-//! What of a picture's metadata an encode may be handed while the EXIF, XMP and IPTC it carries are not yet rewritten.
+//! A picture's metadata without its descriptive blocks: what a preview is encoded with, and the base an export puts its
+//! rewritten blocks back onto.
 
 use std::path::Path;
 
@@ -10,8 +11,8 @@ use rust_sak::image::{Embedded, ImageFormat, Metadata};
 /// **Why the blocks are withheld.** Written as the source held them, they would put false facts into the file: an
 /// upscale or a crop changes the pixel dimensions they state, the thumbnail they embed shows the uncropped original,
 /// a developed RAW's Orientation no longer applies, and their Software names whatever wrote the source.
-/// [`export::write`](fn@crate::export::write) starts from this and puts back what its policy has rewritten to be true —
-/// the EXIF and IPTC today, the XMP once it is rewritten too.
+/// [`export::write`](fn@crate::export::write) starts from this and puts back what its policy has rewritten to be true:
+/// the EXIF, the XMP and the IPTC.
 ///
 /// **Where it stays for good.** A preview rendition is encoded through it permanently: a browser applies an EXIF
 /// Orientation to an `<img>`, which would turn the preview away from the frame the picture's pixels — and any crop
