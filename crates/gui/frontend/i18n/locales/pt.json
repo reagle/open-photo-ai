@@ -230,6 +230,7 @@
             "notice": "{{count}} de {{total}} imagens perderão qualidade neste formato. Passe o ponteiro sobre o aviso de uma linha para ver o quê.",
             "warning": "Perda de qualidade neste formato",
             "hdrGainMap": "Mapa de ganho HDR descartado: por enquanto {{format}} é gravado apenas em SDR",
+            "hdrGainMapNotCarried": "Mapa de ganho HDR descartado: não foi possível mantê-lo",
             "hdrTransfer": "HDR ({{transfer}}) descartado: por enquanto {{format}} é gravado apenas em SDR",
             "depth": "{{from}} → {{to}} em {{format}}",
             "bits": "{{bits}} bits",

@@ -224,6 +224,7 @@
             "notice": "{{total}} 枚中 {{count}} 枚の画像は、この形式で品質が失われます。内容は各行の警告にポインターを合わせると表示されます。",
             "warning": "この形式では品質が失われます",
             "hdrGainMap": "HDR ゲインマップを破棄: {{format}} は現在 SDR でのみ書き出されます",
+            "hdrGainMapNotCarried": "HDR ゲインマップを破棄: 引き継げませんでした",
             "hdrTransfer": "HDR ({{transfer}}) を破棄: {{format}} は現在 SDR でのみ書き出されます",
             "depth": "{{format}} で {{from}} → {{to}}",
             "bits": "{{bits}} ビット",

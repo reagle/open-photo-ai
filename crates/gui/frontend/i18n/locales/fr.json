@@ -236,6 +236,7 @@
             "notice": "{{count}} images sur {{total}} perdront en qualité dans ce format. Survolez l'avertissement d'une ligne pour voir ce qui est perdu.",
             "warning": "Perte de qualité dans ce format",
             "hdrGainMap": "Carte de gain HDR supprimée : {{format}} est écrit en SDR uniquement pour l'instant",
+            "hdrGainMapNotCarried": "Carte de gain HDR supprimée : elle n'a pas pu être conservée",
             "hdrTransfer": "HDR ({{transfer}}) supprimé : {{format}} est écrit en SDR uniquement pour l'instant",
             "depth": "{{from}} → {{to}} en {{format}}",
             "bits": "{{bits}} bits",

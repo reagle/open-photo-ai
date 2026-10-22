@@ -166,7 +166,7 @@ describe("a row", () => {
 });
 
 describe("the loss warning", () => {
-    const HDR: Loss = { kind: "hdr", hdr: "gainMap", format: "JPEG" };
+    const HDR: Loss = { kind: "hdr", hdr: "gainMap", format: "JPEG", cause: "notCarried" };
     const DEPTH: Loss = {
         kind: "depth",
         from: { bits: 16, float: false },
@@ -197,10 +197,7 @@ describe("the loss warning", () => {
         render(<PredictedRow predicted={[HDR, DEPTH]} />);
         await named();
 
-        expect(await listed()).toEqual([
-            "HDR gain map dropped: JPEG output is SDR only for now",
-            "16-bit → 8-bit in JPEG",
-        ]);
+        expect(await listed()).toEqual(["HDR gain map dropped: it could not be carried", "16-bit → 8-bit in JPEG"]);
     });
 
     it("is not drawn on a row that loses nothing", async () => {

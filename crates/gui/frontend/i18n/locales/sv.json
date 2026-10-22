@@ -230,6 +230,7 @@
             "notice": "{{count}} av {{total}} bilder förlorar kvalitet i det här formatet. Håll pekaren över varningen på en rad för att se vad.",
             "warning": "Kvalitetsförlust i det här formatet",
             "hdrGainMap": "HDR-förstärkningskarta borttagen: {{format}} skrivs tills vidare bara som SDR",
+            "hdrGainMapNotCarried": "HDR-förstärkningskarta borttagen: den kunde inte föras över",
             "hdrTransfer": "HDR ({{transfer}}) borttaget: {{format}} skrivs tills vidare bara som SDR",
             "depth": "{{from}} → {{to}} i {{format}}",
             "bits": "{{bits}} bitar",
