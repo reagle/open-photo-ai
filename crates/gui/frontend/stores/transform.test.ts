@@ -1,8 +1,8 @@
 import { act } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
-import { HOLIDAY, resetFileStore, SUNSET } from "@/test/support";
-import { useTransformStore } from "./transform";
+import { ZOOM_BUTTON_STEP, ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
+import { HOLIDAY, openFiles, resetFileStore, SUNSET } from "@/test/support";
+import { FITTED, fitCurrent, stepZoom, useTransformStore } from "./transform";
 
 const identity = (record: { identity?: string }) => record.identity ?? "";
 
@@ -50,5 +50,71 @@ describe("the transform store", () => {
 
         set(HOLIDAY, { scale: 3, x: 0, y: 0 });
         expect(transforms().get(identity(HOLIDAY))).not.toHaveProperty("anchor");
+    });
+});
+
+describe("stepZoom and fitCurrent", () => {
+    const current = () => transforms().get(identity(HOLIDAY));
+
+    it("steps the current photograph by the drawer buttons' step, keeping its position and no anchor", () => {
+        act(() => openFiles(HOLIDAY, SUNSET));
+        set(HOLIDAY, { scale: 2, x: -40, y: -30, anchor: { x: 0.1, y: 0.9 } });
+
+        act(() => stepZoom(1));
+        expect(current()).toEqual({ scale: 2 + ZOOM_BUTTON_STEP, x: -40, y: -30 });
+
+        act(() => stepZoom(-1));
+        expect(current()).toEqual({ scale: 2, x: -40, y: -30 });
+
+        // Only the current photograph moves.
+        expect(transforms().has(identity(SUNSET))).toBe(false);
+    });
+
+    it("starts a never-magnified photograph from fitted", () => {
+        act(() => openFiles(HOLIDAY));
+
+        act(() => stepZoom(1));
+
+        expect(current()).toEqual({ scale: ZOOM_MIN + ZOOM_BUTTON_STEP, x: 0, y: 0 });
+    });
+
+    it("holds at either end of the range", () => {
+        act(() => openFiles(HOLIDAY));
+
+        act(() => stepZoom(-1));
+        expect(current()?.scale).toBe(ZOOM_MIN);
+
+        set(HOLIDAY, { scale: ZOOM_MAX, x: 0, y: 0 });
+        act(() => stepZoom(1));
+        expect(current()?.scale).toBe(ZOOM_MAX);
+    });
+
+    it("fits a magnified, panned photograph whole and centred", () => {
+        act(() => openFiles(HOLIDAY));
+        set(HOLIDAY, { scale: 5, x: -300, y: -120 });
+
+        act(() => fitCurrent());
+
+        expect(current()).toEqual(FITTED);
+    });
+
+    it("does nothing with no photograph open", () => {
+        const before = transforms();
+
+        act(() => stepZoom(1));
+        act(() => fitCurrent());
+
+        expect(transforms()).toBe(before);
+        expect(transforms().size).toBe(0);
+    });
+
+    it("does nothing for a current file whose bytes could not be read", () => {
+        const { identity: _unread, ...unreadable } = HOLIDAY;
+        act(() => openFiles(unreadable));
+
+        act(() => stepZoom(1));
+        act(() => fitCurrent());
+
+        expect(transforms().size).toBe(0);
     });
 });

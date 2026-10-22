@@ -6,6 +6,7 @@ import { SetupDialog } from "@/features/setup/SetupDialog";
 import { TensorRTDialog } from "@/features/setup/TensorRTDialog";
 import { Sidebar } from "@/features/sidebar/Sidebar";
 import { useOpenedFiles } from "@/hooks/useOpenedFiles";
+import { useShortcuts } from "@/hooks/useShortcuts";
 import { initialize } from "@/ipc/setup";
 import { track } from "@/lib/faro";
 import { report } from "@/lib/report";
@@ -44,6 +45,10 @@ const App = () => {
     const retry = useSetupStore((state) => state.retry);
     const tensorrt = useSetupStore((state) => state.providers?.tensorrt === true);
     const tensorrtAsked = useSettingsStore((state) => state.tensorrtAsked);
+
+    // Here because the shortcuts are the window's, not any one region's, and this is mounted exactly
+    // once for the window's whole life.
+    useShortcuts();
 
     // Files the platform asks the application to open, taken once setup is ready.
     useOpenedFiles();

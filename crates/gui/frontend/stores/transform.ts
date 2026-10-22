@@ -1,7 +1,7 @@
 import { create } from "zustand";
-import { ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
+import { ZOOM_BUTTON_STEP, ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
 import { clampTo } from "@/lib/utils";
-import { registerFileOwner } from "@/stores/files";
+import { registerFileOwner, useFileStore } from "@/stores/files";
 
 /**
  * How closely one photograph is being looked at, and which part of it is in view.
@@ -173,6 +173,43 @@ export const useTransformStore = create<TransformStore>()((set) => ({
  */
 export const useImageTransform = (identity?: string): ImageTransform =>
     useTransformStore((state) => (identity ? state.transforms.get(identity) : undefined)) ?? FITTED;
+
+// **Outside the store, reading both stores when called**, because a step is a question about the
+// *current* photograph and this store does not know which one that is. A keyboard shortcut is not a
+// component and has no hook to read it through; the drawer's buttons call these as well, so the two
+// routes onto the zoom are one writer and cannot drift apart.
+//
+// No anchor, as the slider's writes have none: neither route points at any part of the photograph, so
+// the pane holds the middle of itself still. The scale is clamped by `setTransform`, so a step past
+// either end holds at that end.
+/** The current photograph's identity, if one is open and its bytes could be read. */
+const currentIdentity = () => {
+    const { files, currentIndex } = useFileStore.getState();
+
+    return files.at(currentIndex)?.identity;
+};
+
+/**
+ * Steps the current photograph's magnification by one step of the drawer's buttons, in (`1`) or out
+ * (`-1`), about the middle of the pane. Does nothing with no current photograph.
+ */
+export const stepZoom = (direction: 1 | -1) => {
+    const identity = currentIdentity();
+    if (!identity) return;
+
+    const { transforms, setTransform } = useTransformStore.getState();
+    const current = transforms.get(identity) ?? FITTED;
+
+    setTransform(identity, { scale: current.scale + direction * ZOOM_BUTTON_STEP, x: current.x, y: current.y });
+};
+
+/** Draws the current photograph whole and centred again. Does nothing with no current photograph. */
+export const fitCurrent = () => {
+    const identity = currentIdentity();
+    if (!identity) return;
+
+    useTransformStore.getState().setTransform(identity, FITTED);
+};
 
 /*
  * Registered as a per-file owner - see `FileOwner` for why, and for why the file store hands over

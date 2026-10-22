@@ -9,12 +9,14 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCurrentTransform } from "@/hooks/useCurrentTransform";
 import { useOpenImages } from "@/hooks/useOpenImages";
-import { ZOOM_BUTTON_STEP, ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
+import { isMacOs } from "@/ipc/os";
+import { ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
 import { track } from "@/lib/faro";
+import { ariaKeyShortcuts, DEFAULT_SHORTCUTS } from "@/lib/shortcuts";
 import { useDrawerStore } from "@/stores/drawer";
 import { useCurrentFile, useFileStore, useHasFiles } from "@/stores/files";
 import { isPreviewMode, PREVIEW_MODES, usePreviewStore } from "@/stores/preview";
-import { useTransformStore } from "@/stores/transform";
+import { stepZoom, useTransformStore } from "@/stores/transform";
 
 /** The label and the icon each comparison is offered under, in the order the design draws them. */
 const MODES = {
@@ -71,11 +73,15 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
      * rather than the one just left.
      *
      * The position is passed through untouched, and no anchor is set: this control is not pointed at
-     * any part of the photograph, so the canvas holds the middle of the pane still instead.
+     * any part of the photograph, so the canvas holds the middle of the pane still instead. The two
+     * step buttons write through `stepZoom`, which is also what the keyboard's zoom calls, so the two
+     * routes are one step about one point.
      */
     const file = useCurrentFile();
     const transform = useCurrentTransform();
     const setTransform = useTransformStore((state) => state.setTransform);
+
+    const mac = isMacOs();
 
     const setScale = (scale: number) => {
         if (!file?.identity) return;
@@ -238,13 +244,17 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
                  *
                  * A step past either end holds at that end rather than being refused - the store
                  * clamps every write, so this is the same rule the wheel and the slider get.
+                 *
+                 * `aria-keyshortcuts` names the keyboard route onto the same step, so a screen reader
+                 * reports it; nothing visible names it yet.
                  */}
                 <Button
                     variant="ghost"
                     size="icon-sm"
                     disabled={disabled}
-                    onClick={() => setScale(transform.scale - ZOOM_BUTTON_STEP)}
+                    onClick={() => stepZoom(-1)}
                     aria-label={t("drawer.zoomOut")}
+                    aria-keyshortcuts={ariaKeyShortcuts(DEFAULT_SHORTCUTS.zoomOut, mac)}
                 >
                     <Minus className="size-4.5 shrink-0" />
                 </Button>
@@ -281,8 +291,9 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
                     variant="ghost"
                     size="icon-sm"
                     disabled={disabled}
-                    onClick={() => setScale(transform.scale + ZOOM_BUTTON_STEP)}
+                    onClick={() => stepZoom(1)}
                     aria-label={t("drawer.zoomIn")}
+                    aria-keyshortcuts={ariaKeyShortcuts(DEFAULT_SHORTCUTS.zoomIn, mac)}
                 >
                     <Plus className="size-4.5 shrink-0" />
                 </Button>

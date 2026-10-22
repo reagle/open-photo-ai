@@ -10,6 +10,7 @@ import { DRAWER_HEIGHT, ZOOM_MAX, ZOOM_MIN, ZOOM_WHEEL_STEP } from "@/lib/consta
 import { useDrawerStore } from "@/stores/drawer";
 import { useFacesStore } from "@/stores/faces";
 import { useFileStore } from "@/stores/files";
+import { usePeekStore } from "@/stores/peek";
 import { usePreviewStore } from "@/stores/preview";
 import { type ImageTransform, useTransformStore } from "@/stores/transform";
 import { FRAMING, frame, HOLIDAY, openFiles, render, resetCropStore, resetFileStore, SUNSET } from "@/test/support";
@@ -121,6 +122,7 @@ beforeEach(() => {
     useDrawerStore.setState(useDrawerStore.getInitialState(), true);
     useTransformStore.setState(useTransformStore.getInitialState(), true);
     usePreviewStore.setState({ previewMode: "side" });
+    usePeekStore.setState(usePeekStore.getInitialState(), true);
     openFiles(HOLIDAY);
 });
 
@@ -834,6 +836,74 @@ describe("what the pane labels say", () => {
         run = { running: false, enhanced: ENHANCED };
         draw("full");
         expect(labels()).toEqual(["Enhanced"]);
+    });
+});
+
+/**
+ * The show-original key held down (`hooks/useShortcuts.ts`): every pane that draws the result draws
+ * the source instead and says so, and nothing else on the canvas moves.
+ */
+describe("while the original is held", () => {
+    const labels = () => [...document.querySelectorAll("[data-slot='preview-chip']")].map((chip) => chip.textContent);
+    const hold = (showing: boolean) => act(() => usePeekStore.getState().setShowingOriginal(showing));
+    const SOURCE = `opai://localhost/${HOLIDAY.identity}`;
+    const RESULT = `opai://localhost/${ENHANCED.identity}`;
+
+    beforeEach(() => {
+        run = { running: false, enhanced: ENHANCED };
+    });
+
+    it("draws the original across the whole canvas in full, and the result again once released", () => {
+        draw("full");
+
+        hold(true);
+        expect(sources()).toEqual([SOURCE]);
+        expect(labels()).toEqual(["Original"]);
+
+        hold(false);
+        expect(sources()).toEqual([RESULT]);
+        expect(labels()).toEqual(["Enhanced"]);
+    });
+
+    it("draws the original in both panes side by side, at the same magnification and position", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("side");
+        const before = [drawn(0), drawn(1)];
+
+        hold(true);
+
+        expect(sources()).toEqual([SOURCE, SOURCE]);
+        expect(labels()).toEqual(["Original", "Original"]);
+        expect([drawn(0), drawn(1)]).toEqual(before);
+        expect(useTransformStore.getState().transforms.get(HOLIDAY.identity ?? "")).toEqual({
+            scale: 2,
+            x: -100,
+            y: -50,
+        });
+    });
+
+    it("draws the original on both sides of the split, leaving the divider where it was", () => {
+        stubPaneGeometry();
+        draw("split");
+        const divider = screen.getByRole("slider", { name: "Divider" });
+        fireEvent.keyDown(divider, { key: "ArrowLeft" });
+
+        hold(true);
+
+        expect(sources()).toEqual([SOURCE, SOURCE]);
+        expect(labels()).toEqual(["Original", "Original"]);
+        expect(divider).toHaveAttribute("aria-valuenow", "48");
+        expect((document.querySelector("[style*='clip-path']") as HTMLElement).style.clipPath).toBe("inset(0 0 0 48%)");
+    });
+
+    it("leaves a running enhancement's bar in place", () => {
+        run = { running: true, enhanced: ENHANCED, report: progress() };
+        draw("side");
+
+        hold(true);
+
+        expect(bar()).toBeInTheDocument();
     });
 });
 

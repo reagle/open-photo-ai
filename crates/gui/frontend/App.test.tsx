@@ -166,6 +166,18 @@ describe("App", () => {
         expect(screen.getByLabelText(/select all/i)).toBeEnabled();
     });
 
+    it("zooms the current image from the keyboard, by the step the drawer's buttons take", () => {
+        render(<App />);
+
+        act(() => openFiles(HOLIDAY));
+        expect(screen.getByRole("slider", { name: "Zoom" })).toHaveAttribute("aria-valuenow", "1");
+
+        // Control on this platform: `isMacOs` is mocked to answer false above.
+        fireEvent.keyDown(document.body, { key: "=", code: "Equal", ctrlKey: true });
+
+        expect(screen.getByRole("slider", { name: "Zoom" })).toHaveAttribute("aria-valuenow", "1.5");
+    });
+
     it("keeps Autopilot live, because it is not an action on an image", () => {
         render(<App />);
 
