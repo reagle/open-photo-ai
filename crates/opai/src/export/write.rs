@@ -60,11 +60,12 @@ impl From<Cancelled> for WriteError {
 /// embedding its source's ICC colour profile, from the picture's [`metadata`](Picture::metadata), where `format` can
 /// hold it.
 ///
-/// **The source's EXIF and IPTC are written too, rewritten to be true of the file**: Open Photo AI as the software, the
-/// export's time and offset, the written size, orientation 1 (the pixels were turned upright on decode), no thumbnail;
-/// everything else — capture time, camera, lens, exposure, location, the MakerNote where it can be kept
-/// without moving it — byte for byte, and of the IPTC block only the IPTC-IIM record and its digest. **The XMP is not
-/// written yet.** A block the format cannot hold is left out with a warning.
+/// **The source's EXIF, XMP and IPTC are written too, rewritten to be true of the file**: Open Photo AI as the software,
+/// the export's time and offset, the written size, orientation 1 (the pixels were turned upright on decode), no
+/// thumbnail; a new XMP identity derived from the source's, an Open Photo AI history event, no Camera Raw settings;
+/// everything else — capture time, camera, lens, exposure, location, keywords, rating, the MakerNote where it can be
+/// kept without moving it — as it was, and of the IPTC block only the IPTC-IIM record and its digest (in a PNG or WebP,
+/// which cannot hold it, its values go into the XMP). A block the format cannot hold is left out with a warning.
 ///
 /// Without [`overwrite`](WriteOptions::overwrite) a file already there is kept and the result takes the first free
 /// `_1` … `_999` name beside it; with it, the file is replaced once the new one is complete. **A write that does not
@@ -231,7 +232,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_exif_and_iptc_are_written_the_xmp_is_not_yet_and_the_profile_is() {
+    async fn the_exif_xmp_and_iptc_are_written_and_the_profile_is_kept() {
         use crate::image::test_support::{DISPLAY_P3, IPTC, written_described};
 
         let dir = tempfile::tempdir().expect("a temporary directory");
@@ -255,9 +256,10 @@ mod tests {
                 matches!(&software, Some(rust_sak::image::ExifValue::Ascii(name)) if name.starts_with("Open Photo AI ")),
                 "{format:?}: {software:?}"
             );
-            // IPTC has a place only in JPEG; XMP is not written yet anywhere.
+            // IPTC has a place only in JPEG; the XMP, rewritten, in all three.
             assert_eq!(read.iptc.as_deref(), (format == ImageFormat::Jpeg).then_some(IPTC), "{format:?}");
-            assert_eq!(read.xmp, None, "{format:?}");
+            let xmp = String::from_utf8(read.xmp.expect("XMP")).expect("UTF-8");
+            assert!(xmp.contains("<rdf:li>hawk</rdf:li>") && xmp.contains("Open Photo AI"), "{format:?}: {xmp}");
             assert_eq!(read.icc_profile.as_deref(), Some(DISPLAY_P3), "{format:?}");
         }
     }
