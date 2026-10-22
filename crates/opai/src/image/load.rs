@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use ::image::DynamicImage;
 use rust_sak::crypto::xxh3_bytes;
-use rust_sak::image::{Metadata, decode_bytes, decode_raw_bytes, icc_profile_bytes};
+use rust_sak::image::{Metadata, decode_bytes, decode_raw_bytes, metadata_bytes};
 
 use super::error::{self, ImageIoError};
 use super::picture::Picture;
@@ -28,8 +28,16 @@ pub async fn load(path: impl Into<PathBuf>) -> Result<Picture, ImageIoError> {
 
 /// Reads and decodes the image at `path`, on the calling thread.
 ///
-/// The result carries the pixels, the path they came from, the XXH3-64 of the whole of the file's bytes, and the ICC
-/// colour profile the file embeds, byte for byte. See [`Picture`] for what that identity promises.
+/// The result carries the pixels, the path they came from, the XXH3-64 of the whole of the file's bytes, and the
+/// metadata the file holds beside its pixels — its ICC colour profile, EXIF, XMP and IPTC — each byte for byte. See
+/// [`Picture`] for what that identity promises.
+///
+/// # The EXIF, XMP and IPTC
+///
+/// Read from the same buffer as the pixels and the identity, for JPEG (EXIF, XMP with any extended XMP joined in, and
+/// the `APP13` Photoshop block that holds IPTC), PNG and WebP (EXIF and XMP). Nothing is interpreted on the way in. A
+/// malformed block is left out and the rest kept; it never fails the load. TIFF, AVIF, HEIF, BMP, GIF and camera RAW
+/// carry none yet. Nothing is written back out yet either: see [`without_descriptive`](super::without_descriptive).
 ///
 /// # The colour profile
 ///
@@ -87,28 +95,24 @@ fn read(path: &Path) -> Result<Picture, ImageIoError> {
     let decoded = if raw_extension.is_some() { decode_raw_bytes(&bytes) } else { decode_bytes(&bytes) };
     let pixels = decoded.map_err(ImageIoError::decode(path))?;
 
-    // A developed RAW is sRGB whatever the camera embedded, so it carries no profile.
-    let mut metadata = Metadata::default();
-    if raw_extension.is_none() {
-        metadata.icc_profile = profile_of(path, &bytes, &pixels);
-    }
+    // A developed RAW is sRGB whatever the camera embedded, so it carries no profile; its EXIF and XMP are a later
+    // slice's, read from the RAW container and its sidecar.
+    let metadata = if raw_extension.is_none() { metadata_of(path, &bytes, &pixels) } else { Metadata::default() };
 
     Ok(Picture::new(path, Arc::new(pixels), identity).with_metadata(metadata))
 }
 
-/// The ICC profile embedded in `bytes`, if there is one and it describes `pixels`.
+/// Everything `bytes` holds beside its pixels, with the ICC profile left out if it does not describe `pixels`.
 ///
-/// Never a reason to refuse the photograph: the pixels decoded, and a profile that cannot be read is no profile. The
-/// header has already parsed once, so a failure here is not expected, and is recorded at `debug` if it happens.
-fn profile_of(path: &Path, bytes: &[u8], pixels: &DynamicImage) -> Option<Vec<u8>> {
-    let profile = match icc_profile_bytes(bytes) {
-        Ok(profile) => profile?,
-        Err(error) => {
-            tracing::debug!(op = "load", path = %path.display(), %error, "the colour profile could not be read");
-            return None;
-        }
-    };
+/// Never a reason to refuse the photograph: `metadata_bytes` answers a block it cannot read with `None`.
+fn metadata_of(path: &Path, bytes: &[u8], pixels: &DynamicImage) -> Metadata {
+    let mut metadata = metadata_bytes(bytes);
+    metadata.icc_profile = metadata.icc_profile.take().and_then(|profile| fitting(path, profile, pixels));
+    metadata
+}
 
+/// `profile`, if it describes `pixels`; otherwise `None`, and the drop is logged.
+fn fitting(path: &Path, profile: Vec<u8>, pixels: &DynamicImage) -> Option<Vec<u8>> {
     if super::profile::describes(&profile, pixels) {
         return Some(profile);
     }
@@ -516,5 +520,69 @@ mod tests {
         let [record] = records(&log, message)[..] else { panic!("expected one record:\n{log}") };
         assert_eq!(field(record, "colour_space"), Some("CMYK"), "{record}");
         assert!(record.contains("level=WARN"), "{record}");
+    }
+
+    #[test]
+    fn a_jpeg_carries_its_exif_xmp_and_iptc_byte_for_byte_beside_its_profile() {
+        use crate::image::test_support::{EXIF, IPTC, XMP, written_described};
+
+        let dir = tempdir().expect("a temporary directory");
+        let bytes = written_described(ImageFormat::Jpeg);
+        let path = write_fixture(dir.path(), "described.jpg", &bytes);
+
+        let loaded = load_blocking(&path).expect("decodable");
+
+        let metadata = loaded.metadata();
+        assert_eq!(metadata.exif.as_deref(), Some(EXIF));
+        assert_eq!(metadata.xmp.as_deref(), Some(XMP));
+        assert_eq!(metadata.iptc.as_deref(), Some(IPTC));
+        assert_eq!(metadata.icc_profile.as_deref(), Some(DISPLAY_P3));
+        // The identity still hashes the whole file, blocks and all.
+        assert_eq!(loaded.identity(), xxh3_file(&path).expect("readable"));
+    }
+
+    #[test]
+    fn png_and_webp_carry_their_exif_and_xmp() {
+        use crate::image::test_support::{EXIF, XMP, written_described};
+
+        let dir = tempdir().expect("a temporary directory");
+        for format in [ImageFormat::Png, ImageFormat::WebP] {
+            let path =
+                write_fixture(dir.path(), &format!("described.{}", format.extension()), &written_described(format));
+            let loaded = load_blocking(&path).unwrap_or_else(|err| panic!("{format:?}: {err}"));
+
+            assert_eq!(loaded.metadata().exif.as_deref(), Some(EXIF), "{format:?}");
+            assert_eq!(loaded.metadata().xmp.as_deref(), Some(XMP), "{format:?}");
+            assert_eq!(loaded.metadata().iptc, None, "{format:?}");
+        }
+    }
+
+    #[test]
+    fn a_corrupt_exif_block_is_left_out_and_the_photograph_still_loads() {
+        use crate::image::test_support::{XMP, described, sample_image};
+
+        // An EXIF block cut inside its first directory, written as a JPEG would carry it.
+        let mut metadata = described();
+        metadata.exif = Some(crate::image::test_support::EXIF[..12].to_vec());
+        let mut bytes = Vec::new();
+        rust_sak::image::encode_writer_with(&sample_image(), &mut bytes, ImageFormat::Jpeg, None, &metadata)
+            .expect("encodable");
+        let dir = tempdir().expect("a temporary directory");
+
+        let loaded = load_blocking(write_fixture(dir.path(), "corrupt-exif.jpg", &bytes)).expect("still decodable");
+
+        assert_eq!(loaded.metadata().exif, None);
+        assert_eq!(loaded.metadata().xmp.as_deref(), Some(XMP));
+        assert_eq!(loaded.dimensions(), FIXTURE_SIZE);
+    }
+
+    #[test]
+    fn a_file_without_metadata_and_a_raw_carry_none() {
+        let dir = tempdir().expect("a temporary directory");
+        let plain = load_blocking(write_fixture(dir.path(), "plain.png", &written_png())).expect("decodable");
+        let raw = load_blocking(write_fixture(dir.path(), "DSC_0001.dng", &written_dng())).expect("decodable");
+
+        assert_eq!(plain.metadata(), &Metadata::default());
+        assert_eq!(raw.metadata(), &Metadata::default());
     }
 }

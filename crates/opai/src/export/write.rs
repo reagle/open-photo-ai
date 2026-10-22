@@ -4,6 +4,7 @@
 use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::claim::claim;
 use crate::image::{self, ImageFormat, ImageIoError, Picture, recommended_encode_options};
@@ -56,8 +57,12 @@ impl From<Cancelled> for WriteError {
 }
 
 /// Writes `picture` to `destination` as `format`, at the library's recommended settings for it and `options`' quality,
-/// embedding the picture's [`metadata`](Picture::metadata) — its source's ICC colour profile — where `format` can hold
-/// it.
+/// embedding its source's ICC colour profile, from the picture's [`metadata`](Picture::metadata), where `format` can
+/// hold it.
+///
+/// **The EXIF, XMP and IPTC the picture carries are not written yet**: they are withheld through
+/// [`without_descriptive`](crate::image::without_descriptive) until the export rewrites the fields that would otherwise
+/// be false of the written pixels (dimensions, orientation, thumbnail, software).
 ///
 /// Without [`overwrite`](WriteOptions::overwrite) a file already there is kept and the result takes the first free
 /// `_1` … `_999` name beside it; with it, the file is replaced once the new one is complete. **A write that does not
@@ -77,8 +82,9 @@ pub async fn write(
 ) -> Result<Written, WriteError> {
     let pixels = picture.shared_pixels();
     // The source photograph's colour profile, carried through every crop and enhancement by `Picture::derive`, is
-    // embedded wherever the format can hold it; `image::save` warns where it cannot.
-    let metadata = picture.shared_metadata();
+    // embedded wherever the format can hold it; `image::save` warns where it cannot. Its EXIF, XMP and IPTC are carried
+    // too, but withheld here until they are rewritten to be true of these pixels.
+    let metadata = Arc::new(image::without_descriptive(picture.metadata()));
     let encode = recommended_encode_options(format, options.quality);
 
     write_with(destination, options, |path| image::save(pixels, metadata, path, format, Some(encode))).await
@@ -123,8 +129,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::*;
 
     fn picture() -> Picture {
@@ -221,6 +225,28 @@ mod tests {
             assert!(matches!(error, WriteError::Save(_)), "{error:?}");
             assert_eq!(std::fs::read(&out).expect("kept"), b"earlier", "overwrite: {overwrite}");
             assert_eq!(names(dir.path()), ["out.png"], "overwrite: {overwrite}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_exif_xmp_and_iptc_carried_are_not_yet_written_and_the_profile_is() {
+        use crate::image::test_support::{DISPLAY_P3, written_described};
+
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let source = dir.path().join("described.jpg");
+        std::fs::write(&source, written_described(ImageFormat::Jpeg)).expect("written");
+        let loaded = image::load_blocking(&source).expect("decodable");
+        assert!(
+            loaded.metadata().exif.is_some() && loaded.metadata().xmp.is_some() && loaded.metadata().iptc.is_some()
+        );
+
+        for format in [ImageFormat::Jpeg, ImageFormat::Png, ImageFormat::WebP] {
+            let out = dir.path().join(format!("out.{}", format.extension()));
+            let written = write(&loaded, &out, format, WriteOptions::default()).await.expect("written");
+
+            let read = rust_sak::image::metadata_bytes(&std::fs::read(&written.path).expect("readable"));
+            assert_eq!((read.exif, read.xmp, read.iptc), (None, None, None), "{format:?}");
+            assert_eq!(read.icc_profile.as_deref(), Some(DISPLAY_P3), "{format:?}");
         }
     }
 }

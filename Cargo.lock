@@ -4134,7 +4134,7 @@ checksum = "6aa2c4e539b869820a2b82e1aef6ff40aa85e65decdd5185e83fb4b1249cd00f"
 [[package]]
 name = "o11y-macros"
 version = "26.11.0"
-source = "git+https://github.com/reagle/rust-sak?tag=26.11.0-color.1#d8019c0dc2b344027e4725d7506eba6bd8fddaca"
+source = "git+https://github.com/reagle/rust-sak?tag=26.11.0-meta.1#68024e479bee302e71e4441e21acd2996ad07fc8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5608,10 +5608,11 @@ checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 [[package]]
 name = "rust-sak"
 version = "26.11.0"
-source = "git+https://github.com/reagle/rust-sak?tag=26.11.0-color.1#d8019c0dc2b344027e4725d7506eba6bd8fddaca"
+source = "git+https://github.com/reagle/rust-sak?tag=26.11.0-meta.1#68024e479bee302e71e4441e21acd2996ad07fc8"
 dependencies = [
  "avif-rs",
  "cap-std",
+ "crc32fast",
  "ctor 1.0.13",
  "dirs 7.0.0",
  "enough",
@@ -5626,6 +5627,8 @@ dependencies = [
  "libloading 0.9.0",
  "liblzma",
  "machine-uid",
+ "md5",
+ "miniz_oxide 0.8.9",
  "moka",
  "o11y-macros",
  "objc2",

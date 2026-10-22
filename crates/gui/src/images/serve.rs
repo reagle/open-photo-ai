@@ -371,8 +371,11 @@ fn render(pixels: Pixels, asked: &Asked) -> Result<Rendition, Refusal> {
     // With the photograph's colour profile, so the webview shows a Display P3 photograph — and its enhanced result,
     // which keeps the source's profile — in its own colours, matching the exported file (design.md D5 of
     // `add-color-1-icc-profile`). The window does the conversion to the display; no colour code is here.
-    let bytes =
-        opai::image::encode_blocking(&bounded, picture.metadata(), format, options).map_err(|_| Refusal::Unreadable)?;
+    //
+    // Never with its EXIF, XMP or IPTC: a browser applies an EXIF Orientation to an `<img>`, which would turn the
+    // preview away from the frame the crop is measured in (design.md D4 of `preserve-metadata-1-capture`).
+    let metadata = opai::image::without_descriptive(picture.metadata());
+    let bytes = opai::image::encode_blocking(&bounded, &metadata, format, options).map_err(|_| Refusal::Unreadable)?;
 
     Ok(Rendition { bytes: bytes.into(), media_type })
 }
@@ -1043,15 +1046,21 @@ mod tests {
     }
 
     #[test]
-    fn a_display_p3_photograph_and_its_enhanced_result_are_served_with_its_profile() {
-        use crate::test_support::{DISPLAY_P3, display_p3};
+    fn a_display_p3_photograph_and_its_enhanced_result_are_served_with_its_profile_and_no_exif() {
+        use crate::test_support::{DISPLAY_P3, described};
+
+        // Carrying EXIF with Orientation 6, XMP and IPTC as well as the profile: only the profile reaches a rendition.
+        let carries_no_descriptive_block = |bytes: &[u8], what: &str| {
+            let read = rust_sak::image::metadata_bytes(bytes);
+            assert_eq!((read.exif, read.xmp, read.iptc), (None, None, None), "{what}");
+        };
 
         let dir = tempdir().expect("a temporary directory");
         let path = dir.path().join("p3.jpg");
         let pixels = DynamicImage::ImageRgb8(image::RgbImage::from_fn(400, 200, |x, y| {
             image::Rgb([(x % 256) as u8, (y % 256) as u8, 120])
         }));
-        opai::image::save_blocking(&pixels, &display_p3(), &path, ImageFormat::Jpeg, None).expect("writable");
+        opai::image::save_blocking(&pixels, &described(), &path, ImageFormat::Jpeg, None).expect("writable");
         let opened = Opened::default();
         let identity = admit(&opened, &path);
 
@@ -1059,12 +1068,14 @@ mod tests {
             let (rendition, _) = rendered(&opened, &identity, bound);
             let profile = rust_sak::image::icc_profile_bytes(&rendition.bytes).expect("a readable header");
             assert_eq!(profile.as_deref(), Some(DISPLAY_P3), "the {bound}-bounded rendition lost the profile");
+            carries_no_descriptive_block(&rendition.bytes, &format!("the {bound}-bounded rendition"));
         }
+        assert!(rust_sak::image::metadata_bytes(&std::fs::read(&path).expect("readable")).exif.is_some());
 
         // A held result, with the profile its source handed it through `derive`, served as JPEG and, with alpha,
         // as PNG.
         let runs = crate::enhance::Runs::default();
-        let source = opai::Picture::new("/pictures/p3.jpg", pixels.clone(), SOURCE).with_metadata(display_p3());
+        let source = opai::Picture::new("/pictures/p3.jpg", pixels.clone(), SOURCE).with_metadata(described());
         for (run, identity, result) in [
             ("run-1", "aaaaaaaaaaaaaaaa", pixels.clone()),
             ("run-2", "bbbbbbbbbbbbbbbb", DynamicImage::ImageRgba8(pixels.to_rgba8())),
@@ -1075,6 +1086,7 @@ mod tests {
                 let (rendition, _) = rendered_result(&runs, identity, bound);
                 let profile = rust_sak::image::icc_profile_bytes(&rendition.bytes).expect("a readable header");
                 assert_eq!(profile.as_deref(), Some(DISPLAY_P3), "{} at {bound}", rendition.media_type);
+                carries_no_descriptive_block(&rendition.bytes, rendition.media_type);
             }
         }
     }
