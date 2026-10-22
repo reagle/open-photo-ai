@@ -85,7 +85,7 @@ fn preview(mask: &Mask, width: u32, height: u32) -> Result<Vec<u8>, MaskError> {
         .map(image::DynamicImage::ImageLumaA8)
         .ok_or_else(|| MaskError::Draw { message: "the weight does not fill the picture".to_string() })?;
 
-    opai::image::encode_blocking(&pixels, opai::ImageFormat::Png, None)
+    opai::image::encode_blocking(&pixels, &opai::image::Metadata::default(), opai::ImageFormat::Png, None)
         .map_err(|error| MaskError::Draw { message: error.to_string() })
 }
 

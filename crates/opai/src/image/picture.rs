@@ -1,9 +1,11 @@
-//! The image the application is working on: its pixels, where they came from, and what identifies them.
+//! The image the application is working on: its pixels, where they came from, what identifies them, and what the
+//! file said about them beside the pixels.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ::image::DynamicImage;
+use rust_sak::image::Metadata;
 
 /// A decoded image together with where its pixels came from and the identity that describes them.
 ///
@@ -28,10 +30,18 @@ use ::image::DynamicImage;
 /// [`Picture::new`] is the one place the invariant can be broken, because it is the one place pixels and an identity
 /// meet without having been read from the same file; see its documentation.
 ///
+/// # Metadata
+///
+/// [`metadata`](Self::metadata) is what the source file carried beside its pixels — today its ICC colour profile,
+/// byte for byte — and what an export embeds again. It is a label on the pixels, not part of them: nothing here
+/// converts a colour, and the identity does not cover it separately (a loaded identity already hashes the whole file,
+/// profile included). **Every picture derived from another keeps it**, through [`derive`](Self::derive), which is
+/// why a crop or an enhancement of a Display P3 photograph is still written as Display P3.
+///
 /// # Cost of cloning
 ///
-/// Cloning shares the pixels rather than copying them, which after an 8x upscale is the difference between a
-/// refcount bump and several hundred megabytes.
+/// Cloning shares the pixels and the metadata rather than copying them, which after an 8x upscale is the difference
+/// between a refcount bump and several hundred megabytes.
 #[derive(Debug, Clone)]
 pub struct Picture {
     /// Where the pixels came from, never where they are going.
@@ -44,6 +54,9 @@ pub struct Picture {
     pixels: Arc<DynamicImage>,
     /// The identity of these pixels, lowercase hexadecimal. See the type's documentation for where it comes from.
     identity: String,
+    /// What the source file carried beside the pixels, shared for the same reason the pixels are: the GUI clones
+    /// pictures freely, and a large camera profile is hundreds of kilobytes.
+    metadata: Arc<Metadata>,
 }
 
 impl Picture {
@@ -53,8 +66,32 @@ impl Picture {
     /// a hash is opaque, and when the pixels were decoded the bytes behind them are gone. Loading a file goes
     /// through [`load`](fn@super::load), which derives both from the same bytes; this constructor exists for the cases
     /// that cannot.
+    ///
+    /// The picture carries **no metadata**. Pixels computed from another picture are built with
+    /// [`derive`](Self::derive) instead, which keeps that picture's.
     pub fn new(path: impl Into<PathBuf>, pixels: impl Into<Arc<DynamicImage>>, identity: impl Into<String>) -> Self {
-        Self { path: path.into(), pixels: pixels.into(), identity: identity.into() }
+        Self { path: path.into(), pixels: pixels.into(), identity: identity.into(), metadata: Arc::default() }
+    }
+
+    /// This picture with `metadata` in place of what it carried — how [`load`](fn@super::load) attaches what the file
+    /// held beside its pixels.
+    #[must_use]
+    pub fn with_metadata(self, metadata: Metadata) -> Self {
+        Self { metadata: Arc::new(metadata), ..self }
+    }
+
+    /// A picture computed from this one: `pixels` under `identity`, keeping this picture's path and metadata.
+    ///
+    /// **The one way to build a derived picture**, so that a crop, an enhancement or a cache hit cannot forget the
+    /// source's colour profile. The pairing of `pixels` and `identity` is the caller's, exactly as for
+    /// [`new`](Self::new); the metadata is shared, not copied.
+    pub fn derive(&self, pixels: impl Into<Arc<DynamicImage>>, identity: impl Into<String>) -> Self {
+        Self {
+            path: self.path.clone(),
+            pixels: pixels.into(),
+            identity: identity.into(),
+            metadata: Arc::clone(&self.metadata),
+        }
     }
 
     /// Where the pixels were read from.
@@ -78,6 +115,17 @@ impl Picture {
     /// What identifies these pixels, lowercase hexadecimal. See the type's documentation for where it comes from.
     pub fn identity(&self) -> &str {
         &self.identity
+    }
+
+    /// What the source file carried beside the pixels; see the type's documentation.
+    pub fn metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+
+    /// The metadata as a shared handle, for the asynchronous [`save`](fn@super::save) and
+    /// [`encode`](fn@super::encode). A refcount bump, not a copy.
+    pub fn shared_metadata(&self) -> Arc<Metadata> {
+        Arc::clone(&self.metadata)
     }
 
     /// The image's width and height, in pixels.
@@ -126,6 +174,47 @@ mod tests {
             "the clone decoded a second buffer instead of sharing the first"
         );
         assert_eq!(Arc::strong_count(&source.shared_pixels()), 3, "the handle is not the one the clone shares");
+    }
+
+    /// Metadata carrying `profile` as its ICC profile.
+    fn profiled(profile: &[u8]) -> Metadata {
+        let mut metadata = Metadata::default();
+        metadata.icc_profile = Some(profile.to_vec());
+        metadata
+    }
+
+    #[test]
+    fn a_new_picture_carries_no_metadata() {
+        let source = Picture::new("/pictures/holiday.jpg", image_of(2, 2), "cafebabecafebabe");
+
+        assert_eq!(source.metadata(), &Metadata::default());
+        assert_eq!(source.metadata().icc_profile, None);
+    }
+
+    #[test]
+    fn a_derived_picture_keeps_the_path_and_the_profile_and_takes_its_own_pixels_and_identity() {
+        let source = Picture::new("/pictures/p3.jpg", image_of(8, 8), "cafebabecafebabe")
+            .with_metadata(profiled(b"a display p3 profile"));
+
+        let derived = source.derive(image_of(4, 2), "0123456789abcdef");
+
+        assert_eq!(derived.path(), source.path());
+        assert_eq!(derived.identity(), "0123456789abcdef");
+        assert_eq!(derived.dimensions(), (4, 2));
+        assert_eq!(derived.metadata().icc_profile.as_deref(), Some(&b"a display p3 profile"[..]));
+        // Shared rather than copied.
+        assert!(Arc::ptr_eq(&source.shared_metadata(), &derived.shared_metadata()));
+        // And a derivation of a derivation still has it.
+        assert_eq!(derived.derive(image_of(1, 1), "f00df00df00df00d").metadata(), source.metadata());
+    }
+
+    #[test]
+    fn cloning_shares_the_metadata_rather_than_copying_it() {
+        let source =
+            Picture::new("/pictures/p3.jpg", image_of(2, 2), "cafebabecafebabe").with_metadata(profiled(b"profile"));
+        let copy = source.clone();
+
+        assert!(Arc::ptr_eq(&source.shared_metadata(), &copy.shared_metadata()));
     }
 
     #[test]

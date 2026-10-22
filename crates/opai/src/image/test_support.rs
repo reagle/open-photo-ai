@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use ::image::{DynamicImage, RgbImage};
-use rust_sak::image::{EncodeOptions, ImageFormat, encode_writer};
+use rust_sak::image::{EncodeOptions, ImageFormat, Metadata, encode_writer, encode_writer_with};
 
 // Above 16x16 deliberately. `rust-sak`'s `image` module records that the bundled AVIF encoder **hangs** on sub-16px
 // frames rather than returning an error, so a fixture below that turns a failing test into a CI job that never
@@ -65,6 +65,34 @@ pub(crate) fn written_jpeg() -> Vec<u8> {
 /// [`sample_image`] as TIFF, for the tests about RAW: a RAW file is a TIFF as far as its magic bytes go.
 pub(crate) fn written_tiff() -> Vec<u8> {
     encoded(ImageFormat::Tiff, None)
+}
+
+/// A Display P3 ICC profile: `DisplayP3-v4.icc` from saucecontrol/Compact-ICC-Profiles (CC0 1.0), 480 bytes,
+/// committed at the workspace root's `fixtures/` beside the live photograph so every crate's tests reach the same file.
+///
+/// The one fixture that is committed rather than generated, because a profile is not something these tests can
+/// produce: what they assert is that a real one travels byte for byte.
+pub(crate) const DISPLAY_P3: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/DisplayP3-v4.icc"));
+
+/// Metadata carrying [`DISPLAY_P3`].
+pub(crate) fn display_p3() -> Metadata {
+    let mut metadata = Metadata::default();
+    metadata.icc_profile = Some(DISPLAY_P3.to_vec());
+    metadata
+}
+
+/// [`sample_image`] as `format` with [`DISPLAY_P3`] embedded: a wide-gamut photograph as a camera or a phone writes it.
+///
+/// # Panics
+///
+/// Panics if the fixture cannot be encoded, or if the format did not take the profile.
+pub(crate) fn written_p3(format: ImageFormat) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let embedded = encode_writer_with(&sample_image(), &mut bytes, format, None, &display_p3())
+        .unwrap_or_else(|err| panic!("the P3 {format:?} fixture could not be encoded: {err}"));
+    assert!(embedded.icc_profile, "{format:?} did not embed the profile");
+    bytes
 }
 
 /// Writes `bytes` into `dir` under `name` and hands back the path.

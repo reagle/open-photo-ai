@@ -17,7 +17,8 @@ pub(super) fn write_image(dir: &TempDir, name: &str, width: u32, height: u32, fo
         image::Rgb([(x % 256) as u8, (y % 256) as u8, 128])
     }));
 
-    opai::image::save_blocking(&pixels, &path, format, None).expect("the fixture should be writable");
+    opai::image::save_blocking(&pixels, &opai::image::Metadata::default(), &path, format, None)
+        .expect("the fixture should be writable");
     path
 }
 
