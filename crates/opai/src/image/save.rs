@@ -40,10 +40,11 @@ pub async fn save(
 ///
 /// # What is embedded
 ///
-/// `metadata` is written beside the pixels where `format` can hold it — today the ICC colour profile, byte for byte, in
-/// JPEG, PNG, TIFF and WebP. Where it cannot (BMP, GIF, AVIF and HEIF), or where the profile is for another colour model
-/// than `pixels` are in, the file is still written without it and a warning naming the format and the profile is
-/// logged. [`Picture::metadata`](super::Picture::metadata) is what to pass; [`Metadata::default()`] embeds nothing.
+/// `metadata` is written beside the pixels where `format` can hold it, each block byte for byte as given: the ICC colour
+/// profile in JPEG, PNG, TIFF and WebP; EXIF and XMP in JPEG, PNG and WebP; IPTC in JPEG. Where it cannot, or where the
+/// profile is for another colour model than `pixels` are in, the file is still written without it and a warning naming
+/// the format and what was left out is logged. Nothing is rewritten here: an export hands this what
+/// [`export::write`](fn@crate::export::write)'s policy made true of the file; [`Metadata::default()`] embeds nothing.
 ///
 /// # The destination and the format are both the caller's
 ///
@@ -119,6 +120,7 @@ fn write(
 
     // After the flush, so a save that failed is not also reported as having dropped its profile.
     super::profile::warn_if_dropped(metadata, embedded, format, Some(destination));
+    super::descriptive::warn_if_dropped(metadata, embedded, format, Some(destination));
 
     Ok(counted.written)
 }

@@ -4110,7 +4110,7 @@ checksum = "6aa2c4e539b869820a2b82e1aef6ff40aa85e65decdd5185e83fb4b1249cd00f"
 [[package]]
 name = "o11y-macros"
 version = "26.10.8"
-source = "git+https://github.com/reagle/rust-sak?tag=26.10.1-meta.1#3685c9c9b038f97bf6b77910f64649168340f46a"
+source = "git+https://github.com/reagle/rust-sak?tag=26.10.1-meta.3#17081407edec3f6a0657df4b6198e6c47f31efd7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4348,6 +4348,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 name = "opai"
 version = "26.10.0"
 dependencies = [
+ "chrono",
  "ctor",
  "dirs 7.0.0",
  "file-rotate",
@@ -5587,7 +5588,7 @@ checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 [[package]]
 name = "rust-sak"
 version = "26.10.8"
-source = "git+https://github.com/reagle/rust-sak?tag=26.10.1-meta.1#3685c9c9b038f97bf6b77910f64649168340f46a"
+source = "git+https://github.com/reagle/rust-sak?tag=26.10.1-meta.3#17081407edec3f6a0657df4b6198e6c47f31efd7"
 dependencies = [
  "avif-rs",
  "cap-std",
