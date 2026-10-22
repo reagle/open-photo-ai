@@ -445,6 +445,8 @@ With an output **file**, the format is the one its extension names. With an outp
 
 **Transparency is not kept.** Transparent areas are filled with black during processing.
 
+**Colour profile:** if the input embeds an ICC colour profile (a Display P3 photograph from a phone or camera, an Adobe RGB scan), the result embeds the same profile when it is written as JPEG, PNG, TIFF or WebP, so it shows in the same colours as the input. BMP, GIF, AVIF and HEIF results are written without it for now, and the [log file](#log-file) records a warning naming the format. Colours are not converted: the profile is carried over unchanged, and an input without one produces a result without one. Camera RAW inputs have none.
+
 ## What happens during a run
 
 1. **The command is checked.** The arguments, the output, and every input are all checked before anything is downloaded or loaded. A typo fails right away with [exit code 2](#exit-codes), even if it's in the fortieth path. Specifically, the run is refused if:
