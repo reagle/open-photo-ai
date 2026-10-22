@@ -41,15 +41,15 @@
 //! **JPEG, PNG, TIFF and WebP**. **BMP, GIF, AVIF and HEIF** are written without it, and a warning naming the format
 //! and the profile is logged. A developed RAW carries none, its pixels being sRGB.
 //!
-//! # EXIF, XMP and IPTC are carried, not yet written
+//! # EXIF, XMP and IPTC are carried, and written by the export
 //!
 //! [`fn@load`] also keeps the EXIF block, the XMP packet (a JPEG's extended XMP joined in) and the IPTC (Photoshop
 //! `APP13`) block a **JPEG**, **PNG** or **WebP** holds, byte for byte, on the same [`Metadata`], and
 //! [`Picture::derive`] carries them as it carries the profile. TIFF, AVIF, HEIF, BMP, GIF and camera RAW carry none yet.
-//! **None of the three is written yet**: written unchanged they would state the source's dimensions, thumbnail,
-//! orientation and software for different pixels, so [`export::write`](fn@crate::export::write) withholds them through
-//! [`without_descriptive`] until it rewrites them, and a preview rendition always does. [`fn@save`] and [`fn@encode`]
-//! themselves embed whatever [`Metadata`] they are handed.
+//! [`fn@save`] and [`fn@encode`] embed whatever [`Metadata`] they are handed, byte for byte, and warn naming what the
+//! format could not hold; deciding what is true of the file is [`export::write`](fn@crate::export::write)'s, which
+//! rewrites the EXIF, filters the IPTC and withholds the XMP for now. A preview rendition carries none of the three,
+//! through [`without_descriptive`].
 //!
 //! # What is not here
 //!
@@ -85,8 +85,8 @@
 // later slice of the colour series. EXIF orientation belongs to the metadata series.
 //
 // The EXIF, XMP and IPTC blocks are read and spliced by `rust-sak` too (`metadata_bytes`, `encode_writer_with`), which
-// carries them as opaque bytes; which of their fields survive an export and how the rest are rewritten is this crate's
-// policy, and lands in `export::write` with the `preserve-metadata` series' later slices.
+// carries them as opaque bytes, and the EXIF patcher (`patch_exif`) changes fields without moving the rest; which fields
+// survive an export and how the rest are rewritten is this crate's policy, in `export/metadata/`.
 
 mod descriptive;
 mod encode;
