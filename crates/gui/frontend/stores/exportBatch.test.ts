@@ -30,7 +30,7 @@ describe("open and reset", () => {
     it("reset puts every row back to Queued with nothing written, and starts nothing", () => {
         store().open(["/a.jpg", "/b.jpg"]);
         store().start();
-        store().setStage("/a.jpg", { stage: "done", path: "/a_1.png", bytes: 10 });
+        store().setStage("/a.jpg", { stage: "done", path: "/a_1.png", bytes: 10, losses: [] });
         store().setStage("/b.jpg", { stage: "failed", reason: "no" });
         store().finish();
 
@@ -53,7 +53,7 @@ describe("the summary", () => {
     it("counts what is written and what remains after the row in progress while running", () => {
         store().open(["/a", "/b", "/c", "/d"]);
         store().start();
-        store().setStage("/a", { stage: "done", path: "/a.png", bytes: 1 });
+        store().setStage("/a", { stage: "done", path: "/a.png", bytes: 1, losses: [] });
         store().setCurrent({ path: "/b", run: "run-2" });
         store().setStage("/b", { stage: "enhancing", fraction: 0.5 });
 
@@ -63,10 +63,10 @@ describe("the summary", () => {
     it("counts the failed rows apart from the written ones once ended", () => {
         store().open(["/a", "/b", "/c", "/d"]);
         store().start();
-        store().setStage("/a", { stage: "done", path: "/a.png", bytes: 1 });
+        store().setStage("/a", { stage: "done", path: "/a.png", bytes: 1, losses: [] });
         store().setStage("/b", { stage: "failed", reason: "no" });
-        store().setStage("/c", { stage: "done", path: "/c.png", bytes: 1 });
-        store().setStage("/d", { stage: "done", path: "/d.png", bytes: 1 });
+        store().setStage("/c", { stage: "done", path: "/c.png", bytes: 1, losses: [] });
+        store().setStage("/d", { stage: "done", path: "/d.png", bytes: 1, losses: [] });
         store().finish();
 
         expect(summary()).toEqual({ phase: "ended", total: 4, written: 3, failed: 1, remaining: 0 });
@@ -80,7 +80,7 @@ describe("the overall fraction", () => {
         expect(overallFraction(store())).toBe(0);
 
         store().start();
-        store().setStage("/a", { stage: "done", path: "/a.png", bytes: 1 });
+        store().setStage("/a", { stage: "done", path: "/a.png", bytes: 1, losses: [] });
         store().setStage("/b", { stage: "failed", reason: "no" });
         store().setCurrent({ path: "/c", run: "run-3" });
         store().setStage("/c", { stage: "enhancing", fraction: 0.5 });

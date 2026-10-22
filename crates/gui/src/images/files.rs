@@ -142,7 +142,7 @@ impl Opened {
     }
 
     /// Whether this application opened the file at this path. Compared verbatim, not canonicalized.
-    fn knows(&self, path: &Path) -> bool {
+    pub(crate) fn knows(&self, path: &Path) -> bool {
         // Not canonicalized because both sides come from the same string already.
         lock(&self.admitted).paths.contains(path)
     }

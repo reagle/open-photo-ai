@@ -11,6 +11,7 @@
 //! a chosen depth, profiles in AVIF and HEIF.
 
 use std::fmt;
+use std::path::Path;
 
 use ::image::ColorType;
 use serde::{Serialize, Serializer};
@@ -18,7 +19,7 @@ use serde::{Serialize, Serializer};
 use rust_sak::image::Embedded;
 
 use crate::image::profile::{colour_space, description, fits, matters_in, writes_colour};
-use crate::image::{Depth, Fidelity, Hdr, ImageFormat, Picture};
+use crate::image::{Depth, Fidelity, Hdr, ImageFormat, ImageIoError, Picture, is_raw};
 
 /// One thing a written file lost against its source.
 ///
@@ -160,6 +161,138 @@ pub(crate) fn reconcile(
     };
     predicted.insert(at, lost);
     predicted
+}
+
+/// What writing the file at `path`, once loaded, as `format` will lose against it — [`losses`] for a file not yet
+/// loaded, **without decoding its pixels**: its fidelity and profile are read from its bytes as
+/// [`load`](fn@crate::image::load) reads them, and the written pixels are taken to be the file's own colour type, which
+/// they are at the source's own depth. A camera RAW is judged by its extension, without reading it: it develops to
+/// 16-bit sRGB with no profile.
+///
+/// **Only what the prediction needs is read** ([`header`]): a JPEG up to its first scan and a PNG up to its first
+/// image data, where every block it reads lies; another format whole. A format change in the export dialog asks again
+/// for every queued file, so a 30 MB JPEG costs its few kilobytes of header each time rather than its 30 MB.
+///
+/// A lower bound: it may miss a loss but never names one the write will not have. An enhancement that narrows the
+/// depth or changes the colour model is not foreseen (a grayscale photograph colourised loses its `GRAY` profile to the
+/// colour model, which is not predicted), nor a profile the encoder cannot write ([`ProfileCause::NotWritten`]). The
+/// losses [`write`](fn@super::write) answers are what was actually written.
+///
+/// # Errors
+///
+/// [`ImageIoError::Read`] where the file cannot be read, and [`ImageIoError::Decode`] where its header is not one of
+/// a supported format's. An export of such a file will report its own failure.
+pub fn predict_blocking(path: impl AsRef<Path>, format: ImageFormat) -> Result<Vec<Loss>, ImageIoError> {
+    let path = path.as_ref();
+    if is_raw(path) {
+        return Ok(assess(&Fidelity::of_colour(ColorType::Rgb16), None, ColorType::Rgb16, format));
+    }
+
+    let bytes = header(path).map_err(ImageIoError::read(path))?;
+    predict_from(&bytes, path, format)
+}
+
+/// [`predict_blocking`] from the file's `bytes`, as much of them as [`header`] reads.
+fn predict_from(bytes: &[u8], path: &Path, format: ImageFormat) -> Result<Vec<Loss>, ImageIoError> {
+    let info = rust_sak::image::probe_bytes(bytes).map_err(ImageIoError::decode(path))?;
+    let profile = rust_sak::image::icc_profile_bytes(bytes).ok().flatten();
+    let fidelity = Fidelity::read_with(Some(&info), bytes, info.color_type, profile.as_deref());
+    // The load keeps only a profile that describes the decoded pixels; the one it drops is `fidelity.discarded`.
+    let carried = profile.filter(|profile| fits(profile, info.color_type.has_color()));
+
+    Ok(assess(&fidelity, carried.as_deref(), info.color_type, format))
+}
+
+/// How much more of a file [`header`] reads at a time.
+const HEADER_STEP: usize = 64 * 1024;
+
+/// The start of the file at `path`, as far as [`predict_blocking`] needs it: a JPEG through its first `SOS` segment,
+/// where every `APPn` block a prediction reads — the ICC profile, the XMP and the ISO 21496-1 and MPF segments that
+/// declare a gain map — lies; a PNG through its first `IDAT` chunk header, past which no `iCCP` or `cICP` chunk may come;
+/// any other format whole, since a TIFF's directory or an ISO-BMFF `meta` box may lie anywhere. A file that ends sooner,
+/// or whose structure breaks off, is answered as far as it goes, which is what reading it whole would have given.
+fn header(path: &Path) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+
+    // Reads at least `at_least` bytes more, and at least a step; answers whether there were any.
+    fn more(file: &mut std::fs::File, bytes: &mut Vec<u8>, at_least: usize) -> std::io::Result<bool> {
+        let want = u64::try_from(at_least.max(HEADER_STEP)).unwrap_or(u64::MAX);
+        Ok(file.by_ref().take(want).read_to_end(bytes)? > 0)
+    }
+
+    let mut file = std::fs::File::open(path)?;
+    let mut bytes = Vec::new();
+    more(&mut file, &mut bytes, HEADER_STEP)?;
+    loop {
+        let needed = if bytes.starts_with(&[0xFF, 0xD8]) {
+            jpeg_header_end(&bytes)
+        } else if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+            png_header_end(&bytes)
+        } else {
+            None
+        };
+        match needed {
+            // Everything needed is here.
+            Some(end) if end <= bytes.len() => return Ok(bytes),
+            // A structure runs past what was read: read on, at least to its end, unless the file ends first.
+            Some(end) => {
+                let missing = end - bytes.len();
+                if !more(&mut file, &mut bytes, missing)? {
+                    return Ok(bytes);
+                }
+            }
+            // Not a JPEG or a PNG, or one whose structure could not be followed: the whole file.
+            None => {
+                file.read_to_end(&mut bytes)?;
+                return Ok(bytes);
+            }
+        }
+    }
+}
+
+/// How many bytes of the JPEG `bytes` hold everything up to and including its first `SOS` segment: possibly more than
+/// `bytes` has, when a segment runs past its end. `None` where the markers cannot be followed.
+fn jpeg_header_end(bytes: &[u8]) -> Option<usize> {
+    let mut at = 2;
+    loop {
+        // Fill bytes are allowed before a marker.
+        while bytes.get(at) == Some(&0xFF) && bytes.get(at + 1) == Some(&0xFF) {
+            at += 1;
+        }
+        let (Some(&0xFF), Some(&marker)) = (bytes.get(at), bytes.get(at + 1)) else {
+            // Out of bytes, at least the next marker and its length are needed; anything else is no marker.
+            return (at + 2 > bytes.len()).then_some(at + 4);
+        };
+        match marker {
+            // No length and no data.
+            0x01 | 0xD0..=0xD7 => at += 2,
+            // The end of the image before any scan: nothing further is needed.
+            0xD9 => return Some(at + 2),
+            _ => {
+                let Some(length) = bytes.get(at + 2..at + 4) else { return Some(at + 4) };
+                let end = at + 2 + usize::from(u16::from_be_bytes([length[0], length[1]]));
+                if marker == 0xDA || end > bytes.len() {
+                    return Some(end);
+                }
+                at = end;
+            }
+        }
+    }
+}
+
+/// How many bytes of the PNG `bytes` hold everything up to and including its first `IDAT` chunk's length and type:
+/// possibly more than `bytes` has. `None` where the chunks cannot be followed.
+fn png_header_end(bytes: &[u8]) -> Option<usize> {
+    let mut at = 8;
+    loop {
+        let Some(head) = bytes.get(at..at + 8) else { return Some(at + 8) };
+        if &head[4..8] == b"IDAT" || &head[4..8] == b"IEND" {
+            return Some(at + 8);
+        }
+        let length = usize::try_from(u32::from_be_bytes([head[0], head[1], head[2], head[3]])).ok()?;
+        // Length, type, data and CRC.
+        at = at.checked_add(12)?.checked_add(length)?;
+    }
 }
 
 /// [`losses`] for pixels of `colour` carrying `profile`, from a source of `fidelity`.
@@ -443,6 +576,138 @@ mod tests {
             serde_json::json!({
                 "kind": "profile", "profile": null, "colourSpace": "RGB", "format": "GIF", "cause": "format"
             })
+        );
+    }
+
+    #[test]
+    fn a_prediction_from_the_file_agrees_with_the_assessment_of_the_loaded_picture() {
+        use crate::image::test_support::{write_fixture, written_jpeg, written_p3, written_ultra_hdr};
+
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut deep = Vec::new();
+        rust_sak::image::encode_writer(
+            &DynamicImage::ImageRgb16(sample_image().to_rgb16()),
+            &mut deep,
+            ImageFormat::Png,
+            None,
+        )
+        .expect("encodable");
+        let files = [
+            write_fixture(dir.path(), "hawk.jpg", &written_ultra_hdr()),
+            write_fixture(dir.path(), "deep.png", &deep),
+            write_fixture(dir.path(), "plain.jpg", &written_jpeg()),
+            write_fixture(dir.path(), "p3.jpg", &written_p3(ImageFormat::Jpeg)),
+        ];
+
+        for path in &files {
+            let loaded = crate::image::load_blocking(path).expect("decodable");
+            for format in [ImageFormat::Jpeg, ImageFormat::Png, ImageFormat::Avif, ImageFormat::Gif] {
+                assert_eq!(
+                    predict_blocking(path, format).expect("readable"),
+                    losses(&loaded, format),
+                    "{} as {format:?}",
+                    path.display()
+                );
+            }
+        }
+        assert_eq!(
+            predict_blocking(&files[0], ImageFormat::Jpeg).expect("readable"),
+            [Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Jpeg }]
+        );
+        assert_eq!(predict_blocking(&files[2], ImageFormat::Jpeg).expect("readable"), []);
+    }
+
+    #[test]
+    fn a_prediction_reads_a_jpegs_or_pngs_header_only_and_predicts_what_the_whole_file_would() {
+        use crate::image::test_support::{srgb_profile, write_fixture, written_jpeg, written_p3, written_ultra_hdr};
+
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        // Large enough that the pixels dwarf the header: noise does not compress.
+        let mut seed = 7u32;
+        let noise = DynamicImage::ImageRgb8(::image::RgbImage::from_fn(640, 480, |_, _| {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let [a, b, c, _] = seed.to_be_bytes();
+            ::image::Rgb([a, b, c])
+        }));
+        let encode = |pixels: &DynamicImage, format, profile: Option<Vec<u8>>| {
+            let mut metadata = rust_sak::image::Metadata::default();
+            metadata.icc_profile = profile;
+            let mut bytes = Vec::new();
+            encode_writer_with(pixels, &mut bytes, format, None, &metadata).expect("encodable");
+            bytes
+        };
+        let deep = DynamicImage::ImageRgb16(noise.to_rgb16());
+        let large = [
+            // A profile across many `APP2` segments, and one `iCCP` chunk, each larger than a read step.
+            write_fixture(dir.path(), "large.jpg", &encode(&noise, ImageFormat::Jpeg, Some(srgb_profile(300_000)))),
+            write_fixture(dir.path(), "large.png", &encode(&deep, ImageFormat::Png, Some(srgb_profile(300_000)))),
+            write_fixture(dir.path(), "p3.png", &encode(&deep, ImageFormat::Png, Some(DISPLAY_P3.to_vec()))),
+            write_fixture(dir.path(), "plain.jpg", &encode(&noise, ImageFormat::Jpeg, None)),
+        ];
+        let small = [
+            write_fixture(dir.path(), "hawk.jpg", &written_ultra_hdr()),
+            write_fixture(dir.path(), "tiny.jpg", &written_jpeg()),
+            write_fixture(dir.path(), "p3.jpg", &written_p3(ImageFormat::Jpeg)),
+            write_fixture(dir.path(), "gray.png", &encode(&noise.grayscale(), ImageFormat::Png, None)),
+            write_fixture(dir.path(), "deep.tif", &encode(&deep, ImageFormat::Tiff, Some(DISPLAY_P3.to_vec()))),
+            write_fixture(dir.path(), "noise.webp", &encode(&noise, ImageFormat::WebP, Some(DISPLAY_P3.to_vec()))),
+        ];
+
+        for path in large.iter().chain(&small) {
+            let whole = std::fs::read(path).expect("readable");
+            let read = header(path).expect("readable");
+            assert_eq!(read[..], whole[..read.len()], "a prefix of the file");
+            if large.contains(path) {
+                assert!(read.len() * 2 < whole.len(), "{}: {} of {} bytes", path.display(), read.len(), whole.len());
+            }
+            let formats = [ImageFormat::Jpeg, ImageFormat::Png, ImageFormat::Avif, ImageFormat::Gif, ImageFormat::Tiff];
+            for format in formats {
+                assert_eq!(
+                    predict_blocking(path, format).expect("readable"),
+                    predict_from(&whole, path, format).expect("readable"),
+                    "{} as {format:?}",
+                    path.display()
+                );
+            }
+        }
+        // The headers carried what the prediction needs.
+        let words = |path, format| -> Vec<String> {
+            predict_blocking(path, format).expect("readable").iter().map(ToString::to_string).collect()
+        };
+        assert_eq!(words(&large[1], ImageFormat::Jpeg), ["16-bit → 8-bit in JPEG"]);
+        assert_eq!(words(&large[2], ImageFormat::Gif), ["16-bit → 8-bit in GIF", "sP3 profile not embedded in GIF"]);
+        assert_eq!(words(&large[0], ImageFormat::Gif), ["sRGB IEC61966-2.1 profile not embedded in GIF"]);
+    }
+
+    #[test]
+    fn a_header_that_breaks_off_is_read_as_far_as_it_goes() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let jpeg = crate::image::test_support::written_jpeg();
+        for cut in [3, 6, 40, jpeg.len() / 2] {
+            let path = crate::image::test_support::write_fixture(dir.path(), "cut.jpg", &jpeg[..cut]);
+            assert_eq!(header(&path).expect("readable"), jpeg[..cut], "cut at {cut}");
+        }
+        // A marker where none can be: the rest is read whole, as before.
+        let mut odd = jpeg.clone();
+        odd[2] = 0x00;
+        let path = crate::image::test_support::write_fixture(dir.path(), "odd.jpg", &odd);
+        assert_eq!(header(&path).expect("readable"), odd);
+    }
+
+    #[test]
+    fn a_prediction_for_a_file_that_is_missing_or_not_an_image_is_an_error() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let text = crate::image::test_support::write_fixture(dir.path(), "notes.jpg", b"not an image");
+
+        assert!(matches!(
+            predict_blocking(dir.path().join("missing.jpg"), ImageFormat::Jpeg),
+            Err(ImageIoError::Read { .. })
+        ));
+        assert!(matches!(predict_blocking(&text, ImageFormat::Jpeg), Err(ImageIoError::Decode { .. })));
+        // A RAW is judged by its name, without being read.
+        assert_eq!(
+            predict_blocking(dir.path().join("DSC_0001.nef"), ImageFormat::Jpeg).expect("not read"),
+            [Loss::Depth { from: SIXTEEN, to: EIGHT, format: ImageFormat::Jpeg }]
         );
     }
 

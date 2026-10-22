@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import "@/i18n";
-import { pickDirectory } from "@/ipc/export";
+import { exportLosses, type Loss, pickDirectory } from "@/ipc/export";
 import type { ImageRecord } from "@/ipc/images";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useExportBatchStore } from "@/stores/exportBatch";
@@ -40,6 +40,7 @@ vi.mock("@/ipc/export", async () => {
         cancelExport: vi.fn(() => Promise.resolve()),
         onExportProgress: vi.fn(() => Promise.resolve(() => {})),
         exportNames: vi.fn(answerExportNames),
+        exportLosses: vi.fn((paths: string[]) => Promise.resolve(paths.map((path) => ({ path, losses: [] })))),
     };
 });
 vi.mock("@/ipc/os", () => ({ isMacOs: () => false, isWindows: () => false }));
@@ -55,6 +56,7 @@ vi.mock("./batch", async (importOriginal) => ({
 }));
 
 const picked = pickDirectory as unknown as Mock;
+const predicted = exportLosses as unknown as Mock;
 const ran = runBatch as unknown as Mock;
 
 const PORTRAIT: ImageRecord = { ...HOLIDAY, path: "/Users/someone/Pictures/portrait.jpg", extension: "jpg" };
@@ -128,7 +130,7 @@ describe("the summary", () => {
 
         act(() => {
             batch().start();
-            batch().setStage(HOLIDAY.path, { stage: "done", path: "/h.png", bytes: 1 });
+            batch().setStage(HOLIDAY.path, { stage: "done", path: "/h.png", bytes: 1, losses: [] });
             batch().setCurrent({ path: SUNSET.path, run: "export-2" });
             batch().setStage(SUNSET.path, { stage: "enhancing", fraction: 0.5 });
         });
@@ -136,8 +138,8 @@ describe("the summary", () => {
 
         act(() => {
             batch().setStage(SUNSET.path, { stage: "failed", reason: "no" });
-            batch().setStage(PORTRAIT.path, { stage: "done", path: "/p.png", bytes: 1 });
-            batch().setStage(LANDSCAPE.path, { stage: "done", path: "/l.png", bytes: 1 });
+            batch().setStage(PORTRAIT.path, { stage: "done", path: "/p.png", bytes: 1, losses: [] });
+            batch().setStage(LANDSCAPE.path, { stage: "done", path: "/l.png", bytes: 1, losses: [] });
             batch().finish();
         });
         expect(screen.getByText("3 of 4 written, 1 failed")).toBeInTheDocument();
@@ -232,7 +234,7 @@ describe("the buttons", () => {
         mount();
         act(() => {
             batch().start();
-            batch().setStage(HOLIDAY.path, { stage: "done", path: "/h.png", bytes: 1 });
+            batch().setStage(HOLIDAY.path, { stage: "done", path: "/h.png", bytes: 1, losses: [] });
             batch().finish();
         });
 
@@ -396,5 +398,83 @@ describe("the quality", () => {
         const committed = { jpeg: PUBLISHED_QUALITY.jpeg + 1 };
         expect(useSettingsStore.getState().quality).toEqual(committed);
         expect(ran).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ format: "jpeg" }), committed);
+    });
+});
+
+describe("the loss notice", () => {
+    const HDR: Loss = { kind: "hdr", hdr: "gainMap", format: "JPEG" };
+    const P3: Loss = { kind: "profile", profile: "Display P3", colourSpace: "RGB", format: "AVIF", cause: "format" };
+    const notice = () => document.querySelector("[data-slot='export-loss-notice']");
+
+    beforeEach(() => {
+        // An Ultra HDR SUNSET loses its HDR in every format; HOLIDAY loses its Display P3 profile only in AVIF.
+        predicted.mockImplementation((paths: string[], naming: { format: string }) =>
+            Promise.resolve(
+                paths.map((path) => ({
+                    path,
+                    losses:
+                        path === SUNSET.path ? [HDR] : path === HOLIDAY.path && naming.format === "avif" ? [P3] : [],
+                })),
+            ),
+        );
+    });
+
+    it("counts the queued photographs that will lose something, and follows the format choice", async () => {
+        pick(HOLIDAY, SUNSET, PORTRAIT);
+        await mountNamed();
+
+        await waitFor(() =>
+            expect(notice()).toHaveTextContent(
+                "1 of 3 images will lose quality in this format. Hover the warning on a row to see what.",
+            ),
+        );
+        expect(screen.getAllByRole("button", { name: "Quality lost in this format" })).toHaveLength(1);
+
+        act(() => useExportSettingsStore.setState({ format: "avif" }));
+
+        await waitFor(() => expect(notice()).toHaveTextContent("2 of 3 images will lose quality"));
+        expect(predicted).toHaveBeenLastCalledWith(
+            [HOLIDAY.path, SUNSET.path, PORTRAIT.path],
+            expect.objectContaining({ format: "avif" }),
+        );
+        expect(screen.getAllByRole("button", { name: "Quality lost in this format" })).toHaveLength(2);
+    });
+
+    it("is not asked again as a prefix is typed", async () => {
+        pick(HOLIDAY, SUNSET);
+        await mountNamed();
+        await waitFor(() => expect(notice()).not.toBeNull());
+        const asked = predicted.mock.calls.length;
+
+        fireEvent.change(screen.getByRole("textbox", { name: "Prefix" }), { target: { value: "new-" } });
+
+        expect(predicted).toHaveBeenCalledTimes(asked);
+    });
+
+    it("is not shown when nothing will be lost", async () => {
+        pick(HOLIDAY, PORTRAIT);
+        await mountNamed();
+        await waitFor(() => expect(predicted).toHaveBeenCalled());
+
+        expect(notice()).toBeNull();
+        expect(screen.queryByRole("button", { name: "Quality lost in this format" })).not.toBeInTheDocument();
+    });
+
+    it("does not block Save", async () => {
+        pick(SUNSET);
+        await mountNamed();
+        await waitFor(() => expect(notice()).not.toBeNull());
+
+        expect(button("Save")).toBeEnabled();
+    });
+
+    it("is hidden once the batch runs", async () => {
+        pick(SUNSET);
+        await mountNamed();
+        await waitFor(() => expect(notice()).not.toBeNull());
+
+        act(() => batch().start());
+
+        expect(notice()).toBeNull();
     });
 });
