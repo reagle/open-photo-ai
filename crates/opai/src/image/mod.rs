@@ -48,8 +48,8 @@
 //! [`Picture::derive`] carries them as it carries the profile. TIFF, AVIF, HEIF, BMP, GIF and camera RAW carry none yet.
 //! [`fn@save`] and [`fn@encode`] embed whatever [`Metadata`] they are handed, byte for byte, and warn naming what the
 //! format could not hold; deciding what is true of the file is [`export::write`](fn@crate::export::write)'s, which
-//! rewrites the EXIF, filters the IPTC and withholds the XMP for now. A preview rendition carries none of the three,
-//! through [`without_descriptive`].
+//! rewrites the EXIF and the XMP and filters the IPTC. A preview rendition carries none of the three, through
+//! [`without_descriptive`].
 //!
 //! # What is not here
 //!
