@@ -102,6 +102,7 @@ fn context<'a>(output_type: &'static str, exif: Option<&'a [u8]>, iim: Option<&'
         instance_id: "xmp.iid:NEW".into(),
         exif,
         iim,
+        gain_map: None,
     }
 }
 
@@ -490,4 +491,128 @@ fn a_namespace_declared_above_the_descriptions_stays_while_any_description_uses_
     );
     assert!(text.contains("camera-raw-settings") && text.contains("crs:Version"), "{text}");
     assert!(Xmp::parse(text.as_bytes()).is_ok());
+}
+
+// ── The gain map, written ───────────────────────────────────────────────────────────────────────────────────────
+
+/// [`context`] for a JPEG export that writes a gain map of `length` bytes.
+fn with_gain_map(length: usize) -> Context<'static> {
+    Context { gain_map: Some(length), ..context("image/jpeg", None, None) }
+}
+
+/// An Ultra HDR packet as a Pixel writes one, with a Motion Photo: a directory of the primary (with a length and a
+/// padding), the gain map and the video, items in the attribute form, and the `GCamera` Motion Photo properties.
+const PIXEL: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" xmlns:GCamera="http://ns.google.com/photos/1.0/camera/" xmlns:Container="http://ns.google.com/photos/1.0/container/" xmlns:Item="http://ns.google.com/photos/1.0/container/item/" xmlns:xmp="http://ns.adobe.com/xap/1.0/" hdrgm:Version="1.0" GCamera:MotionPhoto="1" GCamera:MotionPhotoVersion="1" GCamera:MotionPhotoPresentationTimestampUs="968000" xmp:Rating="4">
+ <Container:Directory>
+  <rdf:Seq>
+   <rdf:li rdf:parseType="Resource">
+    <Container:Item Item:Mime="image/jpeg" Item:Semantic="Primary" Item:Length="0" Item:Padding="0"/>
+   </rdf:li>
+   <rdf:li rdf:parseType="Resource">
+    <Container:Item Item:Mime="image/jpeg" Item:Semantic="GainMap" Item:Length="31337"/>
+   </rdf:li>
+   <rdf:li rdf:parseType="Resource">
+    <Container:Item Item:Mime="video/mp4" Item:Semantic="MotionPhoto" Item:Length="2400111" Item:Padding="0"/>
+   </rdf:li>
+  </rdf:Seq>
+ </Container:Directory>
+</rdf:Description></rdf:RDF></x:xmpmeta>"#;
+
+#[test]
+fn a_lightroom_packet_written_with_its_gain_map_keeps_hdrgm_and_still_loses_its_develop_settings() {
+    let (text, xmp) = rewritten(Some(LIGHTROOM), true, &with_gain_map(233_897));
+
+    assert_eq!(xmp.get(ns::HDRGM, "Version").as_deref(), Some("1.0"));
+    assert!(!xmp.has(ns::CRS, "Version") && !text.contains("crs:"), "{text}");
+    // Adobe style has no directory, and none is invented.
+    assert!(!text.contains("Container"), "{text}");
+    assert_prefixes_declared(&text);
+
+    // Without the gain map, as before.
+    let (text, xmp) = rewritten(Some(LIGHTROOM), true, &context("image/jpeg", None, None));
+    assert!(!xmp.has(ns::HDRGM, "Version") && !text.contains("hdr-gain-map"), "{text}");
+}
+
+#[test]
+fn a_pixel_directory_keeps_the_primary_and_the_gain_map_with_its_new_length_and_drops_the_video() {
+    let (text, xmp) = rewritten(Some(PIXEL), true, &with_gain_map(4242));
+
+    assert_eq!(xmp.get(ns::HDRGM, "Version").as_deref(), Some("1.0"));
+    assert!(text.contains(r#"Item:Semantic="GainMap" Item:Length="4242""#), "{text}");
+    assert!(text.contains(r#"Item:Semantic="Primary""#), "{text}");
+    for gone in ["31337", "MotionPhoto", "video/mp4", "Item:Padding", r#"Item:Length="0""#, "GCamera"] {
+        assert!(!text.contains(gone), "{gone}: {text}");
+    }
+    assert_eq!(xmp.get(ns::XMP, "Rating").as_deref(), Some("4"), "the rest is kept");
+    assert_eq!(text.matches("<Container:Item").count(), 2, "{text}");
+    assert_prefixes_declared(&text);
+
+    // Without the gain map, the whole description of it goes.
+    let (text, _) = rewritten(Some(PIXEL), true, &context("image/jpeg", None, None));
+    for gone in ["hdrgm", "Container", "Item:", "MotionPhoto\""] {
+        assert!(!text.contains(gone), "{gone}: {text}");
+    }
+}
+
+#[test]
+fn item_fields_in_the_element_form_and_inside_a_description_are_edited_alike() {
+    let element_form = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:Container="http://ns.google.com/photos/1.0/container/" xmlns:Item="http://ns.google.com/photos/1.0/container/item/"><Container:Directory><rdf:Seq><rdf:li rdf:parseType="Resource"><Container:Item rdf:parseType="Resource"><Item:Semantic>Primary</Item:Semantic><Item:Padding>8</Item:Padding></Container:Item></rdf:li><rdf:li><rdf:Description><Container:Item><rdf:Description Item:Semantic="GainMap" Item:Mime="image/jpeg"/></Container:Item></rdf:Description></rdf:li></rdf:Seq></Container:Directory></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+
+    let (text, _) = rewritten(Some(element_form), true, &with_gain_map(77));
+
+    // The gain map had no length: it gains one in the form its semantic is written in.
+    assert!(text.contains(r#"Item:Semantic="GainMap" Item:Mime="image/jpeg" Item:Length="77""#), "{text}");
+    assert!(
+        text.contains("<Item:Semantic>Primary</Item:Semantic>") && !text.contains("Item:Padding"),
+        "{text}"
+    );
+    assert_prefixes_declared(&text);
+
+    // And an element-form length is replaced where it is.
+    let with_length = element_form.replace("<Item:Padding>8</Item:Padding>", "<Item:Length>9</Item:Length>").replace(
+        r#"<rdf:Description Item:Semantic="GainMap" Item:Mime="image/jpeg"/>"#,
+        "<rdf:Description><Item:Semantic>GainMap</Item:Semantic><Item:Length>1</Item:Length></rdf:Description>",
+    );
+    let (text, _) = rewritten(Some(&with_length), true, &with_gain_map(78));
+    assert!(text.contains("<Item:Length>78</Item:Length>") && !text.contains("<Item:Length>9<"), "{text}");
+}
+
+#[test]
+fn a_directory_without_a_gain_map_item_is_dropped_whole() {
+    let packet = PIXEL.replace(r#"Item:Semantic="GainMap""#, r#"Item:Semantic="Depth""#);
+
+    let (text, xmp) = rewritten(Some(&packet), true, &with_gain_map(10));
+
+    assert!(!text.contains("Container") && !text.contains("Item:"), "{text}");
+    assert_eq!(xmp.get(ns::HDRGM, "Version").as_deref(), Some("1.0"));
+}
+
+#[test]
+fn a_lightroom_size_packet_written_with_its_gain_map_stays_one_standard_segment() {
+    // Lightroom's packets are mostly develop settings; the hawk's is 17,048 bytes. One padded to 120 kB with them still
+    // fits one `APP1` once they are dropped, so `hdrgm:Version` is never moved into extended XMP, where Android does
+    // not look.
+    let padding: String = (0..3000).map(|n| format!("\n   crs:Setting{n}=\"{n:020}\"")).collect();
+    let large = LIGHTROOM.replace(r#"crs:Version="18.7""#, &format!(r#"crs:Version="18.7"{padding}"#));
+    assert!(large.len() > 120_000);
+
+    let (text, xmp) = rewritten(Some(&large), true, &with_gain_map(233_897));
+
+    assert!(text.len() < 65_502, "{} bytes", text.len());
+    assert_eq!(xmp.get(ns::HDRGM, "Version").as_deref(), Some("1.0"));
+}
+
+#[test]
+fn a_gain_map_declared_on_rdf_rdf_keeps_its_declaration_only_while_written() {
+    let packet = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/"><rdf:Description rdf:about="" hdrgm:Version="1.0"/></rdf:RDF></x:xmpmeta>"#;
+
+    // Written: `hdrgm:Version` and its declaration on `rdf:RDF` both stay.
+    let (text, xmp) = rewritten(Some(packet), true, &with_gain_map(4242));
+    assert_eq!(xmp.get(ns::HDRGM, "Version").as_deref(), Some("1.0"));
+    assert!(text.contains(r#"xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/""#), "{text}");
+    assert_prefixes_declared(&text);
+
+    // Not written: neither does, so the SDR export is not read as carrying a gain map.
+    let (text, _) = rewritten(Some(packet), true, &context("image/jpeg", None, None));
+    assert!(!text.contains("hdr-gain-map") && !text.contains("hdrgm"), "{text}");
 }

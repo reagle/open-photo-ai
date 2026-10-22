@@ -8,9 +8,12 @@
 //!   no thumbnail — **without moving the bytes it keeps**, so a camera's MakerNote stays valid.
 //! - **IPTC** is filtered by [`iptc`] to the IPTC-IIM resource and its digest.
 //! - **XMP** is rewritten by [`xmp`] — a new identity derived from the source's, the history extended, the dates and
-//!   the EXIF mirrors made current, Camera Raw and gain-map properties dropped — and, for a PNG or WebP export, given
-//!   the IPTC Core values those formats cannot hold as IIM.
+//!   the EXIF mirrors made current, Camera Raw properties dropped, and gain-map properties dropped unless the gain map is
+//!   written, in which case they are made true of it — and, for a PNG or WebP export, given the IPTC Core values those
+//!   formats cannot hold as IIM.
 //! - The **ICC profile** is passed on as it is.
+//! - The **ISO 21496-1 version marker** is kept only when the gain map is written; the gain-map image itself is
+//!   [`export::write`](fn@super::write)'s to add.
 
 pub(crate) mod exif;
 pub(crate) mod iptc;
@@ -21,12 +24,18 @@ use rust_sak::image::{ImageFormat, MAX_JPEG_EXIF_LEN, Metadata};
 
 use crate::image::Picture;
 
-/// The metadata to embed when `picture` is exported as `format` at `now`, the export's local time.
+/// The metadata to embed when `picture` is exported as `format` at `now`, the export's local time, followed by a
+/// gain-map JPEG of `gain_map` bytes if one is written.
 ///
 /// Never fails: a block that cannot be rewritten so as to be true is left out, with a warning naming the source.
-pub(crate) fn for_export(picture: &Picture, format: ImageFormat, now: DateTime<FixedOffset>) -> Metadata {
+pub(crate) fn for_export(
+    picture: &Picture,
+    format: ImageFormat,
+    now: DateTime<FixedOffset>,
+    gain_map: Option<usize>,
+) -> Metadata {
     let ids = (format!("xmp.did:{}", uuid::Uuid::new_v4()), format!("xmp.iid:{}", uuid::Uuid::new_v4()));
-    for_export_with(picture, format, now, ids)
+    for_export_with(picture, format, now, ids, gain_map)
 }
 
 /// [`for_export`] with the new XMP document and instance IDs given, so a test can name them.
@@ -35,6 +44,7 @@ pub(crate) fn for_export_with(
     format: ImageFormat,
     now: DateTime<FixedOffset>,
     (document_id, instance_id): (String, String),
+    gain_map: Option<usize>,
 ) -> Metadata {
     let carried = picture.metadata();
     let (width, height) = picture.dimensions();
@@ -64,6 +74,7 @@ pub(crate) fn for_export_with(
         instance_id,
         exif: carried.exif.as_deref(),
         iim: iim.as_ref(),
+        gain_map,
     };
     let described = carried.exif.is_some() || carried.iptc.is_some();
 
@@ -71,6 +82,9 @@ pub(crate) fn for_export_with(
     written.exif = carried.exif.as_deref().and_then(|block| exif::rewrite(block, &exif_context));
     written.iptc = carried.iptc.as_deref().and_then(|block| iptc::filter(block, picture.path()));
     written.xmp = xmp::rewrite(carried.xmp.as_deref(), described, &xmp_context);
+    if gain_map.is_some() {
+        written.iso_gain_map.clone_from(&carried.iso_gain_map);
+    }
     written
 }
 
@@ -110,7 +124,7 @@ mod tests {
         let picture = Picture::new("/pictures/described.jpg", pixels, "0123456789abcdef").with_metadata(described());
         let now = DateTime::parse_from_rfc3339("2026-10-22T09:30:00-04:00").expect("a time");
 
-        let written = for_export(&picture, ImageFormat::Jpeg, now);
+        let written = for_export(&picture, ImageFormat::Jpeg, now, None);
 
         let exif = written.exif.as_deref().expect("EXIF");
         assert_eq!(

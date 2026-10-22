@@ -327,7 +327,8 @@ mod tests {
     use super::*;
 
     fn hdr() -> Loss {
-        Loss::Hdr { hdr: opai::image::Hdr::GainMap, format: opai::ImageFormat::Jpeg }
+        let cause = opai::export::HdrCause::NotCarried;
+        Loss::Hdr { hdr: opai::image::Hdr::GainMap, format: opai::ImageFormat::Jpeg, cause }
     }
 
     fn depth() -> Loss {
@@ -338,7 +339,7 @@ mod tests {
     #[test]
     fn a_loss_line_names_the_input_and_each_loss_yellow_only_with_color() {
         let path = Path::new("photos/hawk.jpg");
-        let text = "⚠️ photos/hawk.jpg: HDR gain map dropped: JPEG output is SDR only for now; 16-bit → 8-bit in JPEG";
+        let text = "⚠️ photos/hawk.jpg: HDR gain map dropped: it could not be carried; 16-bit → 8-bit in JPEG";
 
         assert_eq!(loss_line(path, &[hdr(), depth()], false), text);
         let (r, g, b) = YELLOW;

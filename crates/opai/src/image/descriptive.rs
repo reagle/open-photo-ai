@@ -5,8 +5,11 @@ use std::path::Path;
 
 use rust_sak::image::{Embedded, ImageFormat, Metadata};
 
-/// `metadata` without its descriptive blocks — EXIF, XMP and IPTC — and with everything else, the ICC colour profile
-/// among it, kept.
+/// `metadata` without its descriptive blocks — EXIF, XMP and IPTC — nor its gain-map container (the ISO 21496-1 payload
+/// and any gain-map image), and with everything else, the ICC colour profile among it, kept.
+///
+/// The gain-map container goes for the same reason: a rendition written with the source's ISO marker would claim a gain
+/// map it does not carry, and an export puts it back only when it writes the gain map.
 ///
 /// **Why the blocks are withheld.** Written as the source held them, they would put false facts into the file: an
 /// upscale or a crop changes the pixel dimensions they state, the thumbnail they embed shows the uncropped original,
@@ -22,17 +25,22 @@ pub fn without_descriptive(metadata: &Metadata) -> Metadata {
     kept.exif = None;
     kept.xmp = None;
     kept.iptc = None;
+    kept.iso_gain_map = None;
+    kept.gain_map = None;
     kept
 }
 
 /// Records, once, which of the EXIF, XMP and IPTC handed to an encode did not reach the file because `format` has no
-/// place for them (BMP and GIF for all three; TIFF, AVIF and HEIF until the series reaches them; IPTC in PNG and WebP).
+/// place for them (BMP and GIF for all three; TIFF, AVIF and HEIF until the series reaches them; IPTC in PNG and WebP),
+/// and likewise the gain-map container, which only JPEG holds.
 /// A warning rather than a refusal, as for the colour profile, and silent when everything given was written.
 pub(super) fn warn_if_dropped(metadata: &Metadata, embedded: Embedded, format: ImageFormat, path: Option<&Path>) {
     let dropped: Vec<&str> = [
         ("exif", metadata.exif.is_some() && !embedded.exif),
         ("xmp", metadata.xmp.is_some() && !embedded.xmp),
         ("iptc", metadata.iptc.is_some() && !embedded.iptc),
+        ("iso_gain_map", metadata.iso_gain_map.is_some() && !embedded.iso_gain_map),
+        ("gain_map", metadata.gain_map.is_some() && !embedded.gain_map),
     ]
     .into_iter()
     .filter_map(|(name, dropped)| dropped.then_some(name))
@@ -52,13 +60,17 @@ mod tests {
     use crate::image::test_support::{DISPLAY_P3, described};
 
     #[test]
-    fn the_descriptive_blocks_go_and_the_colour_profile_stays() {
-        let carried = described();
+    fn the_descriptive_blocks_and_the_gain_map_go_and_the_colour_profile_stays() {
+        let mut carried = described();
+        carried.iso_gain_map = Some(vec![0; 4]);
+        carried.gain_map = Some(b"a gain-map JPEG".to_vec());
         assert!(carried.exif.is_some() && carried.xmp.is_some() && carried.iptc.is_some());
 
         let kept = without_descriptive(&carried);
 
         assert_eq!((kept.exif, kept.xmp, kept.iptc), (None, None, None));
+        // A preview rendition never claims a gain map it does not carry.
+        assert_eq!((kept.iso_gain_map, kept.gain_map), (None, None));
         assert_eq!(kept.icc_profile.as_deref(), Some(DISPLAY_P3));
     }
 

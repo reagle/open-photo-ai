@@ -138,18 +138,90 @@ pub(crate) fn with_app2(jpeg: &[u8], data: &[u8]) -> Vec<u8> {
     out
 }
 
-/// An Ultra HDR / ISO 21496-1 JPEG as a phone writes its primary image: [`DISPLAY_P3`], XMP declaring the `hdrgm`
-/// namespace, and the ISO 21496-1 version marker. The gain map image itself is not appended: nothing reads past the
-/// primary image's first scan.
-pub(crate) fn written_ultra_hdr() -> Vec<u8> {
-    let mut metadata = display_p3();
-    metadata.xmp = Some(
-        br#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" hdrgm:Version="1.0"/></rdf:RDF></x:xmpmeta>"#
-            .to_vec(),
-    );
+/// The primary XMP of a Lightroom Ultra HDR export: `hdrgm:Version` only, Adobe style, with no `Container:Directory`.
+pub(crate) const ULTRA_HDR_XMP: &[u8] = br#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" hdrgm:Version="1.0"/></rdf:RDF></x:xmpmeta>"#;
+
+/// A primary image's ISO 21496-1 payload: minimum and writer version, both 0.
+pub(crate) const ISO_VERSION: &[u8] = &[0, 0, 0, 0];
+
+/// The gain-map image's XMP packet of `18-1603-hawk-bird-mt_auburn-cemetery.jpg`, Joseph's Lightroom Ultra HDR export
+/// the gain-map work was written for (`exiftool -b -MPImage2`, then its `APP1` cut out): the `hdrgm` description with
+/// per-channel `GainMapMin`, `GainMapMax` and `Gamma` as `rdf:Seq`s.
+pub(crate) const HAWK_GAIN_MAP_XMP: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/hawk-gain-map.xmp"));
+
+/// The same gain-map image's 141-byte ISO 21496-1 metadata, its `APP2` after the URN.
+pub(crate) const HAWK_GAIN_MAP_ISO: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/hawk-gain-map.iso"));
+
+/// A gain-map JPEG of `size` with `channels` (1 or 3) as Lightroom writes one: the hawk's own gain-map XMP and ISO
+/// payload, no ICC, no EXIF. Its pixels are a smooth ramp, brighter to the right and, in the first channel, downward, so
+/// a test can tell which part of the scene a crop kept.
+pub(crate) fn gain_map_jpeg(size: (u32, u32), channels: u8) -> Vec<u8> {
+    let (width, height) = size;
+    let ramp = |x: u32, y: u32| ((x * 200 / width.max(1)) + 20, (y * 200 / height.max(1)) + 20);
+    let pixels = if channels == 1 {
+        DynamicImage::ImageLuma8(::image::GrayImage::from_fn(width, height, |x, _| image::Luma([ramp(x, 0).0 as u8])))
+    } else {
+        DynamicImage::ImageRgb8(RgbImage::from_fn(width, height, |x, y| {
+            let (across, down) = ramp(x, y);
+            image::Rgb([across as u8, down as u8, 128])
+        }))
+    };
+    let mut metadata = Metadata::default();
+    metadata.xmp = Some(HAWK_GAIN_MAP_XMP.to_vec());
+    metadata.iso_gain_map = Some(HAWK_GAIN_MAP_ISO.to_vec());
+    let options = EncodeOptions::Jpeg { quality: 95 };
     let mut bytes = Vec::new();
-    encode_writer_with(&sample_image(), &mut bytes, ImageFormat::Jpeg, None, &metadata).expect("encodable");
-    with_app2(&bytes, b"urn:iso:std:iso:ts:21496:-1\0\0\0\0\0")
+    encode_writer_with(&pixels, &mut bytes, ImageFormat::Jpeg, Some(options), &metadata).expect("encodable");
+    bytes
+}
+
+/// A picture of `size` like [`sample_image`]'s: a ramp to the right and downward, so a crop's register can be checked
+/// against the gain map's.
+pub(crate) fn ramp_image(size: (u32, u32)) -> DynamicImage {
+    let (width, height) = size;
+    DynamicImage::ImageRgb8(RgbImage::from_fn(width, height, |x, y| {
+        image::Rgb([(x * 200 / width.max(1) + 20) as u8, (y * 200 / height.max(1) + 20) as u8, 90])
+    }))
+}
+
+/// An Ultra HDR JPEG shaped like the hawk — a primary of `size` carrying [`DISPLAY_P3`], [`ULTRA_HDR_XMP`] and the ISO
+/// 21496-1 version marker, then an MPF gain map of `gain_map` size with `channels` — assembled by `rust-sak`.
+pub(crate) fn written_ultra_hdr_of(size: (u32, u32), gain_map: (u32, u32), channels: u8) -> Vec<u8> {
+    written_ultra_hdr_with(size, gain_map, channels, None)
+}
+
+/// [`written_ultra_hdr_of`] as a phone held on its side writes one: the frame and its gain map stored at `size` and
+/// `gain_map`, and [`EXIF`] recording Orientation 6, so both decode turned a quarter clockwise.
+pub(crate) fn written_turned_ultra_hdr_of(size: (u32, u32), gain_map: (u32, u32)) -> Vec<u8> {
+    written_ultra_hdr_with(size, gain_map, 3, Some(EXIF))
+}
+
+fn written_ultra_hdr_with(size: (u32, u32), gain_map: (u32, u32), channels: u8, exif: Option<&[u8]>) -> Vec<u8> {
+    let mut metadata = display_p3();
+    metadata.exif = exif.map(<[u8]>::to_vec);
+    metadata.xmp = Some(ULTRA_HDR_XMP.to_vec());
+    metadata.iso_gain_map = Some(ISO_VERSION.to_vec());
+    metadata.gain_map = Some(gain_map_jpeg(gain_map, channels));
+    let mut bytes = Vec::new();
+    let embedded =
+        encode_writer_with(&ramp_image(size), &mut bytes, ImageFormat::Jpeg, None, &metadata).expect("encodable");
+    assert!(embedded.gain_map && embedded.iso_gain_map && embedded.xmp);
+    bytes
+}
+
+/// The hawk in miniature: an Ultra HDR JPEG of [`FIXTURE_SIZE`] with a full-resolution, three-channel gain map.
+pub(crate) fn written_ultra_hdr() -> Vec<u8> {
+    written_ultra_hdr_of(FIXTURE_SIZE, FIXTURE_SIZE, 3)
+}
+
+/// [`written_ultra_hdr`] cut short inside its gain map: the primary is whole and still declares HDR, and the gain map
+/// cannot be read.
+pub(crate) fn truncated_ultra_hdr() -> Vec<u8> {
+    let mut bytes = written_ultra_hdr();
+    bytes.truncate(bytes.len() - 40);
+    bytes
 }
 
 /// A minimal big-endian EXIF block: `Make` = `Cam` and `Orientation` = 6 (rotate 90° clockwise to view) in IFD0.
