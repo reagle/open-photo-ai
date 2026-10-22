@@ -17,6 +17,7 @@ mod enhance;
 mod export;
 mod faces;
 mod frontend;
+mod gui_settings;
 mod images;
 mod links;
 mod logs;
@@ -143,6 +144,7 @@ pub fn run(prepared: Result<(), opai::InitError>) {
             version,
             telemetry_ids,
             analytics::set_analytics,
+            gui_settings::set_gui_settings,
             frontend::log,
             setup::initialize,
             setup::quit,
