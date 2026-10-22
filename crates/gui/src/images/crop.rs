@@ -194,6 +194,11 @@ const DISCRIMINATOR: &str = "crop";
 /// A framing that changes nothing — no flip, no turn, and a rectangle covering the whole picture — answers
 /// the source, identity and all. Otherwise the result is named by [`identity_of`], and its path is the
 /// source's own.
+///
+/// An HDR photograph's gain map is framed the same way at its own resolution — the same flips and turn, and the
+/// rectangle [`Crop::scaled`] to it — so it goes on covering exactly what the framed pixels cover. Rounding the
+/// rectangle to the gain map's pixels can leave it up to one of them off, which a viewer absorbs when it resamples the
+/// gain map to the photograph.
 pub(crate) fn cropped(picture: &Picture, crop: Crop) -> Picture {
     // Blocking, because its one caller already runs it on a blocking thread: `enhance` and `faces` both reach this
     // through [`load_framed`], which hands it to a `spawn_blocking`.
@@ -215,7 +220,15 @@ pub(crate) fn cropped(picture: &Picture, crop: Crop) -> Picture {
         //
         // The path is the source's own: these pixels came from that file, and `Picture`'s path is documented as
         // where the pixels came from rather than where anything is going.
-        Cow::Owned(framed) => picture.derive(framed, identity_of(picture.identity(), crop)),
+        Cow::Owned(framed) => {
+            let derived = picture.derive(framed, identity_of(picture.identity(), crop));
+            // `opai::GainMap::reframed` brings the turn's alpha back to the gain map's own colour type; the framing
+            // itself is this file's, so it is handed in rather than restated there.
+            let gain_map = picture
+                .gain_map()
+                .map(|gain_map| gain_map.reframed(|pixels, scale| frame(pixels, crop.scaled(scale)).into_owned()));
+            derived.with_gain_map(gain_map)
+        }
     }
 }
 
@@ -500,6 +513,128 @@ mod tests {
         assert_eq!(cropped.metadata().icc_profile.as_deref(), Some(crate::test_support::DISPLAY_P3));
         assert_eq!(cropped.metadata(), source.metadata(), "the EXIF, XMP or IPTC was lost");
         assert!(Arc::ptr_eq(&cropped.shared_metadata(), &source.shared_metadata()), "the profile was copied");
+    }
+
+    /// An Ultra HDR photograph of `size` with a three-channel gain map of `gain_map` size, both carrying the same
+    /// smooth ramp — red across, green down — so each gain-map pixel can be checked against the photograph's pixel at
+    /// the same place in the scene. Loaded through `opai`, as the GUI opens one.
+    fn ultra_hdr(size: (u32, u32), gain_map: (u32, u32)) -> Picture {
+        let ramp = |(width, height): (u32, u32)| {
+            DynamicImage::ImageRgb8(RgbImage::from_fn(width, height, |x, y| {
+                Rgb([(20 + x * 200 / width) as u8, (20 + y * 200 / height) as u8, 90])
+            }))
+        };
+        let quality = Some(rust_sak::image::EncodeOptions::Jpeg { quality: 98 });
+        // A gain-map image describes itself, here with an ISO 21496-1 payload; one that does not is refused at load.
+        let mut own = rust_sak::image::Metadata::default();
+        own.iso_gain_map = Some(vec![0; 4]);
+        let mut map = Vec::new();
+        rust_sak::image::encode_writer_with(
+            &ramp(gain_map),
+            &mut map,
+            rust_sak::image::ImageFormat::Jpeg,
+            quality,
+            &own,
+        )
+        .expect("encodable");
+        let mut metadata = rust_sak::image::Metadata::default();
+        metadata.iso_gain_map = Some(vec![0; 4]);
+        metadata.gain_map = Some(map);
+        let mut bytes = Vec::new();
+        rust_sak::image::encode_writer_with(
+            &ramp(size),
+            &mut bytes,
+            rust_sak::image::ImageFormat::Jpeg,
+            quality,
+            &metadata,
+        )
+        .expect("encodable");
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let path = dir.path().join("hdr.jpg");
+        std::fs::write(&path, bytes).expect("written");
+        let picture = opai::image::load_blocking(&path).expect("decodable");
+        assert!(picture.gain_map().is_some(), "the fixture's gain map was not read");
+        picture
+    }
+
+    /// Asserts that every gain-map pixel of `framed` well inside the picture (clear of the corners a turn exposes) shows
+    /// the part of the scene its photograph shows there, within one gain-map pixel of the ramp.
+    fn assert_in_register(framed: &Picture, inset: f64) {
+        let map = framed.gain_map().expect("the gain map was kept").pixels().to_rgb8();
+        let base = framed.pixels().to_rgb8();
+        let (sx, sy) = (
+            f64::from(base.width()) / f64::from(map.width()),
+            f64::from(base.height()) / f64::from(map.height()),
+        );
+        let margin = |side: u32| (f64::from(side) * inset).ceil() as u32;
+        for gy in margin(map.height())..map.height() - margin(map.height()) {
+            for gx in margin(map.width())..map.width() - margin(map.width()) {
+                let bx = (((f64::from(gx) + 0.5) * sx) as u32).min(base.width() - 1);
+                let by = (((f64::from(gy) + 0.5) * sy) as u32).min(base.height() - 1);
+                let (b, g) = (base.get_pixel(bx, by).0, map.get_pixel(gx, gy).0);
+                // One gain-map pixel of the steeper ramp is 200 / its side; JPEG at 98 adds a few levels.
+                let tolerance = 200.0 / f64::from(map.width().min(map.height())) + 6.0;
+                for channel in 0..2 {
+                    let off = (f64::from(b[channel]) - f64::from(g[channel])).abs();
+                    assert!(off <= tolerance, "gain map ({gx}, {gy}) vs photograph ({bx}, {by}): {b:?} / {g:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_cut_keeps_the_gain_map_in_register_at_its_own_resolution() {
+        for gain_map in [(64, 48), (16, 12)] {
+            let source = ultra_hdr((64, 48), gain_map);
+            let framed = cropped(&source, Crop::new(8, 4, 40, 32, 0, false, false).expect("legal"));
+
+            let map = framed.gain_map().expect("kept").pixels();
+            let scale = f64::from(gain_map.0) / 64.0;
+            let expected = ((40.0 * scale).round() as u32, (32.0 * scale).round() as u32);
+            assert_eq!((map.width(), map.height()), expected, "{gain_map:?}");
+            assert_eq!(map.color(), image::ColorType::Rgb8);
+            assert_in_register(&framed, 0.0);
+        }
+    }
+
+    #[test]
+    fn both_flips_and_a_turn_frame_the_gain_map_the_same_way() {
+        for gain_map in [(64, 48), (16, 12)] {
+            let source = ultra_hdr((64, 48), gain_map);
+            for crop in [
+                Crop::new(0, 0, 32, 48, 0, true, false),
+                Crop::new(8, 8, 40, 30, 0, true, true),
+                Crop::new(6, 6, 50, 36, 5_000, true, false),
+                Crop::new(4, 4, 40, 30, -12_500, false, true),
+            ] {
+                let crop = crop.expect("legal");
+                let framed = cropped(&source, crop);
+
+                // A turn's alpha is not kept in the gain map.
+                assert_eq!(framed.gain_map().expect("kept").pixels().color(), image::ColorType::Rgb8);
+                // Clear of the corners a turn exposes, whose gain does not matter.
+                let inset = if crop.rotation_degrees() == 0.0 { 0.0 } else { 0.2 };
+                assert_in_register(&framed, inset);
+            }
+        }
+    }
+
+    #[test]
+    fn a_framing_that_changes_nothing_keeps_the_gain_map_shared() {
+        let source = ultra_hdr((32, 24), (8, 6));
+
+        let framed = cropped(&source, whole());
+
+        assert!(Arc::ptr_eq(
+            &framed.shared_gain_map().expect("kept"),
+            &source.shared_gain_map().expect("carried")
+        ));
+        // And a photograph without one gains none.
+        assert!(
+            cropped(&picture_of(8, 8), Crop::new(1, 1, 4, 4, 0, false, false).expect("legal"))
+                .gain_map()
+                .is_none()
+        );
     }
 
     /// A picture whose every pixel is distinguishable from every other, so a flip, a turn or a cut that

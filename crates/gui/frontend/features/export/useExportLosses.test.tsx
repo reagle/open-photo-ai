@@ -12,7 +12,7 @@ const asked = exportLosses as unknown as Mock;
 const pending: ((losses: ExportLosses[]) => void)[] = [];
 
 const QUEUE = ["/photos/hawk.jpg", "/photos/beach.jpg"];
-const HDR: Loss = { kind: "hdr", hdr: "gainMap", format: "JPEG" };
+const HDR: Loss = { kind: "hdr", hdr: "gainMap", format: "PNG", cause: "format" };
 
 beforeEach(() => {
     pending.length = 0;
