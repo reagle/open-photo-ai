@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Preview } from "@/features/preview/Preview";
 import "@/i18n";
+import { isMacOs } from "@/ipc/os";
 import { ZOOM_BUTTON_STEP, ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
 import { track } from "@/lib/faro";
 import { useDrawerStore } from "@/stores/drawer";
@@ -655,6 +656,22 @@ describe("the zoom control", () => {
             x: -120,
             y: -40,
         });
+    });
+
+    it("states the keyboard shortcuts with Command on macOS", () => {
+        vi.mocked(isMacOs).mockReturnValue(true);
+        renderEmpty();
+
+        expect(zoomIn()).toHaveAttribute("aria-keyshortcuts", "Meta+=");
+        expect(zoomOut()).toHaveAttribute("aria-keyshortcuts", "Meta+-");
+    });
+
+    it("states the keyboard shortcuts with Control on Windows and Linux", () => {
+        vi.mocked(isMacOs).mockReturnValue(false);
+        renderEmpty();
+
+        expect(zoomIn()).toHaveAttribute("aria-keyshortcuts", "Control+=");
+        expect(zoomOut()).toHaveAttribute("aria-keyshortcuts", "Control+-");
     });
 
     it("stays unavailable while no image is open", () => {

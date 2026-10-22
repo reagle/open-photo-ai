@@ -10,6 +10,7 @@ import { DRAWER_HEIGHT, ZOOM_WHEEL_STEP } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useDrawerStore } from "@/stores/drawer";
+import { usePeekStore } from "@/stores/peek";
 import { usePreviewStore } from "@/stores/preview";
 import { clampScale, type ImageTransform, useImageTransform, useTransformStore } from "@/stores/transform";
 import { constrain, constrainPosition, fitInside, imageFraction, type Size } from "./geometry";
@@ -480,6 +481,8 @@ const DIVIDER_STEP = 2;
  *   *Original*.
  * - The right-hand chip turns to *Enhanced* exactly when the pane stops drawing the source. A previous
  *   result is held while a new run works, so the chip doesn't flicker back.
+ * - While the show-original key is held (`stores/peek.ts`), the enhanced pane draws the source and its
+ *   chip reads *Original*, as if there were no result.
  * - The URL carries no size bound; the canvas asks for the photograph at its own size.
  * - Both panes share one transform, so zooming or panning either moves both.
  * - It draws the settled image rather than the current one (`hooks/useSettledFile.ts`).
@@ -507,7 +510,16 @@ export const PreviewImage = () => {
      * canvas keys off: a run started for a photograph that is not drawn yet would land a result on
      * the one still on screen.
      */
-    const { enhanced, report, running, fraction } = useEnhancementRun(file, crop);
+    const { enhanced: result, report, running, fraction } = useEnhancementRun(file, crop);
+
+    /*
+     * While the show-original key is held the result is set aside for this render, and everything
+     * below - the URL, the dimensions, the chip - reads as it does before a result has landed: the
+     * enhanced pane draws the source and calls it the original, in all three comparisons. Nothing
+     * else is touched, so the transform, the divider and a running enhancement carry on underneath.
+     */
+    const showingOriginal = usePeekStore((state) => state.showingOriginal);
+    const enhanced = showingOriginal ? undefined : result;
 
     /*
      * One URL for both panes and for all three modes, so switching modes re-points an `<img>` rather
