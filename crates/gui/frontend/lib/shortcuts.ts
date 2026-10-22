@@ -227,3 +227,236 @@ export const ariaKeyShortcuts = (bindings: readonly string[], mac: boolean): str
             ),
         )
         .join(" ");
+
+/** The bindings each action has, as the user stored them: only the actions they changed. */
+export type StoredShortcuts = Partial<Record<ShortcutAction, string[]>>;
+
+/** The bindings every action has in force: the user's where they chose, the defaults elsewhere. */
+export type ShortcutTable = Record<ShortcutAction, readonly string[]>;
+
+/** The most bindings one action keeps. Enough for every reference's alternatives, few enough to list. */
+export const MAX_BINDINGS = 4;
+
+/** Why a binding cannot be had: a key the window needs to be operated, or one the system takes. */
+export type Refusal = "navigation" | "system";
+
+const isShortcutAction = (value: string): value is ShortcutAction =>
+    (SHORTCUT_ACTIONS as readonly string[]).includes(value);
+
+/** macOS's own window keys with Command: quit, close, hide and minimise. */
+const MAC_SYSTEM_KEYS = new Set(["q", "w", "h", "m"]);
+
+/**
+ * Why a binding is refused on this platform, or `undefined` when it may be bound.
+ *
+ * `navigation` everywhere: `Escape` and `Tab` with any modifiers, and `Enter` with nothing but Shift -
+ * taking them would leave a keyboard user unable to close a dialog, move the focus or press a button.
+ * `system`: on macOS, Command with `Q`, `W`, `H` or `M`, which quit, close, hide or minimise the
+ * window before the page sees them; elsewhere, `Alt` with `F4`. A string that is not a binding is
+ * not refused here - `parseBinding` is the question for that.
+ */
+export const refusal = (binding: string, mac: boolean): Refusal | undefined => {
+    const parsed = parseBinding(binding);
+    if (!parsed) return undefined;
+
+    const { modifiers, key } = parsed;
+    if (key === "Escape" || key === "Tab") return "navigation";
+    if (key === "Enter" && [...modifiers].every((name) => name === "Shift")) return "navigation";
+
+    const command = modifiers.has("Meta") || (mac && modifiers.has("Mod"));
+    if (mac && command && MAC_SYSTEM_KEYS.has(key)) return "system";
+    if (!mac && key === "F4" && modifiers.has("Alt")) return "system";
+
+    return undefined;
+};
+
+/** Every combination of the four modifiers, as the key event fields that report them. */
+const MODIFIER_STATES: Omit<KeyLike, "key">[] = Array.from({ length: 16 }, (_, bits) => ({
+    ctrlKey: (bits & 1) !== 0,
+    metaKey: (bits & 2) !== 0,
+    altKey: (bits & 4) !== 0,
+    shiftKey: (bits & 8) !== 0,
+}));
+
+/** The `KeyboardEvent.key` a parsed key arrives as. `canonicalKey` maps it back to itself. */
+const eventKey = (key: string) => (key === "Space" ? " " : key);
+
+/**
+ * Whether one key press would match both bindings on this platform - which is what "the same binding"
+ * means, so `Mod+=` and `Meta+=` are one on macOS, and `?` and `Shift+?` are one everywhere.
+ *
+ * Asked of `matches` itself, over every combination of the modifiers, rather than of a normalised
+ * form: a second statement of the matching rules is a second thing to keep in step with the first.
+ */
+export const overlaps = (a: string, b: string, mac: boolean): boolean => {
+    const first = parseBinding(a);
+    const second = parseBinding(b);
+    if (!first || !second || first.key !== second.key) return false;
+
+    const key = eventKey(first.key);
+
+    return MODIFIER_STATES.some((state) => matches({ key, ...state }, a, mac) && matches({ key, ...state }, b, mac));
+};
+
+/** Keys a recorder never offers: the modifiers on their own, and what a dead key or an input method sends. */
+const UNRECORDABLE = new Set([
+    "Control",
+    "Shift",
+    "Alt",
+    "AltGraph",
+    "Meta",
+    "OS",
+    "Hyper",
+    "Super",
+    "Fn",
+    "FnLock",
+    "CapsLock",
+    "NumLock",
+    "ScrollLock",
+    "Dead",
+    "Unidentified",
+    "Process",
+]);
+
+/**
+ * The binding a key press would be recorded as, or `undefined` for one that names no key yet - a
+ * modifier on its own, a dead key, an input method at work.
+ *
+ * Written in `parseBinding`'s grammar, so it is matched by the same rules it will be judged by:
+ * Command on macOS and Control elsewhere become `Mod` and the other platform's modifier is written out
+ * as `Ctrl` or `Meta`; AltGr is never a modifier; Shift is left out for a punctuation key (it is part
+ * of typing `?`), and so is Alt on one with no Command or Control (a German Mac types `\` with
+ * Option); a letter is written lower-case, and `" "` as `Space`.
+ */
+export const bindingFromEvent = (event: KeyLike, mac: boolean): string | undefined => {
+    if (UNRECORDABLE.has(event.key)) return undefined;
+
+    const key = event.key === " " ? "Space" : event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    const altGraph = event.getModifierState?.("AltGraph") === true;
+    const ctrl = event.ctrlKey && !altGraph;
+    const symbol = isSymbol(event.key);
+
+    const modifiers: Modifier[] = [];
+    if (mac ? event.metaKey : ctrl) modifiers.push("Mod");
+    if (mac && ctrl) modifiers.push("Ctrl");
+    if (!mac && event.metaKey) modifiers.push("Meta");
+    if (event.altKey && !altGraph && !(symbol && modifiers.length === 0)) modifiers.push("Alt");
+    if (event.shiftKey && !symbol) modifiers.push("Shift");
+
+    const binding = [...modifiers, key].join("+");
+
+    return parseBinding(binding) ? binding : undefined;
+};
+
+/** The key a binding names, as it was written rather than as it is compared: `+` stays `+`. */
+const writtenKey = (binding: string) =>
+    binding === "+" || binding.endsWith("++") ? "+" : binding.slice(binding.lastIndexOf("+") + 1);
+
+/** The arrows as they are printed on the keys. */
+const ARROWS: Record<string, string> = { ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓" };
+
+/** macOS's modifier glyphs, in the order its menus print them. */
+const MAC_GLYPHS: [Modifier, string][] = [
+    ["Ctrl", "⌃"],
+    ["Alt", "⌥"],
+    ["Shift", "⇧"],
+    ["Mod", "⌘"],
+    ["Meta", "⌘"],
+];
+
+/** The other platforms' modifier names, in the order their menus print them. */
+const PC_NAMES: [Modifier, string][] = [
+    ["Mod", "Ctrl"],
+    ["Ctrl", "Ctrl"],
+    ["Meta", "Meta"],
+    ["Alt", "Alt"],
+    ["Shift", "Shift"],
+];
+
+/**
+ * A binding as the user presses it on this platform: `⌘ =` and `⌥⇧ Z` on macOS, `Ctrl+=` and
+ * `Alt+Shift+Z` elsewhere. `spaceName` is the `Space` key in the user's language. A string that is
+ * not a binding is shown as it is.
+ */
+export const formatBinding = (binding: string, mac: boolean, spaceName: string): string => {
+    const parsed = parseBinding(binding);
+    if (!parsed) return binding;
+
+    const written = writtenKey(binding);
+    const key =
+        parsed.key === "Space"
+            ? spaceName
+            : (ARROWS[written] ?? (written.length === 1 ? written.toUpperCase() : written));
+
+    // A set, because on macOS `Mod` and `Meta` are both Command and one glyph says so.
+    const names = new Set(
+        (mac ? MAC_GLYPHS : PC_NAMES).filter(([name]) => parsed.modifiers.has(name)).map(([, shown]) => shown),
+    );
+
+    if (mac) return names.size === 0 ? key : `${[...names].join("")} ${key}`;
+
+    return [...names, key].join("+");
+};
+
+/**
+ * A stored set of bindings, repaired: what the settings store reads back on start.
+ *
+ * Platform-independent, because the store rehydrates at import, before anything may ask which
+ * platform this is. Anything that is not an object reads as no choices; an action this application
+ * does not offer is dropped, and so is a value that is not a list of strings (that action reads its
+ * defaults). Within a list, a string that is not a binding, one refused on every platform, and an
+ * exact repeat are dropped, and at most {@link MAX_BINDINGS} are kept. A list that had bindings and
+ * loses every one reads as the defaults rather than as none: an empty list is a choice the user made,
+ * and nothing honoured of what they chose is not that choice.
+ */
+export const repairShortcuts = (value: unknown): StoredShortcuts => {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+
+    const repaired: StoredShortcuts = {};
+    for (const [action, list] of Object.entries(value)) {
+        if (!isShortcutAction(action) || !Array.isArray(list)) continue;
+        if (!list.every((binding): binding is string => typeof binding === "string")) continue;
+
+        const kept = [...new Set(list)]
+            .filter((binding) => parseBinding(binding) && !(refusal(binding, true) && refusal(binding, false)))
+            .slice(0, MAX_BINDINGS);
+
+        if (list.length === 0 || kept.length > 0) repaired[action] = kept;
+    }
+
+    return repaired;
+};
+
+/**
+ * The bindings in force on this platform: the only way anything reads them.
+ *
+ * Each action the user changed takes its stored list, minus a binding refused here or one that
+ * overlaps a binding an earlier action already took; every other action takes its defaults, minus one
+ * that overlaps a binding already placed. So the user's choice beats a default, and no key press is
+ * claimed twice - whatever is on disk, and whatever a later version does to the defaults.
+ */
+export const resolveShortcuts = (stored: StoredShortcuts, mac: boolean): ShortcutTable => {
+    const taken: string[] = [];
+    const place = (bindings: readonly string[]) => {
+        const placed = bindings.filter(
+            (binding) =>
+                parseBinding(binding) !== undefined &&
+                refusal(binding, mac) === undefined &&
+                !taken.some((other) => overlaps(other, binding, mac)),
+        );
+        taken.push(...placed);
+
+        return placed;
+    };
+
+    const table = {} as Record<ShortcutAction, readonly string[]>;
+    for (const action of SHORTCUT_ACTIONS) {
+        const own = stored[action];
+        if (own) table[action] = place(own);
+    }
+    for (const action of SHORTCUT_ACTIONS) {
+        if (!stored[action]) table[action] = place(DEFAULT_SHORTCUTS[action]);
+    }
+
+    return table;
+};

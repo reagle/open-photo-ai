@@ -8,6 +8,7 @@ import { track } from "@/lib/faro";
 import { useDrawerStore } from "@/stores/drawer";
 import { useFileStore } from "@/stores/files";
 import { usePreviewStore } from "@/stores/preview";
+import { useSettingsStore } from "@/stores/settings";
 import { useTransformStore } from "@/stores/transform";
 import { HOLIDAY, openFiles, render, resetFileStore, SUNSET, stubStripGeometry } from "@/test/support";
 import { Drawer } from "./Drawer";
@@ -99,6 +100,8 @@ beforeEach(() => {
     resetFileStore();
     useDrawerStore.setState(useDrawerStore.getInitialState(), true);
     usePreviewStore.setState({ previewMode: "side" });
+    localStorage.clear();
+    useSettingsStore.setState(useSettingsStore.getInitialState(), true);
 
     // The strip is windowed, and jsdom lays nothing out: without a measurable scroll element the
     // virtualizer mounts no thumbnails at all, so every case about what the body draws would fail on
@@ -672,6 +675,16 @@ describe("the zoom control", () => {
 
         expect(zoomIn()).toHaveAttribute("aria-keyshortcuts", "Control+=");
         expect(zoomOut()).toHaveAttribute("aria-keyshortcuts", "Control+-");
+    });
+
+    it("states the user's bindings once they are saved", () => {
+        vi.mocked(isMacOs).mockReturnValue(false);
+        useSettingsStore.getState().apply({ shortcuts: { zoomIn: ["Shift+z", "Mod+="], zoomOut: [] } });
+        renderEmpty();
+
+        expect(zoomIn()).toHaveAttribute("aria-keyshortcuts", "Shift+z Control+=");
+        // No binding is no shortcut to state, rather than an empty one.
+        expect(zoomOut()).not.toHaveAttribute("aria-keyshortcuts");
     });
 
     it("stays unavailable while no image is open", () => {

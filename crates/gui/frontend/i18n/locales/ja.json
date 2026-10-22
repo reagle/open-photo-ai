@@ -35,6 +35,10 @@
             "export": {
                 "title": "書き出し",
                 "description": "非可逆形式の品質。値を下げるとファイルが小さくなります。形式が異なると目盛りは比較できません。"
+            },
+            "keyboard": {
+                "title": "キーボード",
+                "description": "拡大、フィット、元画像の表示に使うキー。変更は保存をクリックすると適用されます。"
             }
         },
         "app": {
@@ -109,7 +113,28 @@
             },
             "autopilotLabel": "自動補正: {{name}}"
         },
-        "reset": "既定値に戻す"
+        "reset": "既定値に戻す",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "拡大",
+                "zoomOut": "縮小",
+                "fit": "ウィンドウに合わせる",
+                "showOriginal": "押している間は元画像を表示"
+            },
+            "add": "ショートカットを追加",
+            "addLabel": "{{action}}にショートカットを追加",
+            "recording": "キーを押してください…",
+            "prompt": "{{action}}のキーを押してください。Escapeでキャンセルします。",
+            "none": "ショートカットなし",
+            "remove": "{{binding}}を削除、{{action}}",
+            "refused": {
+                "navigation": "{{binding}}はウィンドウ内の移動用に予約されています。",
+                "system": "{{binding}}はシステムが使用しています。"
+            },
+            "conflict": "{{binding}}はすでに{{action}}で使用されています。",
+            "useHere": "代わりにここで使う",
+            "space": "スペース"
+        }
     },
     "navbar": {
         "about": "このアプリについて",

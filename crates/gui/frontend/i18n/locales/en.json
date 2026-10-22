@@ -35,6 +35,10 @@
             "export": {
                 "title": "Export",
                 "description": "Quality for the lossy formats. Lower values produce smaller files; the scales are not comparable between formats."
+            },
+            "keyboard": {
+                "title": "Keyboard",
+                "description": "The keys that zoom, fit and show the original. Changes apply when you click Save."
             }
         },
         "app": {
@@ -109,7 +113,28 @@
             },
             "autopilotLabel": "Autopilot: {{name}}"
         },
-        "reset": "Reset to defaults"
+        "reset": "Reset to defaults",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Zoom in",
+                "zoomOut": "Zoom out",
+                "fit": "Fit to window",
+                "showOriginal": "Show original while held"
+            },
+            "add": "Add shortcut",
+            "addLabel": "Add shortcut for {{action}}",
+            "recording": "Press keys…",
+            "prompt": "Press the keys for {{action}}, or Escape to cancel.",
+            "none": "No shortcut",
+            "remove": "Remove {{binding}}, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} is kept for moving around the window.",
+                "system": "{{binding}} is used by the system."
+            },
+            "conflict": "{{binding}} is already used by {{action}}.",
+            "useHere": "Use here instead",
+            "space": "Space"
+        }
     },
     "navbar": {
         "about": "About",

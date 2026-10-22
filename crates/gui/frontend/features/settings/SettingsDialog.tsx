@@ -9,6 +9,7 @@ import { type SettingsDraft, SettingsDraftProvider } from "./draft.tsx";
 import { EnhancementsPage } from "./EnhancementsPage.tsx";
 import { ExportPage } from "./ExportPage.tsx";
 import { GeneralPage } from "./GeneralPage.tsx";
+import { isRecording, KeyboardPage } from "./KeyboardPage.tsx";
 import { PerformancePage } from "./PerformancePage.tsx";
 import { SETTINGS_PAGES, type SettingsPageId } from "./pages.ts";
 import { SettingsNav } from "./SettingsNav.tsx";
@@ -24,6 +25,7 @@ const PAGE_BODIES: Record<SettingsPageId, ReactNode> = {
     performance: <PerformancePage />,
     enhancements: <EnhancementsPage />,
     export: <ExportPage />,
+    keyboard: <KeyboardPage />,
 };
 
 /** The given preferences' defaults, and nothing else - what one page's Reset writes. */
@@ -99,7 +101,8 @@ const SettingsSurface = ({ close, draft }: { close: (save: boolean) => void; dra
 };
 
 /**
- * Screens 16, 16b, 16c and 16d: the application's settings, as four pages shown one at a time.
+ * Screens 16, 16b, 16c and 16d, and the Keyboard page after them: the application's settings, as five
+ * pages shown one at a time.
  *
  * **Every preference on it is a draft until Save.** `useSettingsDialog` owns that draft and this
  * hands it to the pages, so this component draws the surface and reports which way the user left it,
@@ -136,6 +139,12 @@ export const SettingsDialog = ({
                     // Escape.
                     onPointerDownOutside={(event) => event.preventDefault()}
                     onInteractOutside={(event) => event.preventDefault()}
+                    // Escape while a binding is being recorded ends the recording, not the dialog.
+                    // Radix listens for it in the capture phase, before the recorder's own handler
+                    // runs, so this is the one place it can be told apart.
+                    onEscapeKeyDown={(event) => {
+                        if (isRecording(event.target)) event.preventDefault();
+                    }}
                     /*
                      * `sm:max-w-none` as well as `max-w-none`: the generated `DialogContent` carries
                      * `sm:max-w-lg`, and `twMerge` does not treat a bare utility and its `sm:` variant as

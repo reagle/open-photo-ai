@@ -35,6 +35,10 @@
             "export": {
                 "title": "Exportación",
                 "description": "Calidad para los formatos con pérdida. Los valores más bajos generan archivos más pequeños; las escalas no son comparables entre formatos."
+            },
+            "keyboard": {
+                "title": "Teclado",
+                "description": "Las teclas para acercar, ajustar y ver el original. Los cambios se aplican al hacer clic en Guardar."
             }
         },
         "app": {
@@ -109,7 +113,28 @@
             },
             "autopilotLabel": "Piloto automático: {{name}}"
         },
-        "reset": "Restablecer valores predeterminados"
+        "reset": "Restablecer valores predeterminados",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Acercar",
+                "zoomOut": "Alejar",
+                "fit": "Ajustar a la ventana",
+                "showOriginal": "Ver el original mientras se mantiene"
+            },
+            "add": "Añadir atajo",
+            "addLabel": "Añadir atajo para {{action}}",
+            "recording": "Pulsa teclas…",
+            "prompt": "Pulsa las teclas para {{action}}, o Escape para cancelar.",
+            "none": "Sin atajo",
+            "remove": "Quitar {{binding}}, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} se reserva para moverse por la ventana.",
+                "system": "{{binding}} lo usa el sistema."
+            },
+            "conflict": "{{binding}} ya lo usa {{action}}.",
+            "useHere": "Usar aquí en su lugar",
+            "space": "Espacio"
+        }
     },
     "navbar": {
         "about": "Acerca de",

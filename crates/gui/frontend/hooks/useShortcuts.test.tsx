@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isMacOs } from "@/ipc/os";
 import { ZOOM_BUTTON_STEP, ZOOM_MIN } from "@/lib/constants";
 import { usePeekStore } from "@/stores/peek";
+import { useSettingsStore } from "@/stores/settings";
 import { FITTED, useTransformStore } from "@/stores/transform";
 import { HOLIDAY, openFiles, resetFileStore } from "@/test/support";
 import { useShortcuts } from "./useShortcuts";
@@ -32,6 +33,8 @@ beforeEach(() => {
     resetFileStore();
     useTransformStore.setState(useTransformStore.getInitialState(), true);
     usePeekStore.setState(usePeekStore.getInitialState(), true);
+    localStorage.clear();
+    useSettingsStore.setState(useSettingsStore.getInitialState(), true);
     openFiles(HOLIDAY);
 });
 
@@ -223,5 +226,58 @@ describe("useShortcuts", () => {
         expect(scale()).toBeUndefined();
         expect(showing()).toBe(false);
         expect(event.defaultPrevented).toBe(false);
+    });
+
+    describe("with the user's bindings", () => {
+        it("acts on a saved rebinding at once, without being mounted again, and drops the default it replaced", () => {
+            renderHook(() => useShortcuts());
+
+            act(() => useSettingsStore.getState().apply({ shortcuts: { zoomIn: ["Shift+z"] } }));
+
+            const old = fire("keydown", { key: "=", code: "Equal", ctrlKey: true });
+            expect(scale()).toBeUndefined();
+            expect(old.defaultPrevented).toBe(false);
+
+            fire("keydown", { key: "Z", code: "KeyZ", shiftKey: true });
+            expect(scale()).toBe(ZOOM_MIN + ZOOM_BUTTON_STEP);
+        });
+
+        it("does nothing for an action bound to no key", () => {
+            renderHook(() => useShortcuts());
+            act(() => useSettingsStore.getState().apply({ shortcuts: { showOriginal: [] } }));
+
+            const space = fire("keydown", SPACE);
+            fire("keydown", BACKSLASH);
+
+            expect(showing()).toBe(false);
+            expect(space.defaultPrevented).toBe(false);
+        });
+
+        it("holds the original on Space once the user binds it, but leaves Space on a focused button to it", () => {
+            renderHook(() => useShortcuts());
+            act(() => useSettingsStore.getState().apply({ shortcuts: { showOriginal: ["Space", "\\"] } }));
+
+            const press = fire("keydown", SPACE);
+            expect(showing()).toBe(true);
+            expect(press.defaultPrevented).toBe(true);
+            fire("keyup", SPACE);
+            expect(showing()).toBe(false);
+
+            const button = document.createElement("button");
+            document.body.append(button);
+            const onButton = fire("keydown", SPACE, button);
+            expect(showing()).toBe(false);
+            expect(onButton.defaultPrevented).toBe(false);
+        });
+
+        it("gives a key the user bound to one action over another action's default", () => {
+            renderHook(() => useShortcuts());
+            act(() => useSettingsStore.getState().apply({ shortcuts: { zoomIn: ["Mod+0"] } }));
+            act(() => useTransformStore.getState().setTransform(HOLIDAY.identity ?? "", { scale: 2, x: 0, y: 0 }));
+
+            fire("keydown", { key: "0", code: "Digit0", ctrlKey: true });
+
+            expect(scale()).toBe(2 + ZOOM_BUTTON_STEP);
+        });
     });
 });

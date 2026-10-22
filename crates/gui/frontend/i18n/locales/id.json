@@ -35,6 +35,10 @@
             "export": {
                 "title": "Ekspor",
                 "description": "Kualitas untuk format lossy. Nilai lebih rendah menghasilkan file lebih kecil; skalanya tidak sebanding antarformat."
+            },
+            "keyboard": {
+                "title": "Papan ketik",
+                "description": "Tombol untuk memperbesar, menyesuaikan, dan menampilkan yang asli. Perubahan berlaku saat Anda mengeklik Simpan."
             }
         },
         "app": {
@@ -109,7 +113,28 @@
             },
             "autopilotLabel": "Autopilot: {{name}}"
         },
-        "reset": "Kembalikan ke bawaan"
+        "reset": "Kembalikan ke bawaan",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Perbesar",
+                "zoomOut": "Perkecil",
+                "fit": "Sesuaikan dengan jendela",
+                "showOriginal": "Tampilkan asli selama ditahan"
+            },
+            "add": "Tambah pintasan",
+            "addLabel": "Tambah pintasan untuk {{action}}",
+            "recording": "Tekan tombol…",
+            "prompt": "Tekan tombol untuk {{action}}, atau Escape untuk membatalkan.",
+            "none": "Tanpa pintasan",
+            "remove": "Hapus {{binding}}, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} dicadangkan untuk berpindah di dalam jendela.",
+                "system": "{{binding}} digunakan oleh sistem."
+            },
+            "conflict": "{{binding}} sudah digunakan oleh {{action}}.",
+            "useHere": "Gunakan di sini saja",
+            "space": "Spasi"
+        }
     },
     "navbar": {
         "about": "Tentang",

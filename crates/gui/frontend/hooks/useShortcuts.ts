@@ -1,7 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { isMacOs } from "@/ipc/os";
-import { actionFor, DEFAULT_SHORTCUTS, isWindowShortcut, type ShortcutAction } from "@/lib/shortcuts";
+import {
+    actionFor,
+    isWindowShortcut,
+    resolveShortcuts,
+    type ShortcutAction,
+    type ShortcutTable,
+} from "@/lib/shortcuts";
 import { usePeekStore } from "@/stores/peek";
+import { useSettingsStore } from "@/stores/settings";
 import { fitCurrent, stepZoom } from "@/stores/transform";
 
 /** What each one-shot action does. `showOriginal` is not one: it lasts for as long as its key is held. */
@@ -43,7 +50,9 @@ export const useShortcuts = () => {
         const onKeyDown = (event: KeyboardEvent) => {
             if (!isWindowShortcut(event)) return;
 
-            const action = actionFor(event, DEFAULT_SHORTCUTS, mac);
+            // Read at each press rather than once, so a Save takes effect at the next key without the
+            // listener being mounted again.
+            const action = actionFor(event, resolveShortcuts(useSettingsStore.getState().shortcuts, mac), mac);
             if (!action) return;
 
             event.preventDefault();
@@ -87,4 +96,14 @@ export const useShortcuts = () => {
             release();
         };
     }, []);
+};
+
+/**
+ * The bindings in force, for a component that names them - the zoom buttons' `aria-keyshortcuts`.
+ * Follows the settings store, so a saved rebinding is what they report.
+ */
+export const useShortcutBindings = (): ShortcutTable => {
+    const stored = useSettingsStore((state) => state.shortcuts);
+
+    return useMemo(() => resolveShortcuts(stored, isMacOs()), [stored]);
 };
