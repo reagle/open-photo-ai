@@ -82,6 +82,39 @@ pub(crate) fn display_p3() -> Metadata {
     metadata
 }
 
+/// An RGB ICC v2 profile that names itself `description`, `len` bytes long (at least its 220 bytes of header, tag
+/// table and `desc` tag, zero-padded beyond): enough for what this crate reads of a profile — its colour space and its
+/// name — and for a profile of any size, since no committed sRGB profile is free to ship.
+pub(crate) fn rgb_profile_named(description: &str, len: usize) -> Vec<u8> {
+    let mut desc = b"desc\0\0\0\0".to_vec();
+    desc.extend(u32::try_from(description.len() + 1).expect("short").to_be_bytes());
+    desc.extend(description.as_bytes());
+    desc.push(0);
+    // No Unicode text, no ScriptCode text.
+    desc.extend([0; 4 + 4 + 2 + 1 + 67]);
+    let offset = 128 + 4 + 12;
+    let mut profile = vec![0; 128];
+    profile[8..12].copy_from_slice(&[2, 0x10, 0, 0]);
+    profile[12..16].copy_from_slice(b"mntr");
+    profile[16..20].copy_from_slice(b"RGB ");
+    profile[20..24].copy_from_slice(b"XYZ ");
+    profile[36..40].copy_from_slice(b"acsp");
+    profile.extend(1u32.to_be_bytes());
+    profile.extend(b"desc");
+    profile.extend(u32::try_from(offset).expect("small").to_be_bytes());
+    profile.extend(u32::try_from(desc.len()).expect("small").to_be_bytes());
+    profile.extend(desc);
+    profile.resize(len.max(profile.len()), 0);
+    let size = u32::try_from(profile.len()).expect("under 4 GB").to_be_bytes();
+    profile[0..4].copy_from_slice(&size);
+    profile
+}
+
+/// The plain sRGB profile most cameras and editors embed, as [`rgb_profile_named`] makes it, `len` bytes long.
+pub(crate) fn srgb_profile(len: usize) -> Vec<u8> {
+    rgb_profile_named("sRGB IEC61966-2.1", len)
+}
+
 /// [`sample_image`] as `format` with [`DISPLAY_P3`] embedded: a wide-gamut photograph as a camera or a phone writes it.
 ///
 /// # Panics
@@ -93,6 +126,30 @@ pub(crate) fn written_p3(format: ImageFormat) -> Vec<u8> {
         .unwrap_or_else(|err| panic!("the P3 {format:?} fixture could not be encoded: {err}"));
     assert!(embedded.icc_profile, "{format:?} did not embed the profile");
     bytes
+}
+
+/// `jpeg` with an `APP2` segment holding `data` inserted straight after `SOI`.
+pub(crate) fn with_app2(jpeg: &[u8], data: &[u8]) -> Vec<u8> {
+    let length = u16::try_from(data.len() + 2).expect("one segment").to_be_bytes();
+    let mut out = jpeg[..2].to_vec();
+    out.extend([0xFF, 0xE2, length[0], length[1]]);
+    out.extend(data);
+    out.extend(&jpeg[2..]);
+    out
+}
+
+/// An Ultra HDR / ISO 21496-1 JPEG as a phone writes its primary image: [`DISPLAY_P3`], XMP declaring the `hdrgm`
+/// namespace, and the ISO 21496-1 version marker. The gain map image itself is not appended: nothing reads past the
+/// primary image's first scan.
+pub(crate) fn written_ultra_hdr() -> Vec<u8> {
+    let mut metadata = display_p3();
+    metadata.xmp = Some(
+        br#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" hdrgm:Version="1.0"/></rdf:RDF></x:xmpmeta>"#
+            .to_vec(),
+    );
+    let mut bytes = Vec::new();
+    encode_writer_with(&sample_image(), &mut bytes, ImageFormat::Jpeg, None, &metadata).expect("encodable");
+    with_app2(&bytes, b"urn:iso:std:iso:ts:21496:-1\0\0\0\0\0")
 }
 
 /// A minimal big-endian EXIF block: `Make` = `Cam` and `Orientation` = 6 (rotate 90° clockwise to view) in IFD0.

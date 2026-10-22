@@ -12,7 +12,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use opai::export::{self, FormatChoice, Naming, WriteOptions};
+use opai::export::{self, FormatChoice, Naming, WriteOptions, Written};
 use opai::{ImageFormat, Picture};
 
 use crate::args::Args;
@@ -172,7 +172,8 @@ pub fn may_overwrite(target: &Target, source: &Path, destination: &Path) -> bool
 }
 
 /// Writes `picture` to `destination` as `format`, at the library's recommended settings for it, and answers the path
-/// written.
+/// written and what the file lost against the picture's source (HDR, bit depth, colour profile), which the library has
+/// already logged.
 ///
 /// Under a directory target, the destination's directory is created first; beside its source, it exists already.
 /// Without `overwrite` a file already there is
@@ -189,12 +190,11 @@ pub async fn write(
     destination: &Path,
     format: ImageFormat,
     overwrite: bool,
-) -> Result<PathBuf, CliError> {
+) -> Result<Written, CliError> {
     let options = WriteOptions { quality: None, overwrite, create_parent: matches!(target, Target::Directory { .. }) };
 
     export::write(picture, destination, format, options)
         .await
-        .map(|written| written.path)
         .map_err(|error| CliError::Write(Box::new(error)))
 }
 
@@ -453,7 +453,7 @@ mod tests {
         std::fs::write(&out, "earlier").expect("written");
         let target = Target::File { path: out.clone(), format: ImageFormat::Png };
 
-        let written = write(&target, &picture(), &out, ImageFormat::Png, false).await.expect("written");
+        let written = write(&target, &picture(), &out, ImageFormat::Png, false).await.expect("written").path;
 
         assert_eq!(written, dir.path().join("out_1.png"));
         assert_eq!(std::fs::read(&out).expect("kept"), b"earlier");
@@ -467,7 +467,7 @@ mod tests {
         std::fs::write(&out, "earlier").expect("written");
         let target = Target::File { path: out.clone(), format: ImageFormat::Png };
 
-        let written = write(&target, &picture(), &out, ImageFormat::Png, true).await.expect("written");
+        let written = write(&target, &picture(), &out, ImageFormat::Png, true).await.expect("written").path;
 
         assert_eq!(written, out);
         assert!(image::probe_blocking(&out).is_ok(), "the file was replaced by an image");
@@ -481,7 +481,7 @@ mod tests {
         let target = directory(&out.display().to_string(), unaffixed(FormatChoice::Preserve));
         let destination = out.join("2024/a.jpg");
 
-        let written = write(&target, &picture(), &destination, ImageFormat::Jpeg, false).await.expect("written");
+        let written = write(&target, &picture(), &destination, ImageFormat::Jpeg, false).await.expect("written").path;
 
         assert_eq!(written, destination);
         assert!(image::probe_blocking(&written).is_ok());
@@ -497,7 +497,7 @@ mod tests {
         let target = beside("", "_opai", FormatChoice::Preserve);
         let (destination, format) = destination(&target, &named(&source.display().to_string()));
 
-        let written = write(&target, &picture(), &destination, format, false).await.expect("written");
+        let written = write(&target, &picture(), &destination, format, false).await.expect("written").path;
 
         assert_eq!(written, dir.path().join("photo_opai_1.jpg"));
         assert_eq!(std::fs::read(&earlier).expect("kept"), b"earlier");
@@ -515,7 +515,7 @@ mod tests {
         let target = beside("", "_opai", FormatChoice::Preserve);
         let (destination, format) = destination(&target, &named(&source.display().to_string()));
 
-        let written = write(&target, &picture(), &destination, format, true).await.expect("written");
+        let written = write(&target, &picture(), &destination, format, true).await.expect("written").path;
 
         assert_eq!(written, earlier);
         assert!(image::probe_blocking(&earlier).is_ok(), "the earlier result was replaced by an image");

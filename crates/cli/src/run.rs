@@ -24,9 +24,13 @@
 //!   claim, save, commit        --> the source's depth, the library's recommended settings; the log's `wrote` record
 //!                                  names what was applied and what the run cache served
 //!   end its row                --> Enhancements applied, Failed or Stopped, and the bar's [n/N] counts it; under
-//!                                  --verbose a written one adds `: <applied>`; off a terminal, its one plain line
-//! finish the view, summarize   --> ✨ naming the file for one image, or for more the output or "beside their
-//!                                  sources" without one, then each failure's 🧨 line where the view hid it
+//!                                  --verbose a written one adds `: <applied>`; off a terminal, its one plain line,
+//!                                  then ⚠️ naming what the result lost against its source (HDR, bit depth, colour
+//!                                  profile), if anything
+//! finish the view, summarize   --> under a live view, each image's ⚠️ line it hid; for several images, the ⚠️ count
+//!                                  of what was lost; then ✨ naming the file for one image, or for more the output
+//!                                  or "beside their sources" without one, then each failure's 🧨 line where the view
+//!                                  hid it
 //! ```
 //!
 //! A Ctrl-C stops the whole batch, keeping what was already written. The notes, the face report, what each image
@@ -149,6 +153,9 @@ pub async fn run(mut args: Args, look: Look) -> Result<(), CliError> {
 
     let mut written = Vec::new();
     let mut failures = Vec::new();
+    // What each written image lost against its source, and the lines a live view hid until it finishes.
+    let mut lossy = Vec::new();
+    let mut hidden = Vec::new();
     // Set only where the stop left an image unwritten or unstarted: a Ctrl-C landing after the last image was written
     // stopped nothing.
     let mut stopped = false;
@@ -191,9 +198,19 @@ pub async fn run(mut args: Args, look: Look) -> Result<(), CliError> {
         drop(span);
 
         match result {
-            Ok((path, applied)) => {
-                view.end_image(index, &source.path, &ImageEnd::Enhanced(args.verbose.then_some(applied)));
-                written.push(path);
+            Ok((result, applied)) => {
+                // Off a terminal the row is printed here and the loss line straight after it; a live view owns stderr
+                // and keeps only a few rows, so the loss line waits for it to finish. Either way the row is untouched.
+                let row = view.end_line(index, &source.path, &ImageEnd::Enhanced(args.verbose.then_some(applied)));
+                let loss =
+                    (!result.losses.is_empty()).then(|| look::loss_line(&source.path, &result.losses, look.color));
+                for line in ended(row, loss, &mut hidden) {
+                    eprintln!("{line}");
+                }
+                if !result.losses.is_empty() {
+                    lossy.push(result.losses);
+                }
+                written.push(result.path);
             }
             Err(CliError::Cancelled) => {
                 view.end_image(index, &source.path, &ImageEnd::Stopped);
@@ -210,6 +227,10 @@ pub async fn run(mut args: Args, look: Look) -> Result<(), CliError> {
     let live = view.finish_batch();
     events::export_finished(sources.len(), written.len(), !stopped, began.elapsed().as_millis());
 
+    for line in hidden.iter().chain(look::loss_count(&lossy, sources.len(), look.color).as_ref()) {
+        eprintln!("{line}");
+    }
+
     for line in summary(&written, args.output.as_deref(), &failures, live, sources.len(), look.color) {
         eprintln!("{line}");
     }
@@ -217,6 +238,18 @@ pub async fn run(mut args: Args, look: Look) -> Result<(), CliError> {
     drop(opai);
 
     closing(stopped, failures, sources.len())
+}
+
+/// What to print as a written image ends: its plain `row` (`None` under a live view, which drew it) and then its `loss`
+/// line. Under a live view the loss line goes to `hidden` instead, to be printed once the view finishes.
+fn ended(row: Option<String>, loss: Option<String>, hidden: &mut Vec<String>) -> Vec<String> {
+    match row {
+        Some(row) => std::iter::once(row).chain(loss).collect(),
+        None => {
+            hidden.extend(loss);
+            Vec::new()
+        }
+    }
 }
 
 /// The lines printed once the batch's view is finished, before the closing line: the success line when anything was
@@ -351,7 +384,7 @@ struct Masks {
 
 /// Enhances `source`, the image at `index`, with the chain `planner` gives for its own size, after removing what
 /// `masks` marks for removal and limited to the limiting mask where there is one, on the processor `args` names, and
-/// writes it, answering the path written and what it received, in words.
+/// writes it, answering what was written and what it lost, and what it received, in words.
 #[allow(
     clippy::too_many_arguments,
     reason = "one run's state, threaded through rather than bundled for one caller"
@@ -366,7 +399,7 @@ async fn enhance_one(
     masks: &Masks,
     view: &View,
     cancel: &CancellationToken,
-) -> Result<(PathBuf, String), CliError> {
+) -> Result<(opai::export::Written, String), CliError> {
     // From the header's size, before the pixels are decoded: a mask that does not fit costs this image nothing.
     for (mask, what) in [(&masks.limit, "mask"), (&masks.remove, "removal mask")] {
         if let Some(mask) = mask {
@@ -422,7 +455,7 @@ async fn enhance_one(
     let applied = applied(&plan, view.cached(index), &verdict);
     tracing::info!(
         "wrote {} ({width}x{height}, {}); {}; applied {applied}",
-        written.display(),
+        written.path.display(),
         format.name(),
         provenance(plan.operations.is_empty(), &verdict)
     );
@@ -639,6 +672,21 @@ const fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_loss_line_follows_its_plain_row_and_waits_for_a_live_view() {
+        let mut hidden = Vec::new();
+
+        let plain = ended(Some("row".into()), Some("⚠️ loss".into()), &mut hidden);
+        assert_eq!(plain, ["row", "⚠️ loss"]);
+        assert_eq!(ended(Some("row".into()), None, &mut hidden), ["row"]);
+        assert!(hidden.is_empty());
+
+        // Live: nothing now, the loss line kept for after the view; the row itself is the view's.
+        assert!(ended(None, Some("⚠️ loss".into()), &mut hidden).is_empty());
+        assert!(ended(None, None, &mut hidden).is_empty());
+        assert_eq!(hidden, ["⚠️ loss"]);
+    }
     use crate::progress::tests::{inference, upscale};
     use clap::ValueEnum;
     use opai::{Confidence, Face, Faces, InferenceError, Point, Rect, Stage};

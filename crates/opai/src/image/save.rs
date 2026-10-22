@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ::image::DynamicImage;
-use rust_sak::image::{EncodeOptions, ImageError, ImageFormat, Metadata, encode_writer_with};
+use rust_sak::image::{Embedded, EncodeOptions, ImageError, ImageFormat, Metadata, encode_writer_with};
 
 use super::error::{self, ImageIoError};
 use crate::task::spawn_blocking;
@@ -30,10 +30,21 @@ pub async fn save(
     format: ImageFormat,
     options: Option<EncodeOptions>,
 ) -> Result<u64, ImageIoError> {
+    Ok(save_embedding(pixels, metadata, destination, format, options).await?.0)
+}
+
+/// [`save`], answering also which of `metadata`'s blocks the file actually holds — what an export reconciles the
+/// losses it predicted with, since an encoder may still leave a block out (a profile too large for the format).
+pub(crate) async fn save_embedding(
+    pixels: Arc<DynamicImage>,
+    metadata: Arc<Metadata>,
+    destination: impl Into<PathBuf>,
+    format: ImageFormat,
+    options: Option<EncodeOptions>,
+) -> Result<(u64, Embedded), ImageIoError> {
     let destination = destination.into();
     // An `Arc` because `spawn_blocking` requires `'static`, and nothing borrowed can cross onto a blocking thread.
-    spawn_blocking::<_, ImageIoError, _>(move || save_blocking(&pixels, &metadata, &destination, format, options))
-        .await?
+    spawn_blocking::<_, ImageIoError, _>(move || save_traced(&pixels, &metadata, &destination, format, options)).await?
 }
 
 /// Writes `pixels` to `destination` as `format`, on the calling thread, and reports the bytes written.
@@ -74,8 +85,17 @@ pub fn save_blocking(
 ) -> Result<u64, ImageIoError> {
     // The reference writes to the image's own path field instead of taking a destination, which forces every call
     // site to build a throwaway image carrying the *output* path and an empty identity.
-    let destination = destination.as_ref();
+    save_traced(pixels, metadata, destination.as_ref(), format, options).map(|(bytes, _)| bytes)
+}
 
+/// [`save_blocking`], answering also what was embedded.
+fn save_traced(
+    pixels: &DynamicImage,
+    metadata: &Metadata,
+    destination: &Path,
+    format: ImageFormat,
+    options: Option<EncodeOptions>,
+) -> Result<(u64, Embedded), ImageIoError> {
     let span = unit_span!("image_save", path = %destination.display(), format = ?format);
     error::traced(Unit::ImageSave, span, || {
         write(pixels, metadata, destination, format, options).inspect_err(error::unwritable(destination, format))
@@ -89,7 +109,7 @@ fn write(
     destination: &Path,
     format: ImageFormat,
     options: Option<EncodeOptions>,
-) -> Result<u64, ImageIoError> {
+) -> Result<(u64, Embedded), ImageIoError> {
     // Before the destination is opened, and deliberately duplicating a check `encode_writer` also makes. It makes the
     // same one too late to matter: it is handed a writer, so by the time it refuses, `File::create` has already
     // truncated whatever was at the destination — and a user re-exporting over a previous export with a mis-paired
@@ -122,7 +142,7 @@ fn write(
     super::profile::warn_if_dropped(metadata, embedded, format, Some(destination));
     super::descriptive::warn_if_dropped(metadata, embedded, format, Some(destination));
 
-    Ok(counted.written)
+    Ok((counted.written, embedded))
 }
 
 /// A sink that counts what passes through it on its way to `inner`.

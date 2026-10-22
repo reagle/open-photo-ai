@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::claim::claim;
+use rust_sak::image::Embedded;
+
+use super::loss::{Loss, losses, reconcile};
 use crate::image::{self, ImageFormat, ImageIoError, Picture, recommended_encode_options};
 use crate::task::{Cancelled, spawn_blocking};
 
@@ -30,6 +33,9 @@ pub struct Written {
     pub path: PathBuf,
     /// How many bytes it wrote.
     pub bytes: u64,
+    /// What the file lost against the picture's source — HDR, bits per channel, the colour profile — in the order
+    /// [`losses`] gives them; empty when nothing was lost. Each was also logged as a warning.
+    pub losses: Vec<Loss>,
 }
 
 /// Why [`write()`] wrote nothing.
@@ -67,6 +73,11 @@ impl From<Cancelled> for WriteError {
 /// kept without moving it — as it was, and of the IPTC block only the IPTC-IIM record and its digest (in a PNG or WebP,
 /// which cannot hold it, its values go into the XMP). A block the format cannot hold is left out with a warning.
 ///
+/// **What the file loses against the picture's source is assessed before it is written** ([`losses`]):
+/// HDR written as SDR, fewer bits per channel, a colour profile not embedded — **and reconciled with what the encoder
+/// reports it embedded**, so a profile it could not write (one too large for the format) is a loss too. Each loss is
+/// logged as a warning and answered on [`Written::losses`]; none of them stops the write.
+///
 /// Without [`overwrite`](WriteOptions::overwrite) a file already there is kept and the result takes the first free
 /// `_1` … `_999` name beside it; with it, the file is replaced once the new one is complete. **A write that does not
 /// finish leaves nothing behind**: the name claimed is given back, and a file being replaced is untouched.
@@ -89,18 +100,29 @@ pub async fn write(
     let now = chrono::Local::now().fixed_offset();
     let metadata = Arc::new(super::metadata::for_export(picture, format, now));
     let encode = recommended_encode_options(format, options.quality);
+    let predicted = losses(picture, format);
 
-    write_with(destination, options, |path| image::save(pixels, metadata, path, format, Some(encode))).await
+    let (mut written, embedded) =
+        write_with(destination, options, |path| image::save_embedding(pixels, metadata, path, format, Some(encode)))
+            .await?;
+    // What the encoder actually left out, which the prediction cannot know: a profile too large for the format.
+    let losses = reconcile(predicted, picture, format, embedded);
+    for loss in &losses {
+        tracing::warn!(op = "export", path = %written.path.display(), kind = loss.kind(), %loss, "an export lost something against its source");
+    }
+    written.losses = losses;
+    Ok(written)
 }
 
-/// [`write`] with the encoding left to `save`, which is handed the path to write into and answers the bytes written.
+/// [`write`] with the encoding left to `save`, which is handed the path to write into and answers the bytes written and
+/// what it embedded, which is answered beside what was written.
 async fn write_with<F>(
     destination: &Path,
     options: WriteOptions,
     save: impl FnOnce(PathBuf) -> F,
-) -> Result<Written, WriteError>
+) -> Result<(Written, Embedded), WriteError>
 where
-    F: Future<Output = Result<u64, ImageIoError>>,
+    F: Future<Output = Result<(u64, Embedded), ImageIoError>>,
 {
     let unwritable = |source: io::Error| {
         tracing::warn!(op = "export", path = %destination.display(), %source, "an export could not be written");
@@ -122,12 +144,12 @@ where
     .map_err(unwritable)?;
 
     // A failure drops the claim, which gives its name back.
-    let bytes = save(claim.path().to_path_buf()).await?;
+    let (bytes, embedded) = save(claim.path().to_path_buf()).await?;
 
     // Overwriting, this is where the destination is replaced, and not before: a failed save above left it untouched.
     let path = spawn_blocking::<_, WriteError, _>(move || claim.commit()).await?.map_err(unwritable)?;
 
-    Ok(Written { path, bytes })
+    Ok((Written { path, bytes, losses: Vec::new() }, embedded))
 }
 
 #[cfg(test)]
@@ -262,5 +284,59 @@ mod tests {
             assert!(xmp.contains("<rdf:li>hawk</rdf:li>") && xmp.contains("Open Photo AI"), "{format:?}: {xmp}");
             assert_eq!(read.icc_profile.as_deref(), Some(DISPLAY_P3), "{format:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_profile_too_large_for_jpeg_is_reported_as_lost_as_the_file_is_written() {
+        use crate::image::test_support::{sample_image, srgb_profile};
+
+        // 16,740,000 bytes: a PNG holds it, but a JPEG's 255 `APP2` segments cannot, and `rust-sak` leaves it out.
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let mut metadata = rust_sak::image::Metadata::default();
+        metadata.icc_profile = Some(srgb_profile(16_740_000));
+        let source = dir.path().join("big.png");
+        image::save_blocking(&sample_image(), &metadata, &source, ImageFormat::Png, None).expect("written");
+        let loaded = image::load_blocking(&source).expect("decodable");
+        assert_eq!(losses(&loaded, ImageFormat::Jpeg), [], "the prediction cannot know");
+
+        let written = write(&loaded, &dir.path().join("out.jpg"), ImageFormat::Jpeg, WriteOptions::default())
+            .await
+            .expect("written");
+        let read = rust_sak::image::metadata_bytes(&std::fs::read(&written.path).expect("readable"));
+        assert_eq!(read.icc_profile, None);
+        let words: Vec<String> = written.losses.iter().map(ToString::to_string).collect();
+        assert_eq!(words, ["sRGB IEC61966-2.1 profile not embedded in JPEG: the encoder could not write it"]);
+
+        // As PNG it is kept, and nothing is lost.
+        let written = write(&loaded, &dir.path().join("out.png"), ImageFormat::Png, WriteOptions::default())
+            .await
+            .expect("written");
+        assert_eq!(written.losses, []);
+    }
+
+    #[tokio::test]
+    async fn an_ultra_hdr_jpeg_written_as_jpeg_reports_exactly_its_hdr_and_an_srgb_one_nothing() {
+        use crate::image::Hdr;
+        use crate::image::test_support::{written_jpeg, written_ultra_hdr};
+
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let hawk = dir.path().join("hawk.jpg");
+        std::fs::write(&hawk, written_ultra_hdr()).expect("written");
+        let plain = dir.path().join("plain.jpg");
+        std::fs::write(&plain, written_jpeg()).expect("written");
+
+        let loaded = image::load_blocking(&hawk).expect("decodable");
+        let written = write(&loaded, &dir.path().join("out.jpg"), ImageFormat::Jpeg, WriteOptions::default())
+            .await
+            .expect("written");
+        assert_eq!(written.losses, [Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Jpeg }]);
+        // The file was still written, and is SDR.
+        assert_eq!(rust_sak::image::hdr_bytes(&std::fs::read(&written.path).expect("readable")), None);
+
+        let loaded = image::load_blocking(&plain).expect("decodable");
+        let written = write(&loaded, &dir.path().join("plain-out.jpg"), ImageFormat::Jpeg, WriteOptions::default())
+            .await
+            .expect("written");
+        assert_eq!(written.losses, []);
     }
 }
