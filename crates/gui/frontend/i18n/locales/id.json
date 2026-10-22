@@ -119,7 +119,12 @@
                 "zoomIn": "Perbesar",
                 "zoomOut": "Perkecil",
                 "fit": "Sesuaikan dengan jendela",
-                "showOriginal": "Tampilkan asli selama ditahan"
+                "actualPixels": "Piksel sebenarnya (100%)",
+                "toggleZoom": "Beralih antara pas dan piksel sebenarnya",
+                "showOriginal": "Tampilkan asli selama ditahan",
+                "previousImage": "Gambar sebelumnya",
+                "nextImage": "Gambar berikutnya",
+                "showShortcuts": "Tampilkan pintasan papan ketik"
             },
             "add": "Tambah pintasan",
             "addLabel": "Tambah pintasan untuk {{action}}",
@@ -417,5 +422,12 @@
             "message": "Open Photo AI mengalami kesalahan tak terduga dan tidak dapat melanjutkan. Memuat ulang biasanya memperbaikinya; pengaturan Anda tetap tersimpan, tetapi pekerjaan yang belum disimpan pada sesi saat ini akan hilang.",
             "reload": "Muat ulang"
         }
+    },
+    "shortcuts": {
+        "title": "Pintasan papan ketik",
+        "description": "Tombol yang saat ini terikat ke setiap tindakan.",
+        "hint": "Ubah di Pengaturan > Papan ketik.",
+        "tooltip": "{{name}} ({{key}})",
+        "settingsHint": "Tekan {{key}} di mana saja untuk melihat pintasan ini."
     }
 }

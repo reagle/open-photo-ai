@@ -220,4 +220,19 @@ describe("the Keyboard page", () => {
         expect(addButton("Fit to window")).toBeDisabled();
         expect(addButton("Zoom in")).toBeEnabled();
     });
+
+    it("lists the actions added for discovery, and says which key opens the list", () => {
+        renderPage();
+
+        for (const name of ["Actual pixels (100%)", "Toggle fit and actual pixels", "Previous image", "Next image"]) {
+            expect(screen.getByText(name)).toBeInTheDocument();
+        }
+        expect(screen.getByText("Press ? anywhere to see these shortcuts.")).toBeInTheDocument();
+    });
+
+    it("says nothing about the list when no key opens it", () => {
+        renderPage({ showShortcuts: [] });
+
+        expect(screen.queryByText(/anywhere to see these shortcuts/)).not.toBeInTheDocument();
+    });
 });

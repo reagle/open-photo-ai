@@ -35,6 +35,12 @@ export type ImageViewport = {
     height: number;
 };
 
+/**
+ * How large one photograph pixel is drawn at 1x: the fitted width over the photograph's own width, in
+ * pane pixels per photograph pixel, for the photograph it was measured on.
+ */
+export type FitRatio = { identity: string; ratio: number };
+
 /** What an image that has never been magnified reads as: drawn whole, and centred by `constrain`. */
 export const FITTED: ImageTransform = { scale: ZOOM_MIN, x: 0, y: 0 };
 
@@ -65,11 +71,16 @@ type TransformStore = {
     // photograph - which is the whole of what makes the comparison a comparison.
     /** What the sidebar's miniature draws its rectangle from, or absent before anything has drawn. */
     viewport?: ImageViewport;
+    // Beside the viewport and written by the same pane, for the same reason: only the pane knows its
+    // own measured size, and actual pixels is a question about that size.
+    /** What one photograph pixel measures at 1x on the canvas, or absent before anything has drawn. */
+    fit?: FitRatio;
 
     setTransform: (identity: string, transform: ImageTransform) => void;
     forgetTransform: (identity: string) => void;
     forgetAllTransforms: () => void;
     setViewport: (viewport: ImageViewport) => void;
+    setFit: (fit: FitRatio) => void;
 };
 
 // **Its own store, not the drawer's**, where the reference pairs `open` with `zoom`. That pairing is
@@ -157,6 +168,10 @@ export const useTransformStore = create<TransformStore>()((set) => ({
      * so there is no comparison before the store.
      */
     setViewport: (viewport: ImageViewport) => set({ viewport }),
+
+    /** Records the current photograph's fit ratio. Written by the pane that writes the viewport. */
+    setFit: (fit: FitRatio) =>
+        set((state) => (state.fit?.identity === fit.identity && state.fit.ratio === fit.ratio ? state : { fit })),
 }));
 
 // One accessor rather than every reader spelling out the identity lookup and the fallback, as the
@@ -209,6 +224,49 @@ export const fitCurrent = () => {
     if (!identity) return;
 
     useTransformStore.getState().setTransform(identity, FITTED);
+};
+
+/**
+ * The scale at which the current photograph shows its actual pixels: one photograph pixel per pixel of
+ * the display - *device* pixels, as 100% means in Topaz Photo AI and Lightroom Classic, so a Retina
+ * screen does not draw each one as four. `undefined` with no current photograph, or before the pane
+ * has measured this one. Not clamped: `setTransform` does that.
+ */
+export const actualPixelsScale = (): number | undefined => {
+    const identity = currentIdentity();
+    const { fit } = useTransformStore.getState();
+    if (!identity || fit?.identity !== identity || !(fit.ratio > 0)) return undefined;
+
+    return 1 / (fit.ratio * (globalThis.devicePixelRatio || 1));
+};
+
+/**
+ * Shows the current photograph at its actual pixels, about the middle of the pane, held to the zoom
+ * range. Does nothing with no current photograph or before its pane has measured it.
+ */
+export const actualPixels = () => {
+    const identity = currentIdentity();
+    const scale = actualPixelsScale();
+    if (!identity || scale === undefined) return;
+
+    const { transforms, setTransform } = useTransformStore.getState();
+    const current = transforms.get(identity) ?? FITTED;
+
+    setTransform(identity, { scale, x: current.x, y: current.y });
+};
+
+/**
+ * Lightroom's `Z`, between two points only: from the fitted size to actual pixels, and from any other
+ * magnification back to fitted.
+ */
+export const toggleZoom = () => {
+    const identity = currentIdentity();
+    if (!identity) return;
+
+    const scale = useTransformStore.getState().transforms.get(identity)?.scale ?? ZOOM_MIN;
+
+    if (scale > ZOOM_MIN) fitCurrent();
+    else actualPixels();
 };
 
 /*

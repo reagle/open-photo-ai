@@ -119,7 +119,12 @@
                 "zoomIn": "放大",
                 "zoomOut": "缩小",
                 "fit": "适合窗口",
-                "showOriginal": "按住时显示原图"
+                "actualPixels": "实际像素 (100%)",
+                "toggleZoom": "在适合窗口与实际像素间切换",
+                "showOriginal": "按住时显示原图",
+                "previousImage": "上一张图像",
+                "nextImage": "下一张图像",
+                "showShortcuts": "显示键盘快捷键"
             },
             "add": "添加快捷键",
             "addLabel": "为{{action}}添加快捷键",
@@ -417,5 +422,12 @@
             "message": "Open Photo AI 遇到了意外错误，无法继续运行。重新加载通常可以解决问题；你的设置会被保留，但当前会话中未保存的工作会丢失。",
             "reload": "重新加载"
         }
+    },
+    "shortcuts": {
+        "title": "键盘快捷键",
+        "description": "当前分配给每个操作的按键。",
+        "hint": "可在 设置 > 键盘 中更改。",
+        "tooltip": "{{name}} ({{key}})",
+        "settingsHint": "在任意位置按 {{key}} 查看这些快捷键。"
     }
 }

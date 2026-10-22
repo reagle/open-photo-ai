@@ -192,102 +192,113 @@ export const KeyboardPage = () => {
         write({ [action]: table[action].filter((held) => held !== binding) });
     };
 
+    const opensList = table.showShortcuts[0];
+
     return (
-        <SettingsCard>
-            {SHORTCUT_ACTIONS.map((action) => {
-                const name = t(actionKey(action));
-                const bindings = table[action];
-                const statusId = `${baseId}-${action}-status`;
-                const ownNotice = notice?.action === action ? notice : undefined;
+        <>
+            <SettingsCard>
+                {SHORTCUT_ACTIONS.map((action) => {
+                    const name = t(actionKey(action));
+                    const bindings = table[action];
+                    const statusId = `${baseId}-${action}-status`;
+                    const ownNotice = notice?.action === action ? notice : undefined;
 
-                return (
-                    <div key={action} data-slot="shortcut-row" className="flex flex-col px-4 py-3">
-                        <div className="flex items-center justify-between gap-6">
-                            <span className="text-sm">{name}</span>
+                    return (
+                        <div key={action} data-slot="shortcut-row" className="flex flex-col px-4 py-3">
+                            <div className="flex items-center justify-between gap-6">
+                                <span className="text-sm">{name}</span>
 
-                            <div className="flex flex-wrap items-center justify-end gap-1.5">
-                                {bindings.length === 0 ? (
-                                    <span className="text-[13px] text-muted-foreground">
-                                        {t("settings.keyboard.none")}
-                                    </span>
-                                ) : (
-                                    bindings.map((binding) => (
-                                        <span
-                                            key={binding}
-                                            className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background pr-1 pl-2"
-                                        >
-                                            <kbd className="font-mono text-[12px]">{show(binding)}</kbd>
-                                            <button
-                                                type="button"
-                                                aria-label={t("settings.keyboard.remove", {
-                                                    binding: show(binding),
-                                                    action: name,
-                                                })}
-                                                onClick={() => remove(action, binding)}
-                                                className="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-                                            >
-                                                <X className="size-3.5" aria-hidden />
-                                            </button>
+                                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                    {bindings.length === 0 ? (
+                                        <span className="text-[13px] text-muted-foreground">
+                                            {t("settings.keyboard.none")}
                                         </span>
-                                    ))
-                                )}
+                                    ) : (
+                                        bindings.map((binding) => (
+                                            <span
+                                                key={binding}
+                                                className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background pr-1 pl-2"
+                                            >
+                                                <kbd className="font-mono text-[12px]">{show(binding)}</kbd>
+                                                <button
+                                                    type="button"
+                                                    aria-label={t("settings.keyboard.remove", {
+                                                        binding: show(binding),
+                                                        action: name,
+                                                    })}
+                                                    onClick={() => remove(action, binding)}
+                                                    className="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                                                >
+                                                    <X className="size-3.5" aria-hidden />
+                                                </button>
+                                            </span>
+                                        ))
+                                    )}
 
-                                <Recorder
-                                    action={action}
-                                    name={name}
-                                    active={recording === action}
-                                    disabled={bindings.length >= MAX_BINDINGS}
-                                    describedBy={statusId}
-                                    buttonRef={(element) => {
-                                        if (element) addButtons.current.set(action, element);
-                                        else addButtons.current.delete(action);
-                                    }}
-                                    onStart={() => {
-                                        setNotice(undefined);
-                                        setRecording(action);
-                                    }}
-                                    onStop={() => setRecording(undefined)}
-                                    onRecord={(binding) => record(action, binding)}
-                                />
+                                    <Recorder
+                                        action={action}
+                                        name={name}
+                                        active={recording === action}
+                                        disabled={bindings.length >= MAX_BINDINGS}
+                                        describedBy={statusId}
+                                        buttonRef={(element) => {
+                                            if (element) addButtons.current.set(action, element);
+                                            else addButtons.current.delete(action);
+                                        }}
+                                        onStart={() => {
+                                            setNotice(undefined);
+                                            setRecording(action);
+                                        }}
+                                        onStop={() => setRecording(undefined)}
+                                        onRecord={(binding) => record(action, binding)}
+                                    />
+                                </div>
+                            </div>
+
+                            {/*
+                             * Always in the tree, empty when there is nothing to say, so a screen reader
+                             * has a live region to hear the prompt and the outcome through - one that
+                             * appeared with its text would not be announced.
+                             */}
+                            <div
+                                id={statusId}
+                                role="status"
+                                className="mt-2 flex flex-wrap items-center justify-end gap-x-2 text-right text-[12px] text-muted-foreground empty:mt-0"
+                            >
+                                {recording === action && t("settings.keyboard.prompt", { action: name })}
+                                {ownNotice?.kind === "refused" &&
+                                    t(`settings.keyboard.refused.${ownNotice.reason}`, {
+                                        binding: show(ownNotice.binding),
+                                    })}
+                                {ownNotice?.kind === "conflict" && (
+                                    <>
+                                        <span>
+                                            {t("settings.keyboard.conflict", {
+                                                binding: show(ownNotice.binding),
+                                                action: t(actionKey(ownNotice.holder)),
+                                            })}
+                                        </span>
+                                        <Button
+                                            variant="link"
+                                            className="h-auto p-0 text-[12px]"
+                                            onClick={() => move(action, ownNotice.binding, ownNotice.holder)}
+                                        >
+                                            {t("settings.keyboard.useHere")}
+                                        </Button>
+                                    </>
+                                )}
                             </div>
                         </div>
+                    );
+                })}
+            </SettingsCard>
 
-                        {/*
-                         * Always in the tree, empty when there is nothing to say, so a screen reader
-                         * has a live region to hear the prompt and the outcome through - one that
-                         * appeared with its text would not be announced.
-                         */}
-                        <div
-                            id={statusId}
-                            role="status"
-                            className="mt-2 flex flex-wrap items-center justify-end gap-x-2 text-right text-[12px] text-muted-foreground empty:mt-0"
-                        >
-                            {recording === action && t("settings.keyboard.prompt", { action: name })}
-                            {ownNotice?.kind === "refused" &&
-                                t(`settings.keyboard.refused.${ownNotice.reason}`, {
-                                    binding: show(ownNotice.binding),
-                                })}
-                            {ownNotice?.kind === "conflict" && (
-                                <>
-                                    <span>
-                                        {t("settings.keyboard.conflict", {
-                                            binding: show(ownNotice.binding),
-                                            action: t(actionKey(ownNotice.holder)),
-                                        })}
-                                    </span>
-                                    <Button
-                                        variant="link"
-                                        className="h-auto p-0 text-[12px]"
-                                        onClick={() => move(action, ownNotice.binding, ownNotice.holder)}
-                                    >
-                                        {t("settings.keyboard.useHere")}
-                                    </Button>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                );
-            })}
-        </SettingsCard>
+            {/* How to see these from the window, which is the one place nothing else says it. */}
+            {opensList !== undefined && (
+                <p className="m-0 text-[12px] text-muted-foreground">
+                    {t("shortcuts.settingsHint", { key: show(opensList) })}
+                </p>
+            )}
+        </>
     );
 };

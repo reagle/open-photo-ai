@@ -119,7 +119,12 @@
                 "zoomIn": "Zoom in",
                 "zoomOut": "Zoom out",
                 "fit": "Fit to window",
-                "showOriginal": "Show original while held"
+                "actualPixels": "Actual pixels (100%)",
+                "toggleZoom": "Toggle fit and actual pixels",
+                "showOriginal": "Show original while held",
+                "previousImage": "Previous image",
+                "nextImage": "Next image",
+                "showShortcuts": "Show keyboard shortcuts"
             },
             "add": "Add shortcut",
             "addLabel": "Add shortcut for {{action}}",
@@ -427,5 +432,12 @@
             "message": "Open Photo AI hit an unexpected error and can't continue. Reloading usually fixes it; your settings are kept, but any unsaved work in the current session is lost.",
             "reload": "Reload"
         }
+    },
+    "shortcuts": {
+        "title": "Keyboard shortcuts",
+        "description": "The keys bound to each action now.",
+        "hint": "Change them in Settings > Keyboard.",
+        "tooltip": "{{name}} ({{key}})",
+        "settingsHint": "Press {{key}} anywhere to see these shortcuts."
     }
 }

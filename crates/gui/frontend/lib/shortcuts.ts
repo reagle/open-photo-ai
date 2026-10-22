@@ -7,7 +7,19 @@
  */
 
 /** Every action the keyboard can perform on the window. */
-export const SHORTCUT_ACTIONS = ["zoomIn", "zoomOut", "fit", "showOriginal"] as const;
+// The order the Keyboard settings page and the shortcuts list draw them in, and the order in which two
+// stored actions claiming one key press are resolved - see `resolveShortcuts`.
+export const SHORTCUT_ACTIONS = [
+    "zoomIn",
+    "zoomOut",
+    "fit",
+    "actualPixels",
+    "toggleZoom",
+    "showOriginal",
+    "previousImage",
+    "nextImage",
+    "showShortcuts",
+] as const;
 
 export type ShortcutAction = (typeof SHORTCUT_ACTIONS)[number];
 
@@ -28,7 +40,15 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, readonly string[]> = {
     zoomIn: ["Mod+="],
     zoomOut: ["Mod+-"],
     fit: ["Mod+0"],
+    // Topaz's 100%, and Lightroom's `Z` - held here to fitted and actual pixels, not to the last zoom.
+    actualPixels: ["Mod+1"],
+    toggleZoom: ["z"],
     showOriginal: ["\\"],
+    // Lightroom's filmstrip keys.
+    previousImage: ["ArrowLeft"],
+    nextImage: ["ArrowRight"],
+    // A symbol, so Shift is ignored: it matches on every layout that types a `?`.
+    showShortcuts: ["?"],
 };
 
 /** The modifiers a binding may name, before the key. */
@@ -185,11 +205,38 @@ const SPACE_OPERATES = [
     "[role='menuitemradio']",
 ].join(",");
 
+// The same shape as the `Space` rule: a control operated by arrows keeps them, whether or not it
+// remembers to prevent their default. `separator` is the split comparison's divider; `radio` and
+// `radiogroup` the comparison toggles; `[data-arrow-keys]` the marker for an in-house control that
+// moves by arrows and has none of these roles.
+/** Where the arrow keys, Home, End and the page keys move something inside the focused control. */
+const ARROWS_OPERATE = [
+    "[role='slider']",
+    "[role='radiogroup']",
+    "[role='radio']",
+    "[role='tablist']",
+    "[role='tab']",
+    "[role='separator']",
+    "[role='listbox']",
+    "[role='grid']",
+    "[role='tree']",
+    "[role='menu']",
+    "[role='menubar']",
+    "[role='toolbar']",
+    "[role='spinbutton']",
+    "[role='scrollbar']",
+    "[data-arrow-keys]",
+].join(",");
+
+/** The keys {@link ARROWS_OPERATE} keeps. */
+const ARROW_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+
 /**
  * Whether a key press belongs to the window rather than to whatever has the focus.
  *
  * Not when it lands in a field the user types into or an editable region; not while a dialog or a
- * menu is open; not when the key is `Space` and the focus is on a control `Space` operates; not while
+ * menu is open; not when the key is `Space` and the focus is on a control `Space` operates, nor an
+ * arrow key on a control arrows operate; not while
  * an input method is composing; and not once a control has already handled it.
  */
 export const isWindowShortcut = (event: KeyboardEvent): boolean => {
@@ -200,6 +247,8 @@ export const isWindowShortcut = (event: KeyboardEvent): boolean => {
 
     const document = target?.ownerDocument ?? globalThis.document;
     if (document.querySelector(OVERLAY)) return false;
+
+    if (ARROW_KEYS.has(event.key) && target?.closest(ARROWS_OPERATE)) return false;
 
     return !(event.key === " " && target?.closest(SPACE_OPERATES));
 };

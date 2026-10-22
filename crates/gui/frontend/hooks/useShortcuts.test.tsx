@@ -2,10 +2,12 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isMacOs } from "@/ipc/os";
 import { ZOOM_BUTTON_STEP, ZOOM_MIN } from "@/lib/constants";
+import { useFileStore } from "@/stores/files";
 import { usePeekStore } from "@/stores/peek";
 import { useSettingsStore } from "@/stores/settings";
+import { useShortcutsListStore } from "@/stores/shortcutsList";
 import { FITTED, useTransformStore } from "@/stores/transform";
-import { HOLIDAY, openFiles, resetFileStore } from "@/test/support";
+import { HOLIDAY, openFiles, resetFileStore, SUNSET } from "@/test/support";
 import { useShortcuts } from "./useShortcuts";
 
 // The real `platform()` reads a global the plugin's init script installs, which jsdom has none of.
@@ -205,7 +207,7 @@ describe("useShortcuts", () => {
     it("leaves an unbound key alone, Space among them", () => {
         renderHook(() => useShortcuts());
 
-        const event = fire("keydown", { key: "z", code: "KeyZ" });
+        const event = fire("keydown", { key: "k", code: "KeyK" });
         // No default: a menu's trigger button gets the focus back on closing and reopens on Space.
         const space = fire("keydown", SPACE);
 
@@ -278,6 +280,73 @@ describe("useShortcuts", () => {
             fire("keydown", { key: "0", code: "Digit0", ctrlKey: true });
 
             expect(scale()).toBe(2 + ZOOM_BUTTON_STEP);
+        });
+    });
+
+    describe("the actions added for discovery", () => {
+        afterEach(() => {
+            vi.unstubAllGlobals();
+            useShortcutsListStore.setState({ open: false });
+        });
+
+        it("shows actual pixels with Mod+1, and toggles it with Z", () => {
+            vi.stubGlobal("devicePixelRatio", 1);
+            renderHook(() => useShortcuts());
+            act(() => useTransformStore.getState().setFit({ identity: HOLIDAY.identity ?? "", ratio: 0.25 }));
+
+            fire("keydown", { key: "1", code: "Digit1", ctrlKey: true });
+            expect(scale()).toBe(4);
+
+            fire("keydown", { key: "z", code: "KeyZ" });
+            expect(useTransformStore.getState().transforms.get(HOLIDAY.identity ?? "")).toEqual(FITTED);
+
+            fire("keydown", { key: "z", code: "KeyZ" });
+            expect(scale()).toBe(4);
+
+            // Held down, the toggle does not flip back and forth on the key's repeat.
+            fire("keydown", { key: "z", code: "KeyZ", repeat: true });
+            expect(scale()).toBe(4);
+        });
+
+        it("moves to the next and previous image with the arrows", () => {
+            act(() => {
+                openFiles(SUNSET);
+                // Opening makes the newcomer current; start from the first.
+                useFileStore.getState().setCurrentIndex(0);
+            });
+            renderHook(() => useShortcuts());
+
+            const next = fire("keydown", { key: "ArrowRight", code: "ArrowRight" });
+            expect(useFileStore.getState().currentIndex).toBe(1);
+            expect(next.defaultPrevented).toBe(true);
+
+            fire("keydown", { key: "ArrowLeft", code: "ArrowLeft" });
+            expect(useFileStore.getState().currentIndex).toBe(0);
+        });
+
+        it("leaves an arrow on a focused slider to the slider", () => {
+            act(() => {
+                openFiles(SUNSET);
+                // Opening makes the newcomer current; start from the first.
+                useFileStore.getState().setCurrentIndex(0);
+            });
+            renderHook(() => useShortcuts());
+            const slider = document.createElement("span");
+            slider.setAttribute("role", "slider");
+            document.body.append(slider);
+
+            const event = fire("keydown", { key: "ArrowRight", code: "ArrowRight" }, slider);
+
+            expect(useFileStore.getState().currentIndex).toBe(0);
+            expect(event.defaultPrevented).toBe(false);
+        });
+
+        it("opens the shortcuts list with ?, typed with Shift", () => {
+            renderHook(() => useShortcuts());
+
+            fire("keydown", { key: "?", code: "Slash", shiftKey: true });
+
+            expect(useShortcutsListStore.getState().open).toBe(true);
         });
     });
 });
