@@ -24,6 +24,7 @@ pub(crate) mod ns {
     pub(crate) const HDRGM: &str = "http://ns.adobe.com/hdr-gain-map/1.0/";
     pub(crate) const CONTAINER: &str = "http://ns.google.com/photos/1.0/container/";
     pub(crate) const ITEM: &str = "http://ns.google.com/photos/1.0/container/item/";
+    pub(crate) const GCAMERA: &str = "http://ns.google.com/photos/1.0/camera/";
     pub(crate) const DC: &str = "http://purl.org/dc/elements/1.1/";
     pub(crate) const PHOTOSHOP: &str = "http://ns.adobe.com/photoshop/1.0/";
     pub(crate) const IPTC_CORE: &str = "http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/";
@@ -256,6 +257,59 @@ impl Xmp {
         self.remove_where(|uri, name| uri == ns && name == local);
     }
 
+    /// Removes every property in `ns` whose local name starts with `start` (`GCamera:MotionPhoto*`).
+    pub(crate) fn remove_starting(&mut self, ns: &str, start: &str) {
+        self.remove_where(|uri, name| uri == ns && name.starts_with(start));
+    }
+
+    /// Edits the items of the ordered array `ns:local` — each `rdf:li` of the `rdf:Seq` a description's element of that
+    /// name holds — one at a time: `edit` may read and change the fields of each through [`SeqItem`], and answers
+    /// whether to keep it. A removed item takes its indentation with it. Answers whether the array was found.
+    pub(crate) fn edit_seq(&mut self, ns: &str, local: &str, mut edit: impl FnMut(&mut SeqItem<'_>) -> bool) -> bool {
+        let mut found = false;
+        for index in self.description_indices() {
+            let (description, scope) = self.description_mut(index);
+            for node in &mut description.children {
+                let Node::Element(property) = node else { continue };
+                let inner = scope.with(property.attributes());
+                if inner.element(&property.name) != Some((ns, local)) {
+                    continue;
+                }
+                for node in &mut property.children {
+                    let Node::Element(seq) = node else { continue };
+                    let seq_scope = inner.with(seq.attributes());
+                    if seq_scope.element(&seq.name) != Some((ns::RDF, "Seq")) {
+                        continue;
+                    }
+                    found = true;
+                    let mut kept: Vec<Node> = Vec::with_capacity(seq.children.len());
+                    for node in std::mem::take(&mut seq.children) {
+                        let keep = match node {
+                            Node::Element(mut li)
+                                if seq_scope.with(li.attributes()).element(&li.name) == Some((ns::RDF, "li")) =>
+                            {
+                                let item_scope = seq_scope.with(li.attributes());
+                                let keep = edit(&mut SeqItem { element: &mut li, scope: item_scope });
+                                keep.then_some(Node::Element(li))
+                            }
+                            other => Some(other),
+                        };
+                        match keep {
+                            Some(node) => kept.push(node),
+                            None => {
+                                if matches!(kept.last(), Some(Node::Text(text)) if text.trim().is_empty()) {
+                                    kept.pop();
+                                }
+                            }
+                        }
+                    }
+                    seq.children = kept;
+                }
+            }
+        }
+        found
+    }
+
     /// Removes every property in namespace `ns`, and then each declaration of it that nothing in its scope uses any
     /// more — so a packet that described a gain map no longer declares the gain-map namespace, which a reader may take
     /// as the claim itself.
@@ -266,7 +320,7 @@ impl Xmp {
 
     /// Removes each declaration of `ns` that nothing in its scope uses: on a description, on `rdf:RDF`, on
     /// `x:xmpmeta`, or anywhere else in the packet.
-    fn remove_namespace_if_unused(&mut self, ns: &str) {
+    pub(crate) fn remove_namespace_if_unused(&mut self, ns: &str) {
         remove_unused_declarations(&mut self.nodes, ns);
         // The declarations in scope at `rdf:RDF` may be among those removed; its path is not changed.
         if let Some((_, scope)) = find_rdf(&self.nodes, &Scope::default(), &mut Vec::new()) {
@@ -419,6 +473,148 @@ impl Xmp {
         property.children = content(&prefixes, &rdf);
         insert(&mut description.children, Node::Element(property));
     }
+}
+
+/// One item of an ordered array, as [`Xmp::edit_seq`] hands it out: an `rdf:li` and the namespaces in scope on it.
+///
+/// Its fields are found wherever its structure puts them — as attributes or child elements of the `rdf:li`, of a
+/// structure inside it (`Container:Item`), or of an `rdf:Description` inside that — so every form a writer may choose
+/// reads and edits alike.
+pub(crate) struct SeqItem<'a> {
+    element: &'a mut Element,
+    scope: Scope,
+}
+
+impl SeqItem<'_> {
+    /// The decoded value of the field `ns:local`, the first found.
+    pub(crate) fn get(&self, ns: &str, local: &str) -> Option<String> {
+        field_value(self.element, &self.scope, ns, local, 0)
+    }
+
+    /// Sets the field `ns:local` to `value` wherever it is; where it is absent, adds it beside the field `beside` (in
+    /// the same form, under the prefix the item binds to `ns` there). Answers whether it was set.
+    pub(crate) fn set(&mut self, ns: &str, local: &str, value: &str, beside: (&str, &str)) -> bool {
+        set_field(self.element, &self.scope, ns, local, value, 0)
+            || add_field(self.element, &self.scope, beside, (ns, local), value, 0)
+    }
+
+    /// Removes the field `ns:local` wherever it is.
+    pub(crate) fn remove(&mut self, ns: &str, local: &str) {
+        remove_field(self.element, &self.scope, ns, local, 0);
+    }
+}
+
+/// See [`SeqItem::get`]. `depth` bounds the walk, though the tree's own depth bound already does.
+fn field_value(element: &Element, scope: &Scope, ns: &str, local: &str, depth: usize) -> Option<String> {
+    if depth > tree::MAX_DEPTH {
+        return None;
+    }
+    for (name, value) in element.attributes() {
+        if scope.attribute(name) == Some((ns, local)) {
+            return tree::decode(value).ok().map(|value| value.into_owned());
+        }
+    }
+    element.elements().find_map(|child| {
+        let inner = scope.with(child.attributes());
+        if inner.element(&child.name) == Some((ns, local)) {
+            simple_text(child)
+        } else {
+            field_value(child, &inner, ns, local, depth + 1)
+        }
+    })
+}
+
+/// See [`SeqItem::set`]: in place wherever the field is, answering whether it was found.
+fn set_field(element: &mut Element, scope: &Scope, ns: &str, local: &str, value: &str, depth: usize) -> bool {
+    if depth > tree::MAX_DEPTH {
+        return false;
+    }
+    let mut found = element.attributes().iter().any(|(name, _)| scope.attribute(name) == Some((ns, local)));
+    if found {
+        for (name, old) in element.attributes_mut().iter_mut() {
+            if scope.attribute(name) == Some((ns, local)) {
+                *old = tree::encode(value);
+            }
+        }
+    }
+    for node in &mut element.children {
+        let Node::Element(child) = node else { continue };
+        let inner = scope.with(child.attributes());
+        if inner.element(&child.name) == Some((ns, local)) {
+            child.children = vec![Node::Text(tree::encode(value))];
+            child.empty = false;
+            found = true;
+        } else {
+            found |= set_field(child, &inner, ns, local, value, depth + 1);
+        }
+    }
+    found
+}
+
+/// Adds `field` with `value` beside the first `anchor` found: as an attribute where the anchor is one, as an element
+/// where it is one, under the prefix bound to the field's namespace there. Answers whether it was added.
+fn add_field(
+    element: &mut Element,
+    scope: &Scope,
+    anchor: (&str, &str),
+    field: (&str, &str),
+    value: &str,
+    depth: usize,
+) -> bool {
+    if depth > tree::MAX_DEPTH {
+        return false;
+    }
+    if element.attributes().iter().any(|(name, _)| scope.attribute(name) == Some(anchor)) {
+        let Some(prefix) = scope.prefix_for(field.0) else { return false };
+        let name = format!("{prefix}:{}", field.1);
+        element.attributes_mut().push((name, tree::encode(value)));
+        return true;
+    }
+    let anchored = element
+        .elements()
+        .any(|child| scope.with(child.attributes()).element(&child.name) == Some(anchor));
+    if anchored {
+        let Some(prefix) = scope.prefix_for(field.0) else { return false };
+        let mut added = Element::new(format!("{prefix}:{}", field.1));
+        added.children.push(Node::Text(tree::encode(value)));
+        insert(&mut element.children, Node::Element(added));
+        return true;
+    }
+    element.children.iter_mut().any(|node| match node {
+        Node::Element(child) => {
+            let inner = scope.with(child.attributes());
+            add_field(child, &inner, anchor, field, value, depth + 1)
+        }
+        _ => false,
+    })
+}
+
+/// See [`SeqItem::remove`].
+fn remove_field(element: &mut Element, scope: &Scope, ns: &str, local: &str, depth: usize) {
+    if depth > tree::MAX_DEPTH {
+        return;
+    }
+    let attribute_matches = element.attributes().iter().any(|(name, _)| scope.attribute(name) == Some((ns, local)));
+    if attribute_matches {
+        element.attributes_mut().retain(|(name, _)| scope.attribute(name) != Some((ns, local)));
+    }
+    let mut kept: Vec<Node> = Vec::with_capacity(element.children.len());
+    for node in std::mem::take(&mut element.children) {
+        match node {
+            Node::Element(child) if scope.with(child.attributes()).element(&child.name) == Some((ns, local)) => {
+                if matches!(kept.last(), Some(Node::Text(text)) if text.trim().is_empty()) {
+                    kept.pop();
+                }
+            }
+            Node::Element(mut child) => {
+                let inner = scope.with(child.attributes());
+                remove_field(&mut child, &inner, ns, local, depth + 1);
+                kept.push(Node::Element(child));
+            }
+            other => kept.push(other),
+        }
+    }
+    element.children = kept;
 }
 
 /// The path to the first `rdf:RDF` element under `nodes`, and the scope inside it.
