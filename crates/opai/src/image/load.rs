@@ -5,10 +5,11 @@ use std::sync::Arc;
 
 use ::image::DynamicImage;
 use rust_sak::crypto::xxh3_bytes;
-use rust_sak::image::{Metadata, decode_bytes, decode_raw_bytes, metadata_bytes};
+use rust_sak::image::{Hdr, Metadata, decode_bytes, decode_raw_bytes, metadata_bytes};
 
 use super::error::{self, ImageIoError};
 use super::fidelity::Fidelity;
+use super::gain_map::{GainMap, base_orientation};
 use super::picture::Picture;
 use super::raw;
 use crate::task::spawn_blocking;
@@ -39,6 +40,15 @@ pub async fn load(path: impl Into<PathBuf>) -> Result<Picture, ImageIoError> {
 /// the `APP13` Photoshop block that holds IPTC), PNG and WebP (EXIF and XMP). Nothing is interpreted on the way in. A
 /// malformed block is left out and the rest kept; it never fails the load. TIFF, AVIF, HEIF, BMP, GIF and camera RAW
 /// carry none yet. Nothing is written back out yet either: see [`without_descriptive`](super::without_descriptive).
+///
+/// # The gain map
+///
+/// An Ultra HDR / ISO 21496-1 / Adobe gain-map JPEG's gain map — the MPF secondary image `rust-sak` locates — is decoded,
+/// turned upright by the photograph's EXIF orientation as the photograph was, and attached as the picture's
+/// [`gain_map`](Picture::gain_map), with its own `hdrgm` XMP and ISO 21496-1 metadata. The encoded bytes are taken out
+/// of the picture's metadata, so the stale image never reaches an export. A gain map that cannot be located, is not a
+/// JPEG, does not decode, or is larger than the photograph or smaller than a sixteenth of it, is dropped and the drop is
+/// logged; the photograph still loads, and an export reports the HDR it could not carry.
 ///
 /// # The colour profile
 ///
@@ -98,13 +108,46 @@ fn read(path: &Path) -> Result<Picture, ImageIoError> {
 
     // A developed RAW is sRGB whatever the camera embedded, so it carries no profile; its EXIF and XMP are a later
     // slice's, read from the RAW container and its sidecar. Its fidelity is its pixels': 16-bit, SDR.
-    let (metadata, fidelity) = if raw_extension.is_none() {
+    let (mut metadata, fidelity) = if raw_extension.is_none() {
         metadata_of(path, &bytes, &pixels)
     } else {
         (Metadata::default(), Fidelity::of_pixels(&pixels))
     };
+    let gain_map = gain_map_of(path, metadata.gain_map.take(), metadata.exif.as_deref(), &fidelity, &pixels);
 
-    Ok(Picture::new(path, Arc::new(pixels), identity).with_metadata(metadata).with_fidelity(fidelity))
+    Ok(Picture::new(path, Arc::new(pixels), identity)
+        .with_metadata(metadata)
+        .with_fidelity(fidelity)
+        .with_gain_map(gain_map))
+}
+
+/// The gain map `encoded` decoded for a base image of `pixels` whose EXIF block is `exif`; `None`, and the drop logged, if the file declares a gain
+/// map (`fidelity`) that could not be located or read.
+fn gain_map_of(
+    path: &Path,
+    encoded: Option<Vec<u8>>,
+    exif: Option<&[u8]>,
+    fidelity: &Fidelity,
+    pixels: &DynamicImage,
+) -> Option<GainMap> {
+    let warn = |error: &dyn std::fmt::Display| {
+        tracing::warn!(op = "load", path = %path.display(), error = %error, "HDR gain map dropped: it could not be read");
+    };
+    match encoded {
+        Some(encoded) => {
+            // `pixels` were turned upright by the EXIF orientation on decode; the gain map is turned the same way.
+            let orientation = base_orientation(exif);
+            GainMap::read(&encoded, (pixels.width(), pixels.height()), orientation)
+                .inspect_err(|error| warn(error))
+                .ok()
+        }
+        None => {
+            if fidelity.hdr == Some(Hdr::GainMap) {
+                warn(&"the file declares one, and no gain-map image was found where its MPF index says");
+            }
+            None
+        }
+    }
 }
 
 /// Everything `bytes` holds beside its pixels, with the ICC profile left out if it does not describe `pixels`, and what
@@ -606,6 +649,97 @@ mod tests {
         assert_eq!(loaded.fidelity().depth, crate::image::Depth { bits: 8, float: false });
         assert_eq!(loaded.fidelity().discarded, None);
         assert_eq!(loaded.metadata().icc_profile.as_deref(), Some(DISPLAY_P3));
+    }
+
+    #[test]
+    fn an_ultra_hdr_jpeg_keeps_its_gain_map_with_its_own_metadata_and_not_the_encoded_bytes() {
+        use crate::image::test_support::{
+            HAWK_GAIN_MAP_ISO, HAWK_GAIN_MAP_XMP, ISO_VERSION, written_ultra_hdr, written_ultra_hdr_of,
+        };
+
+        let dir = tempdir().expect("a temporary directory");
+        let (log, loaded) = crate::logging::records_of_blocking("info", || {
+            load_blocking(write_fixture(dir.path(), "hawk.jpg", &written_ultra_hdr()))
+        });
+        let loaded = loaded.expect("decodable");
+
+        let gain_map = loaded.gain_map().expect("the gain map is carried");
+        assert_eq!((gain_map.pixels().width(), gain_map.pixels().height()), FIXTURE_SIZE);
+        assert_eq!(gain_map.pixels().color(), ::image::ColorType::Rgb8, "three channels, as stored");
+        assert_eq!(gain_map.scale(), (1.0, 1.0));
+        assert_eq!(gain_map.metadata().xmp.as_deref(), Some(HAWK_GAIN_MAP_XMP));
+        assert_eq!(gain_map.metadata().iso_gain_map.as_deref(), Some(HAWK_GAIN_MAP_ISO));
+        // The encoded image is not left in the picture's metadata; the primary's version marker is.
+        assert_eq!(loaded.metadata().gain_map, None);
+        assert_eq!(loaded.metadata().iso_gain_map.as_deref(), Some(ISO_VERSION));
+        assert!(crate::logging::records(&log, "HDR gain map dropped: it could not be read").is_empty(), "{log}");
+
+        // A quarter-resolution gray one.
+        let bytes = written_ultra_hdr_of((40, 32), (10, 8), 1);
+        let loaded = load_blocking(write_fixture(dir.path(), "quarter.jpg", &bytes)).expect("decodable");
+        let gain_map = loaded.gain_map().expect("carried");
+        assert_eq!((gain_map.pixels().width(), gain_map.pixels().height(), gain_map.scale()), (10, 8, (0.25, 0.25)));
+        assert_eq!(gain_map.pixels().color(), ::image::ColorType::L8);
+    }
+
+    #[test]
+    fn a_turned_ultra_hdr_jpeg_loads_upright_and_its_gain_map_with_it() {
+        use crate::image::test_support::written_turned_ultra_hdr_of;
+
+        // Stored 40x32 with a half-resolution gain map, and Orientation 6.
+        let bytes = written_turned_ultra_hdr_of((40, 32), (20, 16));
+        let dir = tempdir().expect("a temporary directory");
+
+        let loaded = load_blocking(write_fixture(dir.path(), "turned.jpg", &bytes)).expect("decodable");
+
+        assert_eq!(loaded.dimensions(), (32, 40));
+        let gain_map = loaded.gain_map().expect("carried");
+        assert_eq!((gain_map.pixels().width(), gain_map.pixels().height()), (16, 20));
+        assert_eq!(gain_map.scale(), (0.5, 0.5));
+        assert_eq!(gain_map.source(), None, "the stored gain map is not the turned one");
+    }
+
+    #[test]
+    fn a_gain_map_an_editor_moved_without_updating_its_offset_is_still_carried() {
+        use crate::image::test_support::written_ultra_hdr;
+
+        // As ExifTool leaves an Ultra HDR JPEG it added a comment to: a `COM` after the MPF index, its offset stale.
+        let bytes = written_ultra_hdr();
+        let index_end = bytes.windows(4).position(|w| w == b"MPF\0").expect("an MPF index") + 86;
+        let comment = [&[0xFF, 0xFE, 0x00, 0x0B][..], b"fresh run"].concat();
+        let edited = [&bytes[..index_end], &comment, &bytes[index_end..]].concat();
+        let dir = tempdir().expect("a temporary directory");
+
+        let loaded = load_blocking(write_fixture(dir.path(), "edited.jpg", &edited)).expect("decodable");
+
+        let gain_map = loaded.gain_map().expect("found after the primary's EOI");
+        assert_eq!((gain_map.pixels().width(), gain_map.pixels().height()), FIXTURE_SIZE);
+    }
+
+    #[test]
+    fn a_gain_map_that_cannot_be_read_is_dropped_with_a_warning_and_the_photograph_still_loads() {
+        use crate::image::test_support::{truncated_ultra_hdr, written_ultra_hdr_of};
+        use crate::logging::{field, records, records_of_blocking};
+
+        let dir = tempdir().expect("a temporary directory");
+        // Cut inside the gain map, so the MPF index points past the end of the file; and a gain map larger than the
+        // photograph it belongs to.
+        let cut = write_fixture(dir.path(), "cut.jpg", &truncated_ultra_hdr());
+        let large = write_fixture(dir.path(), "large.jpg", &written_ultra_hdr_of((32, 24), (32, 25), 1));
+
+        for (path, why) in [(&cut, "no gain-map image was found"), (&large, "does not fit")] {
+            let (log, loaded) = records_of_blocking("info", || load_blocking(path));
+            let loaded = loaded.expect("the photograph still loads");
+
+            assert!(loaded.gain_map().is_none(), "{}", path.display());
+            assert_eq!(loaded.fidelity().hdr, Some(rust_sak::image::Hdr::GainMap), "still recorded as HDR");
+            assert_eq!(loaded.dimensions(), FIXTURE_SIZE);
+            let [record] = records(&log, "HDR gain map dropped: it could not be read")[..] else {
+                panic!("expected one record:\n{log}")
+            };
+            assert!(record.contains("level=WARN"), "{record}");
+            assert!(field(record, "error").is_some_and(|error| error.contains(why)), "{record}");
+        }
     }
 
     #[test]

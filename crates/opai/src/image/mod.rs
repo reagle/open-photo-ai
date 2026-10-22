@@ -66,6 +66,18 @@
 //! Not detected: AVIF and HEIF gain maps (`tmap` items), and Apple's earlier private gain maps (an MPF secondary image
 //! with no Gain Map type, ISO marker or `hdrgm` namespace) — such a file is recorded as SDR.
 //!
+//! # A JPEG's gain map travels with the pixels
+//!
+//! [`fn@load`] also decodes an Ultra HDR / ISO 21496-1 / Adobe gain-map JPEG's gain map — the MPF secondary image
+//! `rust-sak` locates — into a [`GainMap`] on the [`Picture`], with its own `hdrgm` XMP and ISO 21496-1 metadata,
+//! turned upright by the photograph's EXIF orientation as the pixels are. It covers the scene the pixels cover:
+//! [`Picture::derive`] keeps it (an enhancement, an upscale included, does not move the frame, and the gain map keeps
+//! its own resolution), and a crop reframes it with [`GainMap::reframed`]. [`export::write`](fn@crate::export::write)
+//! writes it back when the result is a JPEG. A gain map that cannot be read, or is larger than the photograph or under
+//! a sixteenth of it, is dropped with a warning. Renditions stay SDR: [`without_descriptive`] also clears the gain-map
+//! container. **Caveat:** enhancements that change brightness or colour (light adjustment, colour balance,
+//! colourisation) leave the gain map's ratios describing the old base.
+//!
 //! # What is not here
 //!
 //! No caching: the identity is designed to key one, and the cache itself lives in `crate::cache`. **No colour is
@@ -108,6 +120,7 @@ mod encode;
 mod error;
 mod extensions;
 mod fidelity;
+mod gain_map;
 mod identity;
 mod load;
 mod picture;
@@ -126,6 +139,8 @@ pub use encode::{encode, encode_blocking};
 pub use error::ImageIoError;
 pub use extensions::{extensions_of, input_extensions};
 pub use fidelity::{Depth, Discarded, Fidelity};
+pub use gain_map::GainMap;
+pub(crate) use gain_map::base_orientation;
 pub use identity::{identity, identity_blocking};
 pub use load::{load, load_blocking};
 pub use picture::Picture;

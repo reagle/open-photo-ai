@@ -11,9 +11,10 @@
 //! - [`mod@claim`]: holding that destination while the file is written ([`claim()`]) — the first free numbered name
 //!   without overwriting, or a hidden name renamed over the destination on [`Claim::commit`] with it — and giving it
 //!   back when the write does not finish.
-//! - [`mod@loss`]: what writing a picture as a format loses against its source ([`losses`], [`Loss`]): HDR (always,
-//!   until HDR is written), bits per channel or float samples, and the colour profile (a format that cannot hold one, a
-//!   profile for another colour model, one the load discarded, a coded description nothing writes yet). Asked before
+//! - [`mod@loss`]: what writing a picture as a format loses against its source ([`losses`], [`Loss`]): HDR (except a
+//!   gain-map JPEG written as JPEG with its gain map carried), bits per channel or float samples, and the colour profile
+//!   (a format that cannot hold one, a profile for another colour model, one the load discarded, a coded description
+//!   nothing writes yet). Asked before
 //!   the write; worded in English by `Display` and left to a front end by `Serialize`. An HDR source whose PQ or HLG
 //!   is declared by an embedded ICC `cicp` tag is reported as losing HDR even where the profile is embedded: a known
 //!   over-warning.
@@ -22,6 +23,12 @@
 //!   on [`Written::losses`].
 //!   It embeds the source's metadata as the export policy rewrites it: the EXIF with every field true of the file and
 //!   its MakerNote kept where safe, the XMP with a new identity and history, the IPTC-IIM, and the ICC profile.
+//!   Written as JPEG, a picture with a gain map is an Ultra HDR JPEG again (`gain_map` prepares the gain map: the
+//!   source's own bytes where nothing reframed or shrank it, otherwise encoded at its own resolution, never enlarged,
+//!   at the export's quality or 90); every other format leaves the gain map out.
+//!   **Known caveat:** light adjustment, colour balance and colourisation change the base image's brightness or
+//!   colour and leave the gain map's ratios computed against the old base, so the HDR rendition is slightly off;
+//!   recomputing the gain map is a later slice.
 //!
 //! # Why this sits beside `image` and not inside it
 //!
@@ -31,6 +38,7 @@
 
 pub mod claim;
 pub mod format;
+pub(crate) mod gain_map;
 pub mod loss;
 pub(crate) mod metadata;
 pub mod name;
@@ -40,6 +48,6 @@ pub use claim::{Claim, claim};
 pub use format::{
     ExportFormat, ExportFormats, FormatCapability, FormatChoice, QualityRange, UnknownFormat, capabilities,
 };
-pub use loss::{Loss, ProfileCause, losses, predict_blocking};
+pub use loss::{HdrCause, Loss, ProfileCause, losses, predict_blocking};
 pub use name::{Named, Naming, destination_for, name_for};
 pub use write::{WriteError, WriteOptions, Written, write};
