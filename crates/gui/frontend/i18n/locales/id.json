@@ -219,6 +219,21 @@
             "running_other": "{{written}} dari {{count}} ditulis · {{remaining}} tersisa",
             "ended_other": "{{written}} dari {{count}} ditulis",
             "endedFailed_other": "{{written}} dari {{count}} ditulis, {{failed}} gagal"
+        },
+        "loss": {
+            "notice": "{{count}} dari {{total}} gambar akan kehilangan kualitas dalam format ini. Arahkan penunjuk ke peringatan di sebuah baris untuk melihat apa yang hilang.",
+            "warning": "Kualitas hilang dalam format ini",
+            "hdrGainMap": "Gain map HDR dihapus: keluaran {{format}} untuk saat ini hanya SDR",
+            "hdrTransfer": "HDR ({{transfer}}) dihapus: keluaran {{format}} untuk saat ini hanya SDR",
+            "depth": "{{from}} → {{to}} di {{format}}",
+            "bits": "{{bits}}-bit",
+            "bitsFloat": "{{bits}}-bit float",
+            "profileFormat": "Profil {{profile}} tidak disematkan di {{format}}",
+            "profileColourModel": "Profil {{profile}} tidak disematkan di {{format}}: profil ini untuk {{colourSpace}}, bukan untuk warna berkas",
+            "profileDiscarded": "Profil {{profile}} dibuang: profil ini untuk {{colourSpace}}, bukan untuk piksel gambar",
+            "profileNotWritten": "Profil {{profile}} tidak disematkan di {{format}}: encoder tidak dapat menulisnya",
+            "profileCoded": "Deskripsi warna {{profile}} tidak ditulis di {{format}}",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {

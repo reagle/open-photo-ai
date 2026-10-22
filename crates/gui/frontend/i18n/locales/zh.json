@@ -219,6 +219,21 @@
             "running_other": "已写入 {{written}}/{{count}} · 剩余 {{remaining}} 个",
             "ended_other": "已写入 {{written}}/{{count}}",
             "endedFailed_other": "已写入 {{written}}/{{count}}，{{failed}} 个失败"
+        },
+        "loss": {
+            "notice": "{{total}} 张图像中有 {{count}} 张在此格式下会损失质量。将指针悬停在某行的警告上可查看详情。",
+            "warning": "此格式会损失质量",
+            "hdrGainMap": "已丢弃 HDR 增益图：{{format}} 目前仅输出 SDR",
+            "hdrTransfer": "已丢弃 HDR（{{transfer}}）：{{format}} 目前仅输出 SDR",
+            "depth": "{{format}} 中 {{from}} → {{to}}",
+            "bits": "{{bits}} 位",
+            "bitsFloat": "{{bits}} 位浮点",
+            "profileFormat": "{{profile}} 配置文件未嵌入 {{format}}",
+            "profileColourModel": "{{profile}} 配置文件未嵌入 {{format}}：它适用于 {{colourSpace}}，而非文件的颜色",
+            "profileDiscarded": "已丢弃 {{profile}} 配置文件：它适用于 {{colourSpace}}，而非图像的像素",
+            "profileNotWritten": "{{profile}} 配置文件未嵌入 {{format}}：编码器无法写入它",
+            "profileCoded": "{{profile}} 颜色描述未写入 {{format}}",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {

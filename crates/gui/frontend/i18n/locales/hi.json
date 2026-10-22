@@ -225,6 +225,21 @@
             "ended_other": "{{count}} में से {{written}} लिखी गईं",
             "endedFailed_one": "{{count}} में से {{written}} लिखी गईं, {{failed}} विफल",
             "endedFailed_other": "{{count}} में से {{written}} लिखी गईं, {{failed}} विफल"
+        },
+        "loss": {
+            "notice": "{{total}} में से {{count}} छवियाँ इस फ़ॉर्मेट में गुणवत्ता खो देंगी। क्या खोया जाएगा, यह देखने के लिए किसी पंक्ति की चेतावनी पर पॉइंटर रखें।",
+            "warning": "इस फ़ॉर्मेट में गुणवत्ता की हानि",
+            "hdrGainMap": "HDR गेन मैप हटाया गया: {{format}} आउटपुट अभी केवल SDR है",
+            "hdrTransfer": "HDR ({{transfer}}) हटाया गया: {{format}} आउटपुट अभी केवल SDR है",
+            "depth": "{{format}} में {{from}} → {{to}}",
+            "bits": "{{bits}}-बिट",
+            "bitsFloat": "{{bits}}-बिट फ़्लोट",
+            "profileFormat": "{{profile}} प्रोफ़ाइल {{format}} में एम्बेड नहीं की गई",
+            "profileColourModel": "{{profile}} प्रोफ़ाइल {{format}} में एम्बेड नहीं की गई: यह {{colourSpace}} के लिए है, फ़ाइल के रंगों के लिए नहीं",
+            "profileDiscarded": "{{profile}} प्रोफ़ाइल हटाई गई: यह {{colourSpace}} के लिए है, छवि के पिक्सेल के लिए नहीं",
+            "profileNotWritten": "{{profile}} प्रोफ़ाइल {{format}} में एम्बेड नहीं की गई: एन्कोडर इसे लिख नहीं सका",
+            "profileCoded": "{{profile}} रंग विवरण {{format}} में नहीं लिखा गया",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {

@@ -225,6 +225,21 @@
             "ended_other": "{{written}} von {{count}} geschrieben",
             "endedFailed_one": "{{written}} von {{count}} geschrieben, {{failed}} fehlgeschlagen",
             "endedFailed_other": "{{written}} von {{count}} geschrieben, {{failed}} fehlgeschlagen"
+        },
+        "loss": {
+            "notice": "{{count}} von {{total}} Bildern verlieren in diesem Format an Qualität. Bewege den Zeiger über die Warnung in einer Zeile, um zu sehen, was.",
+            "warning": "Qualitätsverlust in diesem Format",
+            "hdrGainMap": "HDR-Gain-Map entfernt: {{format}} wird vorerst nur als SDR geschrieben",
+            "hdrTransfer": "HDR ({{transfer}}) entfernt: {{format}} wird vorerst nur als SDR geschrieben",
+            "depth": "{{from}} → {{to}} in {{format}}",
+            "bits": "{{bits}} Bit",
+            "bitsFloat": "{{bits}} Bit Gleitkomma",
+            "profileFormat": "{{profile}}-Profil nicht in {{format}} eingebettet",
+            "profileColourModel": "{{profile}}-Profil nicht in {{format}} eingebettet: Es gilt für {{colourSpace}}, nicht für die Farben der Datei",
+            "profileDiscarded": "{{profile}}-Profil verworfen: Es gilt für {{colourSpace}}, nicht für die Pixel des Bildes",
+            "profileNotWritten": "{{profile}}-Profil nicht in {{format}} eingebettet: Der Encoder konnte es nicht schreiben",
+            "profileCoded": "{{profile}}-Farbbeschreibung nicht in {{format}} geschrieben",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {
