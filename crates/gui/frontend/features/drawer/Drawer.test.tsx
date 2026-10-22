@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { Preview } from "@/features/preview/Preview";
 import "@/i18n";
 import { isMacOs } from "@/ipc/os";
@@ -677,6 +677,31 @@ describe("the zoom control", () => {
         expect(zoomOut()).toHaveAttribute("aria-keyshortcuts", "Control+-");
     });
 
+    it("names its first binding in its tooltip, as this platform writes it", async () => {
+        vi.mocked(isMacOs).mockReturnValue(true);
+        openFiles(HOLIDAY);
+        render(<Drawer />);
+
+        await act(async () => {
+            fireEvent.focus(zoomIn());
+        });
+
+        expect(await screen.findByRole("tooltip")).toHaveTextContent("Zoom in (⌘ =)");
+    });
+
+    it("names only itself in its tooltip when it has no binding", async () => {
+        vi.mocked(isMacOs).mockReturnValue(false);
+        useSettingsStore.getState().apply({ shortcuts: { zoomOut: [] } });
+        openFiles(HOLIDAY);
+        render(<Drawer />);
+
+        await act(async () => {
+            fireEvent.focus(zoomOut());
+        });
+
+        expect(await screen.findByRole("tooltip")).toHaveTextContent(/^Zoom out$/);
+    });
+
     it("states the user's bindings once they are saved", () => {
         vi.mocked(isMacOs).mockReturnValue(false);
         useSettingsStore.getState().apply({ shortcuts: { zoomIn: ["Shift+z", "Mod+="], zoomOut: [] } });
@@ -779,5 +804,37 @@ describe("the zoom control", () => {
 
             expect(bubble()).not.toBeInTheDocument();
         });
+    });
+});
+
+describe("the strip following the current image", () => {
+    it("scrolls an off-screen current image into view, and leaves a visible one where it is", async () => {
+        // jsdom has no `scrollTo` on elements at all, which the virtualizer calls only if present.
+        const scrollTo = vi.fn();
+        Element.prototype.scrollTo = scrollTo;
+        onTestFinished(() => {
+            delete (Element.prototype as Partial<Element>).scrollTo;
+        });
+        // And no layout, so nothing is wider than its box and every offset would clamp to 0.
+        vi.spyOn(Element.prototype, "scrollWidth", "get").mockReturnValue(10_000);
+        vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(640);
+        const many = Array.from({ length: 30 }, (_, index) => ({
+            ...HOLIDAY,
+            path: `/Users/someone/Pictures/photo-${index}.png`,
+            identity: String(index).padStart(16, "0"),
+        }));
+        openFiles(...many);
+        act(() => useFileStore.getState().setCurrentIndex(0));
+        render(<Drawer />);
+        scrollTo.mockClear();
+
+        // The second thumbnail is on screen in a 640px strip, so the strip stays where it is: the
+        // virtualizer may restate the offset it already has, never a new one.
+        await act(async () => useFileStore.getState().setCurrentIndex(1));
+        for (const [options] of scrollTo.mock.calls) expect(options).toMatchObject({ left: 0 });
+
+        scrollTo.mockClear();
+        await act(async () => useFileStore.getState().setCurrentIndex(25));
+        await waitFor(() => expect((scrollTo.mock.lastCall?.[0] as { left?: number })?.left).toBeGreaterThan(0));
     });
 });

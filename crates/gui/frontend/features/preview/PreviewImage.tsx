@@ -150,6 +150,7 @@ const Pane = ({
     const transform = useImageTransform(identity);
     const setTransform = useTransformStore((state) => state.setTransform);
     const setViewport = useTransformStore((state) => state.setViewport);
+    const setFit = useTransformStore((state) => state.setFit);
 
     const [measured, setMeasured] = useState<Size>(UNMEASURED);
     const [natural, setNatural] = useState<Size>(UNMEASURED);
@@ -237,6 +238,10 @@ const Pane = ({
 
         if (!publishViewport) return;
 
+        // What one photograph pixel measures at 1x in this pane, which is what actual pixels is
+        // computed from - in the photograph's own pixels, so a smaller rendition does not change it.
+        if (identity && fitted.width > 0 && imageWidth > 0) setFit({ identity, ratio: fitted.width / imageWidth });
+
         // The portion of the photograph inside this pane, as fractions of the whole of it. The
         // container is this pane's own box, so it is already half-width in side by side.
         const size = scaled(fitted, next.scale);
@@ -256,7 +261,7 @@ const Pane = ({
             width: Math.max(0, right - left) / size.width,
             height: Math.max(0, bottom - top) / size.height,
         });
-    }, [transform, fitted, measured, identity, publishViewport, setViewport]);
+    }, [transform, fitted, measured, identity, imageWidth, publishViewport, setViewport, setFit]);
 
     /*
      * The wheel, and the trackpad pinch the webview delivers as one.

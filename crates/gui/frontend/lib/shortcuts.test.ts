@@ -136,8 +136,27 @@ describe("matches", () => {
     });
 
     it("finds no action for an unbound key", () => {
-        expect(actionFor(key("z"), DEFAULT_SHORTCUTS, MAC)).toBeUndefined();
-        expect(actionFor(key("1", { metaKey: true }), DEFAULT_SHORTCUTS, MAC)).toBeUndefined();
+        expect(actionFor(key("k"), DEFAULT_SHORTCUTS, MAC)).toBeUndefined();
+        expect(actionFor(key("2", { metaKey: true }), DEFAULT_SHORTCUTS, MAC)).toBeUndefined();
+    });
+});
+
+describe("the defaults added for discovery", () => {
+    it.each([
+        ["macOS", MAC, { metaKey: true }],
+        ["Windows and Linux", PC, { ctrlKey: true }],
+    ])("bind actual pixels, the toggle, previous, next and the list on %s", (_platform, mac, mod) => {
+        expect(actionFor(key("1", mod), DEFAULT_SHORTCUTS, mac)).toBe("actualPixels");
+        expect(actionFor(key("z"), DEFAULT_SHORTCUTS, mac)).toBe("toggleZoom");
+        expect(actionFor(key("ArrowLeft"), DEFAULT_SHORTCUTS, mac)).toBe("previousImage");
+        expect(actionFor(key("ArrowRight"), DEFAULT_SHORTCUTS, mac)).toBe("nextImage");
+        // Typed with Shift on most layouts, which a symbol ignores.
+        expect(actionFor(key("?", { shiftKey: true }), DEFAULT_SHORTCUTS, mac)).toBe("showShortcuts");
+    });
+
+    it("leave a modified arrow or Z alone", () => {
+        expect(actionFor(key("ArrowRight", { metaKey: true }), DEFAULT_SHORTCUTS, MAC)).toBeUndefined();
+        expect(actionFor(key("Z", { shiftKey: true }), DEFAULT_SHORTCUTS, PC)).toBeUndefined();
     });
 });
 
@@ -169,6 +188,29 @@ describe("isWindowShortcut", () => {
     it("takes a key pressed on the page itself", () => {
         expect(pressAt(document.body, { key: " " })).toBe(true);
         expect(pressAt(document.body, { key: "=", metaKey: true })).toBe(true);
+    });
+
+    it.each([
+        ["a slider", "<span role='slider' tabindex='0'></span>"],
+        ["a radio in a group", "<div role='radiogroup'><button role='radio'>one</button></div>"],
+        ["the split's divider", "<div role='separator' tabindex='0'></div>"],
+        ["a tab", "<button role='tab'>one</button>"],
+        ["a marked in-house control", "<div data-arrow-keys tabindex='0'></div>"],
+    ])("leaves the arrow keys, Home and End to %s", (_name, html) => {
+        const root = mount(html);
+        const target = root.firstElementChild instanceof HTMLElement ? root.firstElementChild : root;
+
+        for (const value of ["ArrowLeft", "ArrowRight", "ArrowUp", "Home", "End", "PageDown"]) {
+            expect(pressAt(target, { key: value })).toBe(false);
+        }
+        // Other keys are still the window's from there.
+        expect(pressAt(target, { key: "1", metaKey: true })).toBe(true);
+    });
+
+    it("takes the arrow keys from a plain button", () => {
+        const button = mount("<button>Zoom in</button>");
+
+        expect(pressAt(button, { key: "ArrowRight" })).toBe(true);
     });
 
     it.each([

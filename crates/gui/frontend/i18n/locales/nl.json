@@ -119,7 +119,12 @@
                 "zoomIn": "Inzoomen",
                 "zoomOut": "Uitzoomen",
                 "fit": "Passend in venster",
-                "showOriginal": "Origineel tonen zolang ingedrukt"
+                "actualPixels": "Werkelijke pixels (100%)",
+                "toggleZoom": "Wisselen tussen passend en werkelijke pixels",
+                "showOriginal": "Origineel tonen zolang ingedrukt",
+                "previousImage": "Vorige afbeelding",
+                "nextImage": "Volgende afbeelding",
+                "showShortcuts": "Sneltoetsen tonen"
             },
             "add": "Sneltoets toevoegen",
             "addLabel": "Sneltoets toevoegen voor {{action}}",
@@ -427,5 +432,12 @@
             "message": "Open Photo AI liep tegen een onverwachte fout aan en kan niet verder. Opnieuw laden lost het meestal op; je instellingen blijven behouden, maar niet-opgeslagen werk in de huidige sessie gaat verloren.",
             "reload": "Opnieuw laden"
         }
+    },
+    "shortcuts": {
+        "title": "Sneltoetsen",
+        "description": "De toetsen die nu aan elke actie zijn gekoppeld.",
+        "hint": "Wijzig ze in Instellingen > Toetsenbord.",
+        "tooltip": "{{name}} ({{key}})",
+        "settingsHint": "Druk overal op {{key}} om deze sneltoetsen te zien."
     }
 }

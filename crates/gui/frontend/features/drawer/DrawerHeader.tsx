@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ChevronsDown, ChevronsUp, Minus, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PreviewFullIcon, PreviewSideIcon, PreviewSplitIcon } from "@/components/icons/preview-modes";
@@ -13,7 +14,7 @@ import { useShortcutBindings } from "@/hooks/useShortcuts";
 import { isMacOs } from "@/ipc/os";
 import { ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
 import { track } from "@/lib/faro";
-import { ariaKeyShortcuts } from "@/lib/shortcuts";
+import { ariaKeyShortcuts, formatBinding } from "@/lib/shortcuts";
 import { useDrawerStore } from "@/stores/drawer";
 import { useCurrentFile, useFileStore, useHasFiles } from "@/stores/files";
 import { isPreviewMode, PREVIEW_MODES, usePreviewStore } from "@/stores/preview";
@@ -25,6 +26,53 @@ const MODES = {
     side: { labelKey: "drawer.preview.sideBySide", Icon: PreviewSideIcon },
     split: { labelKey: "drawer.preview.split", Icon: PreviewSplitIcon },
 } as const;
+
+/**
+ * One of the zoom control's two step buttons, with a tooltip naming it and the first key it is bound
+ * to now - the first only, since a tooltip is a glance and the shortcuts list holds the rest -
+ * or its name alone when it has none. `aria-keyshortcuts` names every binding.
+ */
+const ZoomStepButton = ({
+    label,
+    bindings,
+    mac,
+    disabled,
+    onPress,
+    children,
+}: {
+    label: string;
+    bindings: readonly string[];
+    mac: boolean;
+    disabled: boolean;
+    onPress: () => void;
+    children: ReactNode;
+}) => {
+    const { t } = useTranslation();
+    const first = bindings[0];
+    const tip =
+        first === undefined
+            ? label
+            : t("shortcuts.tooltip", { name: label, key: formatBinding(first, mac, t("settings.keyboard.space")) });
+
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={disabled}
+                    onClick={onPress}
+                    aria-label={label}
+                    aria-keyshortcuts={ariaKeyShortcuts(bindings, mac) || undefined}
+                >
+                    {children}
+                </Button>
+            </TooltipTrigger>
+
+            <TooltipContent>{tip}</TooltipContent>
+        </Tooltip>
+    );
+};
 
 type DrawerHeaderProps = {
     /** Whether the drawer's body is showing, which is all the fold toggle's icon reports. */
@@ -248,19 +296,18 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
                  * clamps every write, so this is the same rule the wheel and the slider get.
                  *
                  * `aria-keyshortcuts` names the keyboard route onto the same step, so a screen reader
-                 * reports it: the user's bindings, as saved on the Keyboard settings page. Nothing
-                 * visible names it yet.
+                 * reports it: the user's bindings, as saved on the Keyboard settings page. The
+                 * tooltip names the first of them for everyone else.
                  */}
-                <Button
-                    variant="ghost"
-                    size="icon-sm"
+                <ZoomStepButton
+                    label={t("drawer.zoomOut")}
+                    bindings={bindings.zoomOut}
+                    mac={mac}
                     disabled={disabled}
-                    onClick={() => stepZoom(-1)}
-                    aria-label={t("drawer.zoomOut")}
-                    aria-keyshortcuts={ariaKeyShortcuts(bindings.zoomOut, mac) || undefined}
+                    onPress={() => stepZoom(-1)}
                 >
                     <Minus className="size-4.5 shrink-0" />
-                </Button>
+                </ZoomStepButton>
 
                 {/*
                  * `thumbLabel` rather than `aria-label`: Radix puts `role="slider"` on the thumb, so
@@ -290,16 +337,15 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
                     formatValue={(scale) => t("drawer.zoomScale", { scale: Number(scale.toFixed(1)) })}
                 />
 
-                <Button
-                    variant="ghost"
-                    size="icon-sm"
+                <ZoomStepButton
+                    label={t("drawer.zoomIn")}
+                    bindings={bindings.zoomIn}
+                    mac={mac}
                     disabled={disabled}
-                    onClick={() => stepZoom(1)}
-                    aria-label={t("drawer.zoomIn")}
-                    aria-keyshortcuts={ariaKeyShortcuts(bindings.zoomIn, mac) || undefined}
+                    onPress={() => stepZoom(1)}
                 >
                     <Plus className="size-4.5 shrink-0" />
-                </Button>
+                </ZoomStepButton>
             </div>
         </div>
     );

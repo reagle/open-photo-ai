@@ -289,3 +289,15 @@ export const useCurrentFile = () => useFileStore((state) => state.files.at(state
  * and not on every image added after that.
  */
 export const useHasFiles = () => useFileStore((state) => state.files.length > 0);
+
+/**
+ * Makes the image before (`-1`) or after (`1`) the current one current, in the order the drawer lists
+ * them. Stops at either end rather than wrapping, as Lightroom's filmstrip does: a held key reaches the
+ * end and stays there. Does nothing with nothing open.
+ */
+export const stepImage = (direction: 1 | -1) => {
+    const { files, currentIndex, setCurrentIndex } = useFileStore.getState();
+    const next = currentIndex + direction;
+
+    if (next >= 0 && next < files.length) setCurrentIndex(next);
+};

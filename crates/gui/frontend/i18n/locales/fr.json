@@ -119,7 +119,12 @@
                 "zoomIn": "Zoom avant",
                 "zoomOut": "Zoom arrière",
                 "fit": "Ajuster à la fenêtre",
-                "showOriginal": "Afficher l’original tant que la touche est enfoncée"
+                "actualPixels": "Pixels réels (100 %)",
+                "toggleZoom": "Basculer entre ajusté et pixels réels",
+                "showOriginal": "Afficher l’original tant que la touche est enfoncée",
+                "previousImage": "Image précédente",
+                "nextImage": "Image suivante",
+                "showShortcuts": "Afficher les raccourcis clavier"
             },
             "add": "Ajouter un raccourci",
             "addLabel": "Ajouter un raccourci pour {{action}}",
@@ -437,5 +442,12 @@
             "message": "Open Photo AI a rencontré une erreur inattendue et ne peut pas continuer. Recharger règle généralement le problème ; vos paramètres sont conservés, mais tout travail non enregistré de la session en cours sera perdu.",
             "reload": "Recharger"
         }
+    },
+    "shortcuts": {
+        "title": "Raccourcis clavier",
+        "description": "Les touches associées actuellement à chaque action.",
+        "hint": "Modifiez-les dans Paramètres > Clavier.",
+        "tooltip": "{{name}} ({{key}})",
+        "settingsHint": "Appuyez sur {{key}} n’importe où pour voir ces raccourcis."
     }
 }

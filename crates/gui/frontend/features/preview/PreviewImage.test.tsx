@@ -287,6 +287,14 @@ describe("the pane labels", () => {
  * from knowing exactly where the photograph's top-left corner is.
  */
 describe("the photograph's own box", () => {
+    it("reports what one photograph pixel measures when fitted, for actual pixels", () => {
+        stubPaneGeometry();
+        draw("side");
+
+        // 900px of pane for HOLIDAY's 3000px, from the pane that also reports the viewport.
+        expect(useTransformStore.getState().fit).toEqual({ identity: HOLIDAY.identity, ratio: 0.3 });
+    });
+
     it("is drawn at the size that fits, whole and centred, before anything magnifies it", () => {
         stubPaneGeometry();
         draw("full");

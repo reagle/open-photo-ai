@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { DrawerItem } from "@/features/drawer/DrawerItem";
 import { useResizeObserver } from "@/hooks/useResizeObserver";
@@ -83,6 +83,16 @@ export const DrawerBody = ({ height, drawer }: DrawerBodyProps) => {
      * thumbnail on every navigation click.
      */
     const onItemClick = useCallback((index: number) => setCurrentIndex(index), [setCurrentIndex]);
+
+    /*
+     * Keeps the current image in view when it changes, which the keyboard's previous and next do
+     * without the strip being touched. `auto` scrolls only when the item is outside the strip, so a
+     * thumbnail clicked - always on screen - does not move it.
+     */
+    useEffect(() => {
+        if (currentIndex >= 0 && currentIndex < files.length)
+            virtualizer.scrollToIndex(currentIndex, { align: "auto" });
+    }, [currentIndex, files.length, virtualizer]);
 
     const virtualItems = virtualizer.getVirtualItems();
     const first = virtualItems[0];
