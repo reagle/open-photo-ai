@@ -119,7 +119,12 @@
                 "zoomIn": "Acercar",
                 "zoomOut": "Alejar",
                 "fit": "Ajustar a la ventana",
-                "showOriginal": "Ver el original mientras se mantiene"
+                "actualPixels": "Píxeles reales (100 %)",
+                "toggleZoom": "Alternar ajuste y píxeles reales",
+                "showOriginal": "Ver el original mientras se mantiene",
+                "previousImage": "Imagen anterior",
+                "nextImage": "Imagen siguiente",
+                "showShortcuts": "Mostrar atajos de teclado"
             },
             "add": "Añadir atajo",
             "addLabel": "Añadir atajo para {{action}}",
@@ -427,5 +432,12 @@
             "message": "Open Photo AI ha sufrido un error inesperado y no puede continuar. Recargar suele solucionarlo; tus ajustes se conservan, pero cualquier trabajo sin guardar de esta sesión se perderá.",
             "reload": "Recargar"
         }
+    },
+    "shortcuts": {
+        "title": "Atajos de teclado",
+        "description": "Las teclas asignadas ahora a cada acción.",
+        "hint": "Cámbialas en Ajustes > Teclado.",
+        "tooltip": "{{name}} ({{key}})",
+        "settingsHint": "Pulsa {{key}} en cualquier lugar para ver estos atajos."
     }
 }

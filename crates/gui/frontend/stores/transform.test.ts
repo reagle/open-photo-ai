@@ -1,8 +1,8 @@
 import { act } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ZOOM_BUTTON_STEP, ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
 import { HOLIDAY, openFiles, resetFileStore, SUNSET } from "@/test/support";
-import { FITTED, fitCurrent, stepZoom, useTransformStore } from "./transform";
+import { actualPixels, FITTED, fitCurrent, stepZoom, toggleZoom, useTransformStore } from "./transform";
 
 const identity = (record: { identity?: string }) => record.identity ?? "";
 
@@ -116,5 +116,86 @@ describe("stepZoom and fitCurrent", () => {
         act(() => fitCurrent());
 
         expect(transforms().size).toBe(0);
+    });
+});
+
+describe("actualPixels and toggleZoom", () => {
+    const scale = () => transforms().get(identity(HOLIDAY))?.scale;
+    /** The pane's report: HOLIDAY drawn `ratio` pane pixels per photograph pixel when fitted. */
+    const fitted = (ratio: number, record: { identity?: string } = HOLIDAY) =>
+        act(() => store.setFit({ identity: identity(record), ratio }));
+
+    beforeEach(() => {
+        vi.stubGlobal("devicePixelRatio", 1);
+        openFiles(HOLIDAY, SUNSET);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it("shows one photograph pixel per display pixel", () => {
+        fitted(0.25);
+        set(HOLIDAY, { scale: 1, x: -10, y: -20 });
+
+        act(() => actualPixels());
+
+        // Position passed through and no anchor: the pane holds its middle still, as for a step.
+        expect(transforms().get(identity(HOLIDAY))).toEqual({ scale: 4, x: -10, y: -20 });
+    });
+
+    it("counts device pixels, so a Retina display needs half the magnification", () => {
+        vi.stubGlobal("devicePixelRatio", 2);
+        fitted(0.25);
+
+        act(() => actualPixels());
+
+        expect(scale()).toBe(2);
+    });
+
+    it("holds to the zoom range at both ends", () => {
+        fitted(0.05);
+        act(() => actualPixels());
+        expect(scale()).toBe(ZOOM_MAX);
+
+        // A photograph smaller than the pane is enlarged to fit, and the preview has nothing below 1x.
+        fitted(2);
+        act(() => actualPixels());
+        expect(scale()).toBe(ZOOM_MIN);
+    });
+
+    it("does nothing before the pane has measured the current photograph, or with nothing open", () => {
+        act(() => actualPixels());
+        fitted(0.25, SUNSET);
+        act(() => actualPixels());
+        expect(scale()).toBeUndefined();
+
+        resetFileStore();
+        fitted(0.25);
+        act(() => actualPixels());
+        act(() => toggleZoom());
+        expect(scale()).toBeUndefined();
+    });
+
+    it("toggles from fitted to actual pixels, and from any other magnification back to fitted", () => {
+        fitted(0.25);
+
+        act(() => toggleZoom());
+        expect(scale()).toBe(4);
+
+        act(() => toggleZoom());
+        expect(transforms().get(identity(HOLIDAY))).toEqual(FITTED);
+
+        set(HOLIDAY, { scale: 2.5, x: -100, y: -50 });
+        act(() => toggleZoom());
+        expect(transforms().get(identity(HOLIDAY))).toEqual(FITTED);
+    });
+
+    it("keeps one fit report, and does not replace it with an equal one", () => {
+        fitted(0.25);
+        const first = useTransformStore.getState().fit;
+        fitted(0.25);
+
+        expect(useTransformStore.getState().fit).toBe(first);
     });
 });

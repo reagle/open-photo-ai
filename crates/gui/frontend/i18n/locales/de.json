@@ -119,7 +119,12 @@
                 "zoomIn": "Vergrößern",
                 "zoomOut": "Verkleinern",
                 "fit": "An Fenster anpassen",
-                "showOriginal": "Original anzeigen, solange gedrückt"
+                "actualPixels": "Originalpixel (100 %)",
+                "toggleZoom": "Zwischen Einpassen und Originalpixeln wechseln",
+                "showOriginal": "Original anzeigen, solange gedrückt",
+                "previousImage": "Vorheriges Bild",
+                "nextImage": "Nächstes Bild",
+                "showShortcuts": "Tastaturkürzel anzeigen"
             },
             "add": "Kürzel hinzufügen",
             "addLabel": "Kürzel hinzufügen für {{action}}",
@@ -427,5 +432,12 @@
             "message": "Open Photo AI ist auf einen unerwarteten Fehler gestoßen und kann nicht fortfahren. Ein Neuladen behebt das meist; Ihre Einstellungen bleiben erhalten, nicht gespeicherte Arbeit aus der aktuellen Sitzung geht jedoch verloren.",
             "reload": "Neu laden"
         }
+    },
+    "shortcuts": {
+        "title": "Tastaturkürzel",
+        "description": "Die Tasten, die jeder Aktion derzeit zugewiesen sind.",
+        "hint": "Ändern Sie sie unter Einstellungen > Tastatur.",
+        "tooltip": "{{name}} ({{key}})",
+        "settingsHint": "Drücken Sie überall {{key}}, um diese Kürzel zu sehen."
     }
 }

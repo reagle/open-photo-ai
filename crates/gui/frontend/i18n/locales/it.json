@@ -119,7 +119,12 @@
                 "zoomIn": "Ingrandisci",
                 "zoomOut": "Riduci",
                 "fit": "Adatta alla finestra",
-                "showOriginal": "Mostra l’originale finché premuto"
+                "actualPixels": "Pixel reali (100%)",
+                "toggleZoom": "Alterna adattato e pixel reali",
+                "showOriginal": "Mostra l’originale finché premuto",
+                "previousImage": "Immagine precedente",
+                "nextImage": "Immagine successiva",
+                "showShortcuts": "Mostra scorciatoie da tastiera"
             },
             "add": "Aggiungi scorciatoia",
             "addLabel": "Aggiungi scorciatoia per {{action}}",
@@ -437,5 +442,12 @@
             "message": "Open Photo AI ha riscontrato un errore imprevisto e non può continuare. Di solito ricaricare risolve il problema; le impostazioni vengono mantenute, ma il lavoro non salvato nella sessione corrente andrà perso.",
             "reload": "Ricarica"
         }
+    },
+    "shortcuts": {
+        "title": "Scorciatoie da tastiera",
+        "description": "I tasti assegnati ora a ciascuna azione.",
+        "hint": "Modificali in Impostazioni > Tastiera.",
+        "tooltip": "{{name}} ({{key}})",
+        "settingsHint": "Premi {{key}} ovunque per vedere queste scorciatoie."
     }
 }

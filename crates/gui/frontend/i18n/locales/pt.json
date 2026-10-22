@@ -119,7 +119,12 @@
                 "zoomIn": "Aumentar zoom",
                 "zoomOut": "Reduzir zoom",
                 "fit": "Ajustar à janela",
-                "showOriginal": "Mostrar original enquanto pressionado"
+                "actualPixels": "Pixels reais (100%)",
+                "toggleZoom": "Alternar entre ajustado e pixels reais",
+                "showOriginal": "Mostrar original enquanto pressionado",
+                "previousImage": "Imagem anterior",
+                "nextImage": "Próxima imagem",
+                "showShortcuts": "Mostrar atalhos de teclado"
             },
             "add": "Adicionar atalho",
             "addLabel": "Adicionar atalho para {{action}}",
@@ -427,5 +432,12 @@
             "message": "O Open Photo AI encontrou um erro inesperado e não pode continuar. Recarregar normalmente resolve; suas configurações são mantidas, mas qualquer trabalho não salvo nesta sessão será perdido.",
             "reload": "Recarregar"
         }
+    },
+    "shortcuts": {
+        "title": "Atalhos de teclado",
+        "description": "As teclas atribuídas agora a cada ação.",
+        "hint": "Altere-as em Configurações > Teclado.",
+        "tooltip": "{{name}} ({{key}})",
+        "settingsHint": "Pressione {{key}} em qualquer lugar para ver estes atalhos."
     }
 }

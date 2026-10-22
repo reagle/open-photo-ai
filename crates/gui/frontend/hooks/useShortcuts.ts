@@ -7,15 +7,22 @@ import {
     type ShortcutAction,
     type ShortcutTable,
 } from "@/lib/shortcuts";
+import { stepImage } from "@/stores/files";
 import { usePeekStore } from "@/stores/peek";
 import { useSettingsStore } from "@/stores/settings";
-import { fitCurrent, stepZoom } from "@/stores/transform";
+import { useShortcutsListStore } from "@/stores/shortcutsList";
+import { actualPixels, fitCurrent, stepZoom, toggleZoom } from "@/stores/transform";
 
 /** What each one-shot action does. `showOriginal` is not one: it lasts for as long as its key is held. */
 const PRESS: Record<Exclude<ShortcutAction, "showOriginal">, () => void> = {
     zoomIn: () => stepZoom(1),
     zoomOut: () => stepZoom(-1),
     fit: fitCurrent,
+    actualPixels,
+    toggleZoom,
+    previousImage: () => stepImage(-1),
+    nextImage: () => stepImage(1),
+    showShortcuts: () => useShortcutsListStore.getState().setOpen(true),
 };
 
 /**
@@ -58,7 +65,8 @@ export const useShortcuts = () => {
             event.preventDefault();
 
             if (action !== "showOriginal") {
-                PRESS[action]();
+                // A toggle held down would flip on every repeat; the steps and the image keys are meant to.
+                if (!(event.repeat && action === "toggleZoom")) PRESS[action]();
                 return;
             }
 

@@ -4,6 +4,7 @@ import { Navbar } from "@/features/navbar/Navbar";
 import { Preview } from "@/features/preview/Preview";
 import { SetupDialog } from "@/features/setup/SetupDialog";
 import { TensorRTDialog } from "@/features/setup/TensorRTDialog";
+import { ShortcutsDialog } from "@/features/shortcuts/ShortcutsDialog";
 import { Sidebar } from "@/features/sidebar/Sidebar";
 import { useOpenedFiles } from "@/hooks/useOpenedFiles";
 import { useShortcuts } from "@/hooks/useShortcuts";
@@ -138,6 +139,9 @@ const App = () => {
              * exactly as a first attempt does.
              */}
             {status === "ready" && tensorrt && !tensorrtAsked && <TensorRTDialog />}
+
+            {/* The keyboard shortcuts list, opened by its own shortcut. Closed until then. */}
+            <ShortcutsDialog />
         </div>
     );
 };

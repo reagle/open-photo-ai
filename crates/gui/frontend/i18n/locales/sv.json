@@ -119,7 +119,12 @@
                 "zoomIn": "Zooma in",
                 "zoomOut": "Zooma ut",
                 "fit": "Anpassa till fönstret",
-                "showOriginal": "Visa original medan tangenten hålls ned"
+                "actualPixels": "Faktiska pixlar (100 %)",
+                "toggleZoom": "Växla mellan anpassad och faktiska pixlar",
+                "showOriginal": "Visa original medan tangenten hålls ned",
+                "previousImage": "Föregående bild",
+                "nextImage": "Nästa bild",
+                "showShortcuts": "Visa kortkommandon"
             },
             "add": "Lägg till kortkommando",
             "addLabel": "Lägg till kortkommando för {{action}}",
@@ -427,5 +432,12 @@
             "message": "Open Photo AI råkade ut för ett oväntat fel och kan inte fortsätta. Att ladda om brukar lösa det; dina inställningar behålls, men allt osparat arbete i den aktuella sessionen går förlorat.",
             "reload": "Ladda om"
         }
+    },
+    "shortcuts": {
+        "title": "Kortkommandon",
+        "description": "Tangenterna som just nu är kopplade till varje åtgärd.",
+        "hint": "Ändra dem under Inställningar > Tangentbord.",
+        "tooltip": "{{name}} ({{key}})",
+        "settingsHint": "Tryck på {{key}} var som helst för att se kortkommandona."
     }
 }

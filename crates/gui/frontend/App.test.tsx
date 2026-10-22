@@ -178,6 +178,18 @@ describe("App", () => {
         expect(screen.getByRole("slider", { name: "Zoom" })).toHaveAttribute("aria-valuenow", "1.5");
     });
 
+    it("opens the keyboard shortcuts list with ?, and closes it with Escape", () => {
+        render(<App />);
+
+        fireEvent.keyDown(document.body, { key: "?", code: "Slash", shiftKey: true });
+
+        const list = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+        expect(list).toHaveTextContent("Ctrl+=");
+
+        fireEvent.keyDown(list, { key: "Escape" });
+        expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).not.toBeInTheDocument();
+    });
+
     it("keeps Autopilot live, because it is not an action on an image", () => {
         render(<App />);
 
