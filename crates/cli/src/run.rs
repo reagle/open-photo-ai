@@ -21,8 +21,8 @@
 //!   claim, save, commit        --> the source's depth, the library's recommended settings
 //!   end its row                --> Enhancements applied, Failed or Stopped, and the bar's [n/N] counts it;
 //!                                  off a terminal, its one plain line
-//! finish the view, summarize   --> ✨ naming the file for one image or the output for more, then each failure's 🧨
-//!                                  line where the view hid it
+//! finish the view, summarize   --> ✨ naming the file for one image, or for more the output or "beside their
+//!                                  sources" without one, then each failure's 🧨 line where the view hid it
 //! ```
 //!
 //! A Ctrl-C stops the whole batch, keeping what was already written. The notes, the face report, what each image
@@ -70,13 +70,15 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
     let launched = tokio::time::Instant::now();
     let update = update::start();
 
-    let target = output::target(&args)?;
+    let mut target = output::target(&args)?;
     let skip = match &target {
         // A directory that does not exist yet holds no earlier results to skip.
         Target::Directory { path, .. } => std::fs::canonicalize(path).ok(),
-        Target::File { .. } => None,
+        // Beside its source, a result is in no directory of its own to skip.
+        Target::File { .. } | Target::Beside { .. } => None,
     };
     let sources = inputs::expand(&args.inputs, args.recursive, skip.as_deref())?;
+    output::keep_inputs(&mut target, sources.iter().map(|source| source.path.as_path()));
     events::files_added(&sources.iter().map(|source| source.path.as_path()).collect::<Vec<_>>());
 
     // Before the dependency line, the first thing that can draw. A refusal above prints its failure line alone.
@@ -185,7 +187,7 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
     let live = view.finish_batch();
     events::export_finished(sources.len(), written.len(), !stopped, began.elapsed().as_millis());
 
-    for line in summary(&written, &args.output, &failures, live, sources.len(), look.color) {
+    for line in summary(&written, args.output.as_deref(), &failures, live, sources.len(), look.color) {
         eprintln!("{line}");
     }
 
@@ -200,7 +202,7 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
 /// is the closing line.
 fn summary(
     written: &[PathBuf],
-    output: &Path,
+    output: Option<&Path>,
     failures: &[CliError],
     live: bool,
     total: usize,
@@ -250,10 +252,10 @@ fn check_processor(requested: Processor, supported: bool, available: &[Execution
     )))
 }
 
-/// The format the run writes, as `export_started` names it: the directory's choice, or the format of the one file.
+/// The format the run writes, as `export_started` names it: the naming's choice, or the format of the one file.
 fn format_name(target: &Target) -> String {
     match target {
-        Target::Directory { naming, .. } => events::format_name(naming.format),
+        Target::Directory { naming, .. } | Target::Beside { naming, .. } => events::format_name(naming.format),
         Target::File { format, .. } => events::export_format_of(*format)
             .map_or_else(|| format.name().to_string(), |format| format.name().to_string()),
     }
@@ -308,7 +310,11 @@ async fn enhance_one(
     }
 
     let (destination, format) = output::destination(target, source);
-    let written = output::write(target, &enhanced.picture, &destination, format, args.overwrite).await?;
+    let overwrite = args.overwrite && output::may_overwrite(target, &source.path, &destination);
+    if args.overwrite && !overwrite {
+        tracing::warn!("{} is another input, so it is kept and the result numbered", destination.display());
+    }
+    let written = output::write(target, &enhanced.picture, &destination, format, overwrite).await?;
 
     let (width, height) = enhanced.picture.dimensions();
     tracing::info!(
@@ -573,7 +579,7 @@ mod tests {
 
         let written = [PathBuf::from("out/a.jpg"), PathBuf::from("out/c.jpg")];
         let failures = vec![failed("photos/b.jpg")];
-        lines.extend(summary(&written, Path::new("out"), &failures, live, 3, false));
+        lines.extend(summary(&written, Some(Path::new("out")), &failures, live, 3, false));
         let closing = closing(false, failures, 3).expect_err("an image failed");
         lines.push(look::failure(closing, false));
 
@@ -594,7 +600,7 @@ mod tests {
     #[test]
     fn a_live_view_of_several_images_lists_each_failure_under_the_summary() {
         let failures = [failed("a.jpg"), failed("c.jpg")];
-        let lines = summary(&["out/b.jpg".into()], Path::new("out"), &failures, true, 3, false);
+        let lines = summary(&["out/b.jpg".into()], Some(Path::new("out")), &failures, true, 3, false);
 
         assert_eq!(lines.len(), 3, "{lines:?}");
         assert_eq!(lines[0], "✨ Image enhanced successfully; file saved at out/b.jpg");
@@ -606,8 +612,9 @@ mod tests {
     fn a_single_image_or_plain_output_does_not_list_failures() {
         let failures = [failed("a.jpg")];
 
-        assert!(summary(&[], Path::new("out.png"), &failures, true, 1, false).is_empty());
-        assert!(summary(&[], Path::new("out"), &failures, false, 3, false).is_empty());
+        assert!(summary(&[], Some(Path::new("out.png")), &failures, true, 1, false).is_empty());
+        assert!(summary(&[], Some(Path::new("out")), &failures, false, 3, false).is_empty());
+        assert!(summary(&[], None, &failures, false, 3, false).is_empty());
     }
 
     fn failed(path: &str) -> CliError {
