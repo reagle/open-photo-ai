@@ -14,8 +14,6 @@ use ratatui::crossterm::style::{Color as TermColor, Stylize};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::args::Quality;
-
 /// The success line and the processor line's quality.
 pub const YELLOW: (u8, u8, u8) = (0xe5, 0xdb, 0x08);
 /// The failure line, bold, and a `🧨` row, not bold.
@@ -179,20 +177,48 @@ pub fn plain_row(percent: u8, path: &str, end: &ImageEnd, color: bool) -> String
     line.spans.iter().map(|span| ansi(&span.content, span.style)).collect()
 }
 
-/// `🧠 Running inference using the processor <provider>; quality <HD|SD>`, with the processor green and the quality
-/// yellow. The processor is spelled as `opai` spells it, `Auto` included.
-pub fn processor_line(provider: ExecutionProvider, quality: Quality, color: bool) -> String {
+/// `🧠 Running inference using the processor <provider>; quality <HD|SD|mixed>`, with the processor green and the
+/// quality yellow. The processor is spelled as `opai` spells it, `Auto` included.
+///
+/// With `sources` (under `--verbose`), each value is followed by where it came from, uncoloured: `Auto (from GUI
+/// settings); quality SD (from -q)`.
+pub fn processor_line(
+    provider: ExecutionProvider,
+    quality: &str,
+    sources: Option<(&str, &str)>,
+    color: bool,
+) -> String {
     let fg = |rgb| fg(rgb, color);
+    let (processor_source, quality_source) = sources.map_or((String::new(), String::new()), |(processor, quality)| {
+        (format!(" {processor}"), format!(" {quality}"))
+    });
 
     [
         ("🧠 Running inference using the processor ", Style::new()),
         (provider.as_str(), fg(GREEN)),
+        (&processor_source, Style::new()),
         ("; quality ", Style::new()),
-        (quality.label(), fg(YELLOW)),
+        (quality, fg(YELLOW)),
+        (&quality_source, Style::new()),
     ]
     .iter()
     .map(|(text, style)| ansi(text, *style))
     .collect()
+}
+
+/// `🤖 Autopilot models: <family> <model|off> (<source>), …`, under `--verbose` and `--autopilot`: each family in
+/// `models`, in the order given, with its model's name or `off`, and where the choice came from. Uncoloured but for the
+/// models, which are yellow as the quality is.
+pub fn autopilot_line(models: &[(Family, Option<&str>, String)], color: bool) -> String {
+    let entries: Vec<String> = models
+        .iter()
+        .map(|(family, model, source)| {
+            let model = model.map_or_else(|| "off".to_owned(), |model| ansi(model, fg(YELLOW, color)));
+            format!("{} {model} ({source})", family_label(*family))
+        })
+        .collect();
+
+    format!("🤖 Autopilot models: {}", entries.join(", "))
 }
 
 /// Where a newer release is downloaded from, as the update line names it.
@@ -316,6 +342,7 @@ fn paint_bold(text: impl Display, (r, g, b): (u8, u8, u8), color: bool) -> Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::args::Quality;
 
     fn plain(line: &Line<'_>) -> String {
         line.spans.iter().map(|span| span.content.as_ref()).collect()
@@ -625,13 +652,46 @@ mod tests {
     #[test]
     fn the_processor_line_names_what_was_asked_for() {
         assert_eq!(
-            processor_line(ExecutionProvider::Auto, Quality::Hd, false),
+            processor_line(ExecutionProvider::Auto, Quality::Hd.label(), None, false),
             "🧠 Running inference using the processor Auto; quality HD"
         );
         assert_eq!(
-            processor_line(ExecutionProvider::Cpu, Quality::Sd, false),
+            processor_line(ExecutionProvider::Cpu, Quality::Sd.label(), None, false),
             "🧠 Running inference using the processor CPU; quality SD"
         );
+        assert_eq!(
+            processor_line(ExecutionProvider::Cpu, "mixed", None, false),
+            "🧠 Running inference using the processor CPU; quality mixed"
+        );
+    }
+
+    #[test]
+    fn under_verbose_the_processor_line_names_where_each_value_came_from() {
+        assert_eq!(
+            processor_line(ExecutionProvider::Auto, "SD", Some(("(from GUI settings)", "(from GUI settings)")), false),
+            "🧠 Running inference using the processor Auto (from GUI settings); quality SD (from GUI settings)"
+        );
+        assert_eq!(
+            processor_line(ExecutionProvider::Cpu, "HD", Some(("(from -p)", "(from -q)")), false),
+            "🧠 Running inference using the processor CPU (from -p); quality HD (from -q)"
+        );
+    }
+
+    #[test]
+    fn the_autopilot_line_names_each_familys_model_or_off_and_its_source() {
+        let models = [
+            (Family::Denoise, Some("Stockholm"), "default".to_owned()),
+            (Family::Colorization, None, "from GUI settings".to_owned()),
+            (Family::ColorBalance, Some("São Paulo"), "from OPAI_AP_COLOR".to_owned()),
+        ];
+
+        assert_eq!(
+            autopilot_line(&models, false),
+            "🤖 Autopilot models: Denoise Stockholm (default), Colorize off (from GUI settings), \
+             Color Balance São Paulo (from OPAI_AP_COLOR)"
+        );
+        let (r, g, b) = YELLOW;
+        assert!(autopilot_line(&models, true).contains(&"Stockholm".with(TermColor::Rgb { r, g, b }).to_string()));
     }
 
     #[test]
@@ -643,7 +703,7 @@ mod tests {
             "HD".with(TermColor::Rgb { r: yr, g: yg, b: yb }),
         );
 
-        assert_eq!(processor_line(ExecutionProvider::Auto, Quality::Hd, true), expected);
+        assert_eq!(processor_line(ExecutionProvider::Auto, Quality::Hd.label(), None, true), expected);
     }
 
     #[test]

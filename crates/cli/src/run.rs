@@ -5,8 +5,10 @@
 //! output, inputs               --> refused here: nothing installed
 //! the update line              --> 💡 and a blank line, when the check answered "outdated" within 1.5s of launch
 //! initialize                   --> once; the 💾 line; a Ctrl-C on it abandons initialization; another instance ends it
-//! check the processor          --> one this machine does not offer is refused here: no image loaded
-//! the processor line           --> 🧠 naming the processor asked for and the quality, then a blank line; every mode
+//! check the processor          --> one this machine does not offer is refused here: no image loaded; one from the
+//!                                  GUI's settings is replaced with auto instead, with a warning in the log
+//! the processor line           --> 🧠 naming the processor asked for and the quality, then a blank line; every mode;
+//!                                  under --verbose, where each came from, and with --ap a 🤖 line of the models
 //! Ctrl-C handler               --> from here a SIGINT stops the run instead of killing the process (plain mode)
 //! start the batch's view       --> one live session for every image: the batch's bar over the list
 //! for each image:
@@ -43,7 +45,7 @@ use tracing::Instrument;
 
 use crate::analytics;
 use crate::args::Selection;
-use crate::args::{Args, Processor, Quality};
+use crate::args::{Args, Processor};
 use crate::autopilot::AutopilotModels;
 use crate::chain::{self, Plan};
 use crate::error::CliError;
@@ -52,6 +54,7 @@ use crate::inputs::{self, Source};
 use crate::look::{self, ImageEnd, Look};
 use crate::output::{self, Target};
 use crate::progress::{self, View};
+use crate::settings::{GuiFile, Qualities, Source as SettingSource, Sourced};
 use crate::update;
 
 /// Runs what `args` asks for over every image it names, drawing as `look` says, and writes their results.
@@ -65,7 +68,7 @@ use crate::update;
 /// [`CliError`], whose [`exit_code`](CliError::exit_code) is the process's status: a refusal or an initialization
 /// failure before any image, a stop, the image's own [`CliError::Image`] when the only image failed, or
 /// [`CliError::Batch`] when any image of several failed. The results already written are kept on a stop or a failure.
-pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
+pub async fn run(mut args: Args, look: Look) -> Result<(), CliError> {
     // Everything that can be refused without the library, before it is initialized: a typo in the fortieth path must
     // not cost the first run's download. The output is read first, so the cheap refusals do not wait for a walk.
     // The check for a newer release runs meanwhile, and only its answer waits.
@@ -115,11 +118,17 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
 
     // Only now: CUDA, TensorRT and WebGPU are known once the install plan has run and the runtime has loaded.
     let supported = opai.providers();
-    check_processor(args.processor, supported.supports(args.processor.into()), &supported.available())?;
-    events::app_ready(&args.processor.name(), args.autopilot);
+    let requested = args.settings.processor;
+    args.settings.processor = offered(requested, supported.supports(requested.value.into()));
+    let processor = args.processor();
+    check_processor(processor, supported.supports(processor.into()), &supported.available())?;
+    events::app_ready(&processor.name(), args.autopilot);
+    log_gui_file(&args.settings.gui_file);
 
     // No session holds stderr here: the dependency line is frozen and the batch's view has not started.
-    eprintln!("{}", look::processor_line(args.processor.into(), args.quality, look.color));
+    for line in settings_lines(&args, look.color) {
+        eprintln!("{line}");
+    }
     eprintln!();
 
     // In plain mode a Ctrl-C is still a SIGINT. While the batch's view is drawn it is a key press, which the view
@@ -134,7 +143,7 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
     // `parse` fills the models whenever `--autopilot` is given; the default is only for an `Args` built otherwise.
     let autopilot = args.autopilot.then(|| args.autopilot_models.unwrap_or_default());
 
-    events::export_started(sources.len(), &format_name(&target), &args.processor.name());
+    events::export_started(sources.len(), &format_name(&target), &processor.name());
     let began = Instant::now();
 
     view.start_batch(sources.len());
@@ -148,7 +157,7 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
         let planner = match &autopilot {
             Some(models) => Planner::Autopilot(models),
             None => {
-                let plan = chain::plan(&args.selection, args.quality, source.width, source.height);
+                let plan = chain::plan(&args.selection, args.qualities(), source.width, source.height);
                 log_notes(&source.path, &plan);
                 Planner::Fixed(plan)
             }
@@ -254,6 +263,55 @@ fn check_processor(requested: Processor, supported: bool, available: &[Execution
     )))
 }
 
+/// The processor to run on: `processor`, or `auto` where it came from the GUI's settings and this machine does not
+/// offer it — as the GUI itself falls back — so a file saved on another machine never refuses a run. One asked for with
+/// `-p` is left for [`check_processor`] to refuse.
+fn offered(processor: Sourced<Processor>, supported: bool) -> Sourced<Processor> {
+    if supported || processor.source != SettingSource::Gui {
+        return processor;
+    }
+
+    tracing::warn!(
+        "the GUI's saved processor {} is not available on this machine; using auto",
+        processor.value.name()
+    );
+    Sourced::default()
+}
+
+/// Records what became of the GUI's settings file, so a run's log says which settings it followed.
+fn log_gui_file(file: &GuiFile) {
+    match file {
+        GuiFile::NotRead => tracing::info!("the GUI's settings were not read: --no-gui-settings"),
+        GuiFile::Unlocated(error) => tracing::info!("the GUI's settings could not be located: {error}"),
+        GuiFile::Absent(path) => tracing::info!(path = %path.display(), "no GUI settings saved"),
+        GuiFile::Ignored(path, reason) => {
+            tracing::info!(path = %path.display(), "the GUI's settings were ignored: {reason}")
+        }
+        GuiFile::Read(path) => tracing::info!(path = %path.display(), "following the GUI's saved settings"),
+    }
+}
+
+/// The processor line and, under `--verbose` with `--autopilot`, the autopilot line, as `args` resolved them.
+fn settings_lines(args: &Args, color: bool) -> Vec<String> {
+    let settings = &args.settings;
+    let sources = args
+        .verbose
+        .then(|| (format!("({})", settings.processor.source.describe()), settings.qualities.describe()));
+    let mut lines = vec![look::processor_line(
+        args.processor().into(),
+        settings.qualities.label(),
+        sources.as_ref().map(|(processor, quality)| (processor.as_str(), quality.as_str())),
+        color,
+    )];
+
+    if args.verbose && args.autopilot {
+        let models = args.autopilot_models.unwrap_or_default();
+        lines.push(look::autopilot_line(&models.describe(), color));
+    }
+
+    lines
+}
+
 /// The format the run writes, as `export_started` names it: the naming's choice, or the format of the one file.
 fn format_name(target: &Target) -> String {
     match target {
@@ -290,13 +348,13 @@ async fn enhance_one(
     // A file whose header read cleanly but whose pixels do not decode fails this image, not the batch. The library's
     // message names the path.
     let picture = image::load(&source.path).await.map_err(|error| CliError::Load(Box::new(error)))?;
-    let provider = args.processor.into();
+    let provider = args.processor().into();
 
     let (plan, from) = match planner {
         Planner::Fixed(plan) => (plan, events::Source::Manual),
         Planner::Autopilot(models) => {
             let plan =
-                choose(opai, &picture, &source.path, index, models, args.quality, provider, view, cancel).await?;
+                choose(opai, &picture, &source.path, index, models, args.qualities(), provider, view, cancel).await?;
             (plan, events::Source::Autopilot)
         }
     };
@@ -341,7 +399,7 @@ fn applied(plan: &Plan, cached: usize, verdict: &ProviderVerdict) -> String {
 }
 
 /// Analyses `picture`, the image at `index` read from `path`, for the families `models` leaves on, and plans the chain
-/// its suggestions call for at `quality`, with the row reading `Choosing enhancements for` meanwhile.
+/// its suggestions call for at `qualities`, with the row reading `Choosing enhancements for` meanwhile.
 ///
 /// A stop during the analysis is a stop. A signal it could not read is logged, and the image gets what the others
 /// suggested.
@@ -355,7 +413,7 @@ async fn choose(
     path: &Path,
     index: usize,
     models: &AutopilotModels,
-    quality: Quality,
+    qualities: &Qualities,
     provider: ExecutionProvider,
     view: &View,
     cancel: &CancellationToken,
@@ -370,7 +428,7 @@ async fn choose(
     view.chosen(index);
 
     let (width, height) = picture.dimensions();
-    let (plan, warning) = plan_suggested(path, &suggestions, models, quality, width, height);
+    let (plan, warning) = plan_suggested(path, &suggestions, models, qualities, width, height);
     events::autopilot_run(plan.operations.len());
     if let Some(warning) = warning {
         tracing::warn!("{warning}");
@@ -386,7 +444,7 @@ fn plan_suggested(
     path: &Path,
     suggestions: &Suggestions,
     models: &AutopilotModels,
-    quality: Quality,
+    qualities: &Qualities,
     width: u32,
     height: u32,
 ) -> (Plan, Option<String>) {
@@ -394,7 +452,7 @@ fn plan_suggested(
         .incomplete
         .as_ref()
         .map(|error| format!("{}: the analysis could not read every signal: {error}", path.display()));
-    let plan = chain::plan(&Selection::from_suggestions(&suggestions.suggested, models), quality, width, height);
+    let plan = chain::plan(&Selection::from_suggestions(&suggestions.suggested, models), qualities, width, height);
 
     (plan, warning)
 }
@@ -504,7 +562,6 @@ const fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::args::Quality;
     use crate::progress::tests::{inference, upscale};
     use clap::ValueEnum;
     use opai::{Confidence, Face, Faces, InferenceError, Point, Rect, Stage};
@@ -576,7 +633,7 @@ mod tests {
         let view = View::new(Look { interactive: false, color: false }, CancellationToken::new());
         let on_inference = view.on_inference();
         let [a, b, c] = ["photos/a.jpg", "photos/b.jpg", "photos/c.jpg"].map(Path::new);
-        let mut lines = vec![look::processor_line(ExecutionProvider::Auto, Quality::Hd, false), String::new()];
+        let mut lines = vec![look::processor_line(ExecutionProvider::Auto, "HD", None, false), String::new()];
 
         view.start_batch(3);
         view.start_image(1, a);
@@ -729,7 +786,7 @@ mod tests {
 
     fn fixed(line: &str) -> Plan {
         let args = crate::args::parse_from(line.split_whitespace()).expect("parses");
-        chain::plan(&args.selection, args.quality, 1000, 800)
+        chain::plan(&args.selection, args.qualities(), 1000, 800)
     }
 
     #[test]
@@ -756,7 +813,7 @@ mod tests {
     #[test]
     fn an_empty_chain_needs_no_enhancement_and_is_not_cached() {
         let args = crate::args::parse_from("opai large.jpg --up -o out.png".split_whitespace()).expect("parses");
-        let plan = chain::plan(&args.selection, args.quality, 4000, 3000);
+        let plan = chain::plan(&args.selection, args.qualities(), 4000, 3000);
 
         assert_eq!(applied(&plan, 0, &ProviderVerdict::NothingExecuted), "no enhancement needed");
     }
@@ -778,6 +835,64 @@ mod tests {
     }
 
     #[test]
+    fn a_processor_from_the_gui_that_this_machine_does_not_offer_is_auto() {
+        let gui = Sourced { value: Processor::WebGpu, source: SettingSource::Gui };
+        assert_eq!(offered(gui, true), gui, "an offered one is kept");
+        assert_eq!(offered(gui, false), Sourced::default());
+
+        // One asked for on the command line is left for `check_processor` to refuse.
+        let flag = Sourced { value: Processor::WebGpu, source: SettingSource::Flag("-p") };
+        assert_eq!(offered(flag, false), flag);
+    }
+
+    #[test]
+    fn the_settings_lines_name_their_sources_only_under_verbose() {
+        let gui = opai::settings::SharedSettings::from_gui(
+            "cpu",
+            ["color_balance"],
+            [
+                ("denoise", "stockholm_fp16"),
+                ("face_recovery", "athens_fp16"),
+                ("colorization", "delhi_fp16"),
+                ("light_adjustment", "paris_fp16"),
+                ("color_balance", "rio_fp16"),
+                ("sharpen", "moscow_fp16"),
+                ("upscale", "tokyo_fp16"),
+            ],
+        );
+        let args = |line: &str| {
+            let mut args = crate::args::parse_from(line.split_whitespace()).expect("parses");
+            args.settings = crate::settings::Settings::resolve(args.quality, args.processor, Some(&gui));
+            if args.autopilot {
+                args.autopilot_models = Some(AutopilotModels::read(|_| None, Some(&gui)).expect("reads"));
+            }
+            args
+        };
+
+        assert_eq!(
+            settings_lines(&args("opai photo.jpg --ap"), false),
+            ["🧠 Running inference using the processor CPU; quality SD"]
+        );
+
+        let lines = settings_lines(&args("opai photo.jpg --ap --verbose"), false);
+        assert_eq!(
+            lines[0],
+            "🧠 Running inference using the processor CPU (from GUI settings); quality SD (from GUI settings)"
+        );
+        assert!(
+            lines[1].starts_with("🤖 Autopilot models: Denoise Stockholm (from GUI settings), "),
+            "{}",
+            lines[1]
+        );
+        assert!(lines[1].contains("Color Balance off (from GUI settings)"), "{}", lines[1]);
+
+        assert_eq!(
+            settings_lines(&args("opai photo.jpg --up -q hd -p auto --verbose"), false),
+            ["🧠 Running inference using the processor Auto (from -p); quality HD (from -q)"]
+        );
+    }
+
+    #[test]
     fn an_empty_chain_is_not_reported_as_cached() {
         assert_eq!(provenance(true, &ProviderVerdict::NothingExecuted), "no enhancement ran");
     }
@@ -793,8 +908,14 @@ mod tests {
         let suggestions =
             Suggestions { suggested: vec![opai::Suggestion::Upscale { scale }], incomplete: Some(detector) };
 
-        let (plan, warning) =
-            plan_suggested(Path::new("portrait.jpg"), &suggestions, &AutopilotModels::default(), Quality::Hd, 800, 600);
+        let (plan, warning) = plan_suggested(
+            Path::new("portrait.jpg"),
+            &suggestions,
+            &AutopilotModels::default(),
+            &Qualities::default(),
+            800,
+            600,
+        );
 
         assert_eq!(plan.operations, vec![opai::Upscale::tokyo(opai::FloatPrecision::Fp32, scale)]);
         let warning = warning.expect("the failed signal is warned about");
@@ -806,8 +927,14 @@ mod tests {
     fn a_complete_analysis_warns_about_nothing() {
         let suggestions = Suggestions { suggested: Vec::new(), incomplete: None };
 
-        let (plan, warning) =
-            plan_suggested(Path::new("large.jpg"), &suggestions, &AutopilotModels::default(), Quality::Hd, 4000, 3000);
+        let (plan, warning) = plan_suggested(
+            Path::new("large.jpg"),
+            &suggestions,
+            &AutopilotModels::default(),
+            &Qualities::default(),
+            4000,
+            3000,
+        );
 
         assert!(plan.operations.is_empty());
         assert_eq!(warning, None);
