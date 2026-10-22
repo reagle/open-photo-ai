@@ -35,6 +35,10 @@
             "export": {
                 "title": "Exporteren",
                 "description": "Kwaliteit voor de lossy formaten. Lagere waarden geven kleinere bestanden; de schalen zijn niet vergelijkbaar tussen formaten."
+            },
+            "keyboard": {
+                "title": "Toetsenbord",
+                "description": "De toetsen om te zoomen, passend te maken en het origineel te tonen. Wijzigingen gelden na Opslaan."
             }
         },
         "app": {
@@ -109,7 +113,28 @@
             },
             "autopilotLabel": "Autopilot: {{name}}"
         },
-        "reset": "Standaardwaarden herstellen"
+        "reset": "Standaardwaarden herstellen",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Inzoomen",
+                "zoomOut": "Uitzoomen",
+                "fit": "Passend in venster",
+                "showOriginal": "Origineel tonen zolang ingedrukt"
+            },
+            "add": "Sneltoets toevoegen",
+            "addLabel": "Sneltoets toevoegen voor {{action}}",
+            "recording": "Druk op toetsen…",
+            "prompt": "Druk op de toetsen voor {{action}}, of Escape om te annuleren.",
+            "none": "Geen sneltoets",
+            "remove": "{{binding}} verwijderen, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} is gereserveerd voor navigatie in het venster.",
+                "system": "{{binding}} wordt door het systeem gebruikt."
+            },
+            "conflict": "{{binding}} wordt al gebruikt door {{action}}.",
+            "useHere": "Hier gebruiken",
+            "space": "Spatie"
+        }
     },
     "navbar": {
         "about": "Over",

@@ -133,7 +133,7 @@ describe("the settings surface", () => {
         expect(nav.querySelectorAll("[aria-current]")).toHaveLength(1);
     });
 
-    it("lists the four pages", async () => {
+    it("lists the five pages", async () => {
         await open();
 
         const nav = screen.getByRole("navigation", { name: "Settings" });
@@ -142,7 +142,7 @@ describe("the settings surface", () => {
             within(nav)
                 .getAllByRole("button")
                 .map((button) => button.textContent),
-        ).toEqual(["General", "Performance", "Enhancements", "Export"]);
+        ).toEqual(["General", "Performance", "Enhancements", "Export", "Keyboard"]);
     });
 
     it("shows a chosen page in place of the one before it, and marks it current", async () => {
@@ -444,6 +444,114 @@ describe("Reset to defaults", () => {
         expect(useSettingsStore.getState()).toMatchObject({ models: {}, autopilotExcluded: [] });
         // Export is another page, so its change survives.
         expect(useSettingsStore.getState().quality.jpeg).toBe(42);
+    });
+});
+
+describe("the Keyboard page", () => {
+    const goToKeyboard = async () => {
+        await act(async () => {
+            fireEvent.click(
+                within(screen.getByRole("navigation", { name: "Settings" })).getByRole("button", { name: "Keyboard" }),
+            );
+        });
+    };
+
+    /** Presses Add shortcut on an action's row, then the given key on the recorder it became. */
+    const record = async (action: string, init: KeyboardEventInit) => {
+        const add = screen.getByRole("button", { name: `Add shortcut for ${action}` });
+        await act(async () => {
+            add.focus();
+            fireEvent.click(add);
+        });
+        await act(async () => {
+            fireEvent.keyDown(add, init);
+        });
+    };
+
+    it("shows every action with its bindings, as the nav's fifth page", async () => {
+        await open();
+        await goToKeyboard();
+
+        expect(screen.getByRole("heading", { name: "Keyboard" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Remove Ctrl+=, Zoom in" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Remove \\, Show original while held" })).toBeInTheDocument();
+    });
+
+    it("ends a recording on Escape without closing the dialog", async () => {
+        const close = vi.fn();
+        await open(close);
+        await goToKeyboard();
+
+        await record("Fit to window", { key: "Escape" });
+
+        expect(close).not.toHaveBeenCalled();
+        expect(screen.getByRole("dialog")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Add shortcut for Fit to window" })).toBeInTheDocument();
+        expect(useSettingsStore.getState().shortcuts).toEqual({});
+
+        // Not recording any more, so Escape is the dialog's again.
+        await act(async () => {
+            fireEvent.keyDown(screen.getByRole("button", { name: "Add shortcut for Fit to window" }), {
+                key: "Escape",
+            });
+        });
+        expect(close).toHaveBeenCalledWith(false);
+    });
+
+    it("applies a rebinding on Save, and it survives a restart", async () => {
+        await openSurface();
+        await goToKeyboard();
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole("button", { name: "Remove Ctrl+0, Fit to window" }));
+        });
+        await record("Fit to window", { key: "9", ctrlKey: true });
+        await act(async () => {
+            fireEvent.click(screen.getByRole("button", { name: "Save" }));
+        });
+
+        expect(useSettingsStore.getState().shortcuts).toEqual({ fit: ["Mod+9"] });
+
+        // A restart is a fresh store rehydrated from what Save wrote. Resetting the store in memory
+        // writes storage too, so what Save wrote is put back before the rehydrate reads it.
+        const saved = localStorage.getItem("settings-storage") ?? "";
+        expect(JSON.parse(saved).state.shortcuts).toEqual({ fit: ["Mod+9"] });
+        useSettingsStore.setState(useSettingsStore.getInitialState(), true);
+        localStorage.setItem("settings-storage", saved);
+        await useSettingsStore.persist.rehydrate();
+        expect(useSettingsStore.getState().shortcuts).toEqual({ fit: ["Mod+9"] });
+    });
+
+    it("discards a rebinding on Cancel", async () => {
+        await openSurface();
+        await goToKeyboard();
+
+        await record("Fit to window", { key: "9", ctrlKey: true });
+        expect(screen.getByRole("button", { name: "Remove Ctrl+9, Fit to window" })).toBeInTheDocument();
+        await act(async () => {
+            fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+        });
+
+        expect(useSettingsStore.getState().shortcuts).toEqual({});
+    });
+
+    it("puts every action back on its defaults with Reset to defaults, leaving other pages alone", async () => {
+        useSettingsStore.setState({ shortcuts: { zoomIn: ["Shift+z"], showOriginal: [] } });
+        await openSurface();
+
+        await act(async () => {
+            editDraft({ language: "sv" });
+        });
+        await goToKeyboard();
+        await act(async () => {
+            fireEvent.click(screen.getByRole("button", { name: i18n.t("settings.reset") }));
+        });
+        await act(async () => {
+            fireEvent.click(screen.getByRole("button", { name: i18n.t("common.save") }));
+        });
+
+        expect(useSettingsStore.getState().shortcuts).toEqual({});
+        expect(useSettingsStore.getState().language).toBe("sv");
     });
 });
 

@@ -9,10 +9,11 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCurrentTransform } from "@/hooks/useCurrentTransform";
 import { useOpenImages } from "@/hooks/useOpenImages";
+import { useShortcutBindings } from "@/hooks/useShortcuts";
 import { isMacOs } from "@/ipc/os";
 import { ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
 import { track } from "@/lib/faro";
-import { ariaKeyShortcuts, DEFAULT_SHORTCUTS } from "@/lib/shortcuts";
+import { ariaKeyShortcuts } from "@/lib/shortcuts";
 import { useDrawerStore } from "@/stores/drawer";
 import { useCurrentFile, useFileStore, useHasFiles } from "@/stores/files";
 import { isPreviewMode, PREVIEW_MODES, usePreviewStore } from "@/stores/preview";
@@ -82,6 +83,7 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
     const setTransform = useTransformStore((state) => state.setTransform);
 
     const mac = isMacOs();
+    const bindings = useShortcutBindings();
 
     const setScale = (scale: number) => {
         if (!file?.identity) return;
@@ -246,7 +248,8 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
                  * clamps every write, so this is the same rule the wheel and the slider get.
                  *
                  * `aria-keyshortcuts` names the keyboard route onto the same step, so a screen reader
-                 * reports it; nothing visible names it yet.
+                 * reports it: the user's bindings, as saved on the Keyboard settings page. Nothing
+                 * visible names it yet.
                  */}
                 <Button
                     variant="ghost"
@@ -254,7 +257,7 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
                     disabled={disabled}
                     onClick={() => stepZoom(-1)}
                     aria-label={t("drawer.zoomOut")}
-                    aria-keyshortcuts={ariaKeyShortcuts(DEFAULT_SHORTCUTS.zoomOut, mac)}
+                    aria-keyshortcuts={ariaKeyShortcuts(bindings.zoomOut, mac) || undefined}
                 >
                     <Minus className="size-4.5 shrink-0" />
                 </Button>
@@ -293,7 +296,7 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
                     disabled={disabled}
                     onClick={() => stepZoom(1)}
                     aria-label={t("drawer.zoomIn")}
-                    aria-keyshortcuts={ariaKeyShortcuts(DEFAULT_SHORTCUTS.zoomIn, mac)}
+                    aria-keyshortcuts={ariaKeyShortcuts(bindings.zoomIn, mac) || undefined}
                 >
                     <Plus className="size-4.5 shrink-0" />
                 </Button>

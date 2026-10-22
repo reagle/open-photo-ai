@@ -35,6 +35,10 @@
             "export": {
                 "title": "Exportation",
                 "description": "Qualité des formats avec perte. Des valeurs plus basses donnent des fichiers plus petits ; les échelles ne sont pas comparables d'un format à l'autre."
+            },
+            "keyboard": {
+                "title": "Clavier",
+                "description": "Les touches pour zoomer, ajuster et afficher l’original. Les modifications s’appliquent à l’enregistrement."
             }
         },
         "app": {
@@ -109,7 +113,28 @@
             },
             "autopilotLabel": "Autopilote : {{name}}"
         },
-        "reset": "Rétablir les valeurs par défaut"
+        "reset": "Rétablir les valeurs par défaut",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Zoom avant",
+                "zoomOut": "Zoom arrière",
+                "fit": "Ajuster à la fenêtre",
+                "showOriginal": "Afficher l’original tant que la touche est enfoncée"
+            },
+            "add": "Ajouter un raccourci",
+            "addLabel": "Ajouter un raccourci pour {{action}}",
+            "recording": "Appuyez sur les touches…",
+            "prompt": "Appuyez sur les touches pour {{action}}, ou Échap pour annuler.",
+            "none": "Aucun raccourci",
+            "remove": "Retirer {{binding}}, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} est réservé à la navigation dans la fenêtre.",
+                "system": "{{binding}} est utilisé par le système."
+            },
+            "conflict": "{{binding}} est déjà utilisé par {{action}}.",
+            "useHere": "Utiliser ici à la place",
+            "space": "Espace"
+        }
     },
     "navbar": {
         "about": "À propos",

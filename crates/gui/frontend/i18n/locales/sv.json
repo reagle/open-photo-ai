@@ -35,6 +35,10 @@
             "export": {
                 "title": "Export",
                 "description": "Kvalitet för de förstörande formaten. Lägre värden ger mindre filer; skalorna är inte jämförbara mellan format."
+            },
+            "keyboard": {
+                "title": "Tangentbord",
+                "description": "Tangenterna som zoomar, anpassar och visar originalet. Ändringar gäller när du klickar på Spara."
             }
         },
         "app": {
@@ -109,7 +113,28 @@
             },
             "autopilotLabel": "Autopilot: {{name}}"
         },
-        "reset": "Återställ standardvärden"
+        "reset": "Återställ standardvärden",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Zooma in",
+                "zoomOut": "Zooma ut",
+                "fit": "Anpassa till fönstret",
+                "showOriginal": "Visa original medan tangenten hålls ned"
+            },
+            "add": "Lägg till kortkommando",
+            "addLabel": "Lägg till kortkommando för {{action}}",
+            "recording": "Tryck på tangenter…",
+            "prompt": "Tryck på tangenterna för {{action}}, eller Escape för att avbryta.",
+            "none": "Inget kortkommando",
+            "remove": "Ta bort {{binding}}, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} är reserverad för att röra sig i fönstret.",
+                "system": "{{binding}} används av systemet."
+            },
+            "conflict": "{{binding}} används redan av {{action}}.",
+            "useHere": "Använd här i stället",
+            "space": "Blanksteg"
+        }
     },
     "navbar": {
         "about": "Om",

@@ -35,6 +35,10 @@
             "export": {
                 "title": "Export",
                 "description": "Qualität für die verlustbehafteten Formate. Niedrigere Werte ergeben kleinere Dateien; die Skalen sind zwischen den Formaten nicht vergleichbar."
+            },
+            "keyboard": {
+                "title": "Tastatur",
+                "description": "Die Tasten zum Zoomen, Einpassen und Anzeigen des Originals. Änderungen gelten nach Speichern."
             }
         },
         "app": {
@@ -109,7 +113,28 @@
             },
             "autopilotLabel": "Autopilot: {{name}}"
         },
-        "reset": "Auf Standard zurücksetzen"
+        "reset": "Auf Standard zurücksetzen",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Vergrößern",
+                "zoomOut": "Verkleinern",
+                "fit": "An Fenster anpassen",
+                "showOriginal": "Original anzeigen, solange gedrückt"
+            },
+            "add": "Kürzel hinzufügen",
+            "addLabel": "Kürzel hinzufügen für {{action}}",
+            "recording": "Tasten drücken…",
+            "prompt": "Drücken Sie die Tasten für {{action}} oder Escape zum Abbrechen.",
+            "none": "Kein Kürzel",
+            "remove": "{{binding}} entfernen, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} ist für die Navigation im Fenster reserviert.",
+                "system": "{{binding}} wird vom System verwendet."
+            },
+            "conflict": "{{binding}} wird bereits von {{action}} verwendet.",
+            "useHere": "Stattdessen hier verwenden",
+            "space": "Leertaste"
+        }
     },
     "navbar": {
         "about": "Über",

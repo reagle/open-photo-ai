@@ -35,6 +35,10 @@
             "export": {
                 "title": "Exportação",
                 "description": "Qualidade para os formatos com perdas. Valores menores geram arquivos menores; as escalas não são comparáveis entre formatos."
+            },
+            "keyboard": {
+                "title": "Teclado",
+                "description": "As teclas para aumentar o zoom, ajustar e mostrar o original. As alterações se aplicam ao clicar em Salvar."
             }
         },
         "app": {
@@ -109,7 +113,28 @@
             },
             "autopilotLabel": "Piloto automático: {{name}}"
         },
-        "reset": "Restaurar padrões"
+        "reset": "Restaurar padrões",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Aumentar zoom",
+                "zoomOut": "Reduzir zoom",
+                "fit": "Ajustar à janela",
+                "showOriginal": "Mostrar original enquanto pressionado"
+            },
+            "add": "Adicionar atalho",
+            "addLabel": "Adicionar atalho para {{action}}",
+            "recording": "Pressione as teclas…",
+            "prompt": "Pressione as teclas para {{action}}, ou Escape para cancelar.",
+            "none": "Sem atalho",
+            "remove": "Remover {{binding}}, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} é reservado para navegar na janela.",
+                "system": "{{binding}} é usado pelo sistema."
+            },
+            "conflict": "{{binding}} já é usado por {{action}}.",
+            "useHere": "Usar aqui em vez disso",
+            "space": "Espaço"
+        }
     },
     "navbar": {
         "about": "Sobre",

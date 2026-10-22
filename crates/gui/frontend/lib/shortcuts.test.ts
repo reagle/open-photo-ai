@@ -2,11 +2,18 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
     actionFor,
     ariaKeyShortcuts,
+    bindingFromEvent,
     DEFAULT_SHORTCUTS,
+    formatBinding,
     isWindowShortcut,
     type KeyLike,
+    MAX_BINDINGS,
     matches,
+    overlaps,
     parseBinding,
+    refusal,
+    repairShortcuts,
+    resolveShortcuts,
 } from "./shortcuts";
 
 /** A key event with every modifier up unless named. */
@@ -233,5 +240,183 @@ describe("ariaKeyShortcuts", () => {
     it("separates alternatives with spaces and leaves out what is not a binding", () => {
         expect(ariaKeyShortcuts(["Space", "\\"], MAC)).toBe("Space \\");
         expect(ariaKeyShortcuts(["Mod+Shift+0", "Mod+Mod+0"], PC)).toBe("Control+Shift+0");
+    });
+});
+
+describe("refusal", () => {
+    it.each(["Escape", "Shift+Escape", "Mod+Escape", "Tab", "Shift+Tab", "Alt+Tab", "Enter", "Shift+Enter"])(
+        "keeps %s for moving around the window on both platforms",
+        (binding) => {
+            expect(refusal(binding, MAC)).toBe("navigation");
+            expect(refusal(binding, PC)).toBe("navigation");
+        },
+    );
+
+    it("lets Enter with Command or Control be bound", () => {
+        expect(refusal("Mod+Enter", MAC)).toBeUndefined();
+        expect(refusal("Alt+Enter", PC)).toBeUndefined();
+    });
+
+    it.each(["Mod+q", "Mod+w", "Mod+h", "Mod+m", "Meta+q", "Mod+Shift+w"])("refuses %s on macOS only", (binding) => {
+        expect(refusal(binding, MAC)).toBe("system");
+        expect(refusal(binding, PC)).toBeUndefined();
+    });
+
+    it("refuses Alt+F4 off macOS only", () => {
+        expect(refusal("Alt+F4", PC)).toBe("system");
+        expect(refusal("Alt+F4", MAC)).toBeUndefined();
+    });
+
+    it("allows every default, bare letters and digits", () => {
+        for (const binding of [...Object.values(DEFAULT_SHORTCUTS).flat(), "z", "1", "Shift+z"]) {
+            expect(refusal(binding, MAC)).toBeUndefined();
+            expect(refusal(binding, PC)).toBeUndefined();
+        }
+    });
+});
+
+describe("overlaps", () => {
+    it("treats Mod and Command as one on macOS, and Mod and Control as one elsewhere", () => {
+        expect(overlaps("Mod+=", "Meta+=", MAC)).toBe(true);
+        expect(overlaps("Mod+=", "Meta+=", PC)).toBe(false);
+        expect(overlaps("Mod+=", "Ctrl+=", PC)).toBe(true);
+    });
+
+    it("treats a punctuation key with and without Shift as one, and = with +", () => {
+        expect(overlaps("?", "Shift+?", MAC)).toBe(true);
+        expect(overlaps("Mod+=", "Mod++", PC)).toBe(true);
+    });
+
+    it("treats a bare symbol with and without Option as one", () => {
+        expect(overlaps("\\", "Alt+\\", MAC)).toBe(true);
+    });
+
+    it("tells apart different keys, a letter with and without Shift, and extra modifiers", () => {
+        expect(overlaps("Mod+=", "Mod+-", MAC)).toBe(false);
+        expect(overlaps("z", "Shift+z", MAC)).toBe(false);
+        expect(overlaps("Mod+0", "Mod+Alt+0", PC)).toBe(false);
+        expect(overlaps("Space", "Space", PC)).toBe(true);
+        expect(overlaps("nonsense+", "Space", PC)).toBe(false);
+    });
+});
+
+describe("bindingFromEvent", () => {
+    it("records Command on macOS and Control elsewhere as Mod", () => {
+        expect(bindingFromEvent(key("=", { metaKey: true }), MAC)).toBe("Mod+=");
+        expect(bindingFromEvent(key("=", { ctrlKey: true }), PC)).toBe("Mod+=");
+    });
+
+    it("writes the other platform's modifier out", () => {
+        expect(bindingFromEvent(key("k", { ctrlKey: true }), MAC)).toBe("Ctrl+k");
+        expect(bindingFromEvent(key("k", { metaKey: true }), PC)).toBe("Meta+k");
+    });
+
+    it("keeps Shift for a letter, lower-cased, and leaves it out for punctuation", () => {
+        expect(bindingFromEvent(key("Z", { shiftKey: true }), MAC)).toBe("Shift+z");
+        expect(bindingFromEvent(key("?", { shiftKey: true }), PC)).toBe("?");
+        expect(bindingFromEvent(key("+", { shiftKey: true, metaKey: true }), MAC)).toBe("Mod++");
+    });
+
+    it("never records AltGr, nor Option used to type a bare symbol", () => {
+        const altGr = key("\\", { ctrlKey: true, altKey: true, getModifierState: (name) => name === "AltGraph" });
+        expect(bindingFromEvent(altGr, PC)).toBe("\\");
+        expect(bindingFromEvent(key("\\", { altKey: true }), MAC)).toBe("\\");
+        expect(bindingFromEvent(key("0", { altKey: true, ctrlKey: true }), PC)).toBe("Mod+Alt+0");
+    });
+
+    it("names Space and other named keys", () => {
+        expect(bindingFromEvent(key(" "), MAC)).toBe("Space");
+        expect(bindingFromEvent(key("F2", { shiftKey: true }), PC)).toBe("Shift+F2");
+    });
+
+    it.each(["Shift", "Control", "Alt", "Meta", "AltGraph", "Dead", "Unidentified", "Process"])(
+        "records nothing for %s",
+        (value) => {
+            expect(bindingFromEvent(key(value), MAC)).toBeUndefined();
+        },
+    );
+
+    it("records what it then matches", () => {
+        for (const [event, mac] of [
+            [key("=", { metaKey: true }), MAC],
+            [key("Z", { shiftKey: true, ctrlKey: true }), PC],
+            [key("?", { shiftKey: true }), MAC],
+        ] as const) {
+            const binding = bindingFromEvent(event, mac);
+            expect(binding && matches(event, binding, mac)).toBe(true);
+        }
+    });
+});
+
+describe("formatBinding", () => {
+    it("prints modifier glyphs on macOS", () => {
+        expect(formatBinding("Mod+=", MAC, "Space")).toBe("⌘ =");
+        expect(formatBinding("Mod+Shift+Alt+z", MAC, "Space")).toBe("⌥⇧⌘ Z");
+        expect(formatBinding("Ctrl+ArrowLeft", MAC, "Space")).toBe("⌃ ←");
+        expect(formatBinding("\\", MAC, "Space")).toBe("\\");
+    });
+
+    it("prints modifier names elsewhere, and + as written", () => {
+        expect(formatBinding("Mod+=", PC, "Space")).toBe("Ctrl+=");
+        expect(formatBinding("Mod++", PC, "Space")).toBe("Ctrl++");
+        expect(formatBinding("Alt+Shift+z", PC, "Space")).toBe("Alt+Shift+Z");
+    });
+
+    it("names Space in the user's language, and shows junk as it is", () => {
+        expect(formatBinding("Space", PC, "Leertaste")).toBe("Leertaste");
+        expect(formatBinding("Mod+", PC, "Space")).toBe("Mod+");
+    });
+});
+
+describe("repairShortcuts", () => {
+    it.each([null, 3, "Mod+=", ["Mod+="]])("reads %j as no choices", (value) => {
+        expect(repairShortcuts(value)).toEqual({});
+    });
+
+    it("drops unknown actions and values that are not lists of strings", () => {
+        expect(repairShortcuts({ rotate: ["r"], zoomIn: "Mod+=", zoomOut: [1], fit: ["Mod+9"] })).toEqual({
+            fit: ["Mod+9"],
+        });
+    });
+
+    it("drops malformed, everywhere-refused and repeated bindings, and keeps at most four", () => {
+        expect(repairShortcuts({ fit: ["Mod+", "Escape", "Mod+9", "Mod+9", "Mod+q", "1", "2", "3"] })).toEqual({
+            // `Mod+q` is refused on macOS only, so it is kept here and dropped where it is resolved.
+            fit: ["Mod+9", "Mod+q", "1", "2"],
+        });
+        expect(MAX_BINDINGS).toBe(4);
+    });
+
+    it("keeps an empty list as a choice, and reads a list emptied by repair as the defaults", () => {
+        expect(repairShortcuts({ showOriginal: [], fit: ["Escape"] })).toEqual({ showOriginal: [] });
+    });
+});
+
+describe("resolveShortcuts", () => {
+    it("is the defaults when nothing is stored", () => {
+        expect(resolveShortcuts({}, MAC)).toEqual(DEFAULT_SHORTCUTS);
+    });
+
+    it("lets a stored binding beat another action's default", () => {
+        const table = resolveShortcuts({ zoomIn: ["Mod+0"] }, PC);
+
+        expect(table.zoomIn).toEqual(["Mod+0"]);
+        expect(table.fit).toEqual([]);
+        expect(actionFor(key("0", { ctrlKey: true }), table, PC)).toBe("zoomIn");
+    });
+
+    it("gives a press claimed by two stored actions to the earlier one", () => {
+        const table = resolveShortcuts({ zoomIn: ["z"], fit: ["Shift+z", "z"] }, MAC);
+
+        expect(table.zoomIn).toEqual(["z"]);
+        expect(table.fit).toEqual(["Shift+z"]);
+    });
+
+    it("drops what this platform refuses, and honours an empty list", () => {
+        const table = resolveShortcuts({ fit: ["Mod+q", "Mod+9"], showOriginal: [] }, MAC);
+
+        expect(table.fit).toEqual(["Mod+9"]);
+        expect(table.showOriginal).toEqual([]);
+        expect(resolveShortcuts({ fit: ["Mod+q"] }, PC).fit).toEqual(["Mod+q"]);
     });
 });
