@@ -136,6 +136,110 @@ pub(crate) fn written_described(format: ImageFormat) -> Vec<u8> {
     bytes
 }
 
+/// Where the parts of [`camera_exif`] are.
+pub(crate) struct CameraExif {
+    /// The block.
+    pub(crate) exif: Vec<u8>,
+    /// The MakerNote's bytes, whose one entry points at its data by an offset from the start of the block.
+    pub(crate) maker_note: std::ops::Range<usize>,
+}
+
+/// The data [`camera_exif`]'s MakerNote points at.
+pub(crate) const MAKER_NOTE_DATA: &[u8; 8] = b"SECRET!!";
+
+/// A big-endian EXIF block as a camera writes one: IFD0 (Make `Canon`, Orientation 6, Software, DateTime), an Exif IFD
+/// (DateTimeOriginal, OffsetTimeOriginal, a Canon-style MakerNote whose pointer is absolute, PixelX/YDimension 4000 ×
+/// 3000), a GPS IFD (latitude 42° N) and IFD1 with a 64-byte thumbnail last. Laid out byte by byte, so the tests do not
+/// depend on the code they test to build it.
+pub(crate) fn camera_exif() -> CameraExif {
+    let mut b = vec![0_u8; 392];
+    let put = |b: &mut Vec<u8>, at: usize, bytes: &[u8]| b[at..at + bytes.len()].copy_from_slice(bytes);
+    let table = |b: &mut Vec<u8>, at: usize, entries: &[(u16, u16, u32, [u8; 4])], next: u32| {
+        put(b, at, &u16::try_from(entries.len()).expect("few").to_be_bytes());
+        for (index, (tag, kind, count, raw)) in entries.iter().enumerate() {
+            let entry = at + 2 + 12 * index;
+            put(b, entry, &tag.to_be_bytes());
+            put(b, entry + 2, &kind.to_be_bytes());
+            put(b, entry + 4, &count.to_be_bytes());
+            put(b, entry + 8, raw);
+        }
+        put(b, at + 2 + 12 * entries.len(), &next.to_be_bytes());
+    };
+    let at = u32::to_be_bytes;
+    let short = |value: u16| {
+        let mut raw = [0; 4];
+        raw[..2].copy_from_slice(&value.to_be_bytes());
+        raw
+    };
+
+    put(&mut b, 0, b"MM\0\x2a\0\0\0\x08");
+    table(
+        &mut b,
+        8,
+        &[
+            (0x010F, 2, 6, at(86)),   // Make
+            (0x0112, 3, 1, short(6)), // Orientation
+            (0x0131, 2, 11, at(92)),  // Software
+            (0x0132, 2, 20, at(104)), // DateTime
+            (0x8769, 4, 1, at(124)),  // Exif IFD
+            (0x8825, 4, 1, at(244)),  // GPS IFD
+        ],
+        298,
+    );
+    put(&mut b, 86, b"Canon\0");
+    put(&mut b, 92, b"Cam FW 1.0\0");
+    put(&mut b, 104, b"2026:10:18 16:03:50\0");
+    table(
+        &mut b,
+        124,
+        &[
+            (0x9003, 2, 20, at(190)),    // DateTimeOriginal
+            (0x9011, 2, 7, at(210)),     // OffsetTimeOriginal
+            (0x927C, 7, 26, at(218)),    // MakerNote
+            (0xA002, 3, 1, short(4000)), // PixelXDimension
+            (0xA003, 3, 1, short(3000)), // PixelYDimension
+        ],
+        0,
+    );
+    put(&mut b, 190, b"2026:10:18 16:03:50\0");
+    put(&mut b, 210, b"-04:00\0");
+    table(&mut b, 218, &[(0x0001, 7, 8, at(236))], 0);
+    put(&mut b, 236, MAKER_NOTE_DATA);
+    table(&mut b, 244, &[(0x0001, 2, 2, *b"N\0\0\0"), (0x0002, 5, 3, at(274))], 0);
+    put(
+        &mut b,
+        274,
+        &[42_u32, 1, 22, 1, 12, 1].iter().flat_map(|value| value.to_be_bytes()).collect::<Vec<u8>>(),
+    );
+    table(&mut b, 298, &[(0x0201, 4, 1, at(328)), (0x0202, 4, 1, at(64))], 0);
+    put(&mut b, 328, &[0xD8; 64]);
+
+    CameraExif { exif: b, maker_note: 218..244 }
+}
+
+/// A Photoshop resource block as Lightroom writes one: resolution info, the IPTC-IIM record (keyword `hawk`), a
+/// thumbnail resource and the IIM's digest.
+pub(crate) fn photoshop_block() -> Vec<u8> {
+    let resource = |id: u16, data: &[u8]| {
+        let mut bytes = b"8BIM".to_vec();
+        bytes.extend(id.to_be_bytes());
+        bytes.extend([0, 0]);
+        bytes.extend(u32::try_from(data.len()).expect("small").to_be_bytes());
+        bytes.extend(data);
+        if data.len() % 2 == 1 {
+            bytes.push(0);
+        }
+        bytes
+    };
+    [
+        resource(0x03ED, &[1; 16]),
+        IPTC.to_vec(),
+        resource(0x040C, &[0xFF; 40]),
+        resource(0x0425, &[7; 16]),
+    ]
+    .concat()
+}
+
 /// Writes `bytes` into `dir` under `name` and hands back the path.
 pub(crate) fn write_fixture(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {
     // The name is the test's to choose, because half of what these tests assert is that the name does *not* decide

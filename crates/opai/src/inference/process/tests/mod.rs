@@ -8,6 +8,7 @@ mod grain;
 mod identity;
 mod log;
 mod mask;
+mod metadata;
 mod plan;
 mod remove;
 mod report;

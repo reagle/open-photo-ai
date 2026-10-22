@@ -86,6 +86,7 @@ fn encode_into(
     let embedded = encode_writer_with(pixels, &mut bytes, format, options, &embeddable)
         .map_err(|source| ImageIoError::Encode { source })?;
     super::profile::warn_if_dropped(metadata, embedded, format, None);
+    super::descriptive::warn_if_dropped(metadata, embedded, format, None);
 
     Ok(bytes)
 }
