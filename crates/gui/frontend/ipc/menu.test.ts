@@ -10,12 +10,13 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
 
 describe("configureMenu", () => {
-    it("calls the command Rust registers, by name, with the labels and whether images are open", () => {
-        configureMenu({ file: "Fichier" }, true);
+    it("calls the command Rust registers, by name, with the labels, whether images are open and whether Export is", () => {
+        configureMenu({ file: "Fichier" }, true, false);
 
         expect(invoke as unknown as Mock).toHaveBeenCalledWith("configure_menu", {
             labels: { file: "Fichier" },
             hasFiles: true,
+            canExport: false,
         });
     });
 });

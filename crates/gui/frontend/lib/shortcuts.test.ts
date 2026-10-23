@@ -9,6 +9,7 @@ import {
     DEFAULT_SHORTCUTS,
     formatBinding,
     isAppAction,
+    isEditing,
     isOverlayOpen,
     isWindowShortcut,
     type KeyLike,
@@ -157,6 +158,14 @@ describe("the defaults added for discovery", () => {
         expect(actionFor(key("ArrowRight"), DEFAULT_SHORTCUTS, mac)).toBe("nextImage");
         // Typed with Shift on most layouts, which a symbol ignores.
         expect(actionFor(key("?", { shiftKey: true }), DEFAULT_SHORTCUTS, mac)).toBe("showShortcuts");
+        // Topaz's key for its shortcuts panel, beside `?`.
+        expect(actionFor(key("/", mod), DEFAULT_SHORTCUTS, mac)).toBe("showShortcuts");
+    });
+
+    it("leave a bare slash, and the other platform's modifier with it, alone", () => {
+        expect(actionFor(key("/"), DEFAULT_SHORTCUTS, MAC)).toBeUndefined();
+        expect(actionFor(key("/", { ctrlKey: true }), DEFAULT_SHORTCUTS, MAC)).toBeUndefined();
+        expect(actionFor(key("/", { metaKey: true }), DEFAULT_SHORTCUTS, PC)).toBeUndefined();
     });
 
     it("leave a modified arrow or Z alone", () => {
@@ -318,10 +327,13 @@ describe("refusal", () => {
         },
     );
 
-    it.each(["Mod+o", "Mod+,", "Mod+Shift+,"])("refuses %s as the application's everywhere", (binding) => {
-        expect(refusal(binding, MAC)).toBe("application");
-        expect(refusal(binding, PC)).toBe("application");
-    });
+    it.each(["Mod+o", "Mod+,", "Mod+Shift+,", "Mod+s", "Mod+Shift+e"])(
+        "refuses %s as the application's everywhere",
+        (binding) => {
+            expect(refusal(binding, MAC)).toBe("application");
+            expect(refusal(binding, PC)).toBe("application");
+        },
+    );
 
     it("refuses Command-O on macOS, which is Mod there, and leaves Control-O alone", () => {
         expect(refusal("Meta+o", MAC)).toBe("application");
@@ -339,7 +351,7 @@ describe("refusal", () => {
 
     it("refuses every key the application's actions hold, on every platform", () => {
         for (const platform of ["macos", "windows", "linux"] as const) {
-            for (const binding of Object.values(appShortcuts(platform))) {
+            for (const binding of Object.values(appShortcuts(platform)).flat()) {
                 expect(refusal(binding, platform === "macos")).toBeDefined();
             }
         }
@@ -513,15 +525,16 @@ describe("resolveShortcuts", () => {
 describe("the application's actions", () => {
     it("holds the same keys on every platform but Quit's", () => {
         expect(appShortcuts("macos")).toEqual({
-            open: "Mod+o",
-            settings: "Mod+,",
-            closeImage: "Mod+w",
-            closeAll: "Mod+Shift+w",
-            quit: "Mod+q",
+            open: ["Mod+o"],
+            export: ["Mod+s", "Mod+Shift+e"],
+            settings: ["Mod+,"],
+            closeImage: ["Mod+w"],
+            closeAll: ["Mod+Shift+w"],
+            quit: ["Mod+q"],
         });
-        expect(appShortcuts("windows").quit).toBe("Alt+F4");
-        expect(appShortcuts("linux").quit).toBe("Mod+q");
-        expect(APP_ACTIONS).toEqual(["open", "settings", "closeImage", "closeAll", "quit"]);
+        expect(appShortcuts("windows").quit).toEqual(["Alt+F4"]);
+        expect(appShortcuts("linux").quit).toEqual(["Mod+q"]);
+        expect(APP_ACTIONS).toEqual(["open", "export", "settings", "closeImage", "closeAll", "quit"]);
     });
 
     it("names an action by its id, and nothing else", () => {
@@ -535,6 +548,8 @@ describe("the application's actions", () => {
         [",", {}, "settings"],
         ["w", {}, "closeImage"],
         ["W", { shiftKey: true }, "closeAll"],
+        ["s", {}, "export"],
+        ["E", { shiftKey: true }, "export"],
     ] as const)("matches Ctrl with %s on Windows and Linux", (pressed, extra, action) => {
         for (const platform of ["windows", "linux"] as const) {
             expect(appActionFor(key(pressed, { ctrlKey: true, ...extra }), platform)).toBe(action);
@@ -547,15 +562,36 @@ describe("the application's actions", () => {
         expect(appActionFor(key("F4", { altKey: true }), "windows")).toBeUndefined();
     });
 
-    it("matches nothing on macOS, whose menu holds the keys", () => {
+    it("matches on macOS only a key the menu does not hold: Export's second", () => {
         expect(appActionFor(key("w", { metaKey: true }), "macos")).toBeUndefined();
         expect(appActionFor(key("o", { metaKey: true }), "macos")).toBeUndefined();
+        expect(appActionFor(key("s", { metaKey: true }), "macos")).toBeUndefined();
+        expect(appActionFor(key("E", { metaKey: true, shiftKey: true }), "macos")).toBe("export");
+        expect(appActionFor(key("E", { ctrlKey: true, shiftKey: true }), "macos")).toBeUndefined();
+    });
+
+    it("matches Export's keys only with Shift where Shift is named", () => {
+        expect(appActionFor(key("e", { ctrlKey: true }), "linux")).toBeUndefined();
+        expect(appActionFor(key("S", { ctrlKey: true, shiftKey: true }), "linux")).toBeUndefined();
     });
 
     it("matches no key without its modifier, or with another", () => {
         expect(appActionFor(key("w"), "linux")).toBeUndefined();
         expect(appActionFor(key("w", { metaKey: true }), "linux")).toBeUndefined();
         expect(appActionFor(key("w", { ctrlKey: true, altKey: true }), "windows")).toBeUndefined();
+    });
+
+    it("sees the focus in a text field, and not on a button", () => {
+        const field = document.createElement("input");
+        const button = document.createElement("button");
+        document.body.append(field, button);
+
+        field.focus();
+        expect(isEditing(document)).toBe(true);
+        button.focus();
+        expect(isEditing(document)).toBe(false);
+        field.remove();
+        button.remove();
     });
 
     it("sees a dialog or a menu open over the window", () => {

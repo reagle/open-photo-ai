@@ -142,6 +142,7 @@
             "space": "Spasi",
             "appActions": {
                 "open": "Buka gambar",
+                "export": "Ekspor gambar",
                 "settings": "Buka Pengaturan",
                 "closeImage": "Tutup gambar",
                 "closeAll": "Tutup semua gambar",
@@ -428,6 +429,7 @@
             "quit": "Keluar dari {{name}}",
             "file": "File",
             "open": "Buka…",
+            "export": "Ekspor…",
             "closeImage": "Tutup gambar",
             "closeAll": "Tutup semua gambar",
             "settings": "Pengaturan…",

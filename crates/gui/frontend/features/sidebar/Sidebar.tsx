@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -9,6 +8,7 @@ import { ExportDialog } from "@/features/export/ExportDialog";
 import { SidebarMiniature } from "@/features/sidebar/SidebarMiniature";
 import { useAutopilot } from "@/hooks/useAutopilot";
 import { useEnhancementStore } from "@/stores/enhancements";
+import { useCanExport, useExportDialogStore } from "@/stores/exportDialog";
 import { useFileStore } from "@/stores/files";
 
 /**
@@ -27,7 +27,10 @@ export const Sidebar = () => {
     const autopilot = useEnhancementStore((state) => state.autopilot);
     const toggle = useEnhancementStore((state) => state.toggle);
     const picked = useFileStore((state) => state.selectedPaths.size);
-    const [exporting, setExporting] = useState(false);
+    const exportable = useCanExport();
+    // A store's rather than this component's, so the application's Export action opens the same dialog.
+    const exporting = useExportDialogStore((state) => state.open);
+    const { openExport, closeExport } = useExportDialogStore.getState();
 
     return (
         <aside className="flex w-64 flex-none flex-col border-l border-border bg-card">
@@ -75,8 +78,8 @@ export const Sidebar = () => {
              */}
             <Button
                 variant="secondary"
-                disabled={picked === 0}
-                onClick={() => setExporting(true)}
+                disabled={!exportable}
+                onClick={openExport}
                 className="h-12 w-full flex-none rounded-none border-t border-border font-normal disabled:opacity-35"
             >
                 <Upload className="size-4.5 text-primary" />
@@ -85,7 +88,7 @@ export const Sidebar = () => {
             </Button>
 
             {/* Mounted while open, which is what snapshots its queue as it opens. */}
-            {exporting && <ExportDialog onClose={() => setExporting(false)} />}
+            {exporting && <ExportDialog onClose={closeExport} />}
         </aside>
     );
 };

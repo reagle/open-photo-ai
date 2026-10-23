@@ -128,8 +128,8 @@ const Recorder = ({
 };
 
 /**
- * The application's own actions and their keys, read-only: Open, Settings, Close Image, Close All
- * Images and Quit hold the same keys as the macOS menu bar, and recording one of those keys for an
+ * The application's own actions and their keys, read-only: Open, Export, Settings, Close Image, Close
+ * All Images and Quit hold the same keys as the macOS menu bar, and recording one of those keys for an
  * action below is refused (`refusal`'s `application`).
  */
 const ApplicationShortcuts = () => {
@@ -154,9 +154,16 @@ const ApplicationShortcuts = () => {
                         className="flex items-center justify-between gap-6 px-4 py-3"
                     >
                         <span className="text-sm">{name}</span>
-                        <kbd className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2 font-mono text-[12px] text-muted-foreground">
-                            {keys}
-                        </kbd>
+                        <span className="flex flex-wrap justify-end gap-1.5">
+                            {keys.map((shown) => (
+                                <kbd
+                                    key={shown}
+                                    className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2 font-mono text-[12px] text-muted-foreground"
+                                >
+                                    {shown}
+                                </kbd>
+                            ))}
+                        </span>
                     </div>
                 ))}
             </SettingsCard>
