@@ -35,7 +35,7 @@ async fn a_request_cancelled_while_its_model_transfers_stops_the_transfer_and_re
     let sessions = sessions(&bench, &server, listing_for(&[&id]), &app_dir, machine_supporting(false, false, false));
 
     let cancel = CancellationToken::new();
-    let interest = Interest { on_progress: None, cancel: cancel.clone() };
+    let interest = Interest { on_progress: None, cancel: cancel.clone(), ..Interest::default() };
 
     let stopping = {
         // The partial the transfer is writing into. Waiting for bytes in it rather than for the request to be

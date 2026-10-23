@@ -13,6 +13,7 @@ use crate::deps::test_server::{Reply, TestServer, fixture_listing};
 use crate::logging::{self, field, records};
 use crate::models::catalogue;
 use crate::models::test_support::{kyoto, tokyo};
+use crate::providers::MemoryMode;
 use crate::providers::tests::machine_supporting;
 use crate::task::lock;
 use std::collections::{BTreeMap, BTreeSet};

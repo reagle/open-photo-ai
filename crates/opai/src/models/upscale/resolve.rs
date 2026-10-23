@@ -267,6 +267,22 @@ mod tests {
                 "the transformer was given the VAE halves' layout, which costs it 1.3%"
             );
 
+            // In low-memory mode only the INT8 transformer moves to the CPU: the VAE halves are shared by both builds
+            // and must carry one profile whichever asked for them.
+            assert_eq!(
+                of(GraphRole::Transformer).cpu_when_memory_is_low,
+                precision == OsakaPrecision::Int8,
+                "at {precision:?}"
+            );
+            assert!(
+                !of(GraphRole::Encoder).cpu_when_memory_is_low,
+                "the shared encoder took a per-precision setting"
+            );
+            assert!(
+                !of(GraphRole::Decoder).cpu_when_memory_is_low,
+                "the shared decoder took a per-precision setting"
+            );
+
             // The override names one setting and leaves the rest of the variant's declaration alone — otherwise a
             // graph that deviates on one figure would quietly lose the four it does not.
             let variant = UpscaleVariant::Osaka(precision).profile();

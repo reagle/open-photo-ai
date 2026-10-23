@@ -10,7 +10,7 @@ use tracing::{Instrument as _, Span};
 
 use crate::error::SessionError;
 use crate::models::ArtifactId;
-use crate::providers::ExecutionProvider;
+use crate::providers::{ExecutionProvider, MemoryMode};
 use crate::task::lock;
 use crate::telemetry::metrics;
 use crate::telemetry::unit::{self, Outcome, Unit, unit_span};
@@ -51,13 +51,19 @@ pub(super) const SWEEP_INTERVAL: Duration = Duration::from_secs(IDLE_LIFE.as_sec
 /// artifact name is composed from the family, the codename, the native scale and the precision — and there is a test
 /// in `tests::resident` that says so, because the diffusion upscaler is the case that tests it: a per-graph override,
 /// where one graph of a set wants a setting the others do not.
-type Key = (ArtifactId, ExecutionProvider, bool);
+///
+/// The fourth field is the one thing a session is built from that is the **run's** rather than the model's: a
+/// low-memory session is built with the CPU arena off and released when its run returns, so handing it to a standard
+/// run — or a standard one to a low-memory run — would hand out a session built for someone else's trade. Carrying it
+/// here rather than in the profile is what keeps the invariant above true: the profile is still only ever the model's.
+type Key = (ArtifactId, ExecutionProvider, bool, MemoryMode);
 
-/// The key a session for `artifact`, asked for as `requested` and built on `resolved`, is filed under.
-fn key(artifact: &ArtifactId, requested: ExecutionProvider, resolved: ExecutionProvider) -> Key {
+/// The key a session for `artifact`, asked for as `requested` by a run asking for `memory` and built on `resolved`,
+/// is filed under.
+fn key(artifact: &ArtifactId, requested: ExecutionProvider, resolved: ExecutionProvider, memory: MemoryMode) -> Key {
     let rung = requested == ExecutionProvider::Auto && resolved != ExecutionProvider::Cpu;
 
-    (artifact.clone(), resolved, rung)
+    (artifact.clone(), resolved, rung, memory)
 }
 
 /// One session held in memory, and what is known about it.
@@ -223,7 +229,7 @@ impl<S, E> SessionCache<S, E> {
     fn publish_resident(&self, entries: &HashMap<Key, Arc<Resident<S>>>) {
         // Every provider a session can be built on, which leaves out `Auto`: that is what a request asks for.
         for provider in ExecutionProvider::BUILT_ON {
-            let count = entries.keys().filter(|(_, built_on, _)| *built_on == provider).count();
+            let count = entries.keys().filter(|(_, built_on, _, _)| *built_on == provider).count();
             let count = u32::try_from(count).unwrap_or(u32::MAX);
             self.resident_gauge.set_with_tags(count, &[("provider", provider.as_str())]);
         }
@@ -259,7 +265,7 @@ impl<S, E> SessionCache<S, E> {
         let newly = lock(&self.declined).insert((artifact.clone(), provider));
 
         let mut entries = lock(&self.entries);
-        entries.retain(|(filed, built_on, _), _| !(filed == artifact && *built_on == provider));
+        entries.retain(|(filed, built_on, _, _), _| !(filed == artifact && *built_on == provider));
         self.publish_resident(&entries);
 
         newly
@@ -280,7 +286,7 @@ impl<S, E> SessionCache<S, E> {
     /// embedding this library calls.
     pub(crate) fn clear(&self) {
         let mut entries = lock(&self.entries);
-        let evicted: Vec<String> = entries.keys().map(|(artifact, _, _)| artifact.to_string()).collect();
+        let evicted: Vec<String> = entries.keys().map(|(artifact, _, _, _)| artifact.to_string()).collect();
         entries.clear();
         self.publish_resident(&entries);
         drop(entries);
@@ -304,7 +310,7 @@ impl<S, E> SessionCache<S, E> {
     /// than the interval. The count is read under this lock, and the only thing that can increment it is handing out
     /// a handle, which happens under the same lock.
     pub(super) fn sweep(&self, evict_unused_since: Instant) {
-        let (released, artifacts, _) = self.evict(evict_unused_since);
+        let (released, artifacts, _) = self.evict(evict_unused_since, None);
 
         // Only when it did something. This runs every few minutes for the life of the process, and a line each time
         // saying nothing happened is how a log stops being read — the volume rule applied to a background task.
@@ -320,7 +326,7 @@ impl<S, E> SessionCache<S, E> {
     /// since the chain keeps them all until it returns — and that is not a choice: freeing one would be a native
     /// use-after-free. So this frees what earlier runs left resident, and says what it could not.
     pub(crate) fn release_unused(&self, artifact: &ArtifactId) -> usize {
-        let (released, artifacts, held) = self.evict(Instant::now());
+        let (released, artifacts, held) = self.evict(Instant::now(), None);
 
         // Written even for nothing: "it ran out of memory and everything resident was in use" is the answer to why the
         // build then fell back, and it names what was holding the memory.
@@ -336,9 +342,28 @@ impl<S, E> SessionCache<S, E> {
         released
     }
 
-    /// Removes every entry nothing is using that has not been used since `evict_unused_since`, and returns how many
-    /// went, which artifacts they were, and which artifacts stayed because something is using them.
-    fn evict(&self, evict_unused_since: Instant) -> (usize, String, String) {
+    /// Releases every low-memory session nothing is using, however recently it was used. Returns how many were
+    /// released.
+    ///
+    /// Called when a low-memory run returns, which is when its handles have all been dropped: a low-memory run asked
+    /// to hold nothing it is not using, and a resident session is the largest thing it could hold. A session another
+    /// run is still holding survives, for the same reason it survives every other release, and goes when that run
+    /// returns and calls this in turn. Standard sessions are not looked at.
+    pub(crate) fn release_low_memory(&self) -> usize {
+        let (released, artifacts, _) = self.evict(Instant::now(), Some(MemoryMode::Low));
+
+        // Only when it did something, as the sweep: a low-memory batch calls this once per image.
+        if released > 0 {
+            tracing::info!(released, %artifacts, reason = "low_memory", "released resident sessions");
+        }
+
+        released
+    }
+
+    /// Removes every entry nothing is using that has not been used since `evict_unused_since` — of those built for
+    /// `only`, where it names a memory mode — and returns how many went, which artifacts they were, and which
+    /// artifacts stayed because something is using them.
+    fn evict(&self, evict_unused_since: Instant, only: Option<MemoryMode>) -> (usize, String, String) {
         let mut entries = lock(&self.entries);
 
         // Collected by the `retain` predicate itself rather than by a pass before or after it. A second walk would
@@ -347,7 +372,11 @@ impl<S, E> SessionCache<S, E> {
         // entries went, and the record would name something that survived.
         let mut evicted: Vec<String> = Vec::new();
         let mut held: Vec<String> = Vec::new();
-        entries.retain(|(artifact, _, _), entry| {
+        entries.retain(|(artifact, _, _, memory), entry| {
+            if only.is_some_and(|only| only != *memory) {
+                return true;
+            }
+
             let in_use = Arc::strong_count(entry) > 1;
             let keep = in_use || entry.last_used() > evict_unused_since;
             if !keep {
@@ -410,7 +439,7 @@ impl<S> SessionCache<S, SessionError> {
         // waited on.
         let request = Span::current();
 
-        let key = key(artifact, requested, resolved);
+        let key = key(artifact, requested, resolved, interest.memory);
 
         if let Some(handle) = self.get(&key) {
             // `debug`: a chain acquires a handle per pass, so this repeats within one run. It is the record that

@@ -465,21 +465,34 @@ pub(crate) static OSAKA: DiffusionVariant = DiffusionVariant {
     label: "Osaka",
     profile,
     graphs: &[
+        // The VAE halves stay where `Auto` puts them in low-memory mode, at both precisions: they are one pair of files
+        // shared by both builds, so they can carry only one declaration, and the measurement that moves the INT8 build
+        // to the CPU is the transformer's alone. See `osaka::profile`.
         Graph {
             role: GraphRole::Encoder,
             suffix: "_vae_encoder",
             pinned: Some(Precision::Fp16),
             cuda_prefer_nhwc: None,
+            cpu_when_memory_is_low: &[],
         },
-        // The one per-graph override in this project. 12,940 nodes of MatMul, Transpose and Softmax and not one
+        // The one layout override in this project. 12,940 nodes of MatMul, Transpose and Softmax and not one
         // `Conv`, so there is no convolution kernel for NHWC to be faster at and what is left is the layout
-        // transform's own cost: +1.3%, against -8.0% and -9.4% on the two halves either side of it.
-        Graph { role: GraphRole::Transformer, suffix: "", pinned: None, cuda_prefer_nhwc: Some(false) },
+        // transform's own cost: +1.3%, against -8.0% and -9.4% on the two halves either side of it. And the one graph
+        // that runs on the CPU in low-memory mode, at INT8 only: there CoreML splits it into 324 partitions and runs
+        // out of memory building them, while at FP16 CoreML fits and holds less than the CPU does.
+        Graph {
+            role: GraphRole::Transformer,
+            suffix: "",
+            pinned: None,
+            cuda_prefer_nhwc: Some(false),
+            cpu_when_memory_is_low: &[Precision::Int8],
+        },
         Graph {
             role: GraphRole::Decoder,
             suffix: "_vae_decoder",
             pinned: Some(Precision::Fp16),
             cuda_prefer_nhwc: None,
+            cpu_when_memory_is_low: &[],
         },
     ],
 };
@@ -572,11 +585,38 @@ pub(crate) static OSAKA: DiffusionVariant = DiffusionVariant {
 /// are all ties — the last one TensorRT itself suggests in a build warning, and taking that suggestion costs 1.3%
 /// and moves the result further from CUDA rather than nearer.
 ///
+/// ## Why the INT8 build runs on the CPU when memory is low, and the FP16 build does not
+///
+/// [`cpu_when_memory_is_low`](EpProfile::cpu_when_memory_is_low) is declared on the **INT8 transformer** — in
+/// `OSAKA`'s graph list rather than in this profile, which is the same at both precisions — because CoreML is the path
+/// that does not fit a smaller Mac for that graph, and the CPU is the one that does. The two VAE halves are shared
+/// with the FP16 build and stay where `Auto` puts them. Measured on an Apple M4 Pro with
+/// 24 GB under macOS 27, one 960x960 region:
+///
+/// ```text
+///   what ran                                 provider   result                                 lowest available
+///   INT8 transformer alone (ORT 1.31)        CoreML     324 partitions, 8,667 of 12,292 nodes;
+///                                                       aborted building the session, 15.3 GB       < 3 GB
+///   INT8 transformer alone (ORT 1.31)        CPU        13.6 s, 12.4 GB peak                         11.1 GB
+///   opai --up osaka -q sd                    CoreML     killed at 16 s                                2.8 GB
+///   opai --up osaka -q sd --low-memory       CPU (DiT)  completes, 23 s, from 13.7 GB available        9.7 GB
+/// ```
+///
+/// **FP16 is the opposite case, and does not declare it.** There CoreML fits and holds *less* than the CPU: from about
+/// 18 GB available, `opai --up osaka -q hd` completes on CoreML at a lowest of 7.2 GB, and with `--low-memory` on the
+/// CPU at a lowest of 4.0 GB. Sending it to the CPU in low-memory mode would spend more memory, not less. (The CPU
+/// run is the faster of the two for one image, 65 s against 176 s, but that is a single region against CoreML's
+/// session build; speed is not what this declaration is for.)
+///
+/// It is **not** a default, and is acted on only when a run asks for low memory under `Auto`: where CoreML fits it is
+/// the path this project measured as faster at steady state — the 35.7 s recorded in `live.rs` for the nine regions
+/// of a 2560x2560 result on an M2 Max.
+///
 /// [`DISABLED_OPTIMIZER_SEPARATOR`]: crate::providers::profile::DISABLED_OPTIMIZER_SEPARATOR
 pub(crate) fn profile(_precision: Precision) -> EpProfile {
-    // Both precisions, and every figure the reference's. The transformer takes `cuda_prefer_nhwc` back off
-    // where the graph set is resolved, so the override is a property of that graph rather than something a
-    // caller remembers to apply.
+    // Both precisions, and every figure the reference's. The transformer takes `cuda_prefer_nhwc` back off, and adds
+    // the CPU in low-memory mode at INT8, where the graph set is resolved, so both are properties of that graph rather
+    // than something a caller remembers to apply.
     EpProfile {
         coreml_compute_units: CoreMlComputeUnits::CpuAndGpu,
         execution_mode: ExecutionMode::Sequential,

@@ -182,11 +182,11 @@ async fn an_entry_unused_past_the_cutoff_is_released_and_one_used_since_survives
 
     assert_eq!(cache.resident(), 1, "the sweep kept the wrong number of sessions");
     assert!(
-        cache.get(&(fresh.clone(), ExecutionProvider::Cpu, false)).is_some(),
+        cache.get(&(fresh.clone(), ExecutionProvider::Cpu, false, MemoryMode::Standard)).is_some(),
         "a session used since the cutoff was released"
     );
     assert!(
-        cache.get(&(stale.clone(), ExecutionProvider::Cpu, false)).is_none(),
+        cache.get(&(stale.clone(), ExecutionProvider::Cpu, false, MemoryMode::Standard)).is_none(),
         "a session unused past the cutoff survived"
     );
 }
@@ -336,4 +336,92 @@ fn no_two_operations_resolving_to_one_artifact_declare_different_profiles() {
 
     assert_eq!(families.len(), 8, "the traversal did not reach all eight families: {families:?}");
     assert!(!declared.is_empty(), "the traversal named no artifacts at all");
+}
+
+/// What a low-memory run brings to its requests.
+fn low_memory() -> Interest {
+    Interest { memory: MemoryMode::Low, ..Interest::default() }
+}
+
+/// A session for `id` on the CPU, built for `interest`'s memory mode as `serial`, recording its release in `released`.
+async fn held_by(
+    cache: &SessionCache<Dropping>,
+    released: &Arc<Mutex<Vec<usize>>>,
+    id: &ArtifactId,
+    interest: &Interest,
+    serial: usize,
+) -> SessionHandle<Dropping> {
+    let session = Dropping { serial, released: Arc::clone(released) };
+
+    cache
+        .get_or_build(id, ExecutionProvider::Cpu, ExecutionProvider::Cpu, interest, |_| async {
+            Ok::<Option<Dropping>, SessionError>(Some(session))
+        })
+        .await
+        .unwrap()
+        .expect("the build was not stopped")
+}
+
+#[tokio::test]
+async fn one_model_in_two_memory_modes_is_two_sessions_and_each_request_gets_its_own() {
+    // A low-memory session is built with the CPU arena off and released on a different rule, so handing it to a
+    // standard run, or the reverse, would hand out a session built for someone else's trade.
+    let cache: SessionCache<Dropping> = SessionCache::default();
+    let released = Arc::new(Mutex::new(Vec::new()));
+    let id = kyoto();
+
+    let standard = held_by(&cache, &released, &id, &Interest::default(), 0).await;
+    let low = held_by(&cache, &released, &id, &low_memory(), 1).await;
+
+    assert_eq!(cache.resident(), 2, "the two memory modes shared one entry");
+    assert_eq!(standard.session().serial, 0);
+    assert_eq!(low.session().serial, 1, "the low-memory request was served the standard session");
+
+    let again = held_by(&cache, &released, &id, &low_memory(), 2).await;
+    assert_eq!(again.session().serial, 1, "a second low-memory request did not reuse the low-memory session");
+}
+
+#[tokio::test]
+async fn a_low_memory_session_goes_when_nothing_holds_it_and_not_while_something_does() {
+    // Two low-memory runs sharing one session: the first returning must not free it under the second, and the second
+    // returning must free it before the release returns, not at some later sweep.
+    let cache: SessionCache<Dropping> = SessionCache::default();
+    let released = Arc::new(Mutex::new(Vec::new()));
+    let id = tokyo();
+
+    // A standard session beside it, which no low-memory release may touch.
+    build_and_release(&cache, &released, &kyoto(), 0).await;
+
+    let first = held_by(&cache, &released, &id, &low_memory(), 1).await;
+    // The second request is served the first's session, so the one it would have built is dropped unused; only
+    // serial 1 is a session anything was using.
+    let second = held_by(&cache, &released, &id, &low_memory(), 2).await;
+    assert_eq!(second.session().serial, 1, "the second run did not share the first run's session");
+    let freed = |serial| lock(&released).contains(&serial);
+
+    drop(first);
+    assert_eq!(cache.release_low_memory(), 0, "a session another run was holding was released");
+    assert_eq!(cache.resident(), 2);
+    assert!(!freed(1), "a session was freed while a run was still using it");
+
+    drop(second);
+    assert_eq!(cache.release_low_memory(), 1);
+    assert!(freed(1), "the low-memory session was not freed before the release returned");
+    assert!(!freed(0), "the standard session was freed by a low-memory release");
+    assert_eq!(cache.resident(), 1, "the standard session was released by a low-memory release");
+}
+
+#[tokio::test]
+async fn a_low_memory_request_after_the_release_is_built_a_working_session() {
+    let cache: SessionCache<Dropping> = SessionCache::default();
+    let released = Arc::new(Mutex::new(Vec::new()));
+    let id = kyoto();
+
+    drop(held_by(&cache, &released, &id, &low_memory(), 0).await);
+    cache.release_low_memory();
+
+    let fresh = held_by(&cache, &released, &id, &low_memory(), 1).await;
+
+    assert_eq!(fresh.session().serial, 1, "the request after the release was served the released session");
+    assert_eq!(lock(&released).clone(), vec![0]);
 }

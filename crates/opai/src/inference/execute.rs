@@ -33,7 +33,7 @@ use crate::image::Picture;
 use crate::models::DataOperation;
 use crate::pipeline;
 use crate::pipeline::Backend;
-use crate::providers::ExecutionProvider;
+use crate::providers::{ExecutionProvider, MemoryMode};
 use crate::sessions::SessionHandle;
 use crate::task::spawn_blocking;
 use crate::telemetry::metrics;
@@ -60,6 +60,11 @@ pub struct ExecuteOptions {
     /// where a provider throws an error opening or running the model, falls back to the next best — the CPU last.
     /// Any other provider falls back to the CPU where it cannot open the model.
     pub provider: ExecutionProvider,
+
+    /// How much memory this run's sessions may hold. Defaults to [`MemoryMode::Standard`], which builds and keeps them
+    /// as every run always has; [`MemoryMode::Low`] trades speed for a smaller footprint — see that type for what it
+    /// changes.
+    pub memory: MemoryMode,
 
     /// Where progress reports go. Defaults to none, and a caller that asks for none is charged for none.
     pub on_progress: Option<OnInference>,
@@ -94,6 +99,7 @@ impl std::fmt::Debug for ExecuteOptions {
         // reader actually wants is whether one was registered at all.
         f.debug_struct("ExecuteOptions")
             .field("provider", &self.provider)
+            .field("memory", &self.memory)
             .field("on_progress", &self.on_progress.is_some())
             .field("cancel", &self.cancel)
             .field("cache", &self.cache)
@@ -105,6 +111,7 @@ impl Default for ExecuteOptions {
     fn default() -> Self {
         Self {
             provider: ExecutionProvider::Auto,
+            memory: MemoryMode::Standard,
             on_progress: None,
             cancel: CancellationToken::new(),
             // On, as `ProcessOptions`' is and for the same reason.
@@ -194,6 +201,7 @@ pub(crate) async fn execute<B: Backend, O: DataOperation>(
         pipeline,
         &named,
         options.provider,
+        options.memory,
         options.on_progress,
         &options.cancel,
         cache.as_ref(),
@@ -245,6 +253,7 @@ async fn run<B: Backend, O: DataOperation>(
     pipeline: pipeline::SharedData<B, O::Output>,
     operation: &crate::models::Subject,
     provider: ExecutionProvider,
+    memory: MemoryMode,
     on_progress: Option<OnInference>,
     cancel: &CancellationToken,
     cache: Option<&RunCache>,
@@ -305,7 +314,7 @@ async fn run<B: Backend, O: DataOperation>(
     // A model that throws an error on an `Auto` accelerator is run again on the next provider of its ladder; every
     // retry declines at least one provider for good, so it ends at the latest on the CPU. See `run_declining`.
     let (held, produced) =
-        acquire::run_declining(backend, pipeline.as_ref(), &reporter, provider, cancel, |sessions| {
+        acquire::run_declining(backend, pipeline.as_ref(), &reporter, provider, memory, cancel, |sessions| {
             let running = Arc::clone(&pipeline);
             let input = source.shared_pixels();
             let cancelled = cancel.clone();
@@ -689,6 +698,7 @@ mod tests {
             pipeline,
             operation,
             options.provider,
+            options.memory,
             options.on_progress,
             &options.cancel,
             cache.as_ref(),

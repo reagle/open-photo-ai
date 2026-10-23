@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use super::profile::{EpProfile, ExecutionMode};
-use super::{Accelerator, ExecutionProvider, SupportedProviders};
+use super::{Accelerator, ExecutionProvider, MemoryMode, SupportedProviders};
 
 // A property of the providers rather than of the operating system, which is why there is no per-platform table
 // anywhere in this crate: CoreML is already unsupported off macOS and the two NVIDIA providers are unsupported until
@@ -116,6 +116,26 @@ pub(crate) fn ladder(requested: ExecutionProvider, supported: SupportedProviders
     rungs.push(ChainResolution { requested, attach: Vec::new() });
 
     rungs
+}
+
+/// What a request for a model declaring `profile` asks for, in a run asking for `memory`.
+///
+/// `requested` itself, except in the one case the declaration exists for: a model that runs on the CPU when memory is
+/// low, in a low-memory run, asked for as [`Auto`](ExecutionProvider::Auto) — which asks for the CPU. Applied before
+/// the [`ladder`] is built, so such a request has one rung, is filed as the CPU session it is, and never attempts the
+/// accelerator that would not fit.
+pub(crate) fn requested_under(
+    requested: ExecutionProvider,
+    profile: &EpProfile,
+    memory: MemoryMode,
+) -> ExecutionProvider {
+    // `Auto` alone, because a named provider is a decision the user made, and low memory is a trade the user asked
+    // for; overriding the first with the second would answer a question the user did not ask.
+    if requested == ExecutionProvider::Auto && memory == MemoryMode::Low && profile.cpu_when_memory_is_low {
+        ExecutionProvider::Cpu
+    } else {
+        requested
+    }
 }
 
 /// The directories the execution providers are pointed at.
@@ -327,19 +347,31 @@ pub(crate) struct SessionSettings {
     /// The graph transformers to switch off, by the runtime's own names for them. Empty for every model that has
     /// measured none; see [`EpProfile::disabled_optimizers`].
     pub(crate) disabled_optimizers: Vec<String>,
+    // The one field here a model does not declare: it is the run's, and it is why `MemoryMode` is part of the key a
+    // session is filed under. A model's measured settings stay what the model said; this only says where the CPU
+    // provider's working memory goes between runs.
+    /// Whether the CPU provider keeps its working memory in an arena between runs. `true` unless the run asked for
+    /// [`MemoryMode::Low`].
+    ///
+    /// The arena keeps every allocation a run made, at its high-water mark, so the next run of the same graph pays for
+    /// none of them. Off, each tensor's memory is returned when the node that produced it is done. A model holding
+    /// several sessions at once otherwise holds the sum of their peaks: Osaka's two VAE halves need 6.8 GB and 8.8 GB
+    /// of working memory at 960x960 beside the transformer's, and keep it with the arena on.
+    pub(crate) cpu_mem_arena: bool,
 }
 
 impl SessionSettings {
-    /// The settings `profile` declares.
+    /// The settings `profile` declares, for a run asking for `memory`.
     ///
     /// A model that declares nothing runs parallel, with the memory planner on and no optimizer disabled.
-    fn from_profile(profile: &EpProfile) -> Self {
+    fn from_profile(profile: &EpProfile, memory: MemoryMode) -> Self {
         // Those defaults are what every model in the reference implementation runs with before it is measured. The
         // graph optimization *level* is deliberately not here; see `EpProfile::disabled_optimizers`.
         Self {
             execution_mode: profile.execution_mode,
             mem_pattern: !profile.disable_mem_pattern,
             disabled_optimizers: profile.disabled_optimizers.clone(),
+            cpu_mem_arena: memory != MemoryMode::Low,
         }
     }
 }
@@ -380,16 +412,17 @@ pub(crate) fn resolve(
 ) -> SessionPlan {
     // Infallible, deliberately. Every outcome other than the one asked for is a downgrade rather than an error; the one
     // thing that can fail is parsing a provider *name*, which happens at the boundary long before this.
-    plan(resolve_chain(requested, supported), profile, paths, None)
+    plan(resolve_chain(requested, supported), profile, paths, None, MemoryMode::Standard)
 }
 
 /// The plan for running a model with `profile` under `chain`, one rung of a [`ladder`] or the whole of a request, on a
-/// CUDA device with `device_memory` bytes where there is one and it said.
+/// CUDA device with `device_memory` bytes where there is one and it said, for a run asking for `memory`.
 pub(crate) fn plan(
     chain: ChainResolution,
     profile: &EpProfile,
     paths: &CachePaths,
     device_memory: Option<u64>,
+    memory: MemoryMode,
 ) -> SessionPlan {
     let ChainResolution { requested, attach } = chain;
 
@@ -407,7 +440,7 @@ pub(crate) fn plan(
         })
         .collect();
 
-    SessionPlan { requested, providers, settings: SessionSettings::from_profile(profile) }
+    SessionPlan { requested, providers, settings: SessionSettings::from_profile(profile, memory) }
 }
 
 #[cfg(test)]
@@ -661,7 +694,7 @@ mod tests {
     #[test]
     fn a_plan_sizes_tensorrt_s_workspace_to_the_card_it_was_given() {
         let chain = resolve_chain(ExecutionProvider::TensorRt, machine_supporting(false, true, true));
-        let plan = plan(chain, &EpProfile::default(), &paths(), Some(6 << 30));
+        let plan = plan(chain, &EpProfile::default(), &paths(), Some(6 << 30), MemoryMode::Standard);
 
         assert_eq!(option(&plan.providers[0].options, "trt_max_workspace_size"), (3u64 << 29).to_string());
     }
@@ -1065,5 +1098,46 @@ mod tests {
 
         assert_eq!(plan.resolved(), ExecutionProvider::CoreMl);
         assert_eq!(option(&plan.providers[0].options, "MLComputeUnits"), "CPUAndNeuralEngine");
+    }
+
+    #[test]
+    fn only_a_low_memory_auto_request_for_a_model_that_declares_it_asks_for_the_cpu() {
+        let declaring = EpProfile { cpu_when_memory_is_low: true, ..EpProfile::default() };
+        let undeclared = EpProfile::default();
+
+        // A standard run is untouched by the declaration, and a low-memory run is untouched without it: the two
+        // conditions are both required, which is what keeps a machine with the memory on its accelerator.
+        for requested in ExecutionProvider::ALL {
+            assert_eq!(requested_under(requested, &declaring, MemoryMode::Standard), requested, "{requested}");
+            assert_eq!(requested_under(requested, &undeclared, MemoryMode::Low), requested, "{requested}");
+        }
+
+        assert_eq!(requested_under(ExecutionProvider::Auto, &declaring, MemoryMode::Low), ExecutionProvider::Cpu);
+
+        // A named provider is the user's decision, and low memory does not overrule it.
+        for named in ExecutionProvider::ALL.into_iter().filter(|&provider| provider != ExecutionProvider::Auto) {
+            assert_eq!(requested_under(named, &declaring, MemoryMode::Low), named, "{named} was overridden");
+        }
+    }
+
+    #[test]
+    fn the_cpu_arena_follows_the_runs_memory_mode_and_nothing_else() {
+        // Through the plan, for a model that measured settings of its own, so what is checked is that the run's mode
+        // reaches the session settings without disturbing what the model declared.
+        let scale = Scale::new(4.0).expect("4.0 is in range");
+        let osaka = Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Int8), scale).profile();
+        let chain = || resolve_chain(ExecutionProvider::Auto, mac());
+
+        let standard = plan(chain(), &osaka, &paths(), None, MemoryMode::Standard);
+        let low = plan(chain(), &osaka, &paths(), None, MemoryMode::Low);
+
+        assert!(standard.settings.cpu_mem_arena, "a standard run lost the arena");
+        assert!(!low.settings.cpu_mem_arena, "a low-memory run kept the arena");
+        assert_eq!(
+            SessionSettings { cpu_mem_arena: true, ..low.settings.clone() },
+            standard.settings,
+            "the memory mode changed a setting the model declared"
+        );
+        assert_eq!(low.providers, standard.providers, "the memory mode changed a provider's options");
     }
 }

@@ -441,7 +441,7 @@ async fn run_chain(
 ) -> Result<(Arc<DynamicImage>, ProviderReport), InferenceError> {
     let planned = plan::<Fake>(operations)?;
 
-    run(backend, source, &planned, provider, depth, on_progress, cancel, cache)
+    run(backend, source, &planned, provider, MemoryMode::Standard, depth, on_progress, cancel, cache)
         .await
         .map_err(|failure| failure.error)
 }

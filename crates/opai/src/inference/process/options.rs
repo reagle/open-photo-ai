@@ -5,7 +5,7 @@ use tokio_util::sync::CancellationToken;
 use crate::inference::depth::OutputDepth;
 use crate::inference::faces::FaceSelection;
 use crate::inference::progress::OnInference;
-use crate::providers::ExecutionProvider;
+use crate::providers::{ExecutionProvider, MemoryMode};
 
 /// Everything about a run that has a sensible default.
 ///
@@ -34,6 +34,11 @@ pub struct ProcessOptions {
     /// where a provider throws an error opening or running the model, falls back to the next best — the CPU last.
     /// Any other provider falls back to the CPU where it cannot open the model.
     pub provider: ExecutionProvider,
+
+    /// How much memory this run's sessions may hold. Defaults to [`MemoryMode::Standard`], which builds and keeps them
+    /// as every run always has; [`MemoryMode::Low`] trades speed for a smaller footprint — see that type for what it
+    /// changes.
+    pub memory: MemoryMode,
 
     /// How many bits per channel the result carries. Defaults to [`OutputDepth::Eight`] — see that type for why, and
     /// for why a front end's own default should be the other one.
@@ -86,6 +91,7 @@ impl std::fmt::Debug for ProcessOptions {
         // wants is whether one was registered at all.
         f.debug_struct("ProcessOptions")
             .field("provider", &self.provider)
+            .field("memory", &self.memory)
             .field("depth", &self.depth)
             .field("on_progress", &self.on_progress.is_some())
             .field("cancel", &self.cancel)
@@ -99,6 +105,7 @@ impl Default for ProcessOptions {
     fn default() -> Self {
         Self {
             provider: ExecutionProvider::Auto,
+            memory: MemoryMode::Standard,
             depth: OutputDepth::default(),
             on_progress: None,
             cancel: CancellationToken::new(),

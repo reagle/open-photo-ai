@@ -43,7 +43,7 @@ use crate::error::InferenceError;
 use crate::image::Picture;
 use crate::models::{Detection, Faces, Operation};
 use crate::pipeline::{Backend, Shared};
-use crate::providers::ExecutionProvider;
+use crate::providers::{ExecutionProvider, MemoryMode};
 use crate::sessions::SessionHandle;
 use crate::task::spawn_blocking;
 use crate::telemetry::metrics;
@@ -127,6 +127,7 @@ where
             let handover = options.on_progress.as_ref().map(|on_progress| Handover::new(on_progress, operations));
             let detection = ExecuteOptions {
                 provider: options.provider,
+                memory: options.memory,
                 on_progress: handover.as_ref().map(Handover::detection),
                 cancel: options.cancel.clone(),
                 cache: options.cache,
@@ -210,6 +211,7 @@ where
         source.shared_pixels(),
         &planned,
         options.provider,
+        options.memory,
         depth,
         options.on_progress,
         &options.cancel,
@@ -325,6 +327,7 @@ pub(crate) async fn run<B: Backend>(
     source: Arc<DynamicImage>,
     planned: &[Planned<B>],
     provider: ExecutionProvider,
+    memory: MemoryMode,
     depth: ChannelDepth,
     on_progress: Option<OnInference>,
     cancel: &CancellationToken,
@@ -468,8 +471,14 @@ pub(crate) async fn run<B: Backend>(
         // A step whose model throws an error on an `Auto` accelerator is run again on the next provider of its
         // ladder, from the start of the step: the steps before it keep what they produced. Every retry declines at
         // least one provider for good, so it ends — at the latest on the CPU, which is never declined.
-        let (sessions, produced) =
-            acquire::run_declining(backend, operation.pipeline.as_ref(), &reporter, provider, cancel, |sessions| {
+        let (sessions, produced) = acquire::run_declining(
+            backend,
+            operation.pipeline.as_ref(),
+            &reporter,
+            provider,
+            memory,
+            cancel,
+            |sessions| {
                 // Shared with the blocking half rather than borrowed into it; see `Shared`.
                 let pipeline = Shared::clone(&operation.pipeline);
 
@@ -526,10 +535,11 @@ pub(crate) async fn run<B: Backend>(
 
                     Ok((sessions, produced.map(|image| (image, ran))))
                 }
-            })
-            .instrument(step.clone())
-            .await
-            .map_err(in_step)?;
+            },
+        )
+        .instrument(step.clone())
+        .await
+        .map_err(in_step)?;
 
         let ran_on = ran_on(&sessions);
         held.extend(sessions);

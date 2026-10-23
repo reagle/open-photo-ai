@@ -230,7 +230,7 @@ pub use models::{
     UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
 };
 pub use progress::{Dependency, OnPlan, OnProgress, Phase, PlannedDependency, Progress};
-pub use providers::{ExecutionProvider, SupportedProviders};
+pub use providers::{ExecutionProvider, MemoryMode, SupportedProviders};
 // Re-exported so a caller only needs this crate to hold the cancellation token, not `tokio_util` too.
 pub use tokio_util::sync::CancellationToken;
 
@@ -756,7 +756,12 @@ impl Opai {
         operations: &[Operation],
         options: Option<ProcessOptions>,
     ) -> Result<Enhanced, InferenceError> {
-        inference::process::process(self, self.inner.cache.handle().as_ref(), source, operations, options).await
+        let memory = options.as_ref().map(|options| options.memory).unwrap_or_default();
+        let outcome =
+            inference::process::process(self, self.inner.cache.handle().as_ref(), source, operations, options).await;
+        self.release_after(memory);
+
+        outcome
     }
 
     /// Runs one operation whose result is **not** an image over `source`, and returns what it found beside what
@@ -806,7 +811,12 @@ impl Opai {
         analysis: &Analysis,
         options: Option<ExecuteOptions>,
     ) -> Result<Executed<Faces>, InferenceError> {
-        inference::execute::execute(self, self.inner.cache.handle().as_ref(), source, analysis, options).await
+        let memory = options.as_ref().map(|options| options.memory).unwrap_or_default();
+        let outcome =
+            inference::execute::execute(self, self.inner.cache.handle().as_ref(), source, analysis, options).await;
+        self.release_after(memory);
+
+        outcome
     }
 
     /// Analyses `source` and returns the enhancements that photograph calls for.
@@ -887,7 +897,11 @@ impl Opai {
         families: Option<&[Family]>,
         options: Option<ExecuteOptions>,
     ) -> Result<Suggestions, InferenceError> {
-        autopilot::suggest(self, self.inner.cache.handle().as_ref(), source, families, options).await
+        let memory = options.as_ref().map(|options| options.memory).unwrap_or_default();
+        let outcome = autopilot::suggest(self, self.inner.cache.handle().as_ref(), source, families, options).await;
+        self.release_after(memory);
+
+        outcome
     }
 
     /// Releases every resident session.
@@ -899,6 +913,17 @@ impl Opai {
     /// drops. Where nothing is in use, native resources free **before this returns**.
     pub fn release_sessions(&self) {
         self.inner.sessions.cache().clear();
+    }
+
+    /// Releases the low-memory sessions nothing is using, after a run asking for `memory` has returned.
+    ///
+    /// Here, at the three public entry points, because this is the one place a run is known to be over: every handle
+    /// it took was held by the driver for the whole of its call and is dropped by the time the call returns, success
+    /// or failure. A standard run releases nothing and leaves residency to the idle interval.
+    fn release_after(&self, memory: MemoryMode) {
+        if memory == MemoryMode::Low {
+            self.inner.sessions.cache().release_low_memory();
+        }
     }
 }
 

@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 use super::progress::OperationProgress;
 use crate::error::InferenceError;
 use crate::pipeline::{Backend, Model};
-use crate::providers::ExecutionProvider;
+use crate::providers::{ExecutionProvider, MemoryMode};
 use crate::sessions::{Interest, SessionHandle};
 
 /// Opens every session `model` needs, reporting whatever of it had to be installed over the head of `reporter`'s
@@ -28,6 +28,7 @@ pub(crate) async fn acquire<B: Backend>(
     model: &dyn Model<B>,
     reporter: &Arc<OperationProgress>,
     provider: ExecutionProvider,
+    memory: MemoryMode,
     cancel: &CancellationToken,
 ) -> Result<Vec<SessionHandle<B::Session>>, InferenceError> {
     // Written once for both drivers, which would otherwise be identical line for line here, and it carries the
@@ -42,8 +43,9 @@ pub(crate) async fn acquire<B: Backend>(
     // reports through the chain's own `OperationProgress`: a model never acquires a session, it is handed them.
     let installing = reporter.installing(model.required());
 
-    // What this run brings to each install: its reports, and its stop. See `sessions::Interest`.
-    let interest = Interest { on_progress: installing, cancel: cancel.clone() };
+    // What this run brings to each request: its install reports, its stop, and how much memory its sessions may hold.
+    // See `sessions::Interest`.
+    let interest = Interest { on_progress: installing, cancel: cancel.clone(), memory };
 
     let needed = model.sessions();
     let mut sessions = Vec::with_capacity(needed.len());
@@ -103,6 +105,7 @@ pub(crate) async fn run_declining<B, T, F, Fut>(
     model: &dyn Model<B>,
     reporter: &Arc<OperationProgress>,
     provider: ExecutionProvider,
+    memory: MemoryMode,
     cancel: &CancellationToken,
     mut run: F,
 ) -> Result<Attempt<B::Session, T>, InferenceError>
@@ -112,7 +115,7 @@ where
     Fut: Future<Output = Result<Attempt<B::Session, T>, InferenceError>>,
 {
     loop {
-        let sessions = acquire(backend, model, reporter, provider, cancel).await?;
+        let sessions = acquire(backend, model, reporter, provider, memory, cancel).await?;
         let (sessions, produced) = run(sessions).await?;
 
         if matches!(produced, Err(InferenceError::Run { .. })) && decline(backend, model, &sessions, provider) {

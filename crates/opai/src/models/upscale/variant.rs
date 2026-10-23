@@ -279,6 +279,12 @@ pub(crate) mod tests {
             );
             assert_eq!(osaka.coreml_compute_units, CoreMlComputeUnits::CpuAndGpu, "at {precision:?}");
             assert!(osaka.cuda_prefer_nhwc, "at {precision:?}: the VAE halves' layout was not declared");
+            // Declared on the INT8 transformer's graph rather than here, so the VAE halves both builds share carry one
+            // profile; see `resolve.rs`'s per-graph test.
+            assert!(
+                !osaka.cpu_when_memory_is_low,
+                "at {precision:?}: declared for the variant rather than the graph"
+            );
             assert_eq!(
                 osaka.trt_options.get("trt_builder_optimization_level").map(String::as_str),
                 Some("3"),

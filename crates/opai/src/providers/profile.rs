@@ -78,6 +78,18 @@ pub(crate) struct EpProfile {
     /// [`DISABLED_OPTIMIZER_SEPARATOR`].
     pub(crate) disabled_optimizers: Vec<String>,
 
+    // Per model because what an accelerator costs in memory is a property of the graph's op mix, not of the machine:
+    // the same CoreML that holds Kyoto in a few hundred megabytes splits Osaka's transformer into hundreds of
+    // partitions and runs out of memory compiling them. And opt-in twice over — declared by a model, and acted on only
+    // when a run asks for low memory under `Auto` — because the accelerator is the faster path wherever it fits, and a
+    // machine that has the memory must not be sent to the CPU by a declaration about one that does not.
+    /// Whether this model runs on the CPU when a run asks for [`MemoryMode::Low`](crate::MemoryMode::Low) under
+    /// [`Auto`](crate::ExecutionProvider::Auto).
+    ///
+    /// Declared only for a model whose accelerator path was measured to need materially more memory than its CPU path,
+    /// with the measurement beside the declaration. A provider a run names is never overridden.
+    pub(crate) cpu_when_memory_is_low: bool,
+
     // Per model *and* per precision, because it is not an optimization the runtime can pick on its own merits. The
     // intuition is that NHWC is the layout cuDNN's FP16 tensor-core kernels want, so an FP16 graph stops paying for the
     // transposes around every convolution while an FP32 one has no tensor-core path to reach and only pays the
@@ -258,6 +270,7 @@ mod tests {
         assert_eq!(profile.execution_mode, ExecutionMode::Parallel);
         assert!(!profile.disable_mem_pattern, "the memory planner was off before anything was measured");
         assert!(profile.disabled_optimizers.is_empty(), "an optimizer was disabled before anything was measured");
+        assert!(!profile.cpu_when_memory_is_low, "a model was sent to the CPU before anything was measured");
         assert!(!profile.cuda_prefer_nhwc, "NCHW is the runtime's own default and stays the default here");
         assert!(profile.trt_options.is_empty(), "a TensorRT override was applied before anything was measured");
         assert!(!profile.webgpu_prefer_nchw, "NHWC is the plugin's own default and stays the default here");

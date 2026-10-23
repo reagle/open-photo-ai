@@ -278,7 +278,7 @@ fn serialized<T, E>(tensorrt: bool, timing: &Path, build: impl FnOnce() -> Resul
     })
 }
 
-/// The session settings as the three calls that carry them.
+/// The session settings as the four calls that carry them.
 ///
 /// A translation step of its own rather than three expressions inlined into [`apply`](Self::apply), because the
 /// builder it applies to cannot exist without a live runtime: this is the half that says what the runtime will be
@@ -289,6 +289,9 @@ struct BuilderSettings {
     parallel: bool,
     /// What `with_memory_pattern` is given.
     mem_pattern: bool,
+    /// Whether the CPU provider keeps its arena: `false` registers the CPU provider with its arena off, `true`
+    /// registers nothing and leaves the runtime's own default, which is on.
+    cpu_mem_arena: bool,
     /// The disabled optimizers as the runtime's config entry takes them — the names joined by
     /// [`DISABLED_OPTIMIZER_SEPARATOR`] — or `None` where the model disables none, in which case the entry is not
     /// written at all.
@@ -301,6 +304,7 @@ impl BuilderSettings {
         Self {
             parallel: matches!(settings.execution_mode, ExecutionMode::Parallel),
             mem_pattern: settings.mem_pattern,
+            cpu_mem_arena: settings.cpu_mem_arena,
             // Joined here rather than by the model, so that a wrongly separated value is not something a
             // declaration is able to write — see `DISABLED_OPTIMIZER_SEPARATOR` for why that matters and for how the
             // separator was established. An empty name is dropped rather than written: the runtime would take `""`
@@ -323,9 +327,20 @@ impl BuilderSettings {
     ///
     /// # Errors
     ///
-    /// Returns whatever `ort` reports for any of the three, recovered into this crate's error by the caller.
+    /// Returns whatever `ort` reports for any of the four, recovered into this crate's error by the caller.
     fn apply(&self, builder: SessionBuilder) -> Result<SessionBuilder, ort::Error> {
         let mut builder = builder.with_parallel_execution(self.parallel)?.with_memory_pattern(self.mem_pattern)?;
+
+        // Registered only to switch the arena off, and never otherwise. `ort` reaches the runtime's
+        // `DisableCpuMemArena` only through the CPU provider's `register`, which attaches no provider and only sets
+        // the session option — and whose `Default` has the arena **off**, so registering it for a standard session
+        // would quietly change every model this application runs. Leaving it unregistered there keeps a standard
+        // session built exactly as it was before the setting existed. After the accelerators, so it cannot reorder
+        // them.
+        if !self.cpu_mem_arena {
+            builder =
+                builder.with_execution_providers([ort::ep::CPU::default().with_arena_allocator(false).build()])?;
+        }
 
         if let Some(disabled) = &self.disabled_optimizers {
             builder = builder.with_disabled_optimizers(disabled)?;
@@ -382,6 +397,7 @@ mod tests {
                 execution_mode: ExecutionMode::Parallel,
                 mem_pattern: true,
                 disabled_optimizers: Vec::new(),
+                cpu_mem_arena: true,
             },
         }
     }
@@ -439,11 +455,12 @@ mod tests {
     }
 
     #[test]
-    fn the_session_settings_become_the_three_calls_that_carry_them() {
+    fn the_session_settings_become_the_four_calls_that_carry_them() {
         let settings = |mode, mem_pattern, disabled: &[&str]| SessionSettings {
             execution_mode: mode,
             mem_pattern,
             disabled_optimizers: disabled.iter().map(|name| (*name).to_string()).collect(),
+            cpu_mem_arena: true,
         };
         let disabled =
             |names: &[&str]| BuilderSettings::of(&settings(ExecutionMode::Parallel, true, names)).disabled_optimizers;
@@ -451,13 +468,20 @@ mod tests {
         // What every model that has measured nothing runs with, which is what shipped before profiles existed.
         assert_eq!(
             BuilderSettings::of(&settings(ExecutionMode::Parallel, true, &[])),
-            BuilderSettings { parallel: true, mem_pattern: true, disabled_optimizers: None }
+            BuilderSettings { parallel: true, mem_pattern: true, cpu_mem_arena: true, disabled_optimizers: None }
         );
 
         // A model that measured the inter-op pool as a loss, and one whose shapes vary.
         assert_eq!(
             BuilderSettings::of(&settings(ExecutionMode::Sequential, false, &[])),
-            BuilderSettings { parallel: false, mem_pattern: false, disabled_optimizers: None }
+            BuilderSettings { parallel: false, mem_pattern: false, cpu_mem_arena: true, disabled_optimizers: None }
+        );
+
+        // A low-memory run's session, whose arena is off and which is otherwise what its model declared.
+        let low = SessionSettings { cpu_mem_arena: false, ..settings(ExecutionMode::Sequential, false, &[]) };
+        assert_eq!(
+            BuilderSettings::of(&low),
+            BuilderSettings { parallel: false, mem_pattern: false, cpu_mem_arena: false, disabled_optimizers: None }
         );
 
         // One name reaches the config entry verbatim: nothing is separated, so nothing can be separated wrongly.

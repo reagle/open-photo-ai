@@ -77,6 +77,14 @@ pub(crate) struct Graph {
     /// The CUDA convolution layout this graph's own measurement asks for, or `None` where it carries the variant's
     /// declaration, whatever that declaration later becomes.
     pub(super) cuda_prefer_nhwc: Option<bool>,
+    // Per graph *and* per precision, which is why it is a list here rather than a field of the variant's profile. The
+    // measurement is about one graph at one precision — CoreML splitting Osaka's INT8 transformer into 324 partitions
+    // — and a variant-wide figure that changed with the precision would reach the VAE halves too, which are one pair
+    // of files shared by both builds: the session cache files a session by its artifact alone, so a shared artifact
+    // has to carry one profile whichever build asked for it.
+    /// The precisions at which this graph runs on the CPU in low-memory mode, on top of whatever the variant declares.
+    /// Empty for a graph nobody measured that for.
+    pub(super) cpu_when_memory_is_low: &'static [Precision],
 }
 
 impl Graph {
@@ -94,13 +102,14 @@ impl Graph {
         ArtifactId::suffixed(Family::Upscale, codename, self.suffix, precision)
     }
 
-    /// The settings this graph is configured with, given the `variant`'s own declaration.
-    pub(crate) fn profile(self, variant: EpProfile) -> EpProfile {
+    /// The settings this graph is configured with at `precision`, given the `variant`'s own declaration.
+    pub(crate) fn profile(self, variant: EpProfile, precision: Precision) -> EpProfile {
         // Beside `artifact` so that the two things a caller needs about a graph are answered from the one row that
         // declares them — see `ResolvedGraph` for why the settings travel with the graph.
-        match self.cuda_prefer_nhwc {
-            Some(prefer_nhwc) => EpProfile { cuda_prefer_nhwc: prefer_nhwc, ..variant },
-            None => variant,
+        EpProfile {
+            cuda_prefer_nhwc: self.cuda_prefer_nhwc.unwrap_or(variant.cuda_prefer_nhwc),
+            cpu_when_memory_is_low: variant.cpu_when_memory_is_low || self.cpu_when_memory_is_low.contains(&precision),
+            ..variant
         }
     }
 }
@@ -214,7 +223,7 @@ pub(crate) fn resolve(row: &DiffusionVariant, precision: Precision) -> GraphSet 
         .map(|graph: &Graph| ResolvedGraph {
             role: graph.role(),
             artifact: graph.artifact(row.codename, precision),
-            profile: graph.profile(declared.clone()),
+            profile: graph.profile(declared.clone(), precision),
         })
         .collect();
 

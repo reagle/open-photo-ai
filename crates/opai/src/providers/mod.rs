@@ -153,6 +153,34 @@ impl FromStr for ExecutionProvider {
     }
 }
 
+// Two values rather than a `bool`, for the reason `ModelTrust` gives: `memory: true` at a call site says nothing about
+// which way is true. Here rather than beside the run options because what it changes is how a session is planned and
+// how long it stays, which is this module's and `sessions`' business; the options only carry it.
+/// How much memory a run's sessions may hold.
+///
+/// Per run, beside the provider, on [`ProcessOptions::memory`](crate::ProcessOptions::memory) and
+/// [`ExecuteOptions::memory`](crate::ExecuteOptions::memory). It never changes what is installed, and it never changes
+/// the result an enhancement produces on a given provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
+pub enum MemoryMode {
+    /// Sessions are built and kept as they always are: the CPU memory arena on, and each session resident for fifteen
+    /// minutes after its last use. The default, and the fast path wherever the machine has the memory for it.
+    #[default]
+    Standard,
+
+    /// Sessions hold as little memory as they can, for a machine that cannot fit a model's ordinary footprint.
+    ///
+    /// Three things change, each paid for in speed:
+    ///
+    /// - A model whose declaration says it runs on the CPU when memory is low is resolved to the CPU where the run
+    ///   asked for [`ExecutionProvider::Auto`]. A provider named by the run is never overridden.
+    /// - The CPU memory arena is switched off, so each run of a model returns its working memory when it finishes
+    ///   instead of keeping it at the session's high-water mark.
+    /// - The run's sessions are released when the run returns, instead of staying resident.
+    Low,
+}
+
 /// The execution providers initialization found this machine can offer.
 ///
 /// What the machine can be *asked* for, not a promise that a session will build: a provider reported as supported can

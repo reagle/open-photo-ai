@@ -18,12 +18,18 @@ fn interested() -> (Interest, CancellationToken, Arc<Mutex<Vec<crate::progress::
     let (on_progress, heard) = crate::progress::recording();
     let cancel = CancellationToken::new();
 
-    (Interest { on_progress: Some(on_progress), cancel: cancel.clone() }, cancel, heard)
+    (
+        Interest { on_progress: Some(on_progress), cancel: cancel.clone(), ..Interest::default() },
+        cancel,
+        heard,
+    )
 }
 
 /// The flight for `id` on the CPU, as the cache is holding it.
 fn flight_for<S>(cache: &SessionCache<S>, id: &ArtifactId) -> Option<Arc<Flight<S, SessionError>>> {
-    lock(&cache.flights).get(&(id.clone(), ExecutionProvider::Cpu, false)).map(Arc::clone)
+    lock(&cache.flights)
+        .get(&(id.clone(), ExecutionProvider::Cpu, false, MemoryMode::Standard))
+        .map(Arc::clone)
 }
 
 /// Waits until exactly `count` requests are waiting on the CPU flight for `id`.

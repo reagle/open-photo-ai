@@ -7,12 +7,13 @@ use tokio_util::sync::CancellationToken;
 use tracing::{Id, Span};
 
 use crate::progress::OnProgress;
+use crate::providers::MemoryMode;
 use crate::task::lock;
 
 use super::resident::Resident;
 
-/// What one request brings to the build it is waiting on: where its install's progress goes, and how long it wants
-/// that install to happen at all.
+/// What one request brings to the build it is waiting on: where its install's progress goes, how long it wants that
+/// install to happen at all, and how much memory the session it is handed may hold.
 ///
 /// The token is the **run's**, handed down from [`ProcessOptions::cancel`](crate::ProcessOptions::cancel) through
 /// every layer between. What it does here is not to fail the request — a request that stops waiting stops *wanting*,
@@ -24,6 +25,10 @@ pub(crate) struct Interest {
     pub(crate) on_progress: Option<OnProgress>,
     /// The run's own token.
     pub(crate) cancel: CancellationToken,
+    /// The run's memory mode. Unlike the two above it is part of **which** session the request is served, not only of
+    /// how the build is waited on: a low-memory session is built with different settings and released on a different
+    /// rule, so it is filed under its own key. See [`MemoryMode`].
+    pub(crate) memory: MemoryMode,
 }
 
 /// One build in progress, the outcome every request waiting on it is handed, and the audience its install answers to.

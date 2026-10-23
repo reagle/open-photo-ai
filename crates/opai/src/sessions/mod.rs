@@ -297,6 +297,9 @@ impl<S: Send + 'static> Sessions<S> {
     ///
     /// Walks the request's [`ladder`](options::ladder), trying each rung until one builds. Under `Auto` a rung that
     /// already threw an error for this artifact is skipped, and one that throws now is remembered as declined.
+    ///
+    /// A model that runs on the CPU when memory is low, requested under `Auto` by a low-memory run, is requested as
+    /// the CPU before the ladder is built; see [`options::requested_under`].
     async fn request(
         &self,
         artifact: &ArtifactId,
@@ -304,6 +307,14 @@ impl<S: Send + 'static> Sessions<S> {
         requested: ExecutionProvider,
         interest: &Interest,
     ) -> Result<SessionHandle<S>, SessionError> {
+        let asked = requested;
+        let requested = options::requested_under(asked, profile, interest.memory);
+        if requested != asked {
+            // `info`: the user asked for this trade, and a reader wondering why a Mac ran the model on its CPU finds
+            // the answer here rather than reading it as a fallback.
+            tracing::info!(%artifact, requested = %asked, provider = %requested, "running on the CPU in low-memory mode");
+        }
+
         let auto = requested == ExecutionProvider::Auto;
         let rungs: Vec<_> = options::ladder(requested, self.supported)
             .into_iter()
@@ -389,6 +400,7 @@ impl<S: Send + 'static> Sessions<S> {
         // Keyed on what the machine will actually serve, not on what was asked for: filing a CPU session under a GPU
         // key would make an explicit switch to the CPU build a second identical copy of it.
         let (requested, resolved) = (rung.requested, rung.resolved());
+        let memory = interest.memory;
 
         self.cache
             .get_or_build(artifact, requested, resolved, interest, |installing| -> BuildFuture<'_, S> {
@@ -401,7 +413,7 @@ impl<S: Send + 'static> Sessions<S> {
                     };
 
                     let paths = caches::resolve(&self.app_dir, &self.name, artifact)?;
-                    let plan = options::plan(rung.clone(), profile, &paths, crate::gpu::cuda_device_memory());
+                    let plan = options::plan(rung.clone(), profile, &paths, crate::gpu::cuda_device_memory(), memory);
 
                     // The graph is the artifact's own name, the same rule the descriptor composes a model's version from;
                     // a model too large for the protobuf limit keeps its weights in a sibling the runtime opens itself.

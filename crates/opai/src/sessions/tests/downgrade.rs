@@ -384,3 +384,28 @@ async fn a_retry_that_runs_out_of_memory_again_falls_back() {
         "TensorRT was attempted more than twice"
     );
 }
+
+#[tokio::test]
+async fn a_low_memory_auto_request_for_a_model_that_declares_it_is_built_on_the_cpu_and_never_attempts_the_gpu() {
+    // Not a downgrade: the accelerator is never attempted, so nothing is declined and no fallback is counted. The
+    // standard request beside it, for the same model, still gets the accelerator — the declaration is acted on only
+    // when the run asked for low memory.
+    let server = TestServer::start(vec![]).await;
+    let (_root, app_dir) = app();
+    let bench = Arc::new(Bench::default());
+    let id = kyoto();
+    let sessions = sessions(&bench, &server, listing_for(&[&id]), &app_dir, machine_supporting(false, true, false));
+    let declaring = EpProfile { cpu_when_memory_is_low: true, ..EpProfile::default() };
+    let low = Interest { memory: MemoryMode::Low, ..Interest::default() };
+
+    let lean = sessions.session(&id, &declaring, ExecutionProvider::Auto, &low).await.unwrap();
+    assert_eq!(lean.provider(), ExecutionProvider::Cpu);
+    assert_eq!(bench.built_on(), vec![ExecutionProvider::Cpu], "the accelerator was attempted under low memory");
+
+    let standard = sessions.session(&id, &declaring, ExecutionProvider::Auto, &Interest::default()).await.unwrap();
+    assert_eq!(standard.provider(), ExecutionProvider::Cuda, "a standard run was sent to the CPU");
+
+    // And a named provider is honoured whatever the memory mode.
+    let named = sessions.session(&id, &declaring, ExecutionProvider::Cuda, &low).await.unwrap();
+    assert_eq!(named.provider(), ExecutionProvider::Cuda, "low memory overrode a provider the run named");
+}
