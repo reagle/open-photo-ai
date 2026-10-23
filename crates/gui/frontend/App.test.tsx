@@ -477,15 +477,21 @@ describe("App, on a machine that supports TensorRT", () => {
                     quit: "Quit Open Photo AI",
                 }),
                 hasFiles: false,
+                canExport: false,
             });
 
             act(() => openFiles(HOLIDAY));
-            expect(configured()).toEqual(expect.objectContaining({ hasFiles: true }));
+            expect(configured()).toEqual(expect.objectContaining({ hasFiles: true, canExport: true }));
 
             await act(() => i18n.changeLanguage("de"));
             expect(configured()).toEqual({
-                labels: expect.objectContaining({ file: "Ablage", closeImage: "Bild schließen" }),
+                labels: expect.objectContaining({
+                    file: "Ablage",
+                    closeImage: "Bild schließen",
+                    export: "Exportieren …",
+                }),
                 hasFiles: true,
+                canExport: true,
             });
         } finally {
             await act(() => i18n.changeLanguage("en"));

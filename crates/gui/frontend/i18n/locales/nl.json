@@ -142,6 +142,7 @@
             "space": "Spatie",
             "appActions": {
                 "open": "Afbeeldingen openen",
+                "export": "Afbeeldingen exporteren",
                 "settings": "Instellingen openen",
                 "closeImage": "Afbeelding sluiten",
                 "closeAll": "Alle afbeeldingen sluiten",
@@ -438,6 +439,7 @@
             "quit": "Stop {{name}}",
             "file": "Archief",
             "open": "Open…",
+            "export": "Exporteren…",
             "closeImage": "Afbeelding sluiten",
             "closeAll": "Alle afbeeldingen sluiten",
             "settings": "Instellingen…",

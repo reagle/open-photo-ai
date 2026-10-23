@@ -348,5 +348,28 @@ describe("useShortcuts", () => {
 
             expect(useShortcutsListStore.getState().open).toBe(true);
         });
+
+        it.each([
+            ["Command-slash on macOS", true, { metaKey: true }],
+            ["Ctrl+slash elsewhere", false, { ctrlKey: true }],
+        ])("opens the shortcuts list with %s, Topaz's key", (_name, mac, mod) => {
+            vi.mocked(isMacOs).mockReturnValue(mac);
+            renderHook(() => useShortcuts());
+
+            const event = fire("keydown", { key: "/", code: "Slash", ...mod });
+
+            expect(event.defaultPrevented).toBe(true);
+            expect(useShortcutsListStore.getState().open).toBe(true);
+        });
+
+        it("leaves Ctrl+slash to a text field", () => {
+            renderHook(() => useShortcuts());
+            const field = document.createElement("input");
+            document.body.append(field);
+
+            fire("keydown", { key: "/", code: "Slash", ctrlKey: true }, field);
+
+            expect(useShortcutsListStore.getState().open).toBe(false);
+        });
     });
 });

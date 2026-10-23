@@ -7,6 +7,7 @@ import { configureMenu, onMenuItem } from "@/ipc/menu";
 import { isMacOs, isWindows } from "@/ipc/os";
 import { quit } from "@/ipc/setup";
 import { AppProviders } from "@/providers";
+import { useExportDialogStore } from "@/stores/exportDialog";
 import { useFileStore } from "@/stores/files";
 import { useSettingsDialogStore } from "@/stores/settingsDialog";
 import { HOLIDAY, openFiles, resetFileStore, SUNSET } from "@/test/support";
@@ -128,6 +129,38 @@ describe.each([
         expect(useSettingsDialogStore.getState().open).toBe(true);
     });
 
+    it.each([
+        ["Ctrl+S", { key: "s", ctrlKey: true }],
+        ["Ctrl+Shift+E", { key: "E", ctrlKey: true, shiftKey: true }],
+    ])("opens Export with %s", (_name, init) => {
+        mount();
+
+        const event = press(init);
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(useExportDialogStore.getState().open).toBe(true);
+    });
+
+    it("does not open Export with nothing picked", () => {
+        act(() => useFileStore.getState().unselectAll());
+        mount();
+
+        press({ key: "s", ctrlKey: true });
+
+        expect(useExportDialogStore.getState().open).toBe(false);
+    });
+
+    it("leaves a text field its Export keys", () => {
+        mount();
+        const field = document.createElement("input");
+        document.body.append(field);
+
+        press({ key: "s", ctrlKey: true }, field);
+        press({ key: "E", ctrlKey: true, shiftKey: true }, field);
+
+        expect(useExportDialogStore.getState().open).toBe(false);
+    });
+
     it("does nothing while a dialog is open", () => {
         mount();
         openDialog();
@@ -135,9 +168,12 @@ describe.each([
         const event = press({ key: "w", ctrlKey: true });
         press({ key: "o", ctrlKey: true });
 
+        press({ key: "s", ctrlKey: true });
+
         expect(event.defaultPrevented).toBe(false);
         expect(paths()).toEqual([HOLIDAY.path, SUNSET.path]);
         expect(picker).not.toHaveBeenCalled();
+        expect(useExportDialogStore.getState().open).toBe(false);
     });
 
     it("leaves a text field its keys", () => {
@@ -196,6 +232,11 @@ describe("useAppActions from the macOS menu", () => {
     it("acts on each of the application's items", () => {
         const choose = mount();
 
+        // First, while the image picked on opening is still open.
+        choose("export");
+        expect(useExportDialogStore.getState().open).toBe(true);
+        act(() => useExportDialogStore.getState().closeExport());
+
         choose("closeImage");
         expect(paths()).toEqual([SUNSET.path]);
 
@@ -225,8 +266,10 @@ describe("useAppActions from the macOS menu", () => {
 
         choose("closeImage");
         choose("closeAll");
+        choose("export");
 
         expect(paths()).toEqual([HOLIDAY.path, SUNSET.path]);
+        expect(useExportDialogStore.getState().open).toBe(false);
     });
 
     it("does not also act on the keys, which the menu holds", () => {
@@ -234,24 +277,66 @@ describe("useAppActions from the macOS menu", () => {
 
         press({ key: "w", metaKey: true });
         press({ key: "w", ctrlKey: true });
+        press({ key: "s", metaKey: true });
 
         expect(paths()).toEqual([HOLIDAY.path, SUNSET.path]);
+        expect(useExportDialogStore.getState().open).toBe(false);
     });
 
-    it("relabels the menu in the interface language, and follows whether any image is open", async () => {
+    it("leaves Command-S to a focused text field, where AppKit still sends the menu item", () => {
+        const choose = mount();
+        const field = document.createElement("input");
+        document.body.append(field);
+        field.focus();
+
+        choose("export");
+        expect(useExportDialogStore.getState().open).toBe(false);
+
+        field.blur();
+        choose("export");
+        expect(useExportDialogStore.getState().open).toBe(true);
+    });
+
+    it("opens Export with Shift-Command-E, which the menu item cannot also hold", () => {
+        mount();
+
+        const event = press({ key: "E", metaKey: true, shiftKey: true });
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(useExportDialogStore.getState().open).toBe(true);
+    });
+
+    it("leaves Shift-Command-E to a text field, and to an open dialog", () => {
+        mount();
+        const field = document.createElement("input");
+        document.body.append(field);
+
+        press({ key: "E", metaKey: true, shiftKey: true }, field);
+        openDialog();
+        press({ key: "E", metaKey: true, shiftKey: true });
+
+        expect(useExportDialogStore.getState().open).toBe(false);
+    });
+
+    it("relabels the menu in the interface language, and follows whether any image is open or picked", async () => {
         mount();
 
         expect(configureMenu).toHaveBeenLastCalledWith(
-            expect.objectContaining({ closeImage: "Close Image", quit: "Quit Open Photo AI" }),
+            expect.objectContaining({ closeImage: "Close Image", export: "Export…", quit: "Quit Open Photo AI" }),
+            true,
             true,
         );
 
+        act(() => useFileStore.getState().unselectAll());
+        expect(configureMenu).toHaveBeenLastCalledWith(expect.anything(), true, false);
+
         act(() => useFileStore.getState().closeAll());
-        expect(configureMenu).toHaveBeenLastCalledWith(expect.anything(), false);
+        expect(configureMenu).toHaveBeenLastCalledWith(expect.anything(), false, false);
 
         await act(() => i18n.changeLanguage("fr"));
         expect(configureMenu).toHaveBeenLastCalledWith(
-            expect.objectContaining({ file: "Fichier", closeImage: "Fermer l'image" }),
+            expect.objectContaining({ file: "Fichier", closeImage: "Fermer l'image", export: "Exporter…" }),
+            false,
             false,
         );
         await act(() => i18n.changeLanguage("en"));

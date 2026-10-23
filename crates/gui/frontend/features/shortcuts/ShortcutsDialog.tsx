@@ -17,7 +17,7 @@ import { useShortcutsListStore } from "@/stores/shortcutsList";
  * already is; a second place to edit them would be a second draft to keep in step. The line under the
  * list says where that is. While it is open the window's shortcuts are off - it is a dialog - so the
  * key that opened it does not close it; Escape, the close box and a click outside do. The
- * application's own keys (Open, Settings, Close Image, Close All Images, Quit) head the list, fixed.
+ * application's own keys (Open, Export, Settings, Close Image, Close All Images, Quit) head the list, fixed.
  */
 export const ShortcutsDialog = () => {
     const { t } = useTranslation();
@@ -54,9 +54,14 @@ export const ShortcutsDialog = () => {
                                 <div key={action} className="flex items-center justify-between gap-6 px-4 py-2">
                                     <dt className="text-sm">{name}</dt>
                                     <dd className="m-0 flex flex-wrap justify-end gap-1.5">
-                                        <kbd className="rounded-md border border-border bg-background px-2 py-0.5 font-mono text-[12px]">
-                                            {keys}
-                                        </kbd>
+                                        {keys.map((shown) => (
+                                            <kbd
+                                                key={shown}
+                                                className="rounded-md border border-border bg-background px-2 py-0.5 font-mono text-[12px]"
+                                            >
+                                                {shown}
+                                            </kbd>
+                                        ))}
                                     </dd>
                                 </div>
                             ))}

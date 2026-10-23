@@ -38,9 +38,12 @@ struct Action {
 
 /// The items of this application's own, in the order the window names them.
 ///
-/// The keys are fixed: the Keyboard settings page lists them read-only and refuses them for anything else.
-const ACTIONS: [Action; 4] = [
+/// The keys are fixed: the Keyboard settings page lists them read-only and refuses them for anything else. An item
+/// holds one key, the first `appShortcuts` lists for its action; Export's second, Shift-Command-E, is matched by the
+/// window itself.
+const ACTIONS: [Action; 5] = [
     Action { id: "open", label: "Open…", accelerator: "CmdOrCtrl+O" },
+    Action { id: "export", label: "Export…", accelerator: "CmdOrCtrl+S" },
     Action { id: "settings", label: "Settings…", accelerator: "CmdOrCtrl+," },
     Action { id: "closeImage", label: "Close Image", accelerator: "CmdOrCtrl+W" },
     Action { id: "closeAll", label: "Close All Images", accelerator: "CmdOrCtrl+Shift+W" },
@@ -48,6 +51,18 @@ const ACTIONS: [Action; 4] = [
 
 /// The two items that act on open images, and so are unavailable with none open.
 const NEED_FILES: [&str; 2] = ["closeImage", "closeAll"];
+
+/// The item available only while the window's Export button is - while at least one image is picked.
+const NEEDS_EXPORT: &str = "export";
+
+/// What the window says the items that follow it may do now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Availability {
+    /// At least one image is open: Close Image and Close All Images.
+    has_files: bool,
+    /// The sidebar's Export button is available: Export.
+    can_export: bool,
+}
 
 /// AppKit's own items, each of which does its work without the window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,7 +156,14 @@ const SECTIONS: &[Section] = &[
         key: "file",
         title: "File",
         id: None,
-        entries: &[Entry::Action("open"), Entry::Separator, Entry::Action("closeImage"), Entry::Action("closeAll")],
+        entries: &[
+            Entry::Action("open"),
+            Entry::Separator,
+            Entry::Action("export"),
+            Entry::Separator,
+            Entry::Action("closeImage"),
+            Entry::Action("closeAll"),
+        ],
     },
     // The text fields - an export's name, a folder - need these: without an Edit menu Command-C, -V and -A do
     // nothing in a WebKit view on macOS.
@@ -187,12 +209,13 @@ pub(crate) struct AppMenu<R: Runtime> {
 }
 
 impl<R: Runtime> AppMenu<R> {
-    /// Applies the window's labels, by key, and makes the two close items available only with images open.
+    /// Applies the window's labels, by key, and makes the two close items available only with images open and
+    /// Export only while the window could export.
     ///
     /// A failure is logged and the rest are still applied - a label left in English is not worth a broken menu.
-    fn configure(&self, labels: &HashMap<String, String>, has_files: bool) {
+    fn configure(&self, labels: &HashMap<String, String>, now: Availability) {
         for (key, item) in &self.labelled {
-            let (text, enabled) = plan(key, labels, has_files);
+            let (text, enabled) = plan(key, labels, now);
 
             if let Some(text) = text
                 && let Err(error) = set_text(item, text)
@@ -211,15 +234,21 @@ impl<R: Runtime> AppMenu<R> {
 }
 
 /// What configuring does to the item labelled under `key`: the label it takes, if `labels` has one, and whether it
-/// is available, for the two items that follow the open images.
+/// is available, for the two items that follow the open images and for Export.
 ///
 /// Asked only for the keys the menu holds, so a key in `labels` the menu does not hold is ignored; an item missing
 /// from `labels` keeps what it says.
 // Apart from `AppMenu::configure` because the native items cannot be built in a test: AppKit's menus are made on the
 // main thread only, and a test runs on another.
-fn plan<'a>(key: &str, labels: &'a HashMap<String, String>, has_files: bool) -> (Option<&'a str>, Option<bool>) {
+fn plan<'a>(key: &str, labels: &'a HashMap<String, String>, now: Availability) -> (Option<&'a str>, Option<bool>) {
     let text = labels.get(key).map(String::as_str);
-    let enabled = NEED_FILES.contains(&key).then_some(has_files);
+    let enabled = if NEED_FILES.contains(&key) {
+        Some(now.has_files)
+    } else if key == NEEDS_EXPORT {
+        Some(now.can_export)
+    } else {
+        None
+    };
 
     (text, enabled)
 }
@@ -285,7 +314,7 @@ fn system<R: Runtime>(app: &AppHandle<R>, item: System) -> tauri::Result<Predefi
 
 /// Builds the menu bar of [`SECTIONS`], in English, with the items the window relabels.
 ///
-/// The two close items start unavailable: no image is open until the window says otherwise.
+/// The two close items and Export start unavailable: no image is open until the window says otherwise.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, AppMenu<R>)> {
     let mut labelled = Vec::new();
@@ -302,7 +331,7 @@ fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, AppMenu<R>)>
             let item: MenuItemKind<R> = match *entry {
                 Entry::Action(id) => {
                     let action = ACTIONS.iter().find(|action| action.id == id).expect("an entry names an action");
-                    let enabled = !NEED_FILES.contains(&id);
+                    let enabled = !NEED_FILES.contains(&id) && id != NEEDS_EXPORT;
                     let item = MenuItem::with_id(app, id, action.label, enabled, Some(action.accelerator))?;
                     labelled.push((id, item.kind()));
                     item.kind()
@@ -360,7 +389,7 @@ pub(crate) fn forward<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
 
 // The command's name is written once more, in `frontend/ipc/menu.ts`.
 /// Relabels the menu with the window's catalogue, and makes Close Image and Close All Images available only with
-/// images open.
+/// images open, and Export only while the window's Export button is.
 ///
 /// `labels` is keyed as the window's `menu.bar` catalogue is; a key the menu does not hold is ignored. Without a menu
 /// - on Windows and Linux - nothing happens.
@@ -369,11 +398,12 @@ pub(crate) fn configure_menu<R: Runtime>(
     app: AppHandle<R>,
     labels: HashMap<String, String>,
     has_files: bool,
+    can_export: bool,
     traceparent: Traceparent,
 ) {
     traced_sync(command_span!("configure_menu", traceparent), || {
         if let Some(menu) = app.try_state::<AppMenu<R>>() {
-            menu.configure(&labels, has_files);
+            menu.configure(&labels, Availability { has_files, can_export });
         }
     });
 }
@@ -410,6 +440,7 @@ mod tests {
             keys,
             [
                 ("open", "CmdOrCtrl+O"),
+                ("export", "CmdOrCtrl+S"),
                 ("settings", "CmdOrCtrl+,"),
                 ("closeImage", "CmdOrCtrl+W"),
                 ("closeAll", "CmdOrCtrl+Shift+W"),
@@ -439,6 +470,22 @@ mod tests {
         assert_eq!(SECTIONS[5].id, Some(HELP_SUBMENU_ID));
     }
 
+    /// File holds Open, then Export, then the two close items - the order the design's table gives.
+    #[test]
+    fn file_holds_export_between_open_and_the_close_items() {
+        let file = SECTIONS.iter().find(|section| section.key == "file").expect("a File menu");
+        let actions: Vec<&str> = file
+            .entries
+            .iter()
+            .filter_map(|entry| match *entry {
+                Entry::Action(id) => Some(id),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(actions, ["open", "export", "closeImage", "closeAll"]);
+    }
+
     /// Every label key is distinct, so one key never relabels two items.
     #[test]
     fn every_label_key_is_distinct() {
@@ -453,13 +500,13 @@ mod tests {
         assert_eq!(distinct.len(), keys.len(), "a label key is used twice: {keys:?}");
     }
 
-    /// The labels land by key, a key the menu does not hold is ignored, and the two close items - and only they -
-    /// follow whether any image is open.
+    /// The labels land by key, a key the menu does not hold is ignored, the two close items follow whether any image
+    /// is open, and Export whether the window could export - and no other item follows either.
     ///
     /// **What this does not prove:** that AppKit draws the label. The native items cannot be built off the main
     /// thread, so this covers the plan `AppMenu::configure` applies, and the drawing is a check by hand.
     #[test]
-    fn configuring_relabels_by_key_and_disables_the_close_items_with_nothing_open() {
+    fn configuring_relabels_by_key_and_disables_the_close_items_and_export_when_they_cannot_act() {
         let held: Vec<&str> = label_keys().collect();
         assert!(held.contains(&"file") && held.contains(&"open") && held.contains(&"copy"));
         assert!(!held.contains(&"noSuchItem") && !held.contains(&"app"));
@@ -470,14 +517,20 @@ mod tests {
             ("noSuchItem".to_string(), "Rien".to_string()),
         ]);
 
-        assert_eq!(plan("file", &labels, false), (Some("Fichier"), None));
-        assert_eq!(plan("open", &labels, false), (Some("Ouvrir…"), None));
-        assert_eq!(plan("closeImage", &labels, false), (None, Some(false)), "an item with no label keeps its own");
-        assert_eq!(plan("closeAll", &labels, true), (None, Some(true)));
-        assert_eq!(plan("closeAll", &HashMap::new(), false), (None, Some(false)));
+        let none = Availability { has_files: false, can_export: false };
+        let open = Availability { has_files: true, can_export: false };
+        let picked = Availability { has_files: true, can_export: true };
 
-        let enabled: Vec<&str> = held.iter().copied().filter(|key| plan(key, &labels, true).1.is_some()).collect();
-        assert_eq!(enabled, ["closeImage", "closeAll"]);
+        assert_eq!(plan("file", &labels, none), (Some("Fichier"), None));
+        assert_eq!(plan("open", &labels, none), (Some("Ouvrir…"), None));
+        assert_eq!(plan("closeImage", &labels, none), (None, Some(false)), "an item with no label keeps its own");
+        assert_eq!(plan("closeAll", &labels, open), (None, Some(true)));
+        assert_eq!(plan("closeAll", &HashMap::new(), none), (None, Some(false)));
+        assert_eq!(plan("export", &labels, open), (None, Some(false)), "open but nothing picked");
+        assert_eq!(plan("export", &labels, picked), (None, Some(true)));
+
+        let enabled: Vec<&str> = held.iter().copied().filter(|key| plan(key, &labels, picked).1.is_some()).collect();
+        assert_eq!(enabled, ["export", "closeImage", "closeAll"]);
     }
 
     /// The window's own items are forwarded by id; AppKit's, and anything else, are not.

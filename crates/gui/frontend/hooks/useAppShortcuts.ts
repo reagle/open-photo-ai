@@ -10,7 +10,7 @@ export const currentPlatform = (): Platform => (isMacOs() ? "macos" : isWindows(
  * `Ctrl+W` elsewhere - and each action's name, in the order the Keyboard page and the shortcuts list
  * draw them. Read-only: these keys are not the user's to change.
  */
-export const useAppShortcuts = (): { action: AppAction; name: string; keys: string }[] => {
+export const useAppShortcuts = (): { action: AppAction; name: string; keys: string[] }[] => {
     const { t } = useTranslation();
     const platform = currentPlatform();
     const table = appShortcuts(platform);
@@ -18,6 +18,8 @@ export const useAppShortcuts = (): { action: AppAction; name: string; keys: stri
     return APP_ACTIONS.map((action) => ({
         action,
         name: t(`settings.keyboard.appActions.${action}`),
-        keys: formatBinding(table[action], platform === "macos", t("settings.keyboard.space")),
+        keys: table[action].map((binding) =>
+            formatBinding(binding, platform === "macos", t("settings.keyboard.space")),
+        ),
     }));
 };

@@ -142,6 +142,7 @@
             "space": "Leertaste",
             "appActions": {
                 "open": "Bilder öffnen",
+                "export": "Bilder exportieren",
                 "settings": "Einstellungen öffnen",
                 "closeImage": "Bild schließen",
                 "closeAll": "Alle Bilder schließen",
@@ -438,6 +439,7 @@
             "quit": "{{name}} beenden",
             "file": "Ablage",
             "open": "Öffnen …",
+            "export": "Exportieren …",
             "closeImage": "Bild schließen",
             "closeAll": "Alle Bilder schließen",
             "settings": "Einstellungen …",
