@@ -20,6 +20,7 @@ mod frontend;
 mod images;
 mod links;
 mod logs;
+mod opened;
 mod reveal;
 mod setup;
 mod single_instance;
@@ -84,11 +85,17 @@ pub fn run(prepared: Result<(), opai::InitError>) {
     // before the builder - otherwise a second GUI could take the single-instance claim first and be refused with
     // `InitError::AlreadyRunning`.
     //
-    // `_args`/`_cwd` are ignored: a second launch just means "show the window", nothing more.
+    // A second launch means "show the window", and also "open these" when it names files - which is how Windows and
+    // Linux hand a running application a file opened from the file manager. Anything else it says is ignored.
     if single_instance_is_supported() {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             tracing::info!("a second launch was refused; raising the window already open");
-            single_instance::raise_main_window(app);
+            let files = opened::paths_from_args(args.into_iter().skip(1), std::path::Path::new(&cwd));
+            if files.is_empty() {
+                single_instance::raise_main_window(app);
+            } else {
+                opened::deliver(app, files);
+            }
         }));
     }
 
@@ -121,6 +128,10 @@ pub fn run(prepared: Result<(), opai::InitError>) {
         .manage(export::Exports::default())
         // The files this session's exports wrote; the whole of what `reveal_export` may show.
         .manage(export::Written::default())
+        // The files the platform has asked the application to open and the window has not taken yet (see
+        // `src/opened.rs`); filled from the first launch's arguments below, a second launch's, and macOS's
+        // `RunEvent::Opened`.
+        .manage(opened::Inbox::default())
         // Serves opened images' pixels over a custom scheme instead of base64-over-IPC. Async, so large images decode
         // off the window thread. `images::SCHEME` is a constant, not a literal, because `tauri.conf.json`'s `img-src`
         // must list both its platform forms - see the drift guard test below.
@@ -136,6 +147,12 @@ pub fn run(prepared: Result<(), opai::InitError>) {
             analytics::begin(analytics::read(), opai::telemetry::start);
 
             window::reveal_when_late(app.handle());
+
+            // The files this launch was started to open. Windows and Linux name them on the command line; macOS
+            // sends `RunEvent::Opened` instead, but a path given to the binary directly is honoured there too.
+            if let Ok(cwd) = std::env::current_dir() {
+                opened::deliver(app.handle(), opened::paths_from_args(std::env::args_os().skip(1), &cwd));
+            }
 
             Ok(())
         })
@@ -168,12 +185,13 @@ pub fn run(prepared: Result<(), opai::InitError>) {
             images::files::describe_images,
             images::files::reveal_image,
             images::files::input_extensions,
+            opened::take_opened_files,
             window::window_ready
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Open Photo AI application")
-        .run(move |_, event| {
-            if let tauri::RunEvent::Exit = event {
+        .run(move |_app, event| match event {
+            tauri::RunEvent::Exit => {
                 // Before telemetry stops, so a write that had to be abandoned is still recorded. The handle in the
                 // setup state is never dropped on this path, so its own wait on drop does not run.
                 if !opai::settle_cache_writes(CACHE_SETTLE) {
@@ -182,6 +200,11 @@ pub fn run(prepared: Result<(), opai::InitError>) {
 
                 closing(began.elapsed(), opai::telemetry::stop);
             }
+            // Open With, a double-click in Finder, or a drop on the Dock icon - at launch as well as while running,
+            // since macOS hands a launch's files over this way and not on the command line.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Opened { urls } => opened::deliver(_app, opened::paths_from_urls(&urls)),
+            _ => {}
         });
 }
 
@@ -402,6 +425,37 @@ mod tests {
             window["backgroundColor"].as_str(),
             Some(background),
             "the window's pre-paint colour has drifted from `--background` in frontend/style.css"
+        );
+    }
+
+    /// The file types the bundle declares (Open With on macOS, ProgIDs on Windows, `MimeType=` on Linux) are exactly
+    /// the extensions `opai` opens: one it opens and does not declare is missing from Open With, and one it declares
+    /// and does not open would be offered and then refused.
+    #[test]
+    fn tauri_conf_json_declares_exactly_the_extensions_opai_opens() {
+        let raw = include_str!("../tauri.conf.json");
+        let conf: serde_json::Value = serde_json::from_str(raw).expect("tauri.conf.json is not valid JSON");
+
+        let associations = conf["bundle"]["fileAssociations"].as_array().expect("the bundle declares file types");
+        let mut declared = BTreeSet::new();
+        for association in associations {
+            for extension in association["ext"].as_array().expect("each association lists its extensions") {
+                let extension = extension.as_str().expect("an extension is a string");
+                assert!(declared.insert(extension), "`{extension}` is declared by two associations");
+            }
+
+            // Offered beside the default application, never in its place.
+            assert_eq!(association["role"], "Editor", "{association}");
+            assert_eq!(association["rank"], "Alternate", "{association}");
+        }
+
+        let opened: BTreeSet<&str> = opai::image::input_extensions().into_iter().collect();
+        assert_eq!(
+            declared,
+            opened,
+            "declared but not opened: {:?}; opened but not declared: {:?}",
+            declared.difference(&opened).collect::<Vec<_>>(),
+            opened.difference(&declared).collect::<Vec<_>>()
         );
     }
 
