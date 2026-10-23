@@ -5,6 +5,10 @@
 //! someone double-clicked the icon while the application was already running, which is not a mistake
 //! and not a question. It is a request for their window, so the second process hands the first one a
 //! message and exits successfully, and the first one raises what the user was asking for.
+//!
+//! The message is the second launch's arguments and directory. Files among them are opened in the running instance,
+//! through `crate::opened` - on Windows and Linux that is how a file opened from the file manager reaches an
+//! application already running. Every other argument is ignored.
 
 use std::path::Path;
 

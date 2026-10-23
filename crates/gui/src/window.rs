@@ -31,6 +31,7 @@
 // empty window is still on screen, in the colour `backgroundColor` gives it, and `reveal` simply arrives at a window
 // that is already up. macOS and Linux hide as asked.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
@@ -42,6 +43,16 @@ use crate::command::{Traceparent, command_span, traced_sync};
 // user meeting the failure it covers is looking at a window rather than at nothing.
 /// How long the window may stay hidden waiting for a frontend that might never report.
 const GRACE: Duration = Duration::from_secs(5);
+
+/// Whether [`reveal`] has run in this process: once it has, showing the window can no longer put an empty one on
+/// screen. Process-wide rather than per window, because there is one window.
+static REVEALED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the window has been revealed, so something that wants to raise it may. Before that, raising it would show
+/// the window before React has painted it; the reveal itself will show it and bring it to the front.
+pub(crate) fn has_been_revealed() -> bool {
+    REVEALED.load(Ordering::Acquire)
+}
 
 // The command's name is written once on the TypeScript side too, in `frontend/ipc/window.ts`; nothing in either
 // toolchain notices when one of the two is renamed alone.
@@ -63,6 +74,8 @@ pub(crate) fn window_ready(window: WebviewWindow, traceparent: Traceparent) {
 ///
 /// A refusal is recorded and discarded.
 fn reveal<R: Runtime>(window: &WebviewWindow<R>) {
+    REVEALED.store(true, Ordering::Release);
+
     // Discarded because both callers return `()` to something that cannot act on an error - a frontend that has
     // already painted, and a timer thread with nobody waiting on it - and the cost of a window that will not show is
     // the same either way. The record is what makes it diagnosable, and the log sink is installed well before either
