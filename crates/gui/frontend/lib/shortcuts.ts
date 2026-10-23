@@ -47,8 +47,10 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, readonly string[]> = {
     // Lightroom's filmstrip keys.
     previousImage: ["ArrowLeft"],
     nextImage: ["ArrowRight"],
-    // A symbol, so Shift is ignored: it matches on every layout that types a `?`.
-    showShortcuts: ["?"],
+    // A symbol, so Shift is ignored: it matches on every layout that types a `?`. `Mod /` is Topaz's key
+    // for its shortcuts panel - a default here like `?`, not a fixed application key, so the one action
+    // keeps all its keys in one rebindable row.
+    showShortcuts: ["?", "Mod+/"],
 };
 
 /** The modifiers a binding may name, before the key. */
@@ -301,7 +303,7 @@ const MAC_SYSTEM_KEYS = new Set(["q", "w", "h", "m"]);
 /** The keys the application's actions hold, refused for anything else - see `APP_SHORTCUTS`. */
 // `Mod+q` on every platform other than macOS, although only Linux quits with it: a binding stored on
 // Linux and read on Windows should mean the same, and on Windows a `Ctrl+Q` shortcut is no loss.
-const APPLICATION_KEYS = ["Mod+o", "Mod+,", "Mod+w", "Mod+Shift+w", "Mod+q"];
+const APPLICATION_KEYS = ["Mod+o", "Mod+s", "Mod+Shift+e", "Mod+,", "Mod+w", "Mod+Shift+w", "Mod+q"];
 
 /**
  * Why a binding is refused on this platform, or `undefined` when it may be bound.
@@ -310,8 +312,8 @@ const APPLICATION_KEYS = ["Mod+o", "Mod+,", "Mod+w", "Mod+Shift+w", "Mod+q"];
  * taking them would leave a keyboard user unable to close a dialog, move the focus or press a button.
  * `system`: on macOS, Command with `Q`, `W`, `H` or `M`, which quit, close, hide or minimise the
  * window before the page sees them; elsewhere, `Alt` with `F4`. `application`: the keys of the
- * application's own actions (`APP_SHORTCUTS`) that are not already `system` - Open, Settings, Close
- * Image, Close All Images, and Quit off macOS. A string that is not a binding is not refused here -
+ * application's own actions (`APP_SHORTCUTS`) that are not already `system` - Open, Export, Settings,
+ * Close Image, Close All Images, and Quit off macOS. A string that is not a binding is not refused here -
  * `parseBinding` is the question for that.
  */
 export const refusal = (binding: string, mac: boolean): Refusal | undefined => {
@@ -525,7 +527,7 @@ export const resolveShortcuts = (stored: StoredShortcuts, mac: boolean): Shortcu
 /** The application's own actions, whose keys are fixed: the macOS menu's, and the same elsewhere. */
 // The order the Keyboard page and the shortcuts list draw them in. Each id is also the macOS menu
 // item's, which `useAppActions` receives from Rust's `src/menu.rs`.
-export const APP_ACTIONS = ["open", "settings", "closeImage", "closeAll", "quit"] as const;
+export const APP_ACTIONS = ["open", "export", "settings", "closeImage", "closeAll", "quit"] as const;
 
 export type AppAction = (typeof APP_ACTIONS)[number];
 
@@ -537,33 +539,52 @@ export const isAppAction = (value: unknown): value is AppAction =>
 export type Platform = "macos" | "windows" | "linux";
 
 /**
- * The fixed key of each application action on a platform: `Mod` with `O`, `,`, `W` and Shift with
- * `W` everywhere, and Quit as each platform quits - Command-Q on macOS, Alt+F4 on Windows (which the
- * system handles) and Ctrl+Q on Linux. Shown read-only, and refused for anything else (`refusal`).
+ * The fixed keys of each application action on a platform: `Mod` with `O`, `,`, `W` and Shift with
+ * `W` everywhere; Export with `Mod S` (Topaz's) and `Mod Shift E` (Lightroom Classic's); and Quit as
+ * each platform quits - Command-Q on macOS, Alt+F4 on Windows (which the system handles) and Ctrl+Q
+ * on Linux. Shown read-only, and refused for anything else (`refusal`).
+ *
+ * **The first key is the macOS menu item's**, which can hold only one; any further key - Export's
+ * `Mod Shift E` - is the page's there (`appActionFor`).
  */
-export const appShortcuts = (platform: Platform): Record<AppAction, string> => ({
-    open: "Mod+o",
-    settings: "Mod+,",
-    closeImage: "Mod+w",
-    closeAll: "Mod+Shift+w",
-    quit: platform === "windows" ? "Alt+F4" : "Mod+q",
+export const appShortcuts = (platform: Platform): Record<AppAction, readonly string[]> => ({
+    open: ["Mod+o"],
+    export: ["Mod+s", "Mod+Shift+e"],
+    settings: ["Mod+,"],
+    closeImage: ["Mod+w"],
+    closeAll: ["Mod+Shift+w"],
+    quit: [platform === "windows" ? "Alt+F4" : "Mod+q"],
 });
 
 /**
  * Which application action the page itself must perform for this key press, if any.
  *
- * Never on macOS, where the menu holds these keys and AppKit matches them before the page could - a
- * listener here as well would close two images for one press. Never Windows' Alt+F4, which the system
- * turns into closing the window.
+ * On macOS only a key the menu does not hold - an action's keys after its first, which is the menu
+ * item's: AppKit matches the menu's keys before the page could, and a listener here as well would
+ * close two images for one press. Never Windows' Alt+F4, which the system turns into closing the
+ * window.
  */
 export const appActionFor = (event: KeyLike, platform: Platform): AppAction | undefined => {
-    if (platform === "macos") return undefined;
-
+    const mac = platform === "macos";
     const table = appShortcuts(platform);
 
     return APP_ACTIONS.find(
-        (action) => !(platform === "windows" && action === "quit") && matches(event, table[action], false),
+        (action) =>
+            !(platform === "windows" && action === "quit") &&
+            table[action].slice(mac ? 1 : 0).some((binding) => matches(event, binding, mac)),
     );
+};
+
+/**
+ * Whether the focus is in a field the user types into or an editable region - asked of a macOS menu
+ * item, whose key reaches the window with no key event to ask `isWindowShortcut` of.
+ */
+export const isEditing = (document: Document = globalThis.document): boolean => {
+    const active = document.activeElement;
+
+    if (!active) return false;
+
+    return active.closest(EDITABLE) !== null || (active instanceof HTMLElement && active.isContentEditable === true);
 };
 
 /** Whether a dialog or a menu is open over the window - while one is, the window's keys are its. */

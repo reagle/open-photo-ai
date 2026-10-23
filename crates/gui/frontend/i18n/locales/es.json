@@ -142,6 +142,7 @@
             "space": "Espacio",
             "appActions": {
                 "open": "Abrir imágenes",
+                "export": "Exportar imágenes",
                 "settings": "Abrir Ajustes",
                 "closeImage": "Cerrar imagen",
                 "closeAll": "Cerrar todas las imágenes",
@@ -438,6 +439,7 @@
             "quit": "Salir de {{name}}",
             "file": "Archivo",
             "open": "Abrir…",
+            "export": "Exportar…",
             "closeImage": "Cerrar imagen",
             "closeAll": "Cerrar todas las imágenes",
             "settings": "Ajustes…",

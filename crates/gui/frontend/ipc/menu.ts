@@ -9,13 +9,13 @@ const MENU_EVENT = "app-menu";
 
 /**
  * Relabels the macOS menu bar in the interface language, and makes Close Image and Close All Images
- * available only while `hasFiles`.
+ * available only while `hasFiles`, and Export only while `canExport`.
  *
  * `labels` is keyed as the catalogue's `menu.bar` is; Rust ignores a key its menu does not hold. On
  * Windows and Linux, which have no menu bar, the command does nothing.
  */
-export const configureMenu = (labels: Record<string, string>, hasFiles: boolean) =>
-    call<void>(CONFIGURE_MENU_COMMAND, { labels, hasFiles });
+export const configureMenu = (labels: Record<string, string>, hasFiles: boolean, canExport: boolean) =>
+    call<void>(CONFIGURE_MENU_COMMAND, { labels, hasFiles, canExport });
 
 /**
  * Calls `handler` with the id of each macOS menu item of this application's own that is chosen, by

@@ -5,6 +5,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
+import { useExportDialogStore } from "@/stores/exportDialog";
 import { useSettingsDialogStore } from "@/stores/settingsDialog";
 
 // Registered by hand because `globals` is off in vite.config.ts: Testing Library's automatic cleanup
@@ -16,6 +17,8 @@ afterEach(cleanup);
 // leave it open for the next one's navbar. Every other store is reset by the tests that use it; this
 // one is used by every test that mounts the navbar, which is most of them.
 afterEach(() => useSettingsDialogStore.setState(useSettingsDialogStore.getInitialState(), true));
+// The export dialog's likewise, for every test that mounts the sidebar.
+afterEach(() => useExportDialogStore.setState(useExportDialogStore.getInitialState(), true));
 
 // jsdom implements no layout, so it ships no `ResizeObserver` - and Radix measures its Slider thumb
 // with one the moment the component mounts, which throws before any assertion runs. A no-op is the

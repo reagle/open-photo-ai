@@ -142,6 +142,7 @@
             "space": "Blanksteg",
             "appActions": {
                 "open": "Öppna bilder",
+                "export": "Exportera bilder",
                 "settings": "Öppna inställningar",
                 "closeImage": "Stäng bild",
                 "closeAll": "Stäng alla bilder",
@@ -438,6 +439,7 @@
             "quit": "Avsluta {{name}}",
             "file": "Arkiv",
             "open": "Öppna…",
+            "export": "Exportera…",
             "closeImage": "Stäng bild",
             "closeAll": "Stäng alla bilder",
             "settings": "Inställningar…",

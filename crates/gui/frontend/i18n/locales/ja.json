@@ -142,6 +142,7 @@
             "space": "スペース",
             "appActions": {
                 "open": "画像を開く",
+                "export": "画像を書き出す",
                 "settings": "設定を開く",
                 "closeImage": "画像を閉じる",
                 "closeAll": "すべての画像を閉じる",
@@ -428,6 +429,7 @@
             "quit": "{{name}}を終了",
             "file": "ファイル",
             "open": "開く…",
+            "export": "書き出す…",
             "closeImage": "画像を閉じる",
             "closeAll": "すべての画像を閉じる",
             "settings": "設定…",

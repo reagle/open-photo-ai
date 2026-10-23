@@ -73,6 +73,13 @@ describe("the keyboard shortcuts list", () => {
         expect(keysFor(group, "Close image")).toBe(close);
         expect(keysFor(group, "Quit")).toBe(quit);
         expect(keysFor(group, "Open images")).toBe(mac ? "⌘ O" : "Ctrl+O");
+        expect(keysFor(group, "Export images")).toBe(mac ? "⌘ S⇧⌘ E" : "Ctrl+SCtrl+Shift+E");
+    });
+
+    it("lists Ctrl+slash beside ? for itself, as a binding the user may change", () => {
+        const list = openList();
+
+        expect(keysFor(list, "Show keyboard shortcuts")).toBe("?Ctrl+/");
     });
 
     it("closes with Escape", () => {

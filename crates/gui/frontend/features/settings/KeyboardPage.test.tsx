@@ -187,6 +187,12 @@ describe("the Keyboard page", () => {
 
         record("Zoom in", { key: ",", ctrlKey: true });
         expect(screen.getByText("Ctrl+, is used by the application.")).toBeInTheDocument();
+
+        record("Zoom in", { key: "s", ctrlKey: true });
+        expect(screen.getByText("Ctrl+S is used by the application.")).toBeInTheDocument();
+
+        record("Zoom in", { key: "E", ctrlKey: true, shiftKey: true });
+        expect(screen.getByText("Ctrl+Shift+E is used by the application.")).toBeInTheDocument();
         expect(drafted().shortcuts).toEqual({});
     });
 
@@ -198,15 +204,15 @@ describe("the Keyboard page", () => {
                 .closest("[data-slot='app-shortcut-row']")?.textContent;
 
         it.each([
-            ["macOS", true, false, ["⌘ O", "⌘ ,", "⌘ W", "⇧⌘ W", "⌘ Q"]],
-            ["Windows", false, true, ["Ctrl+O", "Ctrl+,", "Ctrl+W", "Ctrl+Shift+W", "Alt+F4"]],
-            ["Linux", false, false, ["Ctrl+O", "Ctrl+,", "Ctrl+W", "Ctrl+Shift+W", "Ctrl+Q"]],
+            ["macOS", true, false, ["⌘ O", "⌘ S⇧⌘ E", "⌘ ,", "⌘ W", "⇧⌘ W", "⌘ Q"]],
+            ["Windows", false, true, ["Ctrl+O", "Ctrl+SCtrl+Shift+E", "Ctrl+,", "Ctrl+W", "Ctrl+Shift+W", "Alt+F4"]],
+            ["Linux", false, false, ["Ctrl+O", "Ctrl+SCtrl+Shift+E", "Ctrl+,", "Ctrl+W", "Ctrl+Shift+W", "Ctrl+Q"]],
         ])("are listed on %s, as that platform writes them", (_platform, mac, windows, keys) => {
             vi.mocked(isMacOs).mockReturnValue(mac);
             vi.mocked(isWindows).mockReturnValue(windows);
             renderPage();
 
-            const names = ["Open images", "Open Settings", "Close image", "Close all images", "Quit"];
+            const names = ["Open images", "Export images", "Open Settings", "Close image", "Close all images", "Quit"];
             names.forEach((name, at) => {
                 expect(fixedKeys(name)).toBe(`${name}${keys[at]}`);
             });
