@@ -1,6 +1,9 @@
+import { invoke } from "@tauri-apps/api/core";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import "@/i18n";
+import i18n from "@/i18n";
+import { isMacOs } from "@/ipc/os";
 import type { SetupEvent, SupportedProviders } from "@/ipc/setup";
 import { track } from "@/lib/faro";
 import { useSettingsStore } from "@/stores/settings";
@@ -455,5 +458,38 @@ describe("App, on a machine that supports TensorRT", () => {
         fireEvent.click(screen.getByRole("button", { name: "Yes" }));
 
         expect(tracked).toHaveBeenCalledWith("tensorrt_prompt_answered", { accepted: true });
+    });
+
+    it("labels the macOS menu bar in the interface language, and says whether an image is open", async () => {
+        vi.mocked(isMacOs).mockReturnValue(true);
+        try {
+            render(<App />);
+            const configured = () =>
+                vi
+                    .mocked(invoke)
+                    .mock.calls.filter(([command]) => command === "configure_menu")
+                    .at(-1)?.[1];
+
+            expect(configured()).toEqual({
+                labels: expect.objectContaining({
+                    file: "File",
+                    closeImage: "Close Image",
+                    quit: "Quit Open Photo AI",
+                }),
+                hasFiles: false,
+            });
+
+            act(() => openFiles(HOLIDAY));
+            expect(configured()).toEqual(expect.objectContaining({ hasFiles: true }));
+
+            await act(() => i18n.changeLanguage("de"));
+            expect(configured()).toEqual({
+                labels: expect.objectContaining({ file: "Ablage", closeImage: "Bild schließen" }),
+                hasFiles: true,
+            });
+        } finally {
+            await act(() => i18n.changeLanguage("en"));
+            vi.mocked(isMacOs).mockReturnValue(false);
+        }
     });
 });

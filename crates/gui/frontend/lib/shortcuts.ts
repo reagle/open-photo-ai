@@ -286,8 +286,11 @@ export type ShortcutTable = Record<ShortcutAction, readonly string[]>;
 /** The most bindings one action keeps. Enough for every reference's alternatives, few enough to list. */
 export const MAX_BINDINGS = 4;
 
-/** Why a binding cannot be had: a key the window needs to be operated, or one the system takes. */
-export type Refusal = "navigation" | "system";
+/**
+ * Why a binding cannot be had: a key the window needs to be operated, one the system takes, or one an
+ * application action holds.
+ */
+export type Refusal = "navigation" | "system" | "application";
 
 const isShortcutAction = (value: string): value is ShortcutAction =>
     (SHORTCUT_ACTIONS as readonly string[]).includes(value);
@@ -295,14 +298,21 @@ const isShortcutAction = (value: string): value is ShortcutAction =>
 /** macOS's own window keys with Command: quit, close, hide and minimise. */
 const MAC_SYSTEM_KEYS = new Set(["q", "w", "h", "m"]);
 
+/** The keys the application's actions hold, refused for anything else - see `APP_SHORTCUTS`. */
+// `Mod+q` on every platform other than macOS, although only Linux quits with it: a binding stored on
+// Linux and read on Windows should mean the same, and on Windows a `Ctrl+Q` shortcut is no loss.
+const APPLICATION_KEYS = ["Mod+o", "Mod+,", "Mod+w", "Mod+Shift+w", "Mod+q"];
+
 /**
  * Why a binding is refused on this platform, or `undefined` when it may be bound.
  *
  * `navigation` everywhere: `Escape` and `Tab` with any modifiers, and `Enter` with nothing but Shift -
  * taking them would leave a keyboard user unable to close a dialog, move the focus or press a button.
  * `system`: on macOS, Command with `Q`, `W`, `H` or `M`, which quit, close, hide or minimise the
- * window before the page sees them; elsewhere, `Alt` with `F4`. A string that is not a binding is
- * not refused here - `parseBinding` is the question for that.
+ * window before the page sees them; elsewhere, `Alt` with `F4`. `application`: the keys of the
+ * application's own actions (`APP_SHORTCUTS`) that are not already `system` - Open, Settings, Close
+ * Image, Close All Images, and Quit off macOS. A string that is not a binding is not refused here -
+ * `parseBinding` is the question for that.
  */
 export const refusal = (binding: string, mac: boolean): Refusal | undefined => {
     const parsed = parseBinding(binding);
@@ -315,6 +325,8 @@ export const refusal = (binding: string, mac: boolean): Refusal | undefined => {
     const command = modifiers.has("Meta") || (mac && modifiers.has("Mod"));
     if (mac && command && MAC_SYSTEM_KEYS.has(key)) return "system";
     if (!mac && key === "F4" && modifiers.has("Alt")) return "system";
+
+    if (APPLICATION_KEYS.some((held) => overlaps(held, binding, mac))) return "application";
 
     return undefined;
 };
@@ -509,3 +521,51 @@ export const resolveShortcuts = (stored: StoredShortcuts, mac: boolean): Shortcu
 
     return table;
 };
+
+/** The application's own actions, whose keys are fixed: the macOS menu's, and the same elsewhere. */
+// The order the Keyboard page and the shortcuts list draw them in. Each id is also the macOS menu
+// item's, which `useAppActions` receives from Rust's `src/menu.rs`.
+export const APP_ACTIONS = ["open", "settings", "closeImage", "closeAll", "quit"] as const;
+
+export type AppAction = (typeof APP_ACTIONS)[number];
+
+/** Whether a string, such as a menu item's id, names one of the application's own actions. */
+export const isAppAction = (value: unknown): value is AppAction =>
+    typeof value === "string" && (APP_ACTIONS as readonly string[]).includes(value);
+
+/** The platforms whose keys differ, as far as the application's actions go. */
+export type Platform = "macos" | "windows" | "linux";
+
+/**
+ * The fixed key of each application action on a platform: `Mod` with `O`, `,`, `W` and Shift with
+ * `W` everywhere, and Quit as each platform quits - Command-Q on macOS, Alt+F4 on Windows (which the
+ * system handles) and Ctrl+Q on Linux. Shown read-only, and refused for anything else (`refusal`).
+ */
+export const appShortcuts = (platform: Platform): Record<AppAction, string> => ({
+    open: "Mod+o",
+    settings: "Mod+,",
+    closeImage: "Mod+w",
+    closeAll: "Mod+Shift+w",
+    quit: platform === "windows" ? "Alt+F4" : "Mod+q",
+});
+
+/**
+ * Which application action the page itself must perform for this key press, if any.
+ *
+ * Never on macOS, where the menu holds these keys and AppKit matches them before the page could - a
+ * listener here as well would close two images for one press. Never Windows' Alt+F4, which the system
+ * turns into closing the window.
+ */
+export const appActionFor = (event: KeyLike, platform: Platform): AppAction | undefined => {
+    if (platform === "macos") return undefined;
+
+    const table = appShortcuts(platform);
+
+    return APP_ACTIONS.find(
+        (action) => !(platform === "windows" && action === "quit") && matches(event, table[action], false),
+    );
+};
+
+/** Whether a dialog or a menu is open over the window - while one is, the window's keys are its. */
+export const isOverlayOpen = (document: Document = globalThis.document): boolean =>
+    document.querySelector(OVERLAY) !== null;

@@ -21,6 +21,7 @@ mod gui_settings;
 mod images;
 mod links;
 mod logs;
+mod menu;
 mod opened;
 mod reveal;
 mod setup;
@@ -149,6 +150,10 @@ pub fn run(prepared: Result<(), opai::InitError>) {
 
             window::reveal_when_late(app.handle());
 
+            // This application's own menu in place of Tauri's default, whose Command-W closed the window and so quit.
+            #[cfg(target_os = "macos")]
+            menu::install(app.handle())?;
+
             // The files this launch was started to open. Windows and Linux name them on the command line; macOS
             // sends `RunEvent::Opened` instead, but a path given to the binary directly is honoured there too.
             if let Ok(cwd) = std::env::current_dir() {
@@ -157,6 +162,8 @@ pub fn run(prepared: Result<(), opai::InitError>) {
 
             Ok(())
         })
+        // Forwards the menu's items of this application's own to the window, which acts on them (`src/menu.rs`).
+        .on_menu_event(menu::forward)
         .invoke_handler(tauri::generate_handler![
             version,
             telemetry_ids,
@@ -166,6 +173,7 @@ pub fn run(prepared: Result<(), opai::InitError>) {
             setup::initialize,
             setup::quit,
             logs::reveal_log,
+            menu::configure_menu,
             links::open_link,
             update::is_outdated,
             catalogue::catalogue,
