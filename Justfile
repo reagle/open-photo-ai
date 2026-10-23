@@ -15,6 +15,29 @@ default:
 # Build a component (`gui` or `cli`) for this OS into build/. Pass `arm64` or `x64` to override the host architecture.
 build target arch=host_arch: (_check-target target) (_compile (if arch == "arm64" { "aarch64" } else if arch == "x64" { "x86_64" } else { error("arch must be arm64 or x64, got: " + arch) }) + "-" + os_triple target)
 
+# Fork only: build like `build`, but stamp the version as <latest release tag>+reagle.<date>.<commit>, e.g.
+# 26.10.6+reagle.20261023.d8888560. The release tag makes the update check treat the build as current (semver
+# precedence ignores `+` metadata) and the rest makes it traceable. Cargo.toml and Cargo.lock are always restored.
+# The commit is git's HEAD, which in a colocated jj repo is the parent of the working copy (`@-`).
+[unix]
+build-fork target arch=host_arch: (_check-target target)
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tag="$(git describe --tags --abbrev=0 --match '[0-9]*.[0-9]*.[0-9]*')"
+    export VERSION="${tag}+reagle.$(date +%Y%m%d).$(git rev-parse --short=8 HEAD)"
+    cp Cargo.toml "{{ build_dir }}.Cargo.toml.orig" && cp Cargo.lock "{{ build_dir }}.Cargo.lock.orig"
+    trap 'mv "{{ build_dir }}.Cargo.toml.orig" Cargo.toml; mv "{{ build_dir }}.Cargo.lock.orig" Cargo.lock' EXIT
+    echo "Stamping version ${VERSION}"
+    # Same approach as the "Set app version" step of .github/workflows/build.yml.
+    node -e '
+      const fs = require("fs");
+      const before = fs.readFileSync("Cargo.toml", "utf8");
+      const pattern = /(\[workspace\.package\][^[]*?\nversion = ")[^"]*(")/;
+      if (!pattern.test(before)) throw new Error("no version found in Cargo.toml");
+      fs.writeFileSync("Cargo.toml", before.replace(pattern, (_, head, tail) => head + process.env.VERSION + tail));
+    '
+    just build {{ target }} {{ arch }}
+
 # Build a component (`gui` or `cli`) like `build`, then package it as build/opai-<target>_<os>_<arch>.zip. The GUI is
 # packaged as .deb and .rpm on Linux instead, unzipped; the CLI is a .zip everywhere.
 package target arch=host_arch: (build target arch)
