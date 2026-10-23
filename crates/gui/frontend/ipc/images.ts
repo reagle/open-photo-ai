@@ -1,4 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { type CropInfo, cropQuery } from "./crop";
 import { call } from "./invoke";
 import { once } from "./once";
@@ -13,6 +14,15 @@ const OPEN_IMAGES_COMMAND = "open_images";
 const DESCRIBE_IMAGES_COMMAND = "describe_images";
 const INPUT_EXTENSIONS_COMMAND = "input_extensions";
 const REVEAL_IMAGE_COMMAND = "reveal_image";
+// Its Rust half is `take_opened_files` in `crates/gui/src/opened.rs`.
+const TAKE_OPENED_FILES_COMMAND = "take_opened_files";
+
+/**
+ * The event Rust emits when the platform has asked the application to open files. It carries no
+ * payload: {@link takeOpenedFiles} is what hands the files over. Matches `FILES_OPENED` in
+ * `crates/gui/src/opened.rs`.
+ */
+export const FILES_OPENED_EVENT = "files-opened";
 
 /**
  * URI scheme used to serve an opened image's pixels.
@@ -77,6 +87,20 @@ export const openImages = (title: string, filterName: string) =>
  * back with no dimensions, same as a truncated one.
  */
 export const describeImages = (paths: string[]) => call<ImageRecord[]>(DESCRIBE_IMAGES_COMMAND, { paths });
+
+/**
+ * The paths the platform asked the application to open (Open With, a drop on its icon, the command
+ * line) since this was last called. Each is handed over once; an empty array means nothing is waiting.
+ *
+ * Paths, not records: they are opened through `lib/openPaths.ts`, exactly as a drop's are.
+ */
+export const takeOpenedFiles = () => call<string[]>(TAKE_OPENED_FILES_COMMAND);
+
+/**
+ * Subscribes to {@link FILES_OPENED_EVENT}. Resolves with the function that removes the listener, as
+ * `listen` does.
+ */
+export const onFilesOpened = (handler: () => void) => listen(FILES_OPENED_EVENT, () => handler());
 
 /**
  * Extensions the application opens, lowercase and without dots.

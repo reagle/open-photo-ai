@@ -1,15 +1,9 @@
 import { type RefObject, useEffect, useState } from "react";
 import type { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
-import { describeImages, inputExtensions } from "@/ipc/images";
 import { isWindows } from "@/ipc/os";
-import { formatsOf } from "@/lib/events";
-import { track } from "@/lib/faro";
-import { extensionOf, fileName } from "@/lib/paths";
+import { openPaths } from "@/lib/openPaths";
 import { report } from "@/lib/report";
-import { useFileStore } from "@/stores/files";
 
 /**
  * What a drop's reported position has to be divided by to be the CSS pixels the DOM measures in.
@@ -65,15 +59,9 @@ const isOver = (element: HTMLElement, position: PhysicalPosition) => {
  * top rather than the canvas's, so the thumbnails are outside the rectangle by construction. See
  * `Preview.tsx`, and design.md D7 of `add-gui-drop-beam`.
  *
- * **The partition is by extension, as the reference partitions it**, against the list the decoder
- * itself reports. Judging a file by reading it instead would mean hashing every byte of whatever was
- * dropped - a video, an archive, a folder - before concluding it is not a photograph, and would
- * report a corrupt but genuinely supported photograph as a format the application does not open.
- *
- * What is refused is named to the user here rather than in Rust, which is also where the reference
- * puts it and for the reason its comment gives: the notice needs a plural form that only the i18n
- * catalogue gets right in languages with more than two. Refusing a file never costs the user the rest
- * of the drop - a folder of photographs with a stray document in it is a batch they assembled.
+ * **What is dropped is opened by `openPaths`**, the route files the platform asks the application to
+ * open take too, so the two refuse, describe and count alike. Its comment says why the partition is
+ * by extension and why the refusal is named here rather than in Rust.
  *
  * **It also reports whether a drag is currently over `target`**, which is the second answer the same
  * channel already holds - the returned boolean is the `isOver` call the drop path makes, evaluated
@@ -83,50 +71,9 @@ const isOver = (element: HTMLElement, position: PhysicalPosition) => {
  * for; the hover is a second return from one listener, not a second responsibility.
  */
 export const useDroppedImages = (target: RefObject<HTMLElement | null>) => {
-    const { t } = useTranslation();
-    const addFiles = useFileStore((state) => state.addFiles);
     const [over, setOver] = useState(false);
 
     useEffect(() => {
-        const open = async (paths: string[]) => {
-            const extensions = await inputExtensions();
-
-            // One pass rather than two complementary filters: `extensionOf` allocates and the
-            // `includes` is linear over the whole list, so a folder drop of several hundred paths
-            // would evaluate both twice for every one of them to reach the same two arrays.
-            const supported: string[] = [];
-            const refused: string[] = [];
-
-            for (const path of paths) {
-                (extensions.includes(extensionOf(path)) ? supported : refused).push(path);
-            }
-
-            // Ahead of the describe, as the reference emits it ahead of the load: the notice is about
-            // what was dropped, and it should not wait on however long hashing the rest takes.
-            if (refused.length > 0) {
-                toast.warning(
-                    t("toasts.unsupportedFiles", { count: refused.length, names: refused.map(fileName).join(", ") }),
-                );
-                // Which formats people want that this application does not open. Their types only.
-                track("files_refused", { count: refused.length, formats: formatsOf(refused) });
-            }
-
-            // Not "describe nothing and add nothing", which would be the same answer at the cost of a
-            // round trip: a drop of one document is a drop this application has nothing to open.
-            if (supported.length === 0) return;
-
-            const admitted = await describeImages(supported);
-            addFiles(admitted);
-
-            if (admitted.length > 0) {
-                track("files_added", {
-                    count: admitted.length,
-                    source: "drop",
-                    formats: formatsOf(admitted.map((file) => file.path)),
-                });
-            }
-        };
-
         const listening = getCurrentWebview().onDragDropEvent((event) => {
             const payload = event.payload;
             const element = target.current;
@@ -160,7 +107,7 @@ export const useDroppedImages = (target: RefObject<HTMLElement | null>) => {
             // over a region that never offered to take it.
             if (!element || !isOver(element, payload.position)) return;
 
-            open(payload.paths).catch((error: unknown) =>
+            openPaths(payload.paths, "drop").catch((error: unknown) =>
                 // Either the extension list or the describe, both of which mean the IPC bridge is
                 // gone. Rust has written whatever it knows to the log, and `report` records what it
                 // could not know.
@@ -174,7 +121,7 @@ export const useDroppedImages = (target: RefObject<HTMLElement | null>) => {
             // reloaded webview in development would accumulate a handler per reload.
             listening.then((unlisten) => unlisten());
         };
-    }, [target, addFiles, t]);
+    }, [target]);
 
     return over;
 };

@@ -174,7 +174,8 @@ finished!(
     Option<crate::TelemetryIds>,
     &'static str,
     &'static [opai::FamilyEntry],
-    Vec<&'static str>
+    Vec<&'static str>,
+    Vec<String>
 );
 
 /// Runs `body` inside `span`, then records on the span how it ended.
