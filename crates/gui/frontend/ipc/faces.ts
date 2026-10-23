@@ -1,5 +1,5 @@
 import type { CropInfo } from "./crop";
-import { mintRun, type Processor } from "./enhance";
+import { type Memory, mintRun, type Processor } from "./enhance";
 import { call } from "./invoke";
 
 // Written a second time in `crates/gui/src/faces.rs`, as a `#[tauri::command]` function's name. A rename on
@@ -91,10 +91,10 @@ export type DetectError =
  * rejection is. A rejection is never an empty answer: an empty array is a photograph with nobody in it,
  * and a rejection is a question that was not answered.
  */
-export const detectFaces = (source: string, processor: Processor, crop?: CropInfo) => {
+export const detectFaces = (source: string, processor: Processor, crop?: CropInfo, memory: Memory = "standard") => {
     // Before the invoke, for the reason `enhance` gives beside its own.
     const run = mintRun();
 
     // `crop` is sent as `undefined` rather than omitted, as `enhance` sends it.
-    return { run, done: call<Face[]>(DETECT_FACES_COMMAND, { run, source, processor, crop }) };
+    return { run, done: call<Face[]>(DETECT_FACES_COMMAND, { run, source, processor, memory, crop }) };
 };

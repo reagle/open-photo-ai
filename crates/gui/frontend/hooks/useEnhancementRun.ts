@@ -9,7 +9,7 @@ import { withChoice } from "@/lib/faces";
 import { report } from "@/lib/report";
 import { useFileEnhancements } from "@/stores/enhancements";
 import { useFaceChoice, useFacesStore } from "@/stores/faces";
-import { useSettingsStore } from "@/stores/settings";
+import { memoryOf, useSettingsStore } from "@/stores/settings";
 
 /** Where an enhanced result's pixels are, and how large they are. */
 export type EnhancedImage = { identity: string; width: number; height: number };
@@ -126,6 +126,7 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
      * once more. Nothing here had to change to fix that; the store stopped publishing drafts.
      */
     const processor = useSettingsStore((state) => state.processor);
+    const memory = useSettingsStore((state) => memoryOf(state.lowMemory));
 
     /*
      * The choice made among this photograph's faces, and the reason this is a dependency rather than
@@ -219,7 +220,7 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
 
         setIndicator(undefined);
 
-        const { run, done } = enhance(source, withChoice(operations, choice), processor, crop);
+        const { run, done } = enhance(source, withChoice(operations, choice), processor, crop, memory);
         mine.current = run;
         setRunning(true);
 
@@ -290,7 +291,7 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
         // The choice among faces is one of these because it is what the run is asked to keep. It changes
         // only when a person applies one - a detection landing records faces and never writes a choice -
         // so nothing else re-runs on its account.
-    }, [source, operations, processor, crop, choice]);
+    }, [source, operations, processor, memory, crop, choice]);
 
     return {
         running,

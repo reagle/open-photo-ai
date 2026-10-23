@@ -59,6 +59,7 @@ describe("enhance", () => {
             source: "0123456789abcdef",
             operations: [kyoto],
             processor: "coreml",
+            memory: "standard",
             crop: undefined,
         });
     });
@@ -74,6 +75,7 @@ describe("enhance", () => {
             source: "0123456789abcdef",
             operations: [kyoto],
             processor: "auto",
+            memory: "standard",
             crop: {
                 left: 10,
                 top: 20,
@@ -150,6 +152,7 @@ describe("enhance", () => {
             source: "0123456789abcdef",
             operations: [],
             processor: "cpu",
+            memory: "standard",
         });
     });
 

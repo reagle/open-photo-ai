@@ -84,7 +84,11 @@
                 }
             },
             "experimental": "Experimentell",
-            "recommended": "Rekommenderas"
+            "recommended": "Rekommenderas",
+            "lowMemory": {
+                "title": "Lite minne",
+                "description": "Långsammare, för en dator utan tillräckligt minne för en modells vanliga sätt att köras. Just nu ändrar det hur Osaka i SD körs på en Mac och frigör varje modell när dess bild är klar."
+            }
         },
         "export": {
             "avif": {

@@ -84,7 +84,11 @@
                 }
             },
             "experimental": "実験的",
-            "recommended": "推奨"
+            "recommended": "推奨",
+            "lowMemory": {
+                "title": "省メモリ",
+                "description": "低速になります。モデルの通常の実行方法に必要なメモリがないマシン向けです。現在は Mac での SD の Osaka の実行方法を変え、画像が終わるたびにモデルを解放します。"
+            }
         },
         "export": {
             "avif": {

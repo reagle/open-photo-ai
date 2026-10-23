@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { exportNaming } from "@/lib/export";
 import type { CropInfo } from "./crop";
-import { type EnhanceError, mintRun, type Operation, type Processor, type RunProgress } from "./enhance";
+import { type EnhanceError, type Memory, mintRun, type Operation, type Processor, type RunProgress } from "./enhance";
 import { call } from "./invoke";
 import { once } from "./once";
 
@@ -165,6 +165,7 @@ export const exportImage = (
     processor: Processor,
     request: ExportRequest,
     crop?: CropInfo,
+    memory: Memory = "standard",
 ) => {
     // Before the invoke, for the reason `enhance` gives beside its own. From the one counter every run name comes
     // from, so an export's name can never be a canvas run's or an analysis's.
@@ -179,6 +180,7 @@ export const exportImage = (
             source,
             operations,
             processor,
+            memory,
             crop,
             naming: exportNaming(naming),
             quality,

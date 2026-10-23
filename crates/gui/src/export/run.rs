@@ -16,7 +16,7 @@ use super::Exports;
 use super::names::ExportNaming;
 use super::progress::ExportReporting;
 use crate::command::{Answer, CommandError, Ended};
-use crate::enhance::{EnhanceError, Enhancer, Prepared, Processor, Requested, judge_chain, prepare_chain};
+use crate::enhance::{EnhanceError, Enhancer, Memory, Prepared, Processor, Requested, judge_chain, prepare_chain};
 use crate::images::{Crop, Opened};
 
 /// How an export ended.
@@ -95,6 +95,8 @@ pub(crate) struct Request {
     pub(crate) operations: Vec<Requested>,
     /// What to run on.
     pub(crate) processor: Processor,
+    /// How much memory the run's models may hold.
+    pub(crate) memory: Memory,
     /// How the image is framed, or `None` to export the whole photograph.
     pub(crate) crop: Option<Crop>,
     /// What the file is called, where it goes and what it is written as, worked out from the source's own path once
@@ -165,6 +167,7 @@ pub(crate) async fn export_with<E: Enhancer>(
     // 16-bit photograph written to a format that holds 16 bits keeps them.
     let options = ProcessOptions {
         provider: request.processor.into(),
+        memory: request.memory.into(),
         depth: OutputDepth::Source,
         on_progress: reporting.as_ref().map(|reporting| std::sync::Arc::clone(&reporting.enhancing.on_progress)),
         cancel: registration.cancel().clone(),
@@ -363,6 +366,7 @@ mod tests {
                 source: self.identity.clone(),
                 operations,
                 processor: Processor(opai::ExecutionProvider::CoreMl),
+                memory: Memory::default(),
                 crop: None,
                 naming: ExportNaming {
                     naming: Naming {
@@ -1137,6 +1141,7 @@ mod tests {
                             source: identity.clone(),
                             operations: vec![kyoto()],
                             processor,
+                            memory: Memory::default(),
                             crop: None,
                             naming: ExportNaming {
                                 naming: Naming {

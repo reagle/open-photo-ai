@@ -41,7 +41,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::command::{Answer, CommandError, Ended, Traceparent, command_span, traced};
-use crate::enhance::{Processor, Reporting, reporting};
+use crate::enhance::{Memory, Processor, Reporting, reporting};
 use crate::images::{Crop, Opened, load_framed};
 use crate::setup::Setup;
 
@@ -208,6 +208,8 @@ pub(crate) struct Request {
     pub(crate) source: String,
     /// What to run on.
     pub(crate) processor: Processor,
+    /// How much memory the run's models may hold.
+    pub(crate) memory: Memory,
     /// How the image is framed, or `None` to look at the whole photograph.
     pub(crate) crop: Option<Crop>,
 }
@@ -252,6 +254,7 @@ pub(crate) async fn detect_with<D: Detector>(
     // what makes a framing returned to free, and `cancel` is left at the token nobody holds — D11.
     let options = ExecuteOptions {
         provider: request.processor.into(),
+        memory: request.memory.into(),
         on_progress: reporting.as_ref().map(|reporting| std::sync::Arc::clone(&reporting.on_progress)),
         ..Default::default()
     };
@@ -304,6 +307,7 @@ pub(crate) async fn detect_faces(
     run: String,
     source: String,
     processor: Processor,
+    memory: Option<Memory>,
     crop: Option<Crop>,
     setup: State<'_, Setup<Opai>>,
     opened: State<'_, Opened>,
@@ -315,7 +319,8 @@ pub(crate) async fn detect_faces(
         let opai = setup.peek(Opai::clone).await.ok_or(DetectError::NotReady)?;
         let reporting = reporting(&app, &run);
 
-        detect_with(&opai, &opened, Some(reporting), Request { source, processor, crop }).await
+        let memory = memory.unwrap_or_default();
+        detect_with(&opai, &opened, Some(reporting), Request { source, processor, memory, crop }).await
     })
     .await
 }
@@ -435,7 +440,12 @@ mod tests {
 
     /// A request for `source`, over the whole photograph.
     fn request(source: &str) -> Request {
-        Request { source: source.to_string(), processor: Processor(opai::ExecutionProvider::CoreMl), crop: None }
+        Request {
+            source: source.to_string(),
+            processor: Processor(opai::ExecutionProvider::CoreMl),
+            memory: Memory::default(),
+            crop: None,
+        }
     }
 
     /// A temporary directory, an empty registry, and one admitted image's identity.

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { DEFAULT_LANGUAGE, detectLanguage, isLanguage, type Language } from "@/i18n/languages";
 import type { Family } from "@/ipc/catalogue";
+import type { Memory } from "@/ipc/enhance";
 import type { ExportFormat } from "@/ipc/export";
 import type { SupportedProviders } from "@/ipc/setup";
 import { familiesWhere } from "@/lib/enhancements";
@@ -41,6 +42,11 @@ export const PROCESSORS = [
 
 const isProcessor = (value: unknown): value is Processor =>
     typeof value === "string" && (PROCESSORS as readonly string[]).includes(value);
+
+// The store keeps a boolean because the setting is a switch; this is the one place it is turned into
+// the word the run commands read beside the processor.
+/** The memory mode a stored low-memory switch asks for. */
+export const memoryOf = (lowMemory: boolean): Memory => (lowMemory ? "low" : "standard");
 
 // Two surfaces and no third. Both are decorative and neither affects what the application can do,
 // which is why it is a pair of names rather than a set of tunable knobs.
@@ -101,6 +107,11 @@ export type SettingsData = {
      */
     analytics: boolean;
     processor: Processor;
+    /**
+     * Whether the models run in low-memory mode: slower, for a machine that cannot fit a model's
+     * ordinary footprint. Handed to every run beside the processor - see `memoryOf`.
+     */
+    lowMemory: boolean;
     models: ModelChoices;
     // The families switched **off** rather than those switched on, which is what makes both defaults
     // hold without a repair step: nothing stored means every family is allowed, and a family a later
@@ -145,10 +156,20 @@ export const settingsData = ({
     background,
     analytics,
     processor,
+    lowMemory,
     models,
     autopilotExcluded,
     quality,
-}: SettingsData): SettingsData => ({ language, background, analytics, processor, models, autopilotExcluded, quality });
+}: SettingsData): SettingsData => ({
+    language,
+    background,
+    analytics,
+    processor,
+    lowMemory,
+    models,
+    autopilotExcluded,
+    quality,
+});
 
 // A function rather than a constant for two reasons: the language is detected, and a record handed
 // to two drafts must not be one object both of them hold.
@@ -164,6 +185,8 @@ export const settingsDefaults = (): SettingsData => ({
     background: "particles",
     analytics: true,
     processor: "auto",
+    // Off, because it trades speed for memory and a machine that has the memory should not pay it.
+    lowMemory: false,
     models: {},
     autopilotExcluded: [],
     // No choice for any format: each is written at the default Rust publishes for it.
@@ -344,6 +367,8 @@ export const useSettingsStore = create<SettingsStore>()(
                     // `"TensorRT"`, or one removed from the library. Whether a known one is offered
                     // by *this machine* is a separate question, asked where the row is drawn.
                     processor: isProcessor(stored.processor) ? stored.processor : "auto",
+                    // Absent for every user who saved before the switch existed, which reads as off.
+                    lowMemory: stored.lowMemory === true,
                     models: repairModels(stored.models),
                     // Absent for every user who saved before the choice existed, which reads as
                     // every family allowed - the stated default, not a migration.

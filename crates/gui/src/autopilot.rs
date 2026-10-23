@@ -36,7 +36,7 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::command::{Answer, CommandError, Ended, Traceparent, command_span, traced, traced_sync};
-use crate::enhance::Processor;
+use crate::enhance::{Memory, Processor};
 use crate::images::{Crop, Opened, load_framed};
 use crate::setup::Setup;
 use crate::stops::Stops;
@@ -192,6 +192,8 @@ pub(crate) struct Request {
     pub(crate) source: String,
     /// What to run on.
     pub(crate) processor: Processor,
+    /// How much memory the run's models may hold.
+    pub(crate) memory: Memory,
     /// How the image is framed, or `None` to analyse the whole photograph.
     pub(crate) crop: Option<Crop>,
     /// The families the analysis may suggest. Empty checks nothing.
@@ -255,6 +257,7 @@ pub(crate) async fn suggest_with<A: Analyser>(
     // lets `detect_faces` be served the face signal's detection, and `on_progress` stays `None` — D5.
     let options = ExecuteOptions {
         provider: request.processor.into(),
+        memory: request.memory.into(),
         cancel: registration.cancel().clone(),
         ..Default::default()
     };
@@ -311,6 +314,7 @@ pub(crate) async fn suggest(
     run: String,
     source: String,
     processor: Processor,
+    memory: Option<Memory>,
     families: Vec<Family>,
     crop: Option<Crop>,
     setup: State<'_, Setup<Opai>>,
@@ -323,7 +327,8 @@ pub(crate) async fn suggest(
         // `Setup::peek`.
         let opai = setup.peek(Opai::clone).await.ok_or(SuggestError::NotReady)?;
 
-        suggest_with(&opai, &opened, &analyses, Request { run, source, processor, crop, families }).await
+        let memory = memory.unwrap_or_default();
+        suggest_with(&opai, &opened, &analyses, Request { run, source, processor, memory, crop, families }).await
     })
     .await
 }
@@ -449,6 +454,7 @@ mod tests {
             run: run.to_string(),
             source: source.to_string(),
             processor: Processor(opai::ExecutionProvider::CoreMl),
+            memory: Memory::default(),
             crop: None,
             families: vec![Family::Upscale, Family::Colorization],
         }
@@ -836,6 +842,7 @@ mod tests {
                     run: format!("suggest-{processor:?}"),
                     source: identity.clone(),
                     processor,
+                    memory: Memory::default(),
                     crop: Some(crop),
                     families: vec![Family::FaceRecovery],
                 };
@@ -856,7 +863,7 @@ mod tests {
                     &opai,
                     &opened,
                     Some(reporting),
-                    faces::Request { source: identity.clone(), processor, crop: Some(crop) },
+                    faces::Request { source: identity.clone(), processor, memory: Memory::default(), crop: Some(crop) },
                 )
                 .await
                 .expect("detectable");

@@ -14,7 +14,7 @@ import { useAutopilotStore } from "@/stores/autopilot";
 import { useImageCrop } from "@/stores/crop";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useCurrentFile, useFileStore } from "@/stores/files";
-import { useSettingsStore } from "@/stores/settings";
+import { memoryOf, useSettingsStore } from "@/stores/settings";
 
 /** Whether a rejection is an analysis this side withdrew, which is never reported. */
 const isStopped = (error: unknown) =>
@@ -76,12 +76,12 @@ export const analyse = async (
     const { path, identity } = file;
     if (identity === undefined) return { failed: undefined };
 
-    const { autopilotExcluded, processor } = useSettingsStore.getState();
+    const { autopilotExcluded, processor, lowMemory } = useSettingsStore.getState();
     // Every enhancement offered, less the ones switched off. An empty set is still sent: it answers nothing,
     // which is what the user asked for, and it is not a failure.
     const families = familiesWhere((family) => !autopilotExcluded.includes(family));
 
-    const { run, done } = suggest(identity, processor, families, crop);
+    const { run, done } = suggest(identity, processor, families, crop, memoryOf(lowMemory));
     useAutopilotStore.getState().begin(path, run, crop);
 
     const ours = () => useAutopilotStore.getState().analysing.get(path)?.run === run;

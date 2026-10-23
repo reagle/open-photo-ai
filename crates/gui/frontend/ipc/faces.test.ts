@@ -48,6 +48,7 @@ describe("detectFaces", () => {
             run,
             source: "0123456789abcdef",
             processor: "coreml",
+            memory: "standard",
             crop: undefined,
         });
     });
@@ -59,6 +60,7 @@ describe("detectFaces", () => {
             run,
             source: "0123456789abcdef",
             processor: "auto",
+            memory: "standard",
             crop: framing,
         });
     });

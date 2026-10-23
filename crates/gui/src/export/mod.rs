@@ -17,7 +17,7 @@ use opai::Opai;
 use tauri::State;
 
 use crate::command::{Traceparent, command_span, traced, traced_sync};
-use crate::enhance::{EnhanceError, Processor, Requested};
+use crate::enhance::{EnhanceError, Memory, Processor, Requested};
 use crate::images::{Crop, Opened};
 use crate::setup::Setup;
 use crate::stops::Stops;
@@ -75,6 +75,7 @@ pub(crate) async fn export(
     source: String,
     operations: Vec<Requested>,
     processor: Processor,
+    memory: Option<Memory>,
     crop: Option<Crop>,
     naming: ExportNaming,
     quality: Option<f64>,
@@ -91,7 +92,8 @@ pub(crate) async fn export(
         let opai = setup.peek(Opai::clone).await.ok_or(EnhanceError::NotReady)?;
         let reporting = progress::reporting(&app, &run);
 
-        let request = Request { run, source, operations, processor, crop, naming, quality, overwrite };
+        let memory = memory.unwrap_or_default();
+        let request = Request { run, source, operations, processor, memory, crop, naming, quality, overwrite };
 
         // Recorded here rather than in `export_with`, so the seam's tests stay free of this record.
         let answer = export_with(&opai, &opened, &exports, Some(reporting), request).await;

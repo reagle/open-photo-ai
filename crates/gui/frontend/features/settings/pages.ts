@@ -30,7 +30,7 @@ export const SETTINGS_PAGES = [
         icon: Cpu,
         titleKey: "settings.pages.performance.title",
         descriptionKey: "settings.pages.performance.description",
-        keys: ["processor"],
+        keys: ["processor", "lowMemory"],
     },
     {
         id: "enhancements",

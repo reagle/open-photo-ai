@@ -84,7 +84,11 @@
                 }
             },
             "experimental": "Eksperimental",
-            "recommended": "Disarankan"
+            "recommended": "Disarankan",
+            "lowMemory": {
+                "title": "Memori rendah",
+                "description": "Lebih lambat, untuk mesin yang tidak punya cukup memori untuk cara biasa sebuah model berjalan. Saat ini mengubah cara Osaka pada SD berjalan di Mac, dan membebaskan setiap model setelah gambarnya selesai."
+            }
         },
         "export": {
             "avif": {

@@ -84,7 +84,11 @@
                 }
             },
             "experimental": "实验性",
-            "recommended": "推荐"
+            "recommended": "推荐",
+            "lowMemory": {
+                "title": "低内存",
+                "description": "速度较慢，适用于内存不足以按常规方式运行模型的机器。目前会改变 Osaka 在 Mac 上以 SD 运行的方式，并在每张图像完成后释放模型。"
+            }
         },
         "export": {
             "avif": {

@@ -84,7 +84,11 @@
                 }
             },
             "experimental": "Experimentell",
-            "recommended": "Empfohlen"
+            "recommended": "Empfohlen",
+            "lowMemory": {
+                "title": "Wenig Arbeitsspeicher",
+                "description": "Langsamer, für Rechner ohne genug Arbeitsspeicher für den üblichen Weg eines Modells. Derzeit ändert es, wie Osaka in SD auf einem Mac läuft, und gibt jedes Modell frei, sobald sein Bild fertig ist."
+            }
         },
         "export": {
             "avif": {

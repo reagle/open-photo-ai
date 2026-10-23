@@ -17,7 +17,7 @@ import { batchSummary, useExportBatchStore } from "@/stores/exportBatch";
 import type { ExportSettingsData } from "@/stores/exportSettings";
 import { useFacesStore } from "@/stores/faces";
 import { useFileStore } from "@/stores/files";
-import { type QualityChoices, useSettingsStore } from "@/stores/settings";
+import { memoryOf, type QualityChoices, useSettingsStore } from "@/stores/settings";
 
 const batch = () => useExportBatchStore.getState();
 
@@ -82,7 +82,7 @@ const exportOne = async (
     }
 
     const operations = stackOf() ?? [];
-    const { processor } = useSettingsStore.getState();
+    const { processor, lowMemory } = useSettingsStore.getState();
 
     /*
      * The choice among faces, not the faces: a face recovery in the chain finds its own inside the export, under
@@ -102,7 +102,14 @@ const exportOne = async (
         overwrite: settings.overwrite,
     };
 
-    const { run, done } = exportImage(identity, withChoice(operations, choice), processor, request, crop);
+    const { run, done } = exportImage(
+        identity,
+        withChoice(operations, choice),
+        processor,
+        request,
+        crop,
+        memoryOf(lowMemory),
+    );
     setCurrent({ path, run });
     setStage(path, { stage: "enhancing", fraction: 0 });
 

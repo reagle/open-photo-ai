@@ -3,7 +3,7 @@
 use opai::{Enhanced, Picture, Precision};
 
 use super::operation::Requested;
-use super::run::{Enhancer, Processor, Request};
+use super::run::{Enhancer, Memory, Processor, Request};
 use super::slot::Runs;
 use crate::enhance::run::{EnhanceError, Enhancement, enhance_with};
 use crate::images::{Crop, Opened};
@@ -16,6 +16,7 @@ pub(super) fn request(run: &str, source: &str, operations: Vec<Requested>) -> Re
         source: source.to_string(),
         operations,
         processor: Processor(opai::ExecutionProvider::CoreMl),
+        memory: Memory::default(),
         crop: None,
     }
 }

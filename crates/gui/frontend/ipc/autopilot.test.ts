@@ -33,6 +33,7 @@ describe("suggest", () => {
             run,
             source: "0123456789abcdef",
             processor: "coreml",
+            memory: "standard",
             families: ["upscale", "colorization"],
             crop: undefined,
         });
@@ -45,6 +46,7 @@ describe("suggest", () => {
             run,
             source: "0123456789abcdef",
             processor: "auto",
+            memory: "standard",
             families: ["face_recovery"],
             crop: framing,
         });

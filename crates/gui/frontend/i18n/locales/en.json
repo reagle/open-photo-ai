@@ -84,7 +84,11 @@
                 }
             },
             "experimental": "Experimental",
-            "recommended": "Recommended"
+            "recommended": "Recommended",
+            "lowMemory": {
+                "title": "Low memory",
+                "description": "Slower, for a machine without enough memory for a model's usual path. Today it changes how Osaka at SD runs on a Mac, and frees each model once its image is done."
+            }
         },
         "export": {
             "avif": {

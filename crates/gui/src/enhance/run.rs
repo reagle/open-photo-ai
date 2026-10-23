@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use opai::{
-    ChainFaces, Enhanced, ExecutionProvider, FaceSelection, InferenceError, Opai, OutputDepth, Picture, ProcessOptions,
+    ChainFaces, Enhanced, ExecutionProvider, FaceSelection, InferenceError, MemoryMode, Opai, OutputDepth, Picture,
+    ProcessOptions,
 };
 use serde::{Deserialize, Serialize};
 
@@ -45,6 +46,31 @@ impl TryFrom<String> for Processor {
 impl From<Processor> for ExecutionProvider {
     fn from(processor: Processor) -> Self {
         processor.0
+    }
+}
+
+/// How much memory the window asked this run's models to hold: the library's [`MemoryMode`], read from the two words
+/// `frontend/ipc/enhance.ts` spells it as, `standard` and `low`.
+///
+/// Its own two arms rather than the library's type, because `MemoryMode` is `#[non_exhaustive]` and has no wire form:
+/// the window's word is this crate's contract, and a word it does not know is refused at the boundary rather than
+/// guessed at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Memory {
+    /// [`MemoryMode::Standard`]: the models as they always run. What a window that sends nothing means.
+    #[default]
+    Standard,
+    /// [`MemoryMode::Low`]: slower, for a machine that cannot fit a model's ordinary footprint.
+    Low,
+}
+
+impl From<Memory> for MemoryMode {
+    fn from(memory: Memory) -> Self {
+        match memory {
+            Memory::Standard => Self::Standard,
+            Memory::Low => Self::Low,
+        }
     }
 }
 
@@ -182,6 +208,8 @@ pub(crate) struct Request {
     pub(crate) operations: Vec<Requested>,
     /// What to run on.
     pub(crate) processor: Processor,
+    /// How much memory the run's models may hold.
+    pub(crate) memory: Memory,
     /// How the image is framed, or `None` to run over the whole photograph.
     pub(crate) crop: Option<Crop>,
 }
@@ -349,6 +377,7 @@ pub(crate) async fn enhance_with<E: Enhancer>(
     // double resident cost for nothing drawable. Export asks for `Source` instead.
     let options = ProcessOptions {
         provider: request.processor.into(),
+        memory: request.memory.into(),
         depth: OutputDepth::Eight,
         on_progress: reporting.as_ref().map(|reporting| Arc::clone(&reporting.on_progress)),
         cancel,
@@ -753,6 +782,17 @@ mod tests {
         let failed = serde_json::to_value(&failed).expect("a failure serializes");
         assert_eq!(stopped, serde_json::json!({ "outcome": "stopped" }));
         assert_eq!(failed["kind"], "enhance", "a failure and a stop are not told apart by their tags");
+    }
+
+    #[test]
+    fn the_memory_words_the_window_sends_are_the_librarys_two_modes() {
+        // The two spellings `frontend/ipc/enhance.ts` sends, and the refusal of one it never does.
+        let read = |word: &str| serde_json::from_value::<Memory>(serde_json::json!(word));
+
+        assert_eq!(MemoryMode::from(read("standard").expect("the window sends it")), MemoryMode::Standard);
+        assert_eq!(MemoryMode::from(read("low").expect("the window sends it")), MemoryMode::Low);
+        assert!(read("Low").is_err() && read("tiny").is_err(), "a word the window never sends was guessed at");
+        assert_eq!(Memory::default(), Memory::Standard, "a window that sends nothing asked for low memory");
     }
 
     #[test]

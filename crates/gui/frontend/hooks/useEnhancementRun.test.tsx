@@ -122,7 +122,7 @@ beforeEach(() => {
 
     useEnhancementStore.setState({ autopilot: true, enhancements: new Map() });
     useFacesStore.setState(useFacesStore.getInitialState(), true);
-    useSettingsStore.setState({ processor: "auto" });
+    useSettingsStore.setState({ processor: "auto", lowMemory: false });
 
     // Both photographs are open, as they are wherever this hook is given one: the canvas hands it a
     // record out of the file store, and what a detection answers is held only while that record is
@@ -145,7 +145,7 @@ describe("running the current image's enhancements", () => {
         stack(HOLIDAY.path, upscale(2));
         mount();
 
-        expect(asked).toHaveBeenCalledWith(HOLIDAY.identity, [upscale(2)], "auto", undefined);
+        expect(asked).toHaveBeenCalledWith(HOLIDAY.identity, [upscale(2)], "auto", undefined, "standard");
 
         pending[0]?.settle({ outcome: "enhanced", identity: "abcdef0123456789", width: 6000, height: 4000 });
 
@@ -162,7 +162,18 @@ describe("running the current image's enhancements", () => {
 
         await waitFor(() => expect(asked).toHaveBeenCalledTimes(2));
         expect(stopped).toHaveBeenCalledWith("run-1");
-        expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(4)], "auto", undefined);
+        expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(4)], "auto", undefined, "standard");
+    });
+
+    it("runs again in low-memory mode when the switch is saved", async () => {
+        stack(HOLIDAY.path, upscale(2));
+        mount();
+
+        act(() => useSettingsStore.setState({ lowMemory: true }));
+
+        await waitFor(() =>
+            expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(2)], "auto", undefined, "low"),
+        );
     });
 
     it("runs again when the processor changes", async () => {
@@ -171,7 +182,9 @@ describe("running the current image's enhancements", () => {
 
         act(() => useSettingsStore.setState({ processor: "cpu" }));
 
-        await waitFor(() => expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(2)], "cpu", undefined));
+        await waitFor(() =>
+            expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(2)], "cpu", undefined, "standard"),
+        );
     });
 
     it("runs again when the framing changes, and stops the run it replaces", async () => {
@@ -184,7 +197,7 @@ describe("running the current image's enhancements", () => {
         // producing pixels for a framing nobody is looking at any more.
         await waitFor(() => expect(asked).toHaveBeenCalledTimes(2));
         expect(stopped).toHaveBeenCalledWith("run-1");
-        expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(2)], "auto", FRAMING);
+        expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(2)], "auto", FRAMING, "standard");
     });
 
     it("lets go of the result the previous framing produced", async () => {
@@ -420,7 +433,13 @@ describe("a chain that restores faces", () => {
         mount();
 
         expect(detected).not.toHaveBeenCalled();
-        expect(asked).toHaveBeenCalledExactlyOnceWith(HOLIDAY.identity, [recovery(), upscale(2)], "auto", undefined);
+        expect(asked).toHaveBeenCalledExactlyOnceWith(
+            HOLIDAY.identity,
+            [recovery(), upscale(2)],
+            "auto",
+            undefined,
+            "standard",
+        );
     });
 
     it("sends the choice made among the photograph's faces, and leaves the stack without it", async () => {
@@ -434,6 +453,7 @@ describe("a chain that restores faces", () => {
             [{ ...recovery(), faces: choice }, upscale(2)],
             "auto",
             undefined,
+            "standard",
         );
         expect(useEnhancementStore.getState().enhancements.get(HOLIDAY.path)).toEqual([recovery(), upscale(2)]);
     });

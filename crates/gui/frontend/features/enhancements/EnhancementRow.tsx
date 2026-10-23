@@ -13,7 +13,7 @@ import { report } from "@/lib/report";
 import { toPercent } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useFaceChoice, useFacesStore, useImageFaces } from "@/stores/faces";
-import { useSettingsStore } from "@/stores/settings";
+import { memoryOf, useSettingsStore } from "@/stores/settings";
 import { ColorBalanceOptions } from "./ColorBalanceOptions";
 import { ColorizationOptions } from "./ColorizationOptions";
 import { DenoiseOptions } from "./DenoiseOptions";
@@ -121,9 +121,9 @@ export const EnhancementRow = ({
     useEffect(() => {
         if (!lookingForFaces || !identity) return;
 
-        const { processor } = useSettingsStore.getState();
+        const { processor, lowMemory } = useSettingsStore.getState();
 
-        detectFaces(identity, processor, crop).done.then(
+        detectFaces(identity, processor, crop, memoryOf(lowMemory)).done.then(
             (found) => useFacesStore.getState().recordFaces(identity, crop, found),
             (error: unknown) => report("detecting the faces for the picker failed", error),
         );

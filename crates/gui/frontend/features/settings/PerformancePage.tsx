@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { PROCESSORS, type Processor } from "@/stores/settings";
 import { useSetupStore } from "@/stores/setup";
 import { useSettingsDraft } from "./draft";
-import { RADIO_FILL } from "./rows.tsx";
+import { RADIO_FILL, SettingsCard, SettingsRow, SettingsSwitch } from "./rows.tsx";
 
 // One of the two things this surface adds of its own; the other is the order `PROCESSORS` pins. The
 // frontend still carries no list of provider names of its own in the sense that matters: **which**
@@ -60,80 +60,112 @@ export const PerformancePage = () => {
     const selected = resolveProcessor(values.processor, offered);
 
     return (
-        <RadioGroup
-            className="flex flex-col gap-2.5"
-            value={selected}
-            // A group announces its options and not what the choice is *about*, and this page has no
-            // row label to borrow - the page title says "Performance", not what is being chosen.
-            aria-label={t("settings.performance.aiProcessor.title")}
-            // Narrowed by the options rather than cast: these are the only values this rendered.
-            onValueChange={(next) => {
-                const chosen = offered.find((processor) => processor === next);
-                if (chosen) update({ processor: chosen });
-            }}
-        >
-            {offered.map((processor) => {
-                const id = `settings_processor_${processor}`;
-                const chosen = processor === selected;
+        <div className="flex flex-col gap-4">
+            <RadioGroup
+                className="flex flex-col gap-2.5"
+                value={selected}
+                // A group announces its options and not what the choice is *about*, and this page has no
+                // row label to borrow - the page title says "Performance", not what is being chosen.
+                aria-label={t("settings.performance.aiProcessor.title")}
+                // Narrowed by the options rather than cast: these are the only values this rendered.
+                onValueChange={(next) => {
+                    const chosen = offered.find((processor) => processor === next);
+                    if (chosen) update({ processor: chosen });
+                }}
+            >
+                {offered.map((processor) => {
+                    const id = `settings_processor_${processor}`;
+                    const chosen = processor === selected;
 
-                return (
-                    /*
-                     * The whole card is the radio's label, so a click anywhere on it chooses it. The
-                     * radio names itself by the name span alone and is described by the sentence: as a
-                     * label, the card would otherwise make the badge and the sentence part of its name.
-                     */
-                    <label
-                        key={processor}
-                        htmlFor={id}
-                        data-slot="processor-card"
-                        className={cn(
-                            "flex cursor-pointer items-start gap-3 rounded-lg border px-4 py-3.5 transition-colors",
-                            chosen ? "border-primary bg-primary/6" : "border-border",
-                        )}
-                    >
-                        <RadioGroupItem
-                            id={id}
-                            value={processor}
-                            className={cn(RADIO_FILL, "mt-0.5")}
-                            aria-labelledby={`${id}_name`}
-                            aria-describedby={`${id}_description`}
-                        />
+                    return (
+                        /*
+                         * The whole card is the radio's label, so a click anywhere on it chooses it. The
+                         * radio names itself by the name span alone and is described by the sentence: as a
+                         * label, the card would otherwise make the badge and the sentence part of its name.
+                         */
+                        <label
+                            key={processor}
+                            htmlFor={id}
+                            data-slot="processor-card"
+                            className={cn(
+                                "flex cursor-pointer items-start gap-3 rounded-lg border px-4 py-3.5 transition-colors",
+                                chosen ? "border-primary bg-primary/6" : "border-border",
+                            )}
+                        >
+                            <RadioGroupItem
+                                id={id}
+                                value={processor}
+                                className={cn(RADIO_FILL, "mt-0.5")}
+                                aria-labelledby={`${id}_name`}
+                                aria-describedby={`${id}_description`}
+                            />
 
-                        <div className="flex min-w-0 flex-col gap-1">
-                            <span className="flex items-center gap-2 text-sm">
-                                <span id={`${id}_name`}>
-                                    {processor === "auto"
-                                        ? t("settings.performance.aiProcessor.auto")
-                                        : PROCESSOR_LABELS[processor]}
+                            <div className="flex min-w-0 flex-col gap-1">
+                                <span className="flex items-center gap-2 text-sm">
+                                    <span id={`${id}_name`}>
+                                        {processor === "auto"
+                                            ? t("settings.performance.aiProcessor.auto")
+                                            : PROCESSOR_LABELS[processor]}
+                                    </span>
+
+                                    {/*
+                                     * `#7cc7ff` is the design's own and has no token: a lighter step of the
+                                     * accent that stays legible on the accent's own 14% tint.
+                                     */}
+                                    {processor === "auto" && (
+                                        <span className="flex h-5 items-center rounded-full bg-primary/14 px-1.75 font-medium text-[#7cc7ff] text-[11px]">
+                                            {t("settings.performance.recommended")}
+                                        </span>
+                                    )}
+
+                                    {processor === "webgpu" && (
+                                        <span className="flex h-5 items-center rounded-full bg-warning/14 px-1.75 font-medium text-warning text-[11px]">
+                                            {t("settings.performance.experimental")}
+                                        </span>
+                                    )}
                                 </span>
 
-                                {/*
-                                 * `#7cc7ff` is the design's own and has no token: a lighter step of the
-                                 * accent that stays legible on the accent's own 14% tint.
-                                 */}
-                                {processor === "auto" && (
-                                    <span className="flex h-5 items-center rounded-full bg-primary/14 px-1.75 font-medium text-[#7cc7ff] text-[11px]">
-                                        {t("settings.performance.recommended")}
-                                    </span>
-                                )}
+                                <p
+                                    id={`${id}_description`}
+                                    className="m-0 text-pretty text-foreground-dim text-xs leading-[1.55]"
+                                >
+                                    {t(`settings.performance.processor.${processor}.description`)}
+                                </p>
+                            </div>
+                        </label>
+                    );
+                })}
+            </RadioGroup>
 
-                                {processor === "webgpu" && (
-                                    <span className="flex h-5 items-center rounded-full bg-warning/14 px-1.75 font-medium text-warning text-[11px]">
-                                        {t("settings.performance.experimental")}
-                                    </span>
-                                )}
-                            </span>
+            <SettingsCard>
+                <LowMemoryRow />
+            </SettingsCard>
+        </div>
+    );
+};
 
-                            <p
-                                id={`${id}_description`}
-                                className="m-0 text-pretty text-foreground-dim text-xs leading-[1.55]"
-                            >
-                                {t(`settings.performance.processor.${processor}.description`)}
-                            </p>
-                        </div>
-                    </label>
-                );
-            })}
-        </RadioGroup>
+/**
+ * Whether the models run in low-memory mode, slower, for a machine that cannot fit a model's ordinary
+ * footprint: Osaka at SD on a 24 GB Mac is the case it was measured for.
+ *
+ * **It edits the draft and does nothing else.** Every run is handed the mode in force beside the
+ * processor, and `useEnhancementRun` starts a new one when Save changes it.
+ */
+const LowMemoryRow = () => {
+    const { t } = useTranslation();
+    const { values, update } = useSettingsDraft();
+
+    return (
+        <SettingsRow
+            label={t("settings.performance.lowMemory.title")}
+            description={t("settings.performance.lowMemory.description")}
+            control={
+                <SettingsSwitch
+                    checked={values.lowMemory}
+                    onCheckedChange={(lowMemory) => update({ lowMemory })}
+                    aria-label={t("settings.performance.lowMemory.title")}
+                />
+            }
+        />
     );
 };

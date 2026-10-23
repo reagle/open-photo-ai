@@ -84,7 +84,11 @@
                 }
             },
             "experimental": "Experimenteel",
-            "recommended": "Aanbevolen"
+            "recommended": "Aanbevolen",
+            "lowMemory": {
+                "title": "Weinig geheugen",
+                "description": "Trager, voor een computer zonder genoeg geheugen voor de gebruikelijke manier waarop een model draait. Op dit moment verandert het hoe Osaka in SD op een Mac draait, en geeft het elk model vrij zodra de afbeelding klaar is."
+            }
         },
         "export": {
             "avif": {

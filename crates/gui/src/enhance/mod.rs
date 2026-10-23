@@ -35,7 +35,7 @@ pub(crate) use operation::Requested;
 #[cfg(test)]
 pub(crate) use operation::UnknownOperation;
 pub(crate) use run::{
-    EnhanceError, Enhancement, Enhancer, Prepared, Processor, Request, enhance_with, judge_chain, prepare_chain,
+    EnhanceError, Enhancement, Enhancer, Memory, Prepared, Processor, Request, enhance_with, judge_chain, prepare_chain,
 };
 pub(crate) use slot::{Resident, Runs};
 
@@ -68,6 +68,7 @@ pub(crate) async fn enhance(
     source: String,
     operations: Vec<Requested>,
     processor: Processor,
+    memory: Option<Memory>,
     crop: Option<Crop>,
     setup: State<'_, Setup<Opai>>,
     opened: State<'_, Opened>,
@@ -80,7 +81,15 @@ pub(crate) async fn enhance(
         let opai = setup.peek(Opai::clone).await.ok_or(EnhanceError::NotReady)?;
         let reporting = reporting(&app, &run);
 
-        enhance_with(&opai, &opened, &runs, Some(reporting), Request { run, source, operations, processor, crop }).await
+        let memory = memory.unwrap_or_default();
+        enhance_with(
+            &opai,
+            &opened,
+            &runs,
+            Some(reporting),
+            Request { run, source, operations, processor, memory, crop },
+        )
+        .await
     })
     .await
 }

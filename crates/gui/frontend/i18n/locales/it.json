@@ -84,7 +84,11 @@
                 }
             },
             "experimental": "Sperimentale",
-            "recommended": "Consigliato"
+            "recommended": "Consigliato",
+            "lowMemory": {
+                "title": "Poca memoria",
+                "description": "Più lento, per un computer senza memoria sufficiente per il funzionamento abituale di un modello. Per ora cambia il modo in cui Osaka in SD viene eseguito su un Mac e libera ogni modello appena la sua immagine è pronta."
+            }
         },
         "export": {
             "avif": {

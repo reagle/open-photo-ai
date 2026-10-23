@@ -1,6 +1,6 @@
 import type { Family } from "./catalogue";
 import type { CropInfo } from "./crop";
-import { mintRun, type Processor } from "./enhance";
+import { type Memory, mintRun, type Processor } from "./enhance";
 import { call } from "./invoke";
 
 // Written a second time in `crates/gui/src/autopilot.rs`, as `#[tauri::command]` function names. A rename on
@@ -57,12 +57,18 @@ export type SuggestError =
  * Rejects with the serialized {@link SuggestError}, typed as `unknown` because that is what an `invoke`
  * rejection is. A rejection is never an empty answer.
  */
-export const suggest = (source: string, processor: Processor, families: Family[], crop?: CropInfo) => {
+export const suggest = (
+    source: string,
+    processor: Processor,
+    families: Family[],
+    crop?: CropInfo,
+    memory: Memory = "standard",
+) => {
     // Before the invoke, for the reason `enhance` gives beside its own.
     const run = mintRun();
 
     // `crop` is sent as `undefined` rather than omitted, as `enhance` sends it.
-    return { run, done: call<Suggestion[]>(SUGGEST_COMMAND, { run, source, processor, families, crop }) };
+    return { run, done: call<Suggestion[]>(SUGGEST_COMMAND, { run, source, processor, memory, families, crop }) };
 };
 
 /**

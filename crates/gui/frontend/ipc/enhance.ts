@@ -17,6 +17,9 @@ const PROGRESS_EVENT = "enhance:progress";
 /** Processor selector, derived from `SupportedProviders` to stay in sync with backend-added providers. Uses wire spellings (e.g. `tensorrt`), translated to library enum spellings in `enhance/run.rs`. */
 export type Processor = "auto" | keyof SupportedProviders;
 
+/** How much memory a run's models may hold: the library's `MemoryMode`, read in `enhance/run.rs`. */
+export type Memory = "standard" | "low";
+
 /**
  * One operation in a chain: a catalogue row, precision, and parameter values.
  *
@@ -134,12 +137,20 @@ export const mintRun = () => `${SESSION}-${++minted}`;
  * whole photograph. An empty `operations` chain is valid and resolves with the source's own identity.
  *
  * Rejects with a serialized {@link EnhanceError} (typed `unknown`, as `invoke` rejections carry no type).
+ *
+ * `memory` is the low-memory switch as the run commands take it (see `memoryOf`); omitted means `"standard"`.
  */
-export const enhance = (source: string, operations: Operation[], processor: Processor, crop?: CropInfo) => {
+export const enhance = (
+    source: string,
+    operations: Operation[],
+    processor: Processor,
+    crop?: CropInfo,
+    memory: Memory = "standard",
+) => {
     // Minted before the invoke so a cleanup racing the dispatch still has a name to cancel.
     const run = mintRun();
 
-    return { run, done: call<Enhancement>(ENHANCE_COMMAND, { run, source, operations, processor, crop }) };
+    return { run, done: call<Enhancement>(ENHANCE_COMMAND, { run, source, operations, processor, memory, crop }) };
 };
 
 /**
