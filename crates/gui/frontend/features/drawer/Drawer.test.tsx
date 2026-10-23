@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Preview } from "@/features/preview/Preview";
 import "@/i18n";
 import { ZOOM_BUTTON_STEP, ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
@@ -364,15 +364,53 @@ describe("the fold itself", () => {
         expect(screen.getByRole("button", { name: "sunset over the harbour.nef" })).toBeInTheDocument();
     });
 
+    // The stand-ins below are appended to the body by hand, outside what Testing Library cleans up.
+    afterEach(() => {
+        for (const stray of document.querySelectorAll("[data-stray]")) stray.remove();
+    });
+
+    /** A stand-in for the preview canvas, which carries the `data-slot` the drawer looks for. */
+    const addCanvas = () => {
+        const canvas = document.createElement("div");
+        canvas.dataset.slot = "preview-canvas";
+        canvas.dataset.stray = "";
+        const inner = document.createElement("span");
+        canvas.append(inner);
+        document.body.append(canvas);
+        return inner;
+    };
+
     it("folds when the canvas outside it is clicked", () => {
         renderUnfolded();
         expect(useDrawerStore.getState().open).toBe(true);
 
         // `pointerDown` rather than `click`, which is the event the drawer listens for: a press that
-        // begins outside it is the honest answer to "did the user reach past the drawer".
-        fireEvent.pointerDown(document.body);
+        // begins on the canvas is the honest answer to "did the user reach past the drawer".
+        fireEvent.pointerDown(addCanvas());
 
         expect(useDrawerStore.getState().open).toBe(false);
+    });
+
+    it("stays unfolded when the sidebar, the navbar or a dialog is pressed", () => {
+        renderUnfolded();
+
+        for (const name of ["Add enhancement", "Export"]) {
+            const button = document.createElement("button");
+            button.textContent = name;
+            button.dataset.stray = "";
+            document.body.append(button);
+            fireEvent.pointerDown(button);
+            expect(useDrawerStore.getState().open).toBe(true);
+        }
+
+        const dialog = document.createElement("div");
+        dialog.setAttribute("role", "dialog");
+        dialog.dataset.stray = "";
+        document.body.append(dialog);
+        fireEvent.pointerDown(dialog);
+        fireEvent.pointerDown(document.body);
+
+        expect(useDrawerStore.getState().open).toBe(true);
     });
 
     it("stays unfolded when one of its own thumbnails is clicked", () => {
@@ -462,12 +500,12 @@ describe("the fold itself", () => {
     });
 
     it("still folds when the canvas is pressed with that menu open", () => {
-        // The other half of the rule: a menu the drawer opened is part of the drawer, and everything
-        // else is still outside it.
+        // The other half of the rule: a menu the drawer opened is part of the drawer, and the canvas is still
+        // outside it.
         renderUnfolded();
 
         fireEvent.keyDown(screen.getByRole("button", { name: "File options for holiday.png" }), { key: "Enter" });
-        fireEvent.pointerDown(document.body);
+        fireEvent.pointerDown(addCanvas());
 
         expect(useDrawerStore.getState().open).toBe(false);
     });
