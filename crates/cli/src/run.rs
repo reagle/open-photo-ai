@@ -33,7 +33,7 @@ use std::time::Instant;
 
 use opai::{
     APP_NAME, CLI, CancellationToken, ChainFaces, Enhanced, ExecuteOptions, ExecutionProvider, FaceSelection,
-    InitOptions, OnInference, Opai, OutputDepth, Picture, ProcessOptions, ProviderVerdict, Suggestions,
+    InitOptions, MemoryMode, OnInference, Opai, OutputDepth, Picture, ProcessOptions, ProviderVerdict, Suggestions,
     default_face_selection, image,
 };
 
@@ -115,7 +115,10 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
     events::app_ready(&args.processor.name(), args.autopilot);
 
     // No session holds stderr here: the dependency line is frozen and the batch's view has not started.
-    eprintln!("{}", look::processor_line(args.processor.into(), args.quality, look.color));
+    eprintln!(
+        "{}",
+        look::processor_line(args.processor.into(), args.quality, memory_mode(args.low_memory), look.color)
+    );
     eprintln!();
 
     // In plain mode a Ctrl-C is still a SIGINT. While the batch's view is drawn it is a key press, which the view
@@ -287,12 +290,14 @@ async fn enhance_one(
     // message names the path.
     let picture = image::load(&source.path).await.map_err(|error| CliError::Load(Box::new(error)))?;
     let provider = args.processor.into();
+    let memory = memory_mode(args.low_memory);
 
     let (plan, from) = match planner {
         Planner::Fixed(plan) => (plan, events::Source::Manual),
         Planner::Autopilot(models) => {
             let plan =
-                choose(opai, &picture, &source.path, index, models, args.quality, provider, view, cancel).await?;
+                choose(opai, &picture, &source.path, index, models, args.quality, provider, memory, view, cancel)
+                    .await?;
             (plan, events::Source::Autopilot)
         }
     };
@@ -300,7 +305,7 @@ async fn enhance_one(
         events::enhancement_added(operation.family(), from);
     }
 
-    let enhanced = enhance(opai, &picture, &plan.operations, provider, view, cancel).await?;
+    let enhanced = enhance(opai, &picture, &plan.operations, provider, memory, view, cancel).await?;
 
     // A Ctrl-C that landed after the last tile was checked still means "write nothing".
     if cancel.is_cancelled() {
@@ -338,6 +343,7 @@ async fn choose(
     models: &AutopilotModels,
     quality: Quality,
     provider: ExecutionProvider,
+    memory: MemoryMode,
     view: &View,
     cancel: &CancellationToken,
 ) -> Result<Plan, CliError> {
@@ -346,7 +352,7 @@ async fn choose(
     // No progress relayed: the only reporting work is the face detection, and the row has no chain yet to map it
     // onto. The chain's own detection is then served from the store this one warmed.
     let families = models.families();
-    let options = ExecuteOptions { on_progress: None, cancel: cancel.clone(), provider, ..Default::default() };
+    let options = ExecuteOptions { on_progress: None, cancel: cancel.clone(), provider, memory, ..Default::default() };
     let suggestions = opai.suggest(picture, Some(&families), Some(options)).await?;
     view.chosen(index);
 
@@ -387,18 +393,19 @@ fn log_notes(path: &Path, plan: &Plan) {
     }
 }
 
-/// Runs `operations` on `provider`, finding the faces its face recoveries restore first, reporting onto the image's
-/// row and the batch's bar.
+/// Runs `operations` on `provider` in `memory` mode, finding the faces its face recoveries restore first, reporting
+/// onto the image's row and the batch's bar.
 async fn enhance(
     opai: &Opai,
     picture: &Picture,
     operations: &[opai::Operation],
     provider: ExecutionProvider,
+    memory: MemoryMode,
     view: &View,
     cancel: &CancellationToken,
 ) -> Result<Enhanced, CliError> {
     let enhanced = opai
-        .process(picture, operations, Some(chain_options(provider, view.on_inference(), cancel)))
+        .process(picture, operations, Some(chain_options(provider, memory, view.on_inference(), cancel)))
         .await?;
 
     if let Some(report) = face_report(&enhanced.faces) {
@@ -412,14 +419,21 @@ async fn enhance(
     Ok(enhanced)
 }
 
-/// What the chain is asked for: `provider` at the source's depth, restoring the faces [`default_face_selection`] keeps,
-/// reporting to `on_progress`, stopped by `cancel`.
-fn chain_options(provider: ExecutionProvider, on_progress: OnInference, cancel: &CancellationToken) -> ProcessOptions {
+/// What the chain is asked for: `provider` in `memory` mode at the source's depth, restoring the faces
+/// [`default_face_selection`] keeps, reporting to `on_progress`, stopped by `cancel`. The chain's face detection runs
+/// under the same provider and memory mode.
+fn chain_options(
+    provider: ExecutionProvider,
+    memory: MemoryMode,
+    on_progress: OnInference,
+    cancel: &CancellationToken,
+) -> ProcessOptions {
     ProcessOptions {
         depth: OutputDepth::Source,
         on_progress: Some(on_progress),
         cancel: cancel.clone(),
         provider,
+        memory,
         faces: FaceSelection::restorable(),
         ..Default::default()
     }
@@ -452,6 +466,11 @@ fn face_report(faces: &ChainFaces) -> Option<String> {
         }
         ChainFaces::Failed(error) => Some(format!("face detection failed, so no face will be restored: {error}")),
     }
+}
+
+/// The memory mode `--low-memory` asks for: [`MemoryMode::Low`] with it, [`MemoryMode::Standard`] without.
+fn memory_mode(low_memory: bool) -> MemoryMode {
+    if low_memory { MemoryMode::Low } else { MemoryMode::Standard }
 }
 
 /// What the run executed on, as the log records it. `empty` is a chain with nothing in it — an upscale that
@@ -557,7 +576,10 @@ mod tests {
         let view = View::new(Look { interactive: false, color: false }, CancellationToken::new());
         let on_inference = view.on_inference();
         let [a, b, c] = ["photos/a.jpg", "photos/b.jpg", "photos/c.jpg"].map(Path::new);
-        let mut lines = vec![look::processor_line(ExecutionProvider::Auto, Quality::Hd, false), String::new()];
+        let mut lines = vec![
+            look::processor_line(ExecutionProvider::Auto, Quality::Hd, MemoryMode::Standard, false),
+            String::new(),
+        ];
 
         view.start_batch(3);
         view.start_image(1, a);
@@ -651,8 +673,13 @@ mod tests {
         for processor in Processor::value_variants() {
             let provider = ExecutionProvider::from(*processor);
 
-            let chain = chain_options(provider, std::sync::Arc::new(|_| {}), &cancel);
+            let chain = chain_options(provider, MemoryMode::Standard, std::sync::Arc::new(|_| {}), &cancel);
             assert_eq!(chain.provider, provider);
+            assert_eq!(chain.memory, MemoryMode::Standard);
+            assert_eq!(
+                chain_options(provider, MemoryMode::Low, std::sync::Arc::new(|_| {}), &cancel).memory,
+                MemoryMode::Low
+            );
             assert_eq!(chain.depth, OutputDepth::Source);
             assert!(matches!(chain.faces, FaceSelection::Detect(_)), "the chain finds no faces");
         }

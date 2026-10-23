@@ -51,6 +51,13 @@ pub struct Args {
     #[arg(long, short = 'p', value_enum, default_value_t = Processor::Auto, ignore_case = true)]
     pub processor: Processor,
 
+    /// Hold as little memory as possible, for a machine that cannot fit a model's ordinary footprint: with `-p auto`, a
+    /// model measured to need far more memory on its accelerator (Osaka at SD) runs on the CPU, the CPU's memory arena
+    /// is switched off, and each model is released when its image is done. Slower; a processor named with `-p` is
+    /// kept.
+    #[arg(long)]
+    pub low_memory: bool,
+
     /// Take a directory input's whole tree, not only the images directly inside it.
     #[arg(long, short = 'r')]
     pub recursive: bool,
@@ -924,6 +931,17 @@ mod tests {
         let args = parse("opai photo.jpg --up -o out.png").expect("parses");
 
         assert_eq!(args.processor, Processor::Auto);
+    }
+
+    #[test]
+    fn low_memory_is_off_unless_asked_for() {
+        assert!(!parse("opai photo.jpg --up -o out.png").expect("parses").low_memory);
+        assert!(parse("opai photo.jpg --up osaka --low-memory -o out.png").expect("parses").low_memory);
+
+        // Beside a named processor, which it does not replace.
+        let args = parse("opai photo.jpg --up osaka --low-memory -p cpu -o out.png").expect("parses");
+        assert!(args.low_memory);
+        assert_eq!(args.processor, Processor::Cpu);
     }
 
     #[test]

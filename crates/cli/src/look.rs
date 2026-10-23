@@ -9,7 +9,7 @@ use std::fmt::Display;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
-use opai::{ExecutionProvider, Family};
+use opai::{ExecutionProvider, Family, MemoryMode};
 use ratatui::crossterm::style::{Color as TermColor, Stylize};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -166,9 +166,15 @@ pub fn plain_row(percent: u8, path: &str, end: &ImageEnd, color: bool) -> String
 }
 
 /// `🧠 Running inference using the processor <provider>; quality <HD|SD>`, with the processor green and the quality
-/// yellow. The processor is spelled as `opai` spells it, `Auto` included.
-pub fn processor_line(provider: ExecutionProvider, quality: Quality, color: bool) -> String {
+/// yellow, and `; low memory` after them in low-memory mode. The processor is spelled as `opai` spells it, `Auto`
+/// included.
+pub fn processor_line(provider: ExecutionProvider, quality: Quality, memory: MemoryMode, color: bool) -> String {
     let fg = |rgb| fg(rgb, color);
+
+    // Named only when it is on, so the line every run without the flag prints is the line it printed before the flag
+    // existed. It says what was asked for, as the processor beside it does: which models it moved to the CPU is the
+    // log's to say.
+    let low_memory = (memory == MemoryMode::Low).then_some(("; low memory", Style::new()));
 
     [
         ("🧠 Running inference using the processor ", Style::new()),
@@ -176,8 +182,9 @@ pub fn processor_line(provider: ExecutionProvider, quality: Quality, color: bool
         ("; quality ", Style::new()),
         (quality.label(), fg(YELLOW)),
     ]
-    .iter()
-    .map(|(text, style)| ansi(text, *style))
+    .into_iter()
+    .chain(low_memory)
+    .map(|(text, style)| ansi(text, style))
     .collect()
 }
 
@@ -547,12 +554,24 @@ mod tests {
     #[test]
     fn the_processor_line_names_what_was_asked_for() {
         assert_eq!(
-            processor_line(ExecutionProvider::Auto, Quality::Hd, false),
+            processor_line(ExecutionProvider::Auto, Quality::Hd, MemoryMode::Standard, false),
             "🧠 Running inference using the processor Auto; quality HD"
         );
         assert_eq!(
-            processor_line(ExecutionProvider::Cpu, Quality::Sd, false),
+            processor_line(ExecutionProvider::Cpu, Quality::Sd, MemoryMode::Standard, false),
             "🧠 Running inference using the processor CPU; quality SD"
+        );
+    }
+
+    #[test]
+    fn the_processor_line_names_low_memory_only_when_it_is_on() {
+        assert_eq!(
+            processor_line(ExecutionProvider::Auto, Quality::Sd, MemoryMode::Low, false),
+            "🧠 Running inference using the processor Auto; quality SD; low memory"
+        );
+        assert!(
+            !processor_line(ExecutionProvider::Auto, Quality::Sd, MemoryMode::Standard, false).contains("memory"),
+            "a run without the flag mentioned memory"
         );
     }
 
@@ -565,7 +584,7 @@ mod tests {
             "HD".with(TermColor::Rgb { r: yr, g: yg, b: yb }),
         );
 
-        assert_eq!(processor_line(ExecutionProvider::Auto, Quality::Hd, true), expected);
+        assert_eq!(processor_line(ExecutionProvider::Auto, Quality::Hd, MemoryMode::Standard, true), expected);
     }
 
     #[test]

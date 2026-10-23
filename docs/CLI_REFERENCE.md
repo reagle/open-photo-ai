@@ -66,6 +66,9 @@ opai photos --dn --overwrite -o photos
 # Upscale on the CPU only, e.g. to rule out a GPU problem
 opai photo.jpg --up -p cpu -o photo-large.png
 
+# Upscale with Osaka on a machine without the memory for its usual path
+opai photo.jpg --up osaka -q sd --low-memory -o photo-large.png
+
 # Let autopilot choose each photo's enhancements, as the GUI's Autopilot does
 opai photos --ap -o enhanced
 ```
@@ -147,6 +150,16 @@ Picks the hardware every model of the run is asked to run on, face detection inc
 The value is case-insensitive (`-p CPU` and `--processor WebGPU` work). `opai --help` lists only the values your build accepts, and any other value is refused straight away, before anything is installed.
 
 A value your build accepts is then checked against what **this machine** offers, once [dependencies are installed](#what-happens-during-a-run). This is the same check the GUI uses to build its list of processors: CUDA needs a supported NVIDIA GPU and driver, TensorRT also needs a GPU that can run it, CoreML needs macOS 12 or newer, and WebGPU needs a GPU the runtime can reach. If the machine doesn't offer the processor, the run stops with one line naming the processors it does offer, for example `🧨 the processor webgpu is not available on this machine; use auto, cpu or coreml`, and exits with [code 2](#exit-codes). No image is loaded and nothing is written.
+
+### `--low-memory`
+
+Runs every model of the run, face detection included, holding as little memory as it can. Use it when a heavy model fails or stalls for lack of memory: for example Osaka at `-q sd`, which with `-p auto` on a Mac with 24 GB of memory uses it all up within seconds and then crawls in swap. It changes three things, each at some cost in speed:
+
+- With `-p auto`, a model that was measured to need far more memory on its accelerator than on the CPU runs on the CPU. Today that is **Osaka at `-q sd`** only, whose main model CoreML can't fit on a 24 GB Mac; at `-q hd` CoreML fits and uses less memory than the CPU, so Osaka stays on it, and every other model still runs where `auto` would put it. A processor you name with `-p` is always used, so `--low-memory -p coreml` still runs Osaka on CoreML.
+- The CPU's memory arena is switched off, so each model gives its working memory back when it finishes a step instead of keeping it for the next one.
+- Each model is released once its image is done, instead of staying loaded for the next image. A batch therefore loads its models again for every image.
+
+It doesn't change what is installed, how a result is named, or the result a model produces on a given processor. The [processor line](#what-happens-during-a-run) ends with `; low memory` when it is on. Without the flag, nothing about a run changes.
 
 ## Where the results go
 
@@ -455,7 +468,7 @@ With an output **file**, the format is the one its extension names. With an outp
    - no image is left to enhance once the inputs are expanded, e.g. a directory with no images in it.
 
    A file **found inside a directory** that has an image extension but can't be read is not a refusal: it's skipped, recorded in the [log file](#log-file), and the rest of the batch goes on. Nothing is written or created when the run is refused.
-2. **Dependencies are installed (first run only).** The first time `opai` runs, it downloads the components it needs: ONNX Runtime, plus CUDA and TensorRT on systems with a supported NVIDIA GPU. A `💾 Downloading dependency <name>... ⣾ 34% Complete` line shows the progress, with a spinner that keeps turning while the download works; it is rewritten when the next dependency starts, and shows a green `✓` once the dependency reaches `100%`. These are shared with the GUI, so if the GUI has already downloaded them, nothing is downloaded. This happens once per command, however many images it has. Then the [processor](#-p---processor-processor-default-auto) is checked against what this machine offers, and the run is refused with [exit code 2](#exit-codes) if it doesn't offer it. Once it's accepted, the line `🧠 Running inference using the processor <processor>; quality <HD|SD>` names the processor you asked for (`Auto` under `-p auto`) and the quality, followed by a blank line.
+2. **Dependencies are installed (first run only).** The first time `opai` runs, it downloads the components it needs: ONNX Runtime, plus CUDA and TensorRT on systems with a supported NVIDIA GPU. A `💾 Downloading dependency <name>... ⣾ 34% Complete` line shows the progress, with a spinner that keeps turning while the download works; it is rewritten when the next dependency starts, and shows a green `✓` once the dependency reaches `100%`. These are shared with the GUI, so if the GUI has already downloaded them, nothing is downloaded. This happens once per command, however many images it has. Then the [processor](#-p---processor-processor-default-auto) is checked against what this machine offers, and the run is refused with [exit code 2](#exit-codes) if it doesn't offer it. Once it's accepted, the line `🧠 Running inference using the processor <processor>; quality <HD|SD>` names the processor you asked for (`Auto` under `-p auto`) and the quality, followed by `; low memory` under [`--low-memory`](#--low-memory), and then a blank line.
 3. **Each image, one after another:**
    1. **The image is loaded.** Its row in the list reads `🖼️ [  0%] Preparing to enhance <path>`. With [`--autopilot`](#autopilot), the image is then analysed, and its row reads `🖼️ [  0%] Choosing enhancements for <path>` until the analysis has chosen its enhancements.
    2. **Models are downloaded (first use only).** Each model is downloaded the first time it's used. The image's row reads `Downloading <enhancement> for <path>` while this happens.

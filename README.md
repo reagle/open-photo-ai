@@ -126,7 +126,9 @@ On Windows x64 and Linux, the app can use CUDA and TensorRT for the best perform
 
 ### Osaka upscaler
 
-**Osaka** is a much heavier model than the others and has its own requirements: at least 32 GB of RAM and a GPU with 16 GB of VRAM on Windows and Linux, or 16 GB of unified memory on macOS. It also takes about 7 GB of extra disk space.
+**Osaka** is a much heavier model than the others and has its own requirements: at least 32 GB of RAM and a GPU with 16 GB of VRAM on Windows and Linux. It also takes about 7 GB of extra disk space.
+
+On macOS, Osaka runs through CoreML by default. Measured on an M4 Pro with 24 GB of unified memory, Osaka at HD completes that way, but Osaka at SD runs out of memory within seconds. With the CLI's [`--low-memory`](docs/CLI_REFERENCE.md#--low-memory), Osaka at SD runs on the CPU instead and completes on that machine. Macs with other amounts of memory, and Windows and Linux with `--low-memory`, have not been measured yet.
 
 ## ✨ Enhancements
 
