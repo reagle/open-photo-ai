@@ -56,6 +56,19 @@ rust-sak = { git = "https://github.com/vegidio/rust-sak", tag = "26.10.6", featu
     "sysinfo",
 ] }
 
+# The export's local date, time and UTC offset, which the EXIF it writes records (Software's date, DateTime,
+# OffsetTime). Already compiled into this crate for `tracing-subscriber`'s timestamps, so it adds nothing to the build;
+# named here because the export calls it directly. `clock` alone: `Local::now` and its offset. `time` was the
+# alternative and is ruled out: it refuses to read the local offset in a multi-threaded process on Unix.
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+
+# The export's XMP is read into a tree and rewritten (`export/metadata/xmp/`). `quick-xml` because it is already
+# compiled into the workspace (Tauri's `plist`) and lets the tree keep every untouched byte as written; no DTD is read
+# and no entity expanded. Adobe's `xmp_toolkit` was the alternative and is ruled out by its C++ build. `uuid` with
+# `v4` for the export's new XMP document and instance IDs, likewise already compiled (Tauri's `infer`).
+quick-xml = "0.42.0"
+uuid = { version = "1.26.1", default-features = false, features = ["v4"] }
+
 # Not a choice: `rust-sak`'s decoders return `image::DynamicImage` and its encoders take one, so the type is already in
 # this crate's own public API and the crate has to be named to spell it. Pinned to the version `rust-sak` builds
 # against so the two resolve to one copy - two `image` crates would make `DynamicImage` two unrelated types.

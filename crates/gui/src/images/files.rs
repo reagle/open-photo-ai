@@ -142,7 +142,7 @@ impl Opened {
     }
 
     /// Whether this application opened the file at this path. Compared verbatim, not canonicalized.
-    fn knows(&self, path: &Path) -> bool {
+    pub(crate) fn knows(&self, path: &Path) -> bool {
         // Not canonicalized because both sides come from the same string already.
         lock(&self.admitted).paths.contains(path)
     }
@@ -774,8 +774,14 @@ mod tests {
             .iter()
             .map(|name| {
                 let path = dir.path().join(name);
-                opai::image::save_blocking(&image::DynamicImage::new_rgb8(4, 3), &path, opai::ImageFormat::Png, None)
-                    .expect("writable");
+                opai::image::save_blocking(
+                    &image::DynamicImage::new_rgb8(4, 3),
+                    &opai::image::Metadata::default(),
+                    &path,
+                    opai::ImageFormat::Png,
+                    None,
+                )
+                .expect("writable");
                 path
             })
             .collect();

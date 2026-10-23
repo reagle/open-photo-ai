@@ -3,10 +3,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use ::image::DynamicImage;
 use rust_sak::crypto::xxh3_bytes;
-use rust_sak::image::{decode_bytes, decode_raw_bytes};
+use rust_sak::image::{Hdr, Metadata, decode_bytes, decode_raw_bytes, metadata_bytes};
 
 use super::error::{self, ImageIoError};
+use super::fidelity::Fidelity;
+use super::gain_map::GainMap;
 use super::picture::Picture;
 use super::raw;
 use crate::task::spawn_blocking;
@@ -27,8 +30,32 @@ pub async fn load(path: impl Into<PathBuf>) -> Result<Picture, ImageIoError> {
 
 /// Reads and decodes the image at `path`, on the calling thread.
 ///
-/// The result carries the pixels, the path they came from, and the XXH3-64 of the whole of the file's bytes. See
+/// The result carries the pixels, the path they came from, the XXH3-64 of the whole of the file's bytes, and the
+/// metadata the file holds beside its pixels — its ICC colour profile, EXIF, XMP and IPTC — each byte for byte. See
 /// [`Picture`] for what that identity promises.
+///
+/// # The EXIF, XMP and IPTC
+///
+/// Read from the same buffer as the pixels and the identity, for JPEG (EXIF, XMP with any extended XMP joined in, and
+/// the `APP13` Photoshop block that holds IPTC), PNG and WebP (EXIF and XMP). Nothing is interpreted on the way in. A
+/// malformed block is left out and the rest kept; it never fails the load. TIFF, AVIF, HEIF, BMP, GIF and camera RAW
+/// carry none yet. Nothing is written back out yet either: see [`without_descriptive`](super::without_descriptive).
+///
+/// # The gain map
+///
+/// An Ultra HDR / ISO 21496-1 / Adobe gain-map JPEG's gain map — the MPF secondary image `rust-sak` locates — is decoded
+/// and attached as the picture's [`gain_map`](Picture::gain_map), with its own `hdrgm` XMP and ISO 21496-1 metadata. The
+/// encoded bytes are taken out of the picture's metadata, so the stale image never reaches an export. A gain map that
+/// cannot be located, is not a JPEG, does not decode, or is larger than the photograph or smaller than a sixteenth of
+/// it, is dropped and the drop is logged; the photograph still loads, and an export reports the HDR it could not carry.
+///
+/// # The colour profile
+///
+/// Read from the same buffer as the pixels, for every format that can carry one (JPEG, PNG, TIFF, WebP, AVIF, HEIF).
+/// **No colour is converted**: the pixels are exactly what they would be without it, and the profile is the label that
+/// says what they mean. A file with no profile, or only coded (`nclx`) colour values, has none; so does a developed RAW,
+/// whose pixels are sRGB. A profile for a different colour model than the decoded pixels — a CMYK profile on a JPEG
+/// the decoder turned into RGB — no longer describes them, so it is dropped and the drop is logged.
 ///
 /// The format is read from the content's magic bytes, not from the file's name, so a JPEG saved as `.png` decodes as
 /// the JPEG it is. Camera RAW is the exception and routes on the extension; see [`is_raw`](super::is_raw).
@@ -78,19 +105,78 @@ fn read(path: &Path) -> Result<Picture, ImageIoError> {
     let decoded = if raw_extension.is_some() { decode_raw_bytes(&bytes) } else { decode_bytes(&bytes) };
     let pixels = decoded.map_err(ImageIoError::decode(path))?;
 
-    Ok(Picture::new(path, Arc::new(pixels), identity))
+    // A developed RAW is sRGB whatever the camera embedded, so it carries no profile; its EXIF and XMP are a later
+    // slice's, read from the RAW container and its sidecar. Its fidelity is its pixels': 16-bit, SDR.
+    let (mut metadata, fidelity) = if raw_extension.is_none() {
+        metadata_of(path, &bytes, &pixels)
+    } else {
+        (Metadata::default(), Fidelity::of_pixels(&pixels))
+    };
+    let gain_map = gain_map_of(path, metadata.gain_map.take(), &fidelity, &pixels);
+
+    Ok(Picture::new(path, Arc::new(pixels), identity)
+        .with_metadata(metadata)
+        .with_fidelity(fidelity)
+        .with_gain_map(gain_map))
+}
+
+/// The gain map `encoded` decoded for a base image of `pixels`; `None`, and the drop logged, if the file declares a gain
+/// map (`fidelity`) that could not be located or read.
+fn gain_map_of(path: &Path, encoded: Option<Vec<u8>>, fidelity: &Fidelity, pixels: &DynamicImage) -> Option<GainMap> {
+    let warn = |error: &dyn std::fmt::Display| {
+        tracing::warn!(op = "load", path = %path.display(), error = %error, "HDR gain map dropped: it could not be read");
+    };
+    match encoded {
+        Some(encoded) => {
+            GainMap::read(&encoded, (pixels.width(), pixels.height())).inspect_err(|error| warn(error)).ok()
+        }
+        None => {
+            if fidelity.hdr == Some(Hdr::GainMap) {
+                warn(&"the file declares one, and no gain-map image was found where its MPF index says");
+            }
+            None
+        }
+    }
+}
+
+/// Everything `bytes` holds beside its pixels, with the ICC profile left out if it does not describe `pixels`, and what
+/// of it an export can lose.
+///
+/// Never a reason to refuse the photograph: `metadata_bytes` answers a block it cannot read with `None`, and
+/// [`Fidelity::read`] reads what it cannot as nothing to lose.
+fn metadata_of(path: &Path, bytes: &[u8], pixels: &DynamicImage) -> (Metadata, Fidelity) {
+    let mut metadata = metadata_bytes(bytes);
+    let fidelity = Fidelity::read(bytes, pixels.color(), metadata.icc_profile.as_deref());
+    metadata.icc_profile = metadata.icc_profile.take().and_then(|profile| fitting(path, profile, pixels));
+    (metadata, fidelity)
+}
+
+/// `profile`, if it describes `pixels`; otherwise `None`, and the drop is logged.
+fn fitting(path: &Path, profile: Vec<u8>, pixels: &DynamicImage) -> Option<Vec<u8>> {
+    if super::profile::describes(&profile, pixels) {
+        return Some(profile);
+    }
+
+    tracing::warn!(
+        op = "load",
+        path = %path.display(),
+        profile = super::profile::description(&profile).unwrap_or_default(),
+        colour_space = super::profile::colour_space(&profile).unwrap_or_default(),
+        "colour profile dropped: it does not describe the decoded pixels"
+    );
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::image::test_support::{
-        BLUE, DNG_FIXTURE_SIZE, FIXTURE_SIZE, GREEN, RED, channel_means, minimal_dng, on_a_dead_runtime, write_fixture,
-        written_dng, written_jpeg, written_png,
+        BLUE, DISPLAY_P3, DNG_FIXTURE_SIZE, FIXTURE_SIZE, GREEN, RED, channel_means, minimal_dng, on_a_dead_runtime,
+        write_fixture, written_dng, written_jpeg, written_p3, written_png,
     };
 
     use rust_sak::crypto::xxh3_file;
-    use rust_sak::image::ImageError;
+    use rust_sak::image::{ImageError, ImageFormat};
     use tempfile::tempdir;
 
     #[test]
@@ -404,5 +490,279 @@ mod tests {
         let (log, outcome) = records_of_blocking("info", || load_blocking(&readable));
         assert!(outcome.is_ok());
         assert!(!log.contains("msg="), "a success was recorded:\n{log}");
+    }
+
+    #[test]
+    fn a_display_p3_jpeg_keeps_its_profile_byte_for_byte_and_its_pixels_unconverted() {
+        let dir = tempdir().expect("a temporary directory");
+        let tagged =
+            load_blocking(write_fixture(dir.path(), "p3.jpg", &written_p3(ImageFormat::Jpeg))).expect("decodable");
+        let plain = load_blocking(write_fixture(dir.path(), "plain.jpg", &written_jpeg())).expect("decodable");
+
+        assert_eq!(tagged.metadata().icc_profile.as_deref(), Some(DISPLAY_P3));
+        // The profile is a label: the same encoder with and without it decodes to the same values.
+        assert_eq!(tagged.pixels(), plain.pixels(), "reading the profile changed the pixels");
+        assert_eq!(plain.metadata().icc_profile, None);
+    }
+
+    #[test]
+    fn every_format_that_can_carry_a_profile_reports_it() {
+        let dir = tempdir().expect("a temporary directory");
+        for format in [ImageFormat::Jpeg, ImageFormat::Png, ImageFormat::Tiff, ImageFormat::WebP] {
+            let path = write_fixture(dir.path(), &format!("p3.{}", format.extension()), &written_p3(format));
+            let loaded = load_blocking(&path).unwrap_or_else(|err| panic!("{format:?}: {err}"));
+            assert_eq!(loaded.metadata().icc_profile.as_deref(), Some(DISPLAY_P3), "{format:?}");
+        }
+    }
+
+    #[test]
+    fn a_png_without_a_profile_reports_none() {
+        let dir = tempdir().expect("a temporary directory");
+        let loaded = load_blocking(write_fixture(dir.path(), "plain.png", &written_png())).expect("decodable");
+
+        assert_eq!(loaded.metadata(), &Metadata::default());
+    }
+
+    #[test]
+    fn a_developed_raw_reports_no_profile() {
+        let dir = tempdir().expect("a temporary directory");
+        let loaded = load_blocking(write_fixture(dir.path(), "DSC_0001.dng", &written_dng())).expect("decodable");
+
+        assert_eq!(loaded.metadata().icc_profile, None);
+    }
+
+    #[test]
+    fn a_profile_for_another_colour_model_is_dropped_and_the_drop_is_logged() {
+        use crate::logging::{field, records, records_of_blocking};
+
+        // A CMYK profile on an RGB JPEG: the decoder hands back RGB, which the profile does not describe.
+        let mut cmyk = DISPLAY_P3.to_vec();
+        cmyk[16..20].copy_from_slice(b"CMYK");
+        let mut metadata = Metadata::default();
+        metadata.icc_profile = Some(cmyk);
+        let mut bytes = Vec::new();
+        rust_sak::image::encode_writer_with(
+            &crate::image::test_support::sample_image(),
+            &mut bytes,
+            ImageFormat::Jpeg,
+            None,
+            &metadata,
+        )
+        .expect("encodable");
+        let dir = tempdir().expect("a temporary directory");
+        let path = write_fixture(dir.path(), "cmyk-profile.jpg", &bytes);
+
+        let (log, loaded) = records_of_blocking("info", || load_blocking(&path));
+        let loaded = loaded.expect("the photograph still loads");
+
+        assert_eq!(loaded.metadata().icc_profile, None);
+        let message = "colour profile dropped: it does not describe the decoded pixels";
+        let [record] = records(&log, message)[..] else { panic!("expected one record:\n{log}") };
+        assert_eq!(field(record, "colour_space"), Some("CMYK"), "{record}");
+        assert!(record.contains("level=WARN"), "{record}");
+    }
+
+    #[test]
+    fn a_jpeg_carries_its_exif_xmp_and_iptc_byte_for_byte_beside_its_profile() {
+        use crate::image::test_support::{EXIF, IPTC, XMP, written_described};
+
+        let dir = tempdir().expect("a temporary directory");
+        let bytes = written_described(ImageFormat::Jpeg);
+        let path = write_fixture(dir.path(), "described.jpg", &bytes);
+
+        let loaded = load_blocking(&path).expect("decodable");
+
+        let metadata = loaded.metadata();
+        assert_eq!(metadata.exif.as_deref(), Some(EXIF));
+        assert_eq!(metadata.xmp.as_deref(), Some(XMP));
+        assert_eq!(metadata.iptc.as_deref(), Some(IPTC));
+        assert_eq!(metadata.icc_profile.as_deref(), Some(DISPLAY_P3));
+        // The identity still hashes the whole file, blocks and all.
+        assert_eq!(loaded.identity(), xxh3_file(&path).expect("readable"));
+    }
+
+    #[test]
+    fn png_and_webp_carry_their_exif_and_xmp() {
+        use crate::image::test_support::{EXIF, XMP, written_described};
+
+        let dir = tempdir().expect("a temporary directory");
+        for format in [ImageFormat::Png, ImageFormat::WebP] {
+            let path =
+                write_fixture(dir.path(), &format!("described.{}", format.extension()), &written_described(format));
+            let loaded = load_blocking(&path).unwrap_or_else(|err| panic!("{format:?}: {err}"));
+
+            assert_eq!(loaded.metadata().exif.as_deref(), Some(EXIF), "{format:?}");
+            assert_eq!(loaded.metadata().xmp.as_deref(), Some(XMP), "{format:?}");
+            assert_eq!(loaded.metadata().iptc, None, "{format:?}");
+        }
+    }
+
+    #[test]
+    fn a_corrupt_exif_block_is_left_out_and_the_photograph_still_loads() {
+        use crate::image::test_support::{XMP, described, sample_image};
+
+        // An EXIF block cut inside its first directory, written as a JPEG would carry it.
+        let mut metadata = described();
+        metadata.exif = Some(crate::image::test_support::EXIF[..12].to_vec());
+        let mut bytes = Vec::new();
+        rust_sak::image::encode_writer_with(&sample_image(), &mut bytes, ImageFormat::Jpeg, None, &metadata)
+            .expect("encodable");
+        let dir = tempdir().expect("a temporary directory");
+
+        let loaded = load_blocking(write_fixture(dir.path(), "corrupt-exif.jpg", &bytes)).expect("still decodable");
+
+        assert_eq!(loaded.metadata().exif, None);
+        assert_eq!(loaded.metadata().xmp.as_deref(), Some(XMP));
+        assert_eq!(loaded.dimensions(), FIXTURE_SIZE);
+    }
+
+    #[test]
+    fn a_file_without_metadata_and_a_raw_carry_none() {
+        let dir = tempdir().expect("a temporary directory");
+        let plain = load_blocking(write_fixture(dir.path(), "plain.png", &written_png())).expect("decodable");
+        let raw = load_blocking(write_fixture(dir.path(), "DSC_0001.dng", &written_dng())).expect("decodable");
+
+        assert_eq!(plain.metadata(), &Metadata::default());
+        assert_eq!(raw.metadata(), &Metadata::default());
+    }
+
+    #[test]
+    fn an_ultra_hdr_jpeg_is_recorded_as_8_bit_hdr_with_a_gain_map() {
+        use crate::image::test_support::written_ultra_hdr;
+        use rust_sak::image::Hdr;
+
+        let dir = tempdir().expect("a temporary directory");
+        let loaded = load_blocking(write_fixture(dir.path(), "hawk.jpg", &written_ultra_hdr())).expect("decodable");
+
+        assert_eq!(loaded.fidelity().hdr, Some(Hdr::GainMap));
+        assert_eq!(loaded.fidelity().depth, crate::image::Depth { bits: 8, float: false });
+        assert_eq!(loaded.fidelity().discarded, None);
+        assert_eq!(loaded.metadata().icc_profile.as_deref(), Some(DISPLAY_P3));
+    }
+
+    #[test]
+    fn an_ultra_hdr_jpeg_keeps_its_gain_map_with_its_own_metadata_and_not_the_encoded_bytes() {
+        use crate::image::test_support::{
+            HAWK_GAIN_MAP_ISO, HAWK_GAIN_MAP_XMP, ISO_VERSION, written_ultra_hdr, written_ultra_hdr_of,
+        };
+
+        let dir = tempdir().expect("a temporary directory");
+        let (log, loaded) = crate::logging::records_of_blocking("info", || {
+            load_blocking(write_fixture(dir.path(), "hawk.jpg", &written_ultra_hdr()))
+        });
+        let loaded = loaded.expect("decodable");
+
+        let gain_map = loaded.gain_map().expect("the gain map is carried");
+        assert_eq!((gain_map.pixels().width(), gain_map.pixels().height()), FIXTURE_SIZE);
+        assert_eq!(gain_map.pixels().color(), ::image::ColorType::Rgb8, "three channels, as stored");
+        assert_eq!(gain_map.scale(), (1.0, 1.0));
+        assert_eq!(gain_map.metadata().xmp.as_deref(), Some(HAWK_GAIN_MAP_XMP));
+        assert_eq!(gain_map.metadata().iso_gain_map.as_deref(), Some(HAWK_GAIN_MAP_ISO));
+        // The encoded image is not left in the picture's metadata; the primary's version marker is.
+        assert_eq!(loaded.metadata().gain_map, None);
+        assert_eq!(loaded.metadata().iso_gain_map.as_deref(), Some(ISO_VERSION));
+        assert!(crate::logging::records(&log, "HDR gain map dropped: it could not be read").is_empty(), "{log}");
+
+        // A quarter-resolution gray one.
+        let bytes = written_ultra_hdr_of((40, 32), (10, 8), 1);
+        let loaded = load_blocking(write_fixture(dir.path(), "quarter.jpg", &bytes)).expect("decodable");
+        let gain_map = loaded.gain_map().expect("carried");
+        assert_eq!((gain_map.pixels().width(), gain_map.pixels().height(), gain_map.scale()), (10, 8, (0.25, 0.25)));
+        assert_eq!(gain_map.pixels().color(), ::image::ColorType::L8);
+    }
+
+    #[test]
+    fn a_gain_map_an_editor_moved_without_updating_its_offset_is_still_carried() {
+        use crate::image::test_support::written_ultra_hdr;
+
+        // As ExifTool leaves an Ultra HDR JPEG it added a comment to: a `COM` after the MPF index, its offset stale.
+        let bytes = written_ultra_hdr();
+        let index_end = bytes.windows(4).position(|w| w == b"MPF\0").expect("an MPF index") + 86;
+        let comment = [&[0xFF, 0xFE, 0x00, 0x0B][..], b"fresh run"].concat();
+        let edited = [&bytes[..index_end], &comment, &bytes[index_end..]].concat();
+        let dir = tempdir().expect("a temporary directory");
+
+        let loaded = load_blocking(write_fixture(dir.path(), "edited.jpg", &edited)).expect("decodable");
+
+        let gain_map = loaded.gain_map().expect("found after the primary's EOI");
+        assert_eq!((gain_map.pixels().width(), gain_map.pixels().height()), FIXTURE_SIZE);
+    }
+
+    #[test]
+    fn a_gain_map_that_cannot_be_read_is_dropped_with_a_warning_and_the_photograph_still_loads() {
+        use crate::image::test_support::{truncated_ultra_hdr, written_ultra_hdr_of};
+        use crate::logging::{field, records, records_of_blocking};
+
+        let dir = tempdir().expect("a temporary directory");
+        // Cut inside the gain map, so the MPF index points past the end of the file; and a gain map larger than the
+        // photograph it belongs to.
+        let cut = write_fixture(dir.path(), "cut.jpg", &truncated_ultra_hdr());
+        let large = write_fixture(dir.path(), "large.jpg", &written_ultra_hdr_of((32, 24), (32, 25), 1));
+
+        for (path, why) in [(&cut, "no gain-map image was found"), (&large, "does not fit")] {
+            let (log, loaded) = records_of_blocking("info", || load_blocking(path));
+            let loaded = loaded.expect("the photograph still loads");
+
+            assert!(loaded.gain_map().is_none(), "{}", path.display());
+            assert_eq!(loaded.fidelity().hdr, Some(rust_sak::image::Hdr::GainMap), "still recorded as HDR");
+            assert_eq!(loaded.dimensions(), FIXTURE_SIZE);
+            let [record] = records(&log, "HDR gain map dropped: it could not be read")[..] else {
+                panic!("expected one record:\n{log}")
+            };
+            assert!(record.contains("level=WARN"), "{record}");
+            assert!(field(record, "error").is_some_and(|error| error.contains(why)), "{record}");
+        }
+    }
+
+    #[test]
+    fn a_16_bit_png_is_recorded_as_16_bit_sdr_and_a_raw_as_its_developed_16_bits() {
+        let pixels = DynamicImage::ImageRgb16(crate::image::test_support::sample_image().to_rgb16());
+        let mut png = Vec::new();
+        rust_sak::image::encode_writer(&pixels, &mut png, ImageFormat::Png, None).expect("encodable");
+        let dir = tempdir().expect("a temporary directory");
+
+        for name in ["deep.png", "DSC_0001.dng"] {
+            let bytes = if name.ends_with("png") { png.clone() } else { written_dng() };
+            let loaded = load_blocking(write_fixture(dir.path(), name, &bytes)).expect("decodable");
+
+            assert_eq!(loaded.fidelity().depth, crate::image::Depth { bits: 16, float: false }, "{name}");
+            assert_eq!(loaded.fidelity().hdr, None, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_truncated_mpf_segment_loads_and_is_not_hdr() {
+        use crate::image::test_support::with_app2;
+
+        let bytes = with_app2(&written_jpeg(), b"MPF\0MM\0\x2a\0\0\0\x08\0");
+        let dir = tempdir().expect("a temporary directory");
+
+        let loaded = load_blocking(write_fixture(dir.path(), "cut.jpg", &bytes)).expect("still decodable");
+
+        assert_eq!(loaded.fidelity().hdr, None);
+        assert_eq!(loaded.dimensions(), FIXTURE_SIZE);
+    }
+
+    #[test]
+    fn a_cmyk_profile_the_load_drops_is_recorded_as_discarded() {
+        let mut cmyk = DISPLAY_P3.to_vec();
+        cmyk[16..20].copy_from_slice(b"CMYK");
+        let mut metadata = Metadata::default();
+        metadata.icc_profile = Some(cmyk);
+        let mut bytes = Vec::new();
+        rust_sak::image::encode_writer_with(
+            &crate::image::test_support::sample_image(),
+            &mut bytes,
+            ImageFormat::Jpeg,
+            None,
+            &metadata,
+        )
+        .expect("encodable");
+        let dir = tempdir().expect("a temporary directory");
+
+        let loaded = load_blocking(write_fixture(dir.path(), "cmyk.jpg", &bytes)).expect("decodable");
+
+        assert_eq!(loaded.metadata().icc_profile, None);
+        assert_eq!(loaded.fidelity().discarded.as_ref().map(|d| d.colour_space.as_str()), Some("CMYK"));
     }
 }

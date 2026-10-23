@@ -18,6 +18,7 @@ import { windowReady } from "@/ipc/window";
 import { mirrorAnalytics } from "@/lib/analytics";
 import { suppressContextMenu } from "@/lib/contextMenu";
 import { startFaro } from "@/lib/faro";
+import { mirrorGuiSettings } from "@/lib/guiSettings";
 import { report } from "@/lib/report";
 import { watchUnhandled } from "@/lib/unhandled";
 import { useSettingsStore } from "@/stores/settings";
@@ -43,6 +44,10 @@ startFaro(useSettingsStore.getState().analytics, appVersion, telemetryIds).catch
 // is Rust's to act on whether or not anything has rendered. Never unsubscribed - it lasts as long as the
 // window does.
 mirrorAnalytics();
+
+// Beside it, for the same reasons: the preferences the command line can follow are published from the
+// store, at boot and on every Save that changes one. Never unsubscribed.
+mirrorGuiSettings();
 
 // Before the app mounts too, so a failure in the first render's own effects is recorded. Never removed,
 // for the same reason.

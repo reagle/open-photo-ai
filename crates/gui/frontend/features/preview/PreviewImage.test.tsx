@@ -1,6 +1,7 @@
 import { act, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EnhancementRun } from "@/hooks/useEnhancementRun";
+import { useShortcuts } from "@/hooks/useShortcuts";
 import "@/i18n";
 import type { Family } from "@/ipc/catalogue";
 import { cropQuery } from "@/ipc/crop";
@@ -10,14 +11,19 @@ import { DRAWER_HEIGHT, ZOOM_MAX, ZOOM_MIN, ZOOM_WHEEL_STEP } from "@/lib/consta
 import { useDrawerStore } from "@/stores/drawer";
 import { useFacesStore } from "@/stores/faces";
 import { useFileStore } from "@/stores/files";
+import { usePeekStore } from "@/stores/peek";
 import { usePreviewStore } from "@/stores/preview";
-import { type ImageTransform, useTransformStore } from "@/stores/transform";
+import { type ImageTransform, panCurrent, useTransformStore } from "@/stores/transform";
 import { FRAMING, frame, HOLIDAY, openFiles, render, resetCropStore, resetFileStore, SUNSET } from "@/test/support";
 import { PreviewImage } from "./PreviewImage";
 
 // `convertFileSrc` reads a global Tauri's init script installs, which jsdom has none of. Mocked to
 // answer the identity it was asked for, so a test can tell which photograph a pane is drawing without
 // restating the platform-dependent URL - which is the one thing `ipc/images.ts` exists to own.
+// The real `platform()` reads a global the plugin's init script installs, which jsdom has none of - and the
+// window's keys ask it, for which modifier `Mod` is.
+vi.mock("@/ipc/os", () => ({ isMacOs: vi.fn(() => false), isWindows: vi.fn(() => false) }));
+
 vi.mock("@tauri-apps/api/core", () => ({
     convertFileSrc: vi.fn((identity: string) => `opai://localhost/${identity}`),
 }));
@@ -121,6 +127,7 @@ beforeEach(() => {
     useDrawerStore.setState(useDrawerStore.getInitialState(), true);
     useTransformStore.setState(useTransformStore.getInitialState(), true);
     usePreviewStore.setState({ previewMode: "side" });
+    usePeekStore.setState(usePeekStore.getInitialState(), true);
     openFiles(HOLIDAY);
 });
 
@@ -285,6 +292,14 @@ describe("the pane labels", () => {
  * from knowing exactly where the photograph's top-left corner is.
  */
 describe("the photograph's own box", () => {
+    it("reports what one photograph pixel measures when fitted, for actual pixels", () => {
+        stubPaneGeometry();
+        draw("side");
+
+        // 900px of pane for HOLIDAY's 3000px, from the pane that also reports the viewport.
+        expect(useTransformStore.getState().fit).toEqual({ identity: HOLIDAY.identity, ratio: 0.3 });
+    });
+
     it("is drawn at the size that fits, whole and centred, before anything magnifies it", () => {
         stubPaneGeometry();
         draw("full");
@@ -490,6 +505,106 @@ describe("panning", () => {
 });
 
 /** The wheel, and the trackpad pinch the webview delivers as one. */
+describe("the pan keys", () => {
+    /** The canvas with the window's keys listening, as the shell mounts both. */
+    const WithKeys = () => {
+        useShortcuts();
+
+        return <PreviewImage />;
+    };
+
+    const press = (key: string) => {
+        const event = new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true });
+        act(() => {
+            document.body.dispatchEvent(event);
+        });
+
+        return event;
+    };
+
+    it("moves a magnified photograph a tenth of the pane the way the arrow points", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        usePreviewStore.setState({ previewMode: "full" });
+        render(<WithKeys />);
+
+        // The view moves right, so the photograph moves left: a tenth of the 1000px pane.
+        const right = press("ArrowRight");
+        expect(right.defaultPrevented).toBe(true);
+        expect(drawn()).toEqual({ x: -200, y: -50, scale: 2 });
+
+        press("ArrowDown");
+        expect(drawn()).toEqual({ x: -200, y: -110, scale: 2 });
+
+        press("ArrowLeft");
+        press("ArrowUp");
+        expect(drawn()).toEqual({ x: -100, y: -50, scale: 2 });
+    });
+
+    it("stops at the photograph's own edge, as a drag does", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -50, y: -30 });
+        draw("full");
+
+        act(() => {
+            panCurrent("left");
+            panCurrent("up");
+        });
+
+        expect(drawn()).toEqual({ x: 0, y: 0, scale: 2 });
+    });
+
+    it("moves from where the photograph is drawn, not from where the store last left it", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+        // A step of the zoom keeps the middle of the pane still, so what is drawn is not what is stored.
+        magnify({ scale: 3, x: -100, y: -50 });
+        const before = drawn();
+
+        act(() => {
+            panCurrent("right");
+        });
+
+        expect(drawn()).toEqual({ x: before.x - 100, y: before.y, scale: 3 });
+    });
+
+    it("does nothing to a photograph drawn whole, and leaves the key alone", () => {
+        stubPaneGeometry();
+        usePreviewStore.setState({ previewMode: "full" });
+        render(<WithKeys />);
+
+        const event = press("ArrowRight");
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(drawn()).toEqual({ x: 50, y: 0, scale: 1 });
+        expect(useTransformStore.getState().transforms.get(HOLIDAY.identity ?? "")).toBeUndefined();
+    });
+
+    it("moves both panes of side by side together, by one step", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("side");
+
+        act(() => {
+            panCurrent("right");
+        });
+
+        expect(drawn(0)).toEqual({ x: -200, y: -50, scale: 2 });
+        expect(drawn(1)).toEqual({ x: -200, y: -50, scale: 2 });
+    });
+
+    it("answers that nothing moved once the canvas is gone", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        const { unmount } = draw("full");
+
+        unmount();
+
+        expect(panCurrent("right")).toBe(false);
+    });
+});
+
 describe("the wheel", () => {
     const wheel = (element: Element, { deltaY = -100, clientX = 500, clientY = 300 } = {}) => {
         const event = new WheelEvent("wheel", { deltaY, clientX, clientY, cancelable: true, bubbles: true });
@@ -834,6 +949,74 @@ describe("what the pane labels say", () => {
         run = { running: false, enhanced: ENHANCED };
         draw("full");
         expect(labels()).toEqual(["Enhanced"]);
+    });
+});
+
+/**
+ * The show-original key held down (`hooks/useShortcuts.ts`): every pane that draws the result draws
+ * the source instead and says so, and nothing else on the canvas moves.
+ */
+describe("while the original is held", () => {
+    const labels = () => [...document.querySelectorAll("[data-slot='preview-chip']")].map((chip) => chip.textContent);
+    const hold = (showing: boolean) => act(() => usePeekStore.getState().setShowingOriginal(showing));
+    const SOURCE = `opai://localhost/${HOLIDAY.identity}`;
+    const RESULT = `opai://localhost/${ENHANCED.identity}`;
+
+    beforeEach(() => {
+        run = { running: false, enhanced: ENHANCED };
+    });
+
+    it("draws the original across the whole canvas in full, and the result again once released", () => {
+        draw("full");
+
+        hold(true);
+        expect(sources()).toEqual([SOURCE]);
+        expect(labels()).toEqual(["Original"]);
+
+        hold(false);
+        expect(sources()).toEqual([RESULT]);
+        expect(labels()).toEqual(["Enhanced"]);
+    });
+
+    it("draws the original in both panes side by side, at the same magnification and position", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("side");
+        const before = [drawn(0), drawn(1)];
+
+        hold(true);
+
+        expect(sources()).toEqual([SOURCE, SOURCE]);
+        expect(labels()).toEqual(["Original", "Original"]);
+        expect([drawn(0), drawn(1)]).toEqual(before);
+        expect(useTransformStore.getState().transforms.get(HOLIDAY.identity ?? "")).toEqual({
+            scale: 2,
+            x: -100,
+            y: -50,
+        });
+    });
+
+    it("draws the original on both sides of the split, leaving the divider where it was", () => {
+        stubPaneGeometry();
+        draw("split");
+        const divider = screen.getByRole("slider", { name: "Divider" });
+        fireEvent.keyDown(divider, { key: "ArrowLeft" });
+
+        hold(true);
+
+        expect(sources()).toEqual([SOURCE, SOURCE]);
+        expect(labels()).toEqual(["Original", "Original"]);
+        expect(divider).toHaveAttribute("aria-valuenow", "48");
+        expect((document.querySelector("[style*='clip-path']") as HTMLElement).style.clipPath).toBe("inset(0 0 0 48%)");
+    });
+
+    it("leaves a running enhancement's bar in place", () => {
+        run = { running: true, enhanced: ENHANCED, report: progress() };
+        draw("side");
+
+        hold(true);
+
+        expect(bar()).toBeInTheDocument();
     });
 });
 

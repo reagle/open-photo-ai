@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { cancelExport } from "@/ipc/export";
+import { cancelExport, type Loss } from "@/ipc/export";
 import { report } from "@/lib/report";
 import { useAutopilotStore } from "@/stores/autopilot";
 
@@ -14,8 +14,11 @@ export type Row =
     /** Its enhancements are running; `fraction` is how far through the chain, from 0 to 1. */
     | { stage: "enhancing"; fraction: number }
     | { stage: "writing" }
-    /** Written: `path` is what was actually written, the numbered name where one was, and `bytes` how much. */
-    | { stage: "done"; path: string; bytes: number }
+    /**
+     * Written: `path` is what was actually written, the numbered name where one was, `bytes` how much, and `losses`
+     * what the file lost against its source, as Rust assessed the write.
+     */
+    | { stage: "done"; path: string; bytes: number; losses: Loss[] }
     /** Not exported; `reason` is what its tooltip shows and a click copies, composed when it failed. */
     | { stage: "failed"; reason: string };
 

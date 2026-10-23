@@ -1,7 +1,7 @@
 import { create } from "zustand";
-import { ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
+import { ZOOM_BUTTON_STEP, ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
 import { clampTo } from "@/lib/utils";
-import { registerFileOwner } from "@/stores/files";
+import { registerFileOwner, useFileStore } from "@/stores/files";
 
 /**
  * How closely one photograph is being looked at, and which part of it is in view.
@@ -35,6 +35,12 @@ export type ImageViewport = {
     height: number;
 };
 
+/**
+ * How large one photograph pixel is drawn at 1x: the fitted width over the photograph's own width, in
+ * pane pixels per photograph pixel, for the photograph it was measured on.
+ */
+export type FitRatio = { identity: string; ratio: number };
+
 /** What an image that has never been magnified reads as: drawn whole, and centred by `constrain`. */
 export const FITTED: ImageTransform = { scale: ZOOM_MIN, x: 0, y: 0 };
 
@@ -65,11 +71,16 @@ type TransformStore = {
     // photograph - which is the whole of what makes the comparison a comparison.
     /** What the sidebar's miniature draws its rectangle from, or absent before anything has drawn. */
     viewport?: ImageViewport;
+    // Beside the viewport and written by the same pane, for the same reason: only the pane knows its
+    // own measured size, and actual pixels is a question about that size.
+    /** What one photograph pixel measures at 1x on the canvas, or absent before anything has drawn. */
+    fit?: FitRatio;
 
     setTransform: (identity: string, transform: ImageTransform) => void;
     forgetTransform: (identity: string) => void;
     forgetAllTransforms: () => void;
     setViewport: (viewport: ImageViewport) => void;
+    setFit: (fit: FitRatio) => void;
 };
 
 // **Its own store, not the drawer's**, where the reference pairs `open` with `zoom`. That pairing is
@@ -157,6 +168,10 @@ export const useTransformStore = create<TransformStore>()((set) => ({
      * so there is no comparison before the store.
      */
     setViewport: (viewport: ImageViewport) => set({ viewport }),
+
+    /** Records the current photograph's fit ratio. Written by the pane that writes the viewport. */
+    setFit: (fit: FitRatio) =>
+        set((state) => (state.fit?.identity === fit.identity && state.fit.ratio === fit.ratio ? state : { fit })),
 }));
 
 // One accessor rather than every reader spelling out the identity lookup and the fallback, as the
@@ -173,6 +188,115 @@ export const useTransformStore = create<TransformStore>()((set) => ({
  */
 export const useImageTransform = (identity?: string): ImageTransform =>
     useTransformStore((state) => (identity ? state.transforms.get(identity) : undefined)) ?? FITTED;
+
+// **Outside the store, reading both stores when called**, because a step is a question about the
+// *current* photograph and this store does not know which one that is. A keyboard shortcut is not a
+// component and has no hook to read it through; the drawer's buttons call these as well, so the two
+// routes onto the zoom are one writer and cannot drift apart.
+//
+// No anchor, as the slider's writes have none: neither route points at any part of the photograph, so
+// the pane holds the middle of itself still. The scale is clamped by `setTransform`, so a step past
+// either end holds at that end.
+/** The current photograph's identity, if one is open and its bytes could be read. */
+const currentIdentity = () => {
+    const { files, currentIndex } = useFileStore.getState();
+
+    return files.at(currentIndex)?.identity;
+};
+
+/**
+ * Steps the current photograph's magnification by one step of the drawer's buttons, in (`1`) or out
+ * (`-1`), about the middle of the pane. Does nothing with no current photograph.
+ */
+export const stepZoom = (direction: 1 | -1) => {
+    const identity = currentIdentity();
+    if (!identity) return;
+
+    const { transforms, setTransform } = useTransformStore.getState();
+    const current = transforms.get(identity) ?? FITTED;
+
+    setTransform(identity, { scale: current.scale + direction * ZOOM_BUTTON_STEP, x: current.x, y: current.y });
+};
+
+/** Draws the current photograph whole and centred again. Does nothing with no current photograph. */
+export const fitCurrent = () => {
+    const identity = currentIdentity();
+    if (!identity) return;
+
+    useTransformStore.getState().setTransform(identity, FITTED);
+};
+
+/**
+ * The scale at which the current photograph shows its actual pixels: one photograph pixel per pixel of
+ * the display - *device* pixels, as 100% means in Topaz Photo AI and Lightroom Classic, so a Retina
+ * screen does not draw each one as four. `undefined` with no current photograph, or before the pane
+ * has measured this one. Not clamped: `setTransform` does that.
+ */
+export const actualPixelsScale = (): number | undefined => {
+    const identity = currentIdentity();
+    const { fit } = useTransformStore.getState();
+    if (!identity || fit?.identity !== identity || !(fit.ratio > 0)) return undefined;
+
+    return 1 / (fit.ratio * (globalThis.devicePixelRatio || 1));
+};
+
+/**
+ * Shows the current photograph at its actual pixels, about the middle of the pane, held to the zoom
+ * range. Does nothing with no current photograph or before its pane has measured it.
+ */
+export const actualPixels = () => {
+    const identity = currentIdentity();
+    const scale = actualPixelsScale();
+    if (!identity || scale === undefined) return;
+
+    const { transforms, setTransform } = useTransformStore.getState();
+    const current = transforms.get(identity) ?? FITTED;
+
+    setTransform(identity, { scale, x: current.x, y: current.y });
+};
+
+/**
+ * Lightroom's `Z`, between two points only: from the fitted size to actual pixels, and from any other
+ * magnification back to fitted.
+ */
+export const toggleZoom = () => {
+    const identity = currentIdentity();
+    if (!identity) return;
+
+    const scale = useTransformStore.getState().transforms.get(identity)?.scale ?? ZOOM_MIN;
+
+    if (scale > ZOOM_MIN) fitCurrent();
+    else actualPixels();
+};
+
+/** Which way a pan key moves the view: the way it points, so `right` shows more of the right-hand side. */
+export type PanDirection = "left" | "right" | "up" | "down";
+
+/**
+ * Moves the view of the photograph the canvas is drawing by one pan step, or answers `false` where it
+ * could not: nothing is drawn, or the photograph is drawn whole and there is nowhere to move it.
+ */
+type Panner = (direction: PanDirection) => boolean;
+
+// A registration rather than a store write, because a pan is a question about where the photograph is
+// *drawn* - which the pane resolves against its own measured size and which the stored position is not
+// after an anchored zoom - and only the pane can answer it. `registerFileOwner` is the same shape.
+let panner: Panner | undefined;
+
+/**
+ * Makes `pan` the one that answers {@link panCurrent}: the pane that publishes the viewport registers
+ * itself. Answers the unregistration, which leaves a later registration alone.
+ */
+export const registerPanner = (pan: Panner) => {
+    panner = pan;
+
+    return () => {
+        if (panner === pan) panner = undefined;
+    };
+};
+
+/** Moves the current photograph's view one pan step, as the pan keys do. `false` where nothing moved. */
+export const panCurrent = (direction: PanDirection): boolean => panner?.(direction) ?? false;
 
 /*
  * Registered as a per-file owner - see `FileOwner` for why, and for why the file store hands over

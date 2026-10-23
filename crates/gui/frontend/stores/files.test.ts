@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ImageRecord } from "@/ipc/images";
 import { useTransformStore } from "@/stores/transform";
-import { useFileStore } from "./files";
+import { stepImage, useFileStore } from "./files";
 
 /** A record as Rust describes one, named by its file so a list of them reads as a list of photographs. */
 const image = (name: string): ImageRecord => ({
@@ -373,6 +373,41 @@ describe("closing every image", () => {
         state().closeAll();
 
         expect(paths()).toEqual([]);
+        expect(state().currentIndex).toBe(0);
+    });
+});
+
+describe("stepImage", () => {
+    beforeEach(() => {
+        useFileStore.setState(useFileStore.getInitialState(), true);
+    });
+
+    it("moves to the next and the previous image in the drawer's order", () => {
+        state().addFiles([holiday, sunset, harbour]);
+
+        stepImage(1);
+        expect(state().currentIndex).toBe(1);
+        stepImage(1);
+        expect(state().currentIndex).toBe(2);
+        stepImage(-1);
+        expect(state().currentIndex).toBe(1);
+    });
+
+    it("stops at either end rather than wrapping", () => {
+        state().addFiles([holiday, sunset]);
+
+        stepImage(-1);
+        expect(state().currentIndex).toBe(0);
+
+        state().setCurrentIndex(1);
+        stepImage(1);
+        expect(state().currentIndex).toBe(1);
+    });
+
+    it("does nothing with nothing open", () => {
+        stepImage(1);
+        stepImage(-1);
+
         expect(state().currentIndex).toBe(0);
     });
 });

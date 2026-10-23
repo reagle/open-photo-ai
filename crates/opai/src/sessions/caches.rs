@@ -24,6 +24,26 @@
 //! provider at it. They cannot disagree about which directory it is. That function lives beside `model_dir` in
 //! `deps/model/descriptor.rs` rather than here, because `deps/` needs it too and sits below this layer — the layout
 //! decisions above are still this module's.
+//!
+//! # CoreML keeps its weights twice, and one copy is made a hard link of the other
+//!
+//! Given a cache directory, ONNX Runtime's CoreML provider writes the MLProgram it translated from the graph as a
+//! package, compiles it, and moves the compiled model in beside it — and deletes neither. Each holds a full copy of the
+//! weights, byte for byte the same:
+//!
+//! ```text
+//! <engine>/<hash>/<n>_static_mlprogram/model/Data/com.microsoft.OnnxRuntime/weights/weight.bin   the package's
+//! <engine>/<hash>/<n>_static_mlprogram/model/compiled_model.mlmodelc/weights/weight.bin         the compiled one's
+//! ```
+//!
+//! So the tree is twice the size it has to be — 13.4 GB rather than 6.7 GB for Osaka at FP16. As of 1.30.0 a cache hit
+//! only asks that `model/` exist and then loads `compiled_model.mlmodelc`; the package is never read again. Deleting
+//! it would therefore work, but it would also make a later runtime that *did* read it fail on a file that is not
+//! there. [`share_coreml_weights`] instead replaces the package's copy with a hard link to the compiled one, once both
+//! are proven identical: every file the runtime wrote stays where it wrote it, and the space is held once. Nothing
+//! writes either file after the compile, so the two names sharing one inode is never observable.
+//!
+//! This is a workaround for the runtime and is meant to be removed once a pinned release stops keeping both.
 
 use std::path::{Path, PathBuf};
 
@@ -120,6 +140,137 @@ pub(crate) fn invalidate_for_runtime(app_dir: &Path, name: &str, tag: &str) -> R
     }
 
     std::fs::write(&stamp, tag).map_err(InitError::io(&stamp))
+}
+
+/// The package's copy of the weights, relative to an MLProgram's `model/` directory.
+#[cfg(unix)]
+const PACKAGE_WEIGHTS: &str = "Data/com.microsoft.OnnxRuntime/weights/weight.bin";
+
+/// The compiled model's copy of the weights, relative to the same directory.
+#[cfg(unix)]
+const COMPILED_WEIGHTS: &str = "compiled_model.mlmodelc/weights/weight.bin";
+
+/// Makes the package's copy of each CoreML MLProgram's weights under `engine` a hard link to the compiled model's, and
+/// returns the bytes that freed.
+///
+/// Called after every session build that attached CoreML, cache hit or not, so an engine compiled before this existed
+/// is shared the next time its model is opened. A pair already sharing an inode costs two `stat` calls; the first time
+/// a pair is seen, both files are read once to prove them identical, and a pair that differs in any byte is left
+/// alone.
+///
+/// Never an error: the build it follows has already succeeded, and a copy left unshared costs disk space and nothing
+/// else. A failure is logged at `warn` with the file it concerns.
+#[cfg(unix)]
+pub(crate) fn share_coreml_weights(engine: &Path) -> u64 {
+    let mut freed = 0;
+
+    for model in mlprogram_models(engine) {
+        let (compiled, package) = (model.join(COMPILED_WEIGHTS), model.join(PACKAGE_WEIGHTS));
+
+        match link_if_identical(&compiled, &package) {
+            Ok(bytes) => freed += bytes,
+            Err(error) => tracing::warn!(
+                path = %package.display(),
+                %error,
+                "could not share CoreML's two copies of a model's weights; both are kept"
+            ),
+        }
+    }
+
+    if freed > 0 {
+        tracing::info!(freed, "shared CoreML's two copies of a model's weights through a hard link");
+    }
+
+    freed
+}
+
+/// Every `<hash>/<subgraph>/model` directory under `engine`: the one layout the CoreML provider writes beneath a cache
+/// directory. A TensorRT engine directory holds files at its top level and yields nothing.
+#[cfg(unix)]
+fn mlprogram_models(engine: &Path) -> Vec<PathBuf> {
+    let directories = |parent: &Path| -> Vec<PathBuf> {
+        std::fs::read_dir(parent)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect()
+    };
+
+    directories(engine)
+        .iter()
+        .flat_map(|hash| directories(hash))
+        .map(|subgraph| subgraph.join("model"))
+        .filter(|model| model.is_dir())
+        .collect()
+}
+
+/// Replaces `package` with a hard link to `compiled` where both are there, are not already one file, and hold the same
+/// bytes; returns the size freed, which is zero where nothing was replaced.
+///
+/// The link is made under a temporary name and renamed over `package`, so an interruption leaves either the copy or
+/// the link, never a missing file.
+#[cfg(unix)]
+fn link_if_identical(compiled: &Path, package: &Path) -> std::io::Result<u64> {
+    use std::os::unix::fs::MetadataExt;
+
+    let (Ok(kept), Ok(copy)) = (std::fs::metadata(compiled), std::fs::metadata(package)) else {
+        return Ok(0);
+    };
+    let shared = (kept.dev(), kept.ino()) == (copy.dev(), copy.ino());
+    if shared || kept.len() != copy.len() || kept.len() == 0 || !same_bytes(compiled, package)? {
+        return Ok(0);
+    }
+
+    let staged = package.with_file_name("weight.bin.linking");
+    // A leftover from an interrupted run would make `hard_link` fail; it is ours, so it goes.
+    if staged.exists() {
+        std::fs::remove_file(&staged)?;
+    }
+    std::fs::hard_link(compiled, &staged)?;
+    std::fs::rename(&staged, package).inspect_err(|_| {
+        let _ = std::fs::remove_file(&staged);
+    })?;
+
+    Ok(kept.len())
+}
+
+/// Whether two files of the same length hold the same bytes, read a mebibyte at a time.
+#[cfg(unix)]
+fn same_bytes(first: &Path, second: &Path) -> std::io::Result<bool> {
+    const CHUNK: usize = 1 << 20;
+
+    let (mut first, mut second) = (std::fs::File::open(first)?, std::fs::File::open(second)?);
+    let (mut left, mut right) = (vec![0; CHUNK], vec![0; CHUNK]);
+
+    loop {
+        let read = fill(&mut first, &mut left)?;
+        if read != fill(&mut second, &mut right)? || left[..read] != right[..read] {
+            return Ok(false);
+        }
+        if read < CHUNK {
+            return Ok(true);
+        }
+    }
+}
+
+/// Reads into `buffer` until it is full or the file ends, and returns how much was read.
+#[cfg(unix)]
+fn fill(file: &mut std::fs::File, buffer: &mut [u8]) -> std::io::Result<usize> {
+    use std::io::{ErrorKind, Read};
+
+    let mut read = 0;
+    while read < buffer.len() {
+        match file.read(&mut buffer[read..]) {
+            Ok(0) => break,
+            Ok(n) => read += n,
+            Err(error) if error.kind() == ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+
+    Ok(read)
 }
 
 #[cfg(test)]
@@ -304,5 +455,100 @@ mod tests {
             invalidate_for_runtime(&second, NAME, "runtime/1.26.0").unwrap();
         });
         assert!(!unchanged.contains("has been replaced"), "{unchanged}");
+    }
+
+    /// Lays out one MLProgram the way the CoreML provider leaves it under `engine`, with `package` and `compiled` as
+    /// the two copies of its weights, and returns their paths in that order.
+    #[cfg(unix)]
+    fn mlprogram(engine: &Path, package: &[u8], compiled: &[u8]) -> (PathBuf, PathBuf) {
+        let model = engine.join("13628133443189788236/0_static_mlprogram/model");
+        let (package_path, compiled_path) = (model.join(PACKAGE_WEIGHTS), model.join(COMPILED_WEIGHTS));
+        for (path, bytes) in [(&package_path, package), (&compiled_path, compiled)] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, bytes).unwrap();
+        }
+
+        (package_path, compiled_path)
+    }
+
+    #[cfg(unix)]
+    fn inode(path: &Path) -> u64 {
+        use std::os::unix::fs::MetadataExt;
+
+        std::fs::metadata(path).unwrap().ino()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn two_identical_copies_of_the_weights_become_one_file_under_both_names() {
+        let (_root, app_dir) = app();
+        let paths = resolve(&app_dir, NAME, &kyoto()).unwrap();
+        let (package, compiled) = mlprogram(&paths.engine, b"the weights", b"the weights");
+
+        let freed = share_coreml_weights(&paths.engine);
+
+        assert_eq!(freed, 11);
+        assert_eq!(inode(&package), inode(&compiled), "the two names are still two files");
+        assert_eq!(std::fs::read(&package).unwrap(), b"the weights", "the package's weights changed");
+        assert!(!package.with_file_name("weight.bin.linking").exists(), "the staging name was left behind");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copies_that_differ_are_left_alone_even_at_the_same_length() {
+        // Proven identical byte for byte, not assumed from the length: replacing a copy that differs would hand a
+        // runtime that reads the package weights it never wrote.
+        let (_root, app_dir) = app();
+        let paths = resolve(&app_dir, NAME, &kyoto()).unwrap();
+        let (package, compiled) = mlprogram(&paths.engine, b"the weights", b"the weighty");
+
+        assert_eq!(share_coreml_weights(&paths.engine), 0);
+        assert_ne!(inode(&package), inode(&compiled));
+        assert_eq!(std::fs::read(&package).unwrap(), b"the weights");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_second_build_finds_the_copies_already_shared_and_frees_nothing() {
+        // Every CoreML build runs this, cache hit or not, so the common case has to be a no-op.
+        let (_root, app_dir) = app();
+        let paths = resolve(&app_dir, NAME, &kyoto()).unwrap();
+        let (package, compiled) = mlprogram(&paths.engine, b"the weights", b"the weights");
+        share_coreml_weights(&paths.engine);
+
+        assert_eq!(share_coreml_weights(&paths.engine), 0);
+        assert_eq!(inode(&package), inode(&compiled));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_engine_directory_without_an_mlprogram_is_untouched() {
+        // A TensorRT engine directory, and a CoreML one whose compile has not finished: only the one layout counts.
+        let (_root, app_dir) = app();
+        let paths = resolve(&app_dir, NAME, &kyoto()).unwrap();
+        let engine = paths.engine.join("engine.bin");
+        std::fs::write(&engine, b"what TensorRT compiled").unwrap();
+        let (package, compiled) = mlprogram(&paths.engine, b"the weights", b"the weights");
+        std::fs::remove_file(&compiled).unwrap();
+
+        assert_eq!(share_coreml_weights(&paths.engine), 0);
+        assert_eq!(std::fs::read(&engine).unwrap(), b"what TensorRT compiled");
+        assert_eq!(std::fs::read(&package).unwrap(), b"the weights");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sharing_the_weights_says_how_much_it_freed() {
+        let (_root, app_dir) = app();
+        let paths = resolve(&app_dir, NAME, &kyoto()).unwrap();
+        mlprogram(&paths.engine, b"the weights", b"the weights");
+
+        let (log, _) = logging::records_of_blocking("info", || share_coreml_weights(&paths.engine));
+
+        let shared = log
+            .lines()
+            .find(|line| line.contains("shared CoreML's two copies"))
+            .unwrap_or_else(|| panic!("the sharing was not recorded:\n{log}"));
+        assert!(shared.contains("freed=11"), "{shared}");
     }
 }

@@ -10,6 +10,7 @@ use opai::Scale;
 use opai::export::{ExportFormat, FormatChoice};
 
 use crate::autopilot::AutopilotModels;
+use crate::settings::{self, Qualities, Settings};
 
 /// Enhance photographs with Open Photo AI.
 ///
@@ -19,10 +20,11 @@ use crate::autopilot::AutopilotModels;
 ///
 /// The output is a file when its extension names a format opai writes and it is not an existing directory; it then
 /// takes exactly one input photograph. Any other output is a directory, created if missing, that mirrors each
-/// directory input. An existing file is never overwritten unless `--overwrite` is given: the result is numbered
-/// `_1`, `_2`, … instead.
+/// directory input. Without an output, each result is written beside its source, with the suffix `_opai` unless
+/// `--prefix` or `--suffix` is given. An existing file is never overwritten unless `--overwrite` is given: the result
+/// is numbered `_1`, `_2`, … instead.
 #[derive(Debug, Parser)]
-#[command(name = "opai", display_name = "Open Photo AI - CLI", version = opai::version(), disable_version_flag = true, override_usage = "opai <INPUT>... [OPTIONS] --output <OUTPUT>\n       opai --gui <INPUT>... [-r]")]
+#[command(name = "opai", display_name = "Open Photo AI - CLI", version = opai::version(), disable_version_flag = true, disable_help_flag = true, max_term_width = 100, override_usage = "opai <INPUT>... [OPTIONS] [--output <OUTPUT>]\n       opai --gui <INPUT>... [-r]")]
 pub struct Args {
     // Positional and first, so a bare enhancement flag is never handed an input as its model name. A user who writes
     // `opai --up photo.jpg` is told `photo.jpg` is not a model, which is clear and costs nothing.
@@ -30,64 +32,92 @@ pub struct Args {
     #[arg(value_name = "INPUT", required = true, num_args = 1..)]
     pub inputs: Vec<PathBuf>,
 
-    /// The enhancements, and their parameters.
-    #[command(flatten)]
-    pub selection: Selection,
-
     /// Analyse each photograph and apply the enhancements it calls for, each with its family's default model. Cannot
     /// be combined with the enhancement flags or their parameters.
     ///
     /// A family's model is chosen with its environment variable, set to one of that family's models or to `off`,
     /// which leaves the family out: OPAI_AP_DENOISE, OPAI_AP_FACE, OPAI_AP_COLORIZATION, OPAI_AP_LIGHT,
     /// OPAI_AP_COLOR, OPAI_AP_SHARPEN and OPAI_AP_UPSCALE.
-    #[arg(long = "autopilot", visible_alias = "ap", conflicts_with = "Selection")]
+    #[arg(
+        help_heading = "Enhancements",
+        long = "autopilot",
+        visible_alias = "ap",
+        conflicts_with = "Selection"
+    )]
     pub autopilot: bool,
 
-    /// `hd` runs every model at its higher-fidelity build, `sd` at its lighter, faster one.
-    #[arg(long, short = 'q', value_enum, default_value_t = Quality::Hd, ignore_case = true)]
-    pub quality: Quality,
+    /// The enhancements, and their parameters.
+    #[command(flatten, next_help_heading = "Enhancements")]
+    pub selection: Selection,
 
-    /// The hardware to run on: `auto` (the best this machine has; the default), or one processor by name. One this
-    /// machine does not offer is refused once initialization has finished.
-    #[arg(long, short = 'p', value_enum, default_value_t = Processor::Auto, ignore_case = true)]
-    pub processor: Processor,
+    /// `hd` runs every model at its higher-fidelity build, `sd` at its lighter, faster one. Without it, each family
+    /// runs at the quality of its model in the GUI's saved settings, or `hd`.
+    #[arg(help_heading = "Processing", long, short = 'q', value_enum, ignore_case = true)]
+    pub quality: Option<Quality>,
+
+    /// The hardware to run on: `auto` (the best this machine has), or one processor by name. Without it, the GUI's
+    /// saved processor, or `auto`. One this machine does not offer is refused once initialization has finished.
+    #[arg(help_heading = "Processing", long, short = 'p', value_enum, ignore_case = true)]
+    pub processor: Option<Processor>,
+
+    /// Ignore the GUI's saved settings for this run: every setting not given here is the built-in default.
+    #[arg(help_heading = "Processing", long)]
+    pub no_gui_settings: bool,
 
     /// Take a directory input's whole tree, not only the images directly inside it.
-    #[arg(long, short = 'r')]
+    #[arg(help_heading = "Processing", long, short = 'r')]
     pub recursive: bool,
 
-    /// The format every result is written in under an output directory: `preserve` (each source's own, TIFF for camera
-    /// RAW; the default), avif, bmp, gif, heic, jpeg, png, tiff or webp.
-    #[arg(long, value_name = "FORMAT", value_parser = parse_format)]
+    /// The file or directory to write to. Without it, each result is written beside its source, named with the suffix
+    /// `_opai` unless `--prefix` or `--suffix` is given.
+    #[arg(help_heading = "Output", long, short = 'o', value_name = "OUTPUT")]
+    pub output: Option<PathBuf>,
+
+    /// The format every result is written in, unless the output is a file: `preserve` (each source's own, TIFF for
+    /// camera RAW; the default), avif, bmp, gif, heic, jpeg, png, tiff or webp.
+    #[arg(help_heading = "Output", long, value_name = "FORMAT", value_parser = parse_format)]
     pub format: Option<FormatChoice>,
 
-    /// Written before each source's name under an output directory.
-    #[arg(long, value_name = "TEXT", allow_hyphen_values = true)]
+    /// Written before each source's name, unless the output is a file.
+    #[arg(help_heading = "Output", long, value_name = "TEXT", allow_hyphen_values = true)]
     pub prefix: Option<String>,
 
-    /// Written after each source's name, before the extension, under an output directory.
-    #[arg(long, value_name = "TEXT", allow_hyphen_values = true)]
+    /// Written after each source's name, before the extension, unless the output is a file. Without an output it
+    /// defaults to `_opai`, unless `--prefix` is given; `--suffix ""` turns it off.
+    #[arg(help_heading = "Output", long, value_name = "TEXT", allow_hyphen_values = true)]
     pub suffix: Option<String>,
 
     /// Replace a file already at a destination, once the new one is complete, instead of numbering the result.
-    #[arg(long)]
+    #[arg(help_heading = "Output", long)]
     pub overwrite: bool,
 
-    /// The file or directory to write to.
-    #[arg(long, short = 'o', value_name = "OUTPUT", required_unless_present = "gui")]
-    pub output: Option<PathBuf>,
+    /// Name, on each written image's line, the enhancements it received: each model, its strength, bias or upscale
+    /// factor, and whether the run cache served them. Without it the line names only the path.
+    #[arg(help_heading = "Output", long)]
+    pub verbose: bool,
 
     /// Open the photographs in Open Photo AI instead of processing them; other options are ignored.
-    #[arg(long)]
+    #[arg(help_heading = "Options", long)]
     pub gui: bool,
 
     /// Send no usage or diagnostic data to the project for this run. Setting OPAI_ANALYTICS to 0, off, false or no
     /// does the same.
-    #[arg(long)]
+    #[arg(help_heading = "Options", long)]
     pub no_analytics: bool,
 
+    // Declared here, not left to clap, so it sits in the same section as the other generic options.
+    #[arg(
+        help_heading = "Options",
+        long,
+        short = 'h',
+        action = ArgAction::Help,
+        help = "Print help (see more with '--help')",
+        long_help = "Print help"
+    )]
+    help: (),
+
     /// Print version.
-    #[arg(long, short = 'v', action = ArgAction::Version)]
+    #[arg(help_heading = "Options", long, short = 'v', action = ArgAction::Version)]
     version: (),
 
     /// The model autopilot runs each family with, read from the `OPAI_AP_*` variables by [`parse`] under
@@ -95,10 +125,27 @@ pub struct Args {
     #[arg(skip)]
     pub autopilot_models: Option<AutopilotModels>,
 
+    /// The processor and the qualities the run uses, and where each came from: resolved by [`parse_from`] from the
+    /// flags alone, and by [`parse`] over the GUI's saved settings too.
+    #[arg(skip)]
+    pub settings: Settings,
+
     /// Under `--gui`, the options given on the command line that it ignores, as the user would recognise them
     /// (`--upscale`, `-o`), in the order they were given; empty otherwise. Filled in by [`parse_from`].
     #[arg(skip)]
     pub ignored: Vec<String>,
+}
+
+impl Args {
+    /// The processor the run asks for: `-p`, or the GUI's, or `auto`.
+    pub const fn processor(&self) -> Processor {
+        self.settings.processor.value
+    }
+
+    /// The quality each family runs at.
+    pub const fn qualities(&self) -> &Qualities {
+        &self.settings.qualities
+    }
 }
 
 /// The upscale models, as the command line names them.
@@ -183,6 +230,15 @@ impl Quality {
             Self::Sd => 1,
         }
     }
+
+    /// The quality a precision's `position` among a model's published ones names, or `None` past the second.
+    pub const fn at(position: usize) -> Option<Self> {
+        match position {
+            0 => Some(Self::Hd),
+            1 => Some(Self::Sd),
+            _ => None,
+        }
+    }
 }
 
 // `#[cfg]` is resolved before `ValueEnum` expands, so a value no machine running this OS could ever offer is missing
@@ -243,11 +299,31 @@ impl From<Processor> for opai::ExecutionProvider {
 /// Read through `wild`, which expands the wildcards `cmd` and PowerShell leave as written, and on every other platform
 /// hands the arguments over unchanged. Under `--autopilot`, the `OPAI_AP_*` variables are read here too, so a bad one
 /// is refused as a bad flag is, before anything is installed; without it they are not looked at.
+///
+/// The GUI's saved settings are read here too, unless `--no-gui-settings` is given, and rank below every flag and
+/// variable; a file that cannot be read is recorded in the log and ignored. See [`crate::settings`].
 pub fn parse() -> Args {
     let mut args = parse_from(wild::args_os()).unwrap_or_else(|error| error.exit());
 
+    // `--gui` hands the inputs to the application, whose own settings apply there.
+    if args.gui {
+        return args;
+    }
+
+    let (gui, gui_file) = if args.no_gui_settings {
+        (None, settings::GuiFile::NotRead)
+    } else {
+        settings::load(
+            || opai::settings::path(opai::APP_NAME).map_err(|error| error.to_string()),
+            opai::settings::read_at,
+        )
+    };
+
+    args.settings = Settings { gui_file, ..Settings::resolve(args.quality, args.processor, gui.as_ref()) };
+
     if args.autopilot {
-        let models = AutopilotModels::read(|name| std::env::var_os(name)).unwrap_or_else(|error| error.exit());
+        let models =
+            AutopilotModels::read(|name| std::env::var_os(name), gui.as_ref()).unwrap_or_else(|error| error.exit());
         args.autopilot_models = Some(models);
     }
 
@@ -392,6 +468,7 @@ where
     let mut command = Args::command();
     let matches = command.try_get_matches_from_mut(arguments)?;
     let mut args = Args::from_arg_matches(&matches).map_err(|error| error.format(&mut command))?;
+    args.settings = Settings::resolve(args.quality, args.processor, None);
 
     // `--gui` hands the inputs to the application and does nothing else, so it needs no enhancement; what else was
     // given is collected to be warned about.
@@ -417,7 +494,7 @@ where
 /// The arguments, by clap id, that `--gui` is never warned about: the inputs and `--recursive`, which choose what it
 /// opens, and `--gui` itself. Every other argument is warned about when given, so an option added later is covered
 /// without being listed; one `--gui` should accept silently is added here.
-const NOT_IGNORED_BY_GUI: &[&str] = &["inputs", "recursive", "gui"];
+const NOT_IGNORED_BY_GUI: &[&str] = &["inputs", "recursive", "gui", "verbose"];
 
 /// The options `--gui` does not use, each named by its long flag, in the order given: every one written on the command
 /// line except those in [`NOT_IGNORED_BY_GUI`]. A default or an environment variable is not counted, only what the
@@ -520,7 +597,7 @@ mod tests {
         assert_eq!(args.inputs, [PathBuf::from("photo.jpg")]);
         assert_eq!(args.selection.upscale, Some(UpscaleModel::Tokyo));
         assert_eq!(args.selection.face_recovery, Some(FaceModel::Athens));
-        assert_eq!(args.quality, Quality::Hd);
+        assert_eq!(args.qualities().uniform(), Some(Quality::Hd));
         assert_eq!(args.selection.scale, None);
         assert_eq!(args.output, Some(PathBuf::from("out.png")));
     }
@@ -537,7 +614,7 @@ mod tests {
 
         assert_eq!(args.selection.upscale, Some(UpscaleModel::Tokyo));
         assert_eq!(args.selection.face_recovery, Some(FaceModel::Athens));
-        assert_eq!(args.quality, Quality::Sd);
+        assert_eq!(args.qualities().uniform(), Some(Quality::Sd));
     }
 
     #[test]
@@ -546,7 +623,7 @@ mod tests {
 
         assert_eq!(args.selection.upscale, Some(UpscaleModel::Osaka));
         assert_eq!(args.selection.face_recovery, Some(FaceModel::Santorini));
-        assert_eq!(args.quality, Quality::Sd);
+        assert_eq!(args.qualities().uniform(), Some(Quality::Sd));
 
         for (name, model) in [
             ("kyoto", UpscaleModel::Kyoto),
@@ -869,10 +946,20 @@ mod tests {
     }
 
     #[test]
-    fn the_output_is_required() {
-        let error = parse("opai photo.jpg --up").expect_err("no -o");
+    fn the_output_is_optional() {
+        let args = parse("opai photo.jpg --ap").expect("no -o parses");
 
-        assert_eq!(error.kind(), ErrorKind::MissingRequiredArgument);
+        assert_eq!(args.output, None);
+        assert_eq!(args.suffix, None);
+    }
+
+    #[test]
+    fn an_empty_suffix_is_read_as_given() {
+        // Not through `parse`, which splits on whitespace and so cannot pass an empty argument.
+        let args = parse_from(["opai", "photo.jpg", "--dn", "--suffix", "", "--overwrite"]).expect("parses");
+
+        assert_eq!(args.suffix.as_deref(), Some(""));
+        assert_eq!(args.output, None);
     }
 
     #[test]
@@ -899,8 +986,8 @@ mod tests {
     #[test]
     fn gui_collects_every_other_option_given_in_order_by_its_long_name() {
         let args = parse(
-            "opai a.jpg --gui --up osaka -q sd -p cpu --format png --prefix x --suffix y --overwrite -o out \
-             --no-analytics --dn-str 50 --dn",
+            "opai a.jpg --gui --up osaka -q sd -p cpu --no-gui-settings --format png --prefix x --suffix y \
+             --overwrite -o out --verbose --no-analytics --dn-str 50 --dn",
         )
         .expect("parses");
 
@@ -910,6 +997,7 @@ mod tests {
                 "--upscale",
                 "--quality",
                 "--processor",
+                "--no-gui-settings",
                 "--format",
                 "--prefix",
                 "--suffix",
@@ -931,7 +1019,7 @@ mod tests {
 
     #[test]
     fn help_lists_gui_and_its_usage() {
-        let help = Args::command().render_help().to_string();
+        let help = Args::command().term_width(10_000).max_term_width(10_000).render_help().to_string();
 
         assert!(help.contains("opai --gui <INPUT>... [-r]"), "{help}");
         assert!(help.contains("--gui"), "{help}");
@@ -1032,20 +1120,20 @@ mod tests {
     fn no_processor_is_auto() {
         let args = parse("opai photo.jpg --up -o out.png").expect("parses");
 
-        assert_eq!(args.processor, Processor::Auto);
+        assert_eq!(args.processor(), Processor::Auto);
     }
 
     #[test]
     fn a_processor_is_taken_whatever_its_case() {
         let args = parse("opai photo.jpg --up -p CPU -o out.png").expect("parses");
-        assert_eq!(args.processor, Processor::Cpu);
+        assert_eq!(args.processor(), Processor::Cpu);
 
         let args = parse("opai photo.jpg --up --processor WebGPU -o out.png").expect("parses");
-        assert_eq!(args.processor, Processor::WebGpu);
+        assert_eq!(args.processor(), Processor::WebGpu);
 
         for name in PROCESSORS {
             let args = parse(&format!("opai photo.jpg --up -p {} -o out.png", name.to_uppercase())).expect(name);
-            assert_eq!(args.processor.name(), name);
+            assert_eq!(args.processor().name(), name);
         }
     }
 
@@ -1054,17 +1142,17 @@ mod tests {
     fn coreml_is_a_processor_on_macos() {
         let args = parse("opai photo.jpg --up -p coreml -o out.png").expect("parses");
 
-        assert_eq!(args.processor, Processor::CoreMl);
+        assert_eq!(args.processor(), Processor::CoreMl);
     }
 
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn cuda_and_tensorrt_are_processors_off_macos() {
         let args = parse("opai photo.jpg --up -p cuda -o out.png").expect("parses");
-        assert_eq!(args.processor, Processor::Cuda);
+        assert_eq!(args.processor(), Processor::Cuda);
 
         let args = parse("opai photo.jpg --up -p TensorRT -o out.png").expect("parses");
-        assert_eq!(args.processor, Processor::TensorRt);
+        assert_eq!(args.processor(), Processor::TensorRt);
     }
 
     #[test]
@@ -1080,8 +1168,48 @@ mod tests {
     }
 
     #[test]
+    fn help_groups_the_options_under_headings_in_order() {
+        let help = Args::command().term_width(10_000).max_term_width(10_000).render_help().to_string();
+        // By line, not by text: the usage line and the descriptions name flags too.
+        let lines: Vec<_> = help.lines().map(str::trim_start).collect();
+        let position = |text: &str| {
+            let line = lines.iter().position(|line| line.starts_with(text) || line.contains(&format!(", {text}")));
+            line.unwrap_or_else(|| panic!("{text} is not in the help: {help}"))
+        };
+        let order = [
+            "Enhancements:",
+            "--autopilot",
+            "--denoise",
+            "--dn-str",
+            "--upscale",
+            "--scale",
+            "Processing:",
+            "--quality",
+            "--processor",
+            "--no-gui-settings",
+            "--recursive",
+            "Output:",
+            "--output",
+            "--format",
+            "--prefix",
+            "--suffix",
+            "--overwrite",
+            "--verbose",
+            "Options:",
+            "--gui",
+            "--no-analytics",
+            "--help",
+            "--version",
+        ];
+
+        let positions: Vec<_> = order.iter().map(|text| position(text)).collect();
+        assert!(positions.is_sorted(), "{help}");
+    }
+
+    #[test]
     fn help_lists_exactly_this_builds_processors() {
-        let help = Args::command().render_help().to_string();
+        // Wide enough that nothing wraps, so a line holds a whole description whatever the terminal this runs in.
+        let help = Args::command().term_width(10_000).max_term_width(10_000).render_help().to_string();
         let line = help.lines().find(|line| line.contains("--processor")).expect("--processor is in the help");
 
         assert!(line.trim_start().starts_with("-p, --processor <PROCESSOR>"), "{line}");
@@ -1157,6 +1285,15 @@ mod tests {
                 panic!("`{command}` does not parse: {error}");
             }
         }
+    }
+
+    #[test]
+    fn verbose_is_off_unless_asked_for_and_works_with_autopilot() {
+        assert!(!parse("opai photo.jpg --up").expect("parses").verbose);
+        assert!(parse("opai photo.jpg --up --verbose").expect("parses").verbose);
+
+        let args = parse("opai photo.jpg --ap --verbose").expect("parses");
+        assert!(args.autopilot && args.verbose);
     }
 
     #[test]

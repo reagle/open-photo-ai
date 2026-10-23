@@ -35,6 +35,10 @@
             "export": {
                 "title": "Exportação",
                 "description": "Qualidade para os formatos com perdas. Valores menores geram arquivos menores; as escalas não são comparáveis entre formatos."
+            },
+            "keyboard": {
+                "title": "Teclado",
+                "description": "As teclas para aumentar o zoom, ajustar e mostrar o original. As alterações se aplicam ao clicar em Salvar."
             }
         },
         "app": {
@@ -109,7 +113,62 @@
             },
             "autopilotLabel": "Piloto automático: {{name}}"
         },
-        "reset": "Restaurar padrões"
+        "reset": "Restaurar padrões",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Aumentar zoom",
+                "zoomOut": "Reduzir zoom",
+                "fit": "Ajustar à janela",
+                "actualPixels": "Pixels reais (100%)",
+                "toggleZoom": "Alternar entre ajustado e pixels reais",
+                "panLeft": "Mover para a esquerda",
+                "panRight": "Mover para a direita",
+                "panUp": "Mover para cima",
+                "panDown": "Mover para baixo",
+                "showOriginal": "Mostrar original enquanto pressionado",
+                "cyclePreview": "Alternar visualização de comparação",
+                "toggleDrawer": "Mostrar ou ocultar imagens",
+                "previousImage": "Imagem anterior",
+                "nextImage": "Próxima imagem",
+                "revealImage": "Mostrar imagem no gerenciador de arquivos",
+                "toggleAutopilot": "Ativar ou desativar o piloto automático",
+                "addEnhancement": "Adicionar melhoria",
+                "removeEnhancement": "Remover a melhoria selecionada",
+                "openOptions1": "Opções da melhoria 1",
+                "openOptions2": "Opções da melhoria 2",
+                "openOptions3": "Opções da melhoria 3",
+                "openOptions4": "Opções da melhoria 4",
+                "openOptions5": "Opções da melhoria 5",
+                "openOptions6": "Opções da melhoria 6",
+                "openOptions7": "Opções da melhoria 7",
+                "cropRotate": "Recortar/Girar",
+                "showShortcuts": "Mostrar atalhos de teclado"
+            },
+            "add": "Adicionar atalho",
+            "addLabel": "Adicionar atalho para {{action}}",
+            "recording": "Pressione as teclas…",
+            "prompt": "Pressione as teclas para {{action}}, ou Escape para cancelar.",
+            "none": "Sem atalho",
+            "remove": "Remover {{binding}}, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} é reservado para navegar na janela.",
+                "system": "{{binding}} é usado pelo sistema.",
+                "application": "{{binding}} é usado pelo aplicativo."
+            },
+            "conflict": "{{binding}} já é usado por {{action}}.",
+            "useHere": "Usar aqui em vez disso",
+            "space": "Espaço",
+            "appActions": {
+                "open": "Abrir imagens",
+                "export": "Exportar imagens",
+                "settings": "Abrir Configurações",
+                "closeImage": "Fechar imagem",
+                "closeAll": "Fechar todas as imagens",
+                "quit": "Sair"
+            },
+            "application": "Aplicativo",
+            "applicationHint": "Estas teclas são fixas e não podem ser alteradas."
+        }
     },
     "navbar": {
         "about": "Sobre",
@@ -225,6 +284,22 @@
             "ended_other": "{{written}} de {{count}} gravados",
             "endedFailed_one": "{{written}} de {{count}} gravados, {{failed}} com falha",
             "endedFailed_other": "{{written}} de {{count}} gravados, {{failed}} com falha"
+        },
+        "loss": {
+            "notice": "{{count}} de {{total}} imagens perderão qualidade neste formato. Passe o ponteiro sobre o aviso de uma linha para ver o quê.",
+            "warning": "Perda de qualidade neste formato",
+            "hdrGainMap": "Mapa de ganho HDR descartado: por enquanto {{format}} é gravado apenas em SDR",
+            "hdrGainMapNotCarried": "Mapa de ganho HDR descartado: não foi possível mantê-lo",
+            "hdrTransfer": "HDR ({{transfer}}) descartado: por enquanto {{format}} é gravado apenas em SDR",
+            "depth": "{{from}} → {{to}} em {{format}}",
+            "bits": "{{bits}} bits",
+            "bitsFloat": "{{bits}} bits de ponto flutuante",
+            "profileFormat": "Perfil {{profile}} não incorporado em {{format}}",
+            "profileColourModel": "Perfil {{profile}} não incorporado em {{format}}: ele é para {{colourSpace}}, não para as cores do arquivo",
+            "profileDiscarded": "Perfil {{profile}} descartado: ele é para {{colourSpace}}, não para os pixels da imagem",
+            "profileNotWritten": "Perfil {{profile}} não incorporado em {{format}}: o codificador não conseguiu gravá-lo",
+            "profileCoded": "Descrição de cor {{profile}} não gravada em {{format}}",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {
@@ -388,6 +463,34 @@
             "showIn": "Mostrar no gerenciador de arquivos",
             "showIn_darwin": "Mostrar no Finder",
             "showIn_windows": "Mostrar no Explorador de Arquivos"
+        },
+        "bar": {
+            "about": "Sobre {{name}}",
+            "services": "Serviços",
+            "hide": "Ocultar {{name}}",
+            "hideOthers": "Ocultar Outros",
+            "showAll": "Mostrar Tudo",
+            "quit": "Encerrar {{name}}",
+            "file": "Arquivo",
+            "open": "Abrir…",
+            "export": "Exportar…",
+            "closeImage": "Fechar imagem",
+            "closeAll": "Fechar todas as imagens",
+            "settings": "Configurações…",
+            "edit": "Editar",
+            "undo": "Desfazer",
+            "redo": "Refazer",
+            "cut": "Recortar",
+            "copy": "Copiar",
+            "paste": "Colar",
+            "selectAll": "Selecionar Tudo",
+            "view": "Visualizar",
+            "fullscreen": "Entrar em Tela Cheia",
+            "window": "Janela",
+            "minimize": "Minimizar",
+            "zoom": "Zoom",
+            "bringAllToFront": "Trazer Tudo para a Frente",
+            "help": "Ajuda"
         }
     },
     "errors": {
@@ -401,6 +504,25 @@
             "title": "Algo deu errado",
             "message": "O Open Photo AI encontrou um erro inesperado e não pode continuar. Recarregar normalmente resolve; suas configurações são mantidas, mas qualquer trabalho não salvo nesta sessão será perdido.",
             "reload": "Recarregar"
+        }
+    },
+    "shortcuts": {
+        "title": "Atalhos de teclado",
+        "description": "As teclas atribuídas agora a cada ação.",
+        "hint": "Altere-as em Configurações > Teclado.",
+        "tooltip": "{{name}} ({{key}})",
+        "tooltipCycle": "{{name}} ({{key}} alterna)",
+        "settingsHint": "Pressione {{key}} em qualquer lugar para ver estes atalhos.",
+        "sections": {
+            "view": "Visualização",
+            "images": "Imagens",
+            "enhancements": "Melhorias"
+        },
+        "rows": {
+            "zoom": "Aumentar zoom / Reduzir zoom",
+            "pan": "Mover",
+            "images": "Imagem anterior / Próxima imagem",
+            "options": "Opções da melhoria 1–7"
         }
     }
 }

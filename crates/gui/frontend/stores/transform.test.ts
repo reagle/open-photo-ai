@@ -1,8 +1,17 @@
 import { act } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
-import { ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
-import { HOLIDAY, resetFileStore, SUNSET } from "@/test/support";
-import { useTransformStore } from "./transform";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ZOOM_BUTTON_STEP, ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
+import { HOLIDAY, openFiles, resetFileStore, SUNSET } from "@/test/support";
+import {
+    actualPixels,
+    FITTED,
+    fitCurrent,
+    panCurrent,
+    registerPanner,
+    stepZoom,
+    toggleZoom,
+    useTransformStore,
+} from "./transform";
 
 const identity = (record: { identity?: string }) => record.identity ?? "";
 
@@ -50,5 +59,181 @@ describe("the transform store", () => {
 
         set(HOLIDAY, { scale: 3, x: 0, y: 0 });
         expect(transforms().get(identity(HOLIDAY))).not.toHaveProperty("anchor");
+    });
+});
+
+describe("stepZoom and fitCurrent", () => {
+    const current = () => transforms().get(identity(HOLIDAY));
+
+    it("steps the current photograph by the drawer buttons' step, keeping its position and no anchor", () => {
+        act(() => openFiles(HOLIDAY, SUNSET));
+        set(HOLIDAY, { scale: 2, x: -40, y: -30, anchor: { x: 0.1, y: 0.9 } });
+
+        act(() => stepZoom(1));
+        expect(current()).toEqual({ scale: 2 + ZOOM_BUTTON_STEP, x: -40, y: -30 });
+
+        act(() => stepZoom(-1));
+        expect(current()).toEqual({ scale: 2, x: -40, y: -30 });
+
+        // Only the current photograph moves.
+        expect(transforms().has(identity(SUNSET))).toBe(false);
+    });
+
+    it("starts a never-magnified photograph from fitted", () => {
+        act(() => openFiles(HOLIDAY));
+
+        act(() => stepZoom(1));
+
+        expect(current()).toEqual({ scale: ZOOM_MIN + ZOOM_BUTTON_STEP, x: 0, y: 0 });
+    });
+
+    it("holds at either end of the range", () => {
+        act(() => openFiles(HOLIDAY));
+
+        act(() => stepZoom(-1));
+        expect(current()?.scale).toBe(ZOOM_MIN);
+
+        set(HOLIDAY, { scale: ZOOM_MAX, x: 0, y: 0 });
+        act(() => stepZoom(1));
+        expect(current()?.scale).toBe(ZOOM_MAX);
+    });
+
+    it("fits a magnified, panned photograph whole and centred", () => {
+        act(() => openFiles(HOLIDAY));
+        set(HOLIDAY, { scale: 5, x: -300, y: -120 });
+
+        act(() => fitCurrent());
+
+        expect(current()).toEqual(FITTED);
+    });
+
+    it("does nothing with no photograph open", () => {
+        const before = transforms();
+
+        act(() => stepZoom(1));
+        act(() => fitCurrent());
+
+        expect(transforms()).toBe(before);
+        expect(transforms().size).toBe(0);
+    });
+
+    it("does nothing for a current file whose bytes could not be read", () => {
+        const { identity: _unread, ...unreadable } = HOLIDAY;
+        act(() => openFiles(unreadable));
+
+        act(() => stepZoom(1));
+        act(() => fitCurrent());
+
+        expect(transforms().size).toBe(0);
+    });
+});
+
+describe("actualPixels and toggleZoom", () => {
+    const scale = () => transforms().get(identity(HOLIDAY))?.scale;
+    /** The pane's report: HOLIDAY drawn `ratio` pane pixels per photograph pixel when fitted. */
+    const fitted = (ratio: number, record: { identity?: string } = HOLIDAY) =>
+        act(() => store.setFit({ identity: identity(record), ratio }));
+
+    beforeEach(() => {
+        vi.stubGlobal("devicePixelRatio", 1);
+        openFiles(HOLIDAY, SUNSET);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it("shows one photograph pixel per display pixel", () => {
+        fitted(0.25);
+        set(HOLIDAY, { scale: 1, x: -10, y: -20 });
+
+        act(() => actualPixels());
+
+        // Position passed through and no anchor: the pane holds its middle still, as for a step.
+        expect(transforms().get(identity(HOLIDAY))).toEqual({ scale: 4, x: -10, y: -20 });
+    });
+
+    it("counts device pixels, so a Retina display needs half the magnification", () => {
+        vi.stubGlobal("devicePixelRatio", 2);
+        fitted(0.25);
+
+        act(() => actualPixels());
+
+        expect(scale()).toBe(2);
+    });
+
+    it("holds to the zoom range at both ends", () => {
+        fitted(0.05);
+        act(() => actualPixels());
+        expect(scale()).toBe(ZOOM_MAX);
+
+        // A photograph smaller than the pane is enlarged to fit, and the preview has nothing below 1x.
+        fitted(2);
+        act(() => actualPixels());
+        expect(scale()).toBe(ZOOM_MIN);
+    });
+
+    it("does nothing before the pane has measured the current photograph, or with nothing open", () => {
+        act(() => actualPixels());
+        fitted(0.25, SUNSET);
+        act(() => actualPixels());
+        expect(scale()).toBeUndefined();
+
+        resetFileStore();
+        fitted(0.25);
+        act(() => actualPixels());
+        act(() => toggleZoom());
+        expect(scale()).toBeUndefined();
+    });
+
+    it("toggles from fitted to actual pixels, and from any other magnification back to fitted", () => {
+        fitted(0.25);
+
+        act(() => toggleZoom());
+        expect(scale()).toBe(4);
+
+        act(() => toggleZoom());
+        expect(transforms().get(identity(HOLIDAY))).toEqual(FITTED);
+
+        set(HOLIDAY, { scale: 2.5, x: -100, y: -50 });
+        act(() => toggleZoom());
+        expect(transforms().get(identity(HOLIDAY))).toEqual(FITTED);
+    });
+
+    it("keeps one fit report, and does not replace it with an equal one", () => {
+        fitted(0.25);
+        const first = useTransformStore.getState().fit;
+        fitted(0.25);
+
+        expect(useTransformStore.getState().fit).toBe(first);
+    });
+});
+
+describe("panCurrent", () => {
+    it("answers that nothing moved while no canvas has registered", () => {
+        expect(panCurrent("left")).toBe(false);
+    });
+
+    it("asks the registered canvas, and stops once it unregisters", () => {
+        const pan = vi.fn(() => true);
+        const unregister = registerPanner(pan);
+
+        expect(panCurrent("down")).toBe(true);
+        expect(pan).toHaveBeenCalledExactlyOnceWith("down");
+
+        unregister();
+        expect(panCurrent("down")).toBe(false);
+    });
+
+    it("leaves a later registration in place when an earlier one unregisters", () => {
+        const first = registerPanner(() => true);
+        const second = vi.fn(() => true);
+        const unregisterSecond = registerPanner(second);
+
+        first();
+        panCurrent("up");
+
+        expect(second).toHaveBeenCalledOnce();
+        unregisterSecond();
     });
 });

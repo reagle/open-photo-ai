@@ -35,6 +35,10 @@
             "export": {
                 "title": "Ekspor",
                 "description": "Kualitas untuk format lossy. Nilai lebih rendah menghasilkan file lebih kecil; skalanya tidak sebanding antarformat."
+            },
+            "keyboard": {
+                "title": "Papan ketik",
+                "description": "Tombol untuk memperbesar, menyesuaikan, dan menampilkan yang asli. Perubahan berlaku saat Anda mengeklik Simpan."
             }
         },
         "app": {
@@ -109,7 +113,62 @@
             },
             "autopilotLabel": "Autopilot: {{name}}"
         },
-        "reset": "Kembalikan ke bawaan"
+        "reset": "Kembalikan ke bawaan",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Perbesar",
+                "zoomOut": "Perkecil",
+                "fit": "Sesuaikan dengan jendela",
+                "actualPixels": "Piksel sebenarnya (100%)",
+                "toggleZoom": "Beralih antara pas dan piksel sebenarnya",
+                "panLeft": "Geser ke kiri",
+                "panRight": "Geser ke kanan",
+                "panUp": "Geser ke atas",
+                "panDown": "Geser ke bawah",
+                "showOriginal": "Tampilkan asli selama ditahan",
+                "cyclePreview": "Ganti tampilan perbandingan",
+                "toggleDrawer": "Tampilkan atau sembunyikan gambar",
+                "previousImage": "Gambar sebelumnya",
+                "nextImage": "Gambar berikutnya",
+                "revealImage": "Tampilkan gambar di Pengelola File",
+                "toggleAutopilot": "Nyalakan atau matikan Autopilot",
+                "addEnhancement": "Tambah peningkatan",
+                "removeEnhancement": "Hapus peningkatan yang dipilih",
+                "openOptions1": "Opsi peningkatan 1",
+                "openOptions2": "Opsi peningkatan 2",
+                "openOptions3": "Opsi peningkatan 3",
+                "openOptions4": "Opsi peningkatan 4",
+                "openOptions5": "Opsi peningkatan 5",
+                "openOptions6": "Opsi peningkatan 6",
+                "openOptions7": "Opsi peningkatan 7",
+                "cropRotate": "Pangkas/Putar",
+                "showShortcuts": "Tampilkan pintasan papan ketik"
+            },
+            "add": "Tambah pintasan",
+            "addLabel": "Tambah pintasan untuk {{action}}",
+            "recording": "Tekan tombol…",
+            "prompt": "Tekan tombol untuk {{action}}, atau Escape untuk membatalkan.",
+            "none": "Tanpa pintasan",
+            "remove": "Hapus {{binding}}, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} dicadangkan untuk berpindah di dalam jendela.",
+                "system": "{{binding}} digunakan oleh sistem.",
+                "application": "{{binding}} digunakan oleh aplikasi."
+            },
+            "conflict": "{{binding}} sudah digunakan oleh {{action}}.",
+            "useHere": "Gunakan di sini saja",
+            "space": "Spasi",
+            "appActions": {
+                "open": "Buka gambar",
+                "export": "Ekspor gambar",
+                "settings": "Buka Pengaturan",
+                "closeImage": "Tutup gambar",
+                "closeAll": "Tutup semua gambar",
+                "quit": "Keluar"
+            },
+            "application": "Aplikasi",
+            "applicationHint": "Tombol ini tetap dan tidak dapat diubah."
+        }
     },
     "navbar": {
         "about": "Tentang",
@@ -219,6 +278,22 @@
             "running_other": "{{written}} dari {{count}} ditulis · {{remaining}} tersisa",
             "ended_other": "{{written}} dari {{count}} ditulis",
             "endedFailed_other": "{{written}} dari {{count}} ditulis, {{failed}} gagal"
+        },
+        "loss": {
+            "notice": "{{count}} dari {{total}} gambar akan kehilangan kualitas dalam format ini. Arahkan penunjuk ke peringatan di sebuah baris untuk melihat apa yang hilang.",
+            "warning": "Kualitas hilang dalam format ini",
+            "hdrGainMap": "Gain map HDR dihapus: keluaran {{format}} untuk saat ini hanya SDR",
+            "hdrGainMapNotCarried": "Gain map HDR dihapus: tidak dapat dipertahankan",
+            "hdrTransfer": "HDR ({{transfer}}) dihapus: keluaran {{format}} untuk saat ini hanya SDR",
+            "depth": "{{from}} → {{to}} di {{format}}",
+            "bits": "{{bits}}-bit",
+            "bitsFloat": "{{bits}}-bit float",
+            "profileFormat": "Profil {{profile}} tidak disematkan di {{format}}",
+            "profileColourModel": "Profil {{profile}} tidak disematkan di {{format}}: profil ini untuk {{colourSpace}}, bukan untuk warna berkas",
+            "profileDiscarded": "Profil {{profile}} dibuang: profil ini untuk {{colourSpace}}, bukan untuk piksel gambar",
+            "profileNotWritten": "Profil {{profile}} tidak disematkan di {{format}}: encoder tidak dapat menulisnya",
+            "profileCoded": "Deskripsi warna {{profile}} tidak ditulis di {{format}}",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {
@@ -378,6 +453,34 @@
             "showIn": "Tampilkan di Pengelola File",
             "showIn_darwin": "Tampilkan di Finder",
             "showIn_windows": "Tampilkan di Explorer"
+        },
+        "bar": {
+            "about": "Tentang {{name}}",
+            "services": "Layanan",
+            "hide": "Sembunyikan {{name}}",
+            "hideOthers": "Sembunyikan Lainnya",
+            "showAll": "Tampilkan Semua",
+            "quit": "Keluar dari {{name}}",
+            "file": "File",
+            "open": "Buka…",
+            "export": "Ekspor…",
+            "closeImage": "Tutup gambar",
+            "closeAll": "Tutup semua gambar",
+            "settings": "Pengaturan…",
+            "edit": "Edit",
+            "undo": "Urungkan",
+            "redo": "Ulangi",
+            "cut": "Potong",
+            "copy": "Salin",
+            "paste": "Tempel",
+            "selectAll": "Pilih Semua",
+            "view": "Tampilan",
+            "fullscreen": "Masuk ke Layar Penuh",
+            "window": "Jendela",
+            "minimize": "Minimalkan",
+            "zoom": "Perbesar/Perkecil",
+            "bringAllToFront": "Bawa Semua ke Depan",
+            "help": "Bantuan"
         }
     },
     "errors": {
@@ -391,6 +494,25 @@
             "title": "Terjadi kesalahan",
             "message": "Open Photo AI mengalami kesalahan tak terduga dan tidak dapat melanjutkan. Memuat ulang biasanya memperbaikinya; pengaturan Anda tetap tersimpan, tetapi pekerjaan yang belum disimpan pada sesi saat ini akan hilang.",
             "reload": "Muat ulang"
+        }
+    },
+    "shortcuts": {
+        "title": "Pintasan papan ketik",
+        "description": "Tombol yang saat ini terikat ke setiap tindakan.",
+        "hint": "Ubah di Pengaturan > Papan ketik.",
+        "tooltip": "{{name}} ({{key}})",
+        "tooltipCycle": "{{name}} ({{key}} berganti)",
+        "settingsHint": "Tekan {{key}} di mana saja untuk melihat pintasan ini.",
+        "sections": {
+            "view": "Tampilan",
+            "images": "Gambar",
+            "enhancements": "Peningkatan"
+        },
+        "rows": {
+            "zoom": "Perbesar / Perkecil",
+            "pan": "Geser",
+            "images": "Gambar sebelumnya / Gambar berikutnya",
+            "options": "Opsi peningkatan 1–7"
         }
     }
 }

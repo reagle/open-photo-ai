@@ -8,6 +8,10 @@ import { CATALOGUE, HOLIDAY, openFiles, render, resetFileStore } from "@/test/su
 import { EnhancementList } from "./EnhancementList";
 import { ScaleControl } from "./ScaleControl";
 
+// The real `platform()` reads a global the plugin's init script installs, which jsdom has none of - and
+// the shortcut hints ask it, to write their keys as this platform does.
+vi.mock("@/ipc/os", () => ({ isMacOs: vi.fn(() => false), isWindows: vi.fn(() => false) }));
+
 vi.mock("@tauri-apps/api/core", () => ({
     invoke: vi.fn(() => Promise.resolve(CATALOGUE)),
     convertFileSrc: vi.fn((identity: string) => `opai://localhost/${identity}`),

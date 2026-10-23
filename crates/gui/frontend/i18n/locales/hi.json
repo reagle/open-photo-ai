@@ -35,6 +35,10 @@
             "export": {
                 "title": "निर्यात",
                 "description": "हानिपूर्ण फ़ॉर्मैट के लिए गुणवत्ता। कम मान छोटी फ़ाइलें बनाते हैं; अलग-अलग फ़ॉर्मैट के पैमाने तुलनीय नहीं हैं।"
+            },
+            "keyboard": {
+                "title": "कीबोर्ड",
+                "description": "ज़ूम करने, फ़िट करने और मूल दिखाने वाली कुंजियाँ। बदलाव सहेजें क्लिक करने पर लागू होते हैं।"
             }
         },
         "app": {
@@ -109,7 +113,62 @@
             },
             "autopilotLabel": "ऑटोपायलट: {{name}}"
         },
-        "reset": "डिफ़ॉल्ट पर रीसेट करें"
+        "reset": "डिफ़ॉल्ट पर रीसेट करें",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "ज़ूम इन",
+                "zoomOut": "ज़ूम आउट",
+                "fit": "विंडो में फ़िट करें",
+                "actualPixels": "वास्तविक पिक्सेल (100%)",
+                "toggleZoom": "फ़िट और वास्तविक पिक्सेल के बीच बदलें",
+                "panLeft": "बाएँ खिसकाएँ",
+                "panRight": "दाएँ खिसकाएँ",
+                "panUp": "ऊपर खिसकाएँ",
+                "panDown": "नीचे खिसकाएँ",
+                "showOriginal": "दबाए रखने तक मूल दिखाएँ",
+                "cyclePreview": "तुलना दृश्य बदलें",
+                "toggleDrawer": "छवियाँ दिखाएँ या छिपाएँ",
+                "previousImage": "पिछली छवि",
+                "nextImage": "अगली छवि",
+                "revealImage": "छवि को फ़ाइल मैनेजर में दिखाएँ",
+                "toggleAutopilot": "ऑटोपायलट चालू या बंद करें",
+                "addEnhancement": "सुधार जोड़ें",
+                "removeEnhancement": "चुना हुआ सुधार हटाएँ",
+                "openOptions1": "सुधार 1 के विकल्प",
+                "openOptions2": "सुधार 2 के विकल्प",
+                "openOptions3": "सुधार 3 के विकल्प",
+                "openOptions4": "सुधार 4 के विकल्प",
+                "openOptions5": "सुधार 5 के विकल्प",
+                "openOptions6": "सुधार 6 के विकल्प",
+                "openOptions7": "सुधार 7 के विकल्प",
+                "cropRotate": "क्रॉप/घुमाएँ",
+                "showShortcuts": "कीबोर्ड शॉर्टकट दिखाएँ"
+            },
+            "add": "शॉर्टकट जोड़ें",
+            "addLabel": "{{action}} के लिए शॉर्टकट जोड़ें",
+            "recording": "कुंजियाँ दबाएँ…",
+            "prompt": "{{action}} के लिए कुंजियाँ दबाएँ, या रद्द करने के लिए Escape।",
+            "none": "कोई शॉर्टकट नहीं",
+            "remove": "{{binding}} हटाएँ, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} विंडो में घूमने के लिए आरक्षित है।",
+                "system": "{{binding}} सिस्टम द्वारा उपयोग किया जाता है।",
+                "application": "{{binding}} ऐप्लिकेशन द्वारा उपयोग किया जाता है।"
+            },
+            "conflict": "{{binding}} पहले से {{action}} द्वारा उपयोग में है।",
+            "useHere": "इसके बजाय यहाँ उपयोग करें",
+            "space": "स्पेस",
+            "appActions": {
+                "open": "छवियाँ खोलें",
+                "export": "छवियाँ निर्यात करें",
+                "settings": "सेटिंग्स खोलें",
+                "closeImage": "छवि बंद करें",
+                "closeAll": "सभी छवियाँ बंद करें",
+                "quit": "बंद करें"
+            },
+            "application": "ऐप्लिकेशन",
+            "applicationHint": "ये कुंजियाँ निश्चित हैं और बदली नहीं जा सकतीं।"
+        }
     },
     "navbar": {
         "about": "परिचय",
@@ -225,6 +284,22 @@
             "ended_other": "{{count}} में से {{written}} लिखी गईं",
             "endedFailed_one": "{{count}} में से {{written}} लिखी गईं, {{failed}} विफल",
             "endedFailed_other": "{{count}} में से {{written}} लिखी गईं, {{failed}} विफल"
+        },
+        "loss": {
+            "notice": "{{total}} में से {{count}} छवियाँ इस फ़ॉर्मेट में गुणवत्ता खो देंगी। क्या खोया जाएगा, यह देखने के लिए किसी पंक्ति की चेतावनी पर पॉइंटर रखें।",
+            "warning": "इस फ़ॉर्मेट में गुणवत्ता की हानि",
+            "hdrGainMap": "HDR गेन मैप हटाया गया: {{format}} आउटपुट अभी केवल SDR है",
+            "hdrGainMapNotCarried": "HDR गेन मैप हटाया गया: इसे बनाए नहीं रखा जा सका",
+            "hdrTransfer": "HDR ({{transfer}}) हटाया गया: {{format}} आउटपुट अभी केवल SDR है",
+            "depth": "{{format}} में {{from}} → {{to}}",
+            "bits": "{{bits}}-बिट",
+            "bitsFloat": "{{bits}}-बिट फ़्लोट",
+            "profileFormat": "{{profile}} प्रोफ़ाइल {{format}} में एम्बेड नहीं की गई",
+            "profileColourModel": "{{profile}} प्रोफ़ाइल {{format}} में एम्बेड नहीं की गई: यह {{colourSpace}} के लिए है, फ़ाइल के रंगों के लिए नहीं",
+            "profileDiscarded": "{{profile}} प्रोफ़ाइल हटाई गई: यह {{colourSpace}} के लिए है, छवि के पिक्सेल के लिए नहीं",
+            "profileNotWritten": "{{profile}} प्रोफ़ाइल {{format}} में एम्बेड नहीं की गई: एन्कोडर इसे लिख नहीं सका",
+            "profileCoded": "{{profile}} रंग विवरण {{format}} में नहीं लिखा गया",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {
@@ -388,6 +463,34 @@
             "showIn": "फ़ाइल मैनेजर में दिखाएँ",
             "showIn_darwin": "Finder में दिखाएँ",
             "showIn_windows": "Explorer में दिखाएँ"
+        },
+        "bar": {
+            "about": "{{name}} के बारे में",
+            "services": "सेवाएँ",
+            "hide": "{{name}} छिपाएँ",
+            "hideOthers": "अन्य छिपाएँ",
+            "showAll": "सभी दिखाएँ",
+            "quit": "{{name}} बंद करें",
+            "file": "फ़ाइल",
+            "open": "खोलें…",
+            "export": "निर्यात करें…",
+            "closeImage": "छवि बंद करें",
+            "closeAll": "सभी छवियाँ बंद करें",
+            "settings": "सेटिंग्स…",
+            "edit": "संपादित करें",
+            "undo": "पूर्ववत करें",
+            "redo": "फिर से करें",
+            "cut": "काटें",
+            "copy": "कॉपी करें",
+            "paste": "पेस्ट करें",
+            "selectAll": "सभी चुनें",
+            "view": "देखें",
+            "fullscreen": "फ़ुल स्क्रीन में जाएँ",
+            "window": "विंडो",
+            "minimize": "छोटा करें",
+            "zoom": "ज़ूम करें",
+            "bringAllToFront": "सभी को सामने लाएँ",
+            "help": "सहायता"
         }
     },
     "errors": {
@@ -401,6 +504,25 @@
             "title": "कुछ गलत हो गया",
             "message": "Open Photo AI में एक अप्रत्याशित त्रुटि आई और यह आगे नहीं चल सकता। आमतौर पर पेज दोबारा लोड करने से यह ठीक हो जाता है; आपकी सेटिंग्स सुरक्षित रहती हैं, लेकिन मौजूदा सत्र का बिना सहेजा काम खो जाएगा।",
             "reload": "फिर से लोड करें"
+        }
+    },
+    "shortcuts": {
+        "title": "कीबोर्ड शॉर्टकट",
+        "description": "हर क्रिया के लिए अभी निर्धारित कुंजियाँ।",
+        "hint": "इन्हें सेटिंग्स > कीबोर्ड में बदलें।",
+        "tooltip": "{{name}} ({{key}})",
+        "tooltipCycle": "{{name}} ({{key}} बदलता है)",
+        "settingsHint": "ये शॉर्टकट देखने के लिए कहीं भी {{key}} दबाएँ।",
+        "sections": {
+            "view": "दृश्य",
+            "images": "छवियाँ",
+            "enhancements": "सुधार"
+        },
+        "rows": {
+            "zoom": "ज़ूम इन / ज़ूम आउट",
+            "pan": "खिसकाएँ",
+            "images": "पिछली छवि / अगली छवि",
+            "options": "सुधार 1–7 के विकल्प"
         }
     }
 }

@@ -6,12 +6,20 @@ import { useResizeObserver } from "@/hooks/useResizeObserver";
 import { useSettledFile } from "@/hooks/useSettledFile";
 import { framedDimensions } from "@/ipc/crop";
 import { renditionFor } from "@/ipc/images";
-import { DRAWER_HEIGHT, ZOOM_WHEEL_STEP } from "@/lib/constants";
+import { DRAWER_HEIGHT, PAN_KEY_STEP, ZOOM_MIN, ZOOM_WHEEL_STEP } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useDrawerStore } from "@/stores/drawer";
+import { usePeekStore } from "@/stores/peek";
 import { usePreviewStore } from "@/stores/preview";
-import { clampScale, type ImageTransform, useImageTransform, useTransformStore } from "@/stores/transform";
+import {
+    clampScale,
+    type ImageTransform,
+    type PanDirection,
+    registerPanner,
+    useImageTransform,
+    useTransformStore,
+} from "@/stores/transform";
 import { constrain, constrainPosition, fitInside, imageFraction, type Size } from "./geometry";
 import { ProgressBar } from "./ProgressBar";
 
@@ -149,6 +157,7 @@ const Pane = ({
     const transform = useImageTransform(identity);
     const setTransform = useTransformStore((state) => state.setTransform);
     const setViewport = useTransformStore((state) => state.setViewport);
+    const setFit = useTransformStore((state) => state.setFit);
 
     const [measured, setMeasured] = useState<Size>(UNMEASURED);
     const [natural, setNatural] = useState<Size>(UNMEASURED);
@@ -236,6 +245,10 @@ const Pane = ({
 
         if (!publishViewport) return;
 
+        // What one photograph pixel measures at 1x in this pane, which is what actual pixels is
+        // computed from - in the photograph's own pixels, so a smaller rendition does not change it.
+        if (identity && fitted.width > 0 && imageWidth > 0) setFit({ identity, ratio: fitted.width / imageWidth });
+
         // The portion of the photograph inside this pane, as fractions of the whole of it. The
         // container is this pane's own box, so it is already half-width in side by side.
         const size = scaled(fitted, next.scale);
@@ -255,7 +268,7 @@ const Pane = ({
             width: Math.max(0, right - left) / size.width,
             height: Math.max(0, bottom - top) / size.height,
         });
-    }, [transform, fitted, measured, identity, publishViewport, setViewport]);
+    }, [transform, fitted, measured, identity, imageWidth, publishViewport, setViewport, setFit]);
 
     /*
      * The wheel, and the trackpad pinch the webview delivers as one.
@@ -392,6 +405,52 @@ const Pane = ({
         [setTransform],
     );
 
+    /*
+     * The pan keys (`Mod` with an arrow by default), answered by the pane that publishes the viewport -
+     * one pane, since in side by side both draw the same part of the photograph. Moved from where the
+     * photograph is *drawn*, as a drag is, and held inside the pane the same way; a step is a share of
+     * the pane, `PAN_KEY_STEP`. Nothing moves while the photograph is drawn whole.
+     */
+    const panned = useRef<ImageTransform>(undefined);
+
+    useEffect(() => {
+        if (!publishViewport) return;
+
+        return registerPanner((direction: PanDirection) => {
+            const { drawn: shown, fitted: fittedNow, measured: measuredNow, identity: id } = live.current;
+            if (id === undefined || shown.scale <= ZOOM_MIN) return false;
+
+            // A press that lands before the last one has been drawn moves on from where that one put the
+            // photograph rather than undoing it - the store still holds exactly what it wrote. Anything
+            // else in the store since (a zoom, a drag) is resolved by now, so what is drawn is the answer.
+            const stored = useTransformStore.getState().transforms.get(id);
+            const last = panned.current;
+            const current =
+                stored && last && stored.scale === last.scale && stored.x === last.x && stored.y === last.y
+                    ? last
+                    : shown;
+
+            const step = { x: measuredNow.width * PAN_KEY_STEP, y: measuredNow.height * PAN_KEY_STEP };
+            // The photograph moves against the arrow, so the view moves with it.
+            const delta = {
+                left: { x: step.x, y: 0 },
+                right: { x: -step.x, y: 0 },
+                up: { x: 0, y: step.y },
+                down: { x: 0, y: -step.y },
+            }[direction];
+
+            const position = constrainPosition(
+                { x: current.x + delta.x, y: current.y + delta.y },
+                scaled(fittedNow, current.scale),
+                measuredNow,
+            );
+            panned.current = { scale: current.scale, ...position };
+            setTransform(id, panned.current);
+
+            return true;
+        });
+    }, [publishViewport, setTransform]);
+
     return (
         <div
             ref={container}
@@ -480,6 +539,8 @@ const DIVIDER_STEP = 2;
  *   *Original*.
  * - The right-hand chip turns to *Enhanced* exactly when the pane stops drawing the source. A previous
  *   result is held while a new run works, so the chip doesn't flicker back.
+ * - While the show-original key is held (`stores/peek.ts`), the enhanced pane draws the source and its
+ *   chip reads *Original*, as if there were no result.
  * - The URL carries no size bound; the canvas asks for the photograph at its own size.
  * - Both panes share one transform, so zooming or panning either moves both.
  * - It draws the settled image rather than the current one (`hooks/useSettledFile.ts`).
@@ -507,7 +568,16 @@ export const PreviewImage = () => {
      * canvas keys off: a run started for a photograph that is not drawn yet would land a result on
      * the one still on screen.
      */
-    const { enhanced, report, running, fraction } = useEnhancementRun(file, crop);
+    const { enhanced: result, report, running, fraction } = useEnhancementRun(file, crop);
+
+    /*
+     * While the show-original key is held the result is set aside for this render, and everything
+     * below - the URL, the dimensions, the chip - reads as it does before a result has landed: the
+     * enhanced pane draws the source and calls it the original, in all three comparisons. Nothing
+     * else is touched, so the transform, the divider and a running enhancement carry on underneath.
+     */
+    const showingOriginal = usePeekStore((state) => state.showingOriginal);
+    const enhanced = showingOriginal ? undefined : result;
 
     /*
      * One URL for both panes and for all three modes, so switching modes re-points an `<img>` rather

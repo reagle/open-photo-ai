@@ -35,6 +35,10 @@
             "export": {
                 "title": "导出",
                 "description": "有损格式的质量。数值越低文件越小；不同格式之间的刻度不可比较。"
+            },
+            "keyboard": {
+                "title": "键盘",
+                "description": "用于缩放、适合窗口和显示原图的按键。点击保存后生效。"
             }
         },
         "app": {
@@ -109,7 +113,62 @@
             },
             "autopilotLabel": "自动优化：{{name}}"
         },
-        "reset": "恢复默认设置"
+        "reset": "恢复默认设置",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "放大",
+                "zoomOut": "缩小",
+                "fit": "适合窗口",
+                "actualPixels": "实际像素 (100%)",
+                "toggleZoom": "在适合窗口与实际像素间切换",
+                "panLeft": "向左平移",
+                "panRight": "向右平移",
+                "panUp": "向上平移",
+                "panDown": "向下平移",
+                "showOriginal": "按住时显示原图",
+                "cyclePreview": "切换对比视图",
+                "toggleDrawer": "显示或隐藏图片",
+                "previousImage": "上一张图像",
+                "nextImage": "下一张图像",
+                "revealImage": "在文件管理器中显示图像",
+                "toggleAutopilot": "开启或关闭自动优化",
+                "addEnhancement": "添加增强",
+                "removeEnhancement": "移除所选增强",
+                "openOptions1": "增强 1 的选项",
+                "openOptions2": "增强 2 的选项",
+                "openOptions3": "增强 3 的选项",
+                "openOptions4": "增强 4 的选项",
+                "openOptions5": "增强 5 的选项",
+                "openOptions6": "增强 6 的选项",
+                "openOptions7": "增强 7 的选项",
+                "cropRotate": "裁剪/旋转",
+                "showShortcuts": "显示键盘快捷键"
+            },
+            "add": "添加快捷键",
+            "addLabel": "为{{action}}添加快捷键",
+            "recording": "请按键…",
+            "prompt": "请按下{{action}}的按键，或按 Escape 取消。",
+            "none": "无快捷键",
+            "remove": "移除 {{binding}}，{{action}}",
+            "refused": {
+                "navigation": "{{binding}} 保留用于在窗口中移动。",
+                "system": "{{binding}} 被系统占用。",
+                "application": "{{binding}} 被应用程序占用。"
+            },
+            "conflict": "{{binding}} 已被{{action}}使用。",
+            "useHere": "改为在此使用",
+            "space": "空格",
+            "appActions": {
+                "open": "打开图片",
+                "export": "导出图像",
+                "settings": "打开设置",
+                "closeImage": "关闭图片",
+                "closeAll": "关闭所有图片",
+                "quit": "退出"
+            },
+            "application": "应用程序",
+            "applicationHint": "这些按键是固定的，无法更改。"
+        }
     },
     "navbar": {
         "about": "关于",
@@ -219,6 +278,22 @@
             "running_other": "已写入 {{written}}/{{count}} · 剩余 {{remaining}} 个",
             "ended_other": "已写入 {{written}}/{{count}}",
             "endedFailed_other": "已写入 {{written}}/{{count}}，{{failed}} 个失败"
+        },
+        "loss": {
+            "notice": "{{total}} 张图像中有 {{count}} 张在此格式下会损失质量。将指针悬停在某行的警告上可查看详情。",
+            "warning": "此格式会损失质量",
+            "hdrGainMap": "已丢弃 HDR 增益图：{{format}} 目前仅输出 SDR",
+            "hdrGainMapNotCarried": "已丢弃 HDR 增益图：无法保留",
+            "hdrTransfer": "已丢弃 HDR（{{transfer}}）：{{format}} 目前仅输出 SDR",
+            "depth": "{{format}} 中 {{from}} → {{to}}",
+            "bits": "{{bits}} 位",
+            "bitsFloat": "{{bits}} 位浮点",
+            "profileFormat": "{{profile}} 配置文件未嵌入 {{format}}",
+            "profileColourModel": "{{profile}} 配置文件未嵌入 {{format}}：它适用于 {{colourSpace}}，而非文件的颜色",
+            "profileDiscarded": "已丢弃 {{profile}} 配置文件：它适用于 {{colourSpace}}，而非图像的像素",
+            "profileNotWritten": "{{profile}} 配置文件未嵌入 {{format}}：编码器无法写入它",
+            "profileCoded": "{{profile}} 颜色描述未写入 {{format}}",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {
@@ -378,6 +453,34 @@
             "showIn": "在文件管理器中显示",
             "showIn_darwin": "在访达中显示",
             "showIn_windows": "在资源管理器中显示"
+        },
+        "bar": {
+            "about": "关于 {{name}}",
+            "services": "服务",
+            "hide": "隐藏 {{name}}",
+            "hideOthers": "隐藏其他",
+            "showAll": "全部显示",
+            "quit": "退出 {{name}}",
+            "file": "文件",
+            "open": "打开…",
+            "export": "导出…",
+            "closeImage": "关闭图片",
+            "closeAll": "关闭所有图片",
+            "settings": "设置…",
+            "edit": "编辑",
+            "undo": "撤销",
+            "redo": "重做",
+            "cut": "剪切",
+            "copy": "拷贝",
+            "paste": "粘贴",
+            "selectAll": "全选",
+            "view": "显示",
+            "fullscreen": "进入全屏幕",
+            "window": "窗口",
+            "minimize": "最小化",
+            "zoom": "缩放",
+            "bringAllToFront": "前置全部窗口",
+            "help": "帮助"
         }
     },
     "errors": {
@@ -391,6 +494,25 @@
             "title": "出了点问题",
             "message": "Open Photo AI 遇到了意外错误，无法继续运行。重新加载通常可以解决问题；你的设置会被保留，但当前会话中未保存的工作会丢失。",
             "reload": "重新加载"
+        }
+    },
+    "shortcuts": {
+        "title": "键盘快捷键",
+        "description": "当前分配给每个操作的按键。",
+        "hint": "可在 设置 > 键盘 中更改。",
+        "tooltip": "{{name}} ({{key}})",
+        "tooltipCycle": "{{name}} ({{key}} 切换)",
+        "settingsHint": "在任意位置按 {{key}} 查看这些快捷键。",
+        "sections": {
+            "view": "视图",
+            "images": "图像",
+            "enhancements": "增强"
+        },
+        "rows": {
+            "zoom": "放大 / 缩小",
+            "pan": "平移",
+            "images": "上一张图像 / 下一张图像",
+            "options": "增强 1–7 的选项"
         }
     }
 }

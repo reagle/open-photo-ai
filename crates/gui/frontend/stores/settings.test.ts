@@ -306,4 +306,43 @@ describe("the TensorRT question", () => {
         expect(useSettingsStore.getState()).toMatchObject({ processor: "auto", tensorrtAsked: true });
         expect(persisted()).toMatchObject({ processor: "auto", tensorrtAsked: true });
     });
+
+    describe("the keyboard bindings", () => {
+        it("default to no choices, which is every action at its defaults", () => {
+            expect(settingsDefaults().shortcuts).toEqual({});
+            expect(useSettingsStore.getState().shortcuts).toEqual({});
+        });
+
+        it("survive a restart once saved", async () => {
+            useSettingsStore.getState().apply({ shortcuts: { fit: ["Mod+9"], showOriginal: [] } });
+            const saved = localStorage.getItem("settings-storage") ?? "";
+
+            useSettingsStore.setState(useSettingsStore.getInitialState(), true);
+            localStorage.setItem("settings-storage", saved);
+            await useSettingsStore.persist.rehydrate();
+
+            expect(useSettingsStore.getState().shortcuts).toEqual({ fit: ["Mod+9"], showOriginal: [] });
+        });
+
+        it("read as none chosen from a file written before they existed", async () => {
+            await stored({ ...SOUND });
+
+            expect(useSettingsStore.getState().shortcuts).toEqual({});
+        });
+
+        it("drop an unknown action, a malformed binding and Escape, and keep the rest", async () => {
+            await stored({
+                ...SOUND,
+                shortcuts: { rotate: ["r"], fit: ["Escape", "Mod+9", "Mod+"], zoomIn: "Mod+=", zoomOut: ["Shift+z"] },
+            });
+
+            expect(useSettingsStore.getState().shortcuts).toEqual({ fit: ["Mod+9"], zoomOut: ["Shift+z"] });
+        });
+
+        it("read as none chosen when the stored value is not a record", async () => {
+            await stored({ ...SOUND, shortcuts: ["Mod+="] });
+
+            expect(useSettingsStore.getState().shortcuts).toEqual({});
+        });
+    });
 });

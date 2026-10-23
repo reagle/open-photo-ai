@@ -35,6 +35,10 @@
             "export": {
                 "title": "Exporteren",
                 "description": "Kwaliteit voor de lossy formaten. Lagere waarden geven kleinere bestanden; de schalen zijn niet vergelijkbaar tussen formaten."
+            },
+            "keyboard": {
+                "title": "Toetsenbord",
+                "description": "De toetsen om te zoomen, passend te maken en het origineel te tonen. Wijzigingen gelden na Opslaan."
             }
         },
         "app": {
@@ -109,7 +113,62 @@
             },
             "autopilotLabel": "Autopilot: {{name}}"
         },
-        "reset": "Standaardwaarden herstellen"
+        "reset": "Standaardwaarden herstellen",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Inzoomen",
+                "zoomOut": "Uitzoomen",
+                "fit": "Passend in venster",
+                "actualPixels": "Werkelijke pixels (100%)",
+                "toggleZoom": "Wisselen tussen passend en werkelijke pixels",
+                "panLeft": "Naar links schuiven",
+                "panRight": "Naar rechts schuiven",
+                "panUp": "Omhoog schuiven",
+                "panDown": "Omlaag schuiven",
+                "showOriginal": "Origineel tonen zolang ingedrukt",
+                "cyclePreview": "Vergelijkingsweergave wisselen",
+                "toggleDrawer": "Afbeeldingen tonen of verbergen",
+                "previousImage": "Vorige afbeelding",
+                "nextImage": "Volgende afbeelding",
+                "revealImage": "Afbeelding tonen in bestandsbeheer",
+                "toggleAutopilot": "Autopilot aan- of uitzetten",
+                "addEnhancement": "Verbetering toevoegen",
+                "removeEnhancement": "Geselecteerde verbetering verwijderen",
+                "openOptions1": "Opties van verbetering 1",
+                "openOptions2": "Opties van verbetering 2",
+                "openOptions3": "Opties van verbetering 3",
+                "openOptions4": "Opties van verbetering 4",
+                "openOptions5": "Opties van verbetering 5",
+                "openOptions6": "Opties van verbetering 6",
+                "openOptions7": "Opties van verbetering 7",
+                "cropRotate": "Bijsnijden/Draaien",
+                "showShortcuts": "Sneltoetsen tonen"
+            },
+            "add": "Sneltoets toevoegen",
+            "addLabel": "Sneltoets toevoegen voor {{action}}",
+            "recording": "Druk op toetsen…",
+            "prompt": "Druk op de toetsen voor {{action}}, of Escape om te annuleren.",
+            "none": "Geen sneltoets",
+            "remove": "{{binding}} verwijderen, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} is gereserveerd voor navigatie in het venster.",
+                "system": "{{binding}} wordt door het systeem gebruikt.",
+                "application": "{{binding}} wordt door de applicatie gebruikt."
+            },
+            "conflict": "{{binding}} wordt al gebruikt door {{action}}.",
+            "useHere": "Hier gebruiken",
+            "space": "Spatie",
+            "appActions": {
+                "open": "Afbeeldingen openen",
+                "export": "Afbeeldingen exporteren",
+                "settings": "Instellingen openen",
+                "closeImage": "Afbeelding sluiten",
+                "closeAll": "Alle afbeeldingen sluiten",
+                "quit": "Afsluiten"
+            },
+            "application": "Applicatie",
+            "applicationHint": "Deze toetsen liggen vast en kunnen niet worden gewijzigd."
+        }
     },
     "navbar": {
         "about": "Over",
@@ -225,6 +284,22 @@
             "ended_other": "{{written}} van {{count}} geschreven",
             "endedFailed_one": "{{written}} van {{count}} geschreven, {{failed}} mislukt",
             "endedFailed_other": "{{written}} van {{count}} geschreven, {{failed}} mislukt"
+        },
+        "loss": {
+            "notice": "{{count}} van {{total}} afbeeldingen verliezen kwaliteit in dit formaat. Wijs de waarschuwing in een rij aan om te zien wat.",
+            "warning": "Kwaliteitsverlies in dit formaat",
+            "hdrGainMap": "HDR-gainmap verwijderd: {{format}} wordt voorlopig alleen als SDR geschreven",
+            "hdrGainMapNotCarried": "HDR-gainmap verwijderd: deze kon niet worden meegenomen",
+            "hdrTransfer": "HDR ({{transfer}}) verwijderd: {{format}} wordt voorlopig alleen als SDR geschreven",
+            "depth": "{{from}} → {{to}} in {{format}}",
+            "bits": "{{bits}}-bits",
+            "bitsFloat": "{{bits}}-bits drijvende komma",
+            "profileFormat": "{{profile}}-profiel niet ingesloten in {{format}}",
+            "profileColourModel": "{{profile}}-profiel niet ingesloten in {{format}}: het is voor {{colourSpace}}, niet voor de kleuren van het bestand",
+            "profileDiscarded": "{{profile}}-profiel weggelaten: het is voor {{colourSpace}}, niet voor de pixels van de afbeelding",
+            "profileNotWritten": "{{profile}}-profiel niet ingesloten in {{format}}: de encoder kon het niet schrijven",
+            "profileCoded": "{{profile}}-kleurbeschrijving niet geschreven in {{format}}",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {
@@ -388,6 +463,34 @@
             "showIn": "Tonen in bestandsbeheer",
             "showIn_darwin": "Tonen in Finder",
             "showIn_windows": "Tonen in Verkenner"
+        },
+        "bar": {
+            "about": "Over {{name}}",
+            "services": "Voorzieningen",
+            "hide": "Verberg {{name}}",
+            "hideOthers": "Verberg andere",
+            "showAll": "Toon alles",
+            "quit": "Stop {{name}}",
+            "file": "Archief",
+            "open": "Open…",
+            "export": "Exporteren…",
+            "closeImage": "Afbeelding sluiten",
+            "closeAll": "Alle afbeeldingen sluiten",
+            "settings": "Instellingen…",
+            "edit": "Wijzig",
+            "undo": "Herstel",
+            "redo": "Opnieuw",
+            "cut": "Knip",
+            "copy": "Kopieer",
+            "paste": "Plak",
+            "selectAll": "Selecteer alles",
+            "view": "Weergave",
+            "fullscreen": "Ga naar schermvullende weergave",
+            "window": "Venster",
+            "minimize": "Minimaliseer",
+            "zoom": "Zoom",
+            "bringAllToFront": "Alles naar voorgrond",
+            "help": "Help"
         }
     },
     "errors": {
@@ -401,6 +504,25 @@
             "title": "Er is iets misgegaan",
             "message": "Open Photo AI liep tegen een onverwachte fout aan en kan niet verder. Opnieuw laden lost het meestal op; je instellingen blijven behouden, maar niet-opgeslagen werk in de huidige sessie gaat verloren.",
             "reload": "Opnieuw laden"
+        }
+    },
+    "shortcuts": {
+        "title": "Sneltoetsen",
+        "description": "De toetsen die nu aan elke actie zijn gekoppeld.",
+        "hint": "Wijzig ze in Instellingen > Toetsenbord.",
+        "tooltip": "{{name}} ({{key}})",
+        "tooltipCycle": "{{name}} ({{key}} wisselt)",
+        "settingsHint": "Druk overal op {{key}} om deze sneltoetsen te zien.",
+        "sections": {
+            "view": "Weergave",
+            "images": "Afbeeldingen",
+            "enhancements": "Verbeteringen"
+        },
+        "rows": {
+            "zoom": "Inzoomen / Uitzoomen",
+            "pan": "Schuiven",
+            "images": "Vorige afbeelding / Volgende afbeelding",
+            "options": "Opties van verbetering 1–7"
         }
     }
 }

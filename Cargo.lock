@@ -972,6 +972,7 @@ dependencies = [
  "anstyle",
  "clap_lex",
  "strsim",
+ "terminal_size",
 ]
 
 [[package]]
@@ -2422,6 +2423,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-os",
  "tauri-plugin-single-instance",
+ "tauri-plugin-window-state",
  "tempfile",
  "thiserror 2.0.20",
  "tracing",
@@ -4107,7 +4109,7 @@ checksum = "6aa2c4e539b869820a2b82e1aef6ff40aa85e65decdd5185e83fb4b1249cd00f"
 [[package]]
 name = "o11y-macros"
 version = "26.10.6"
-source = "git+https://github.com/vegidio/rust-sak?tag=26.10.6#10c6ee4a0e5c502c971ce7288d0dc253c050db28"
+source = "git+https://github.com/reagle/rust-sak?tag=26.10.6-meta.6#14613d79c74e91cba2e9468398e08ddd1da70af7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4345,6 +4347,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 name = "opai"
 version = "26.10.0"
 dependencies = [
+ "chrono",
  "ctor",
  "file-rotate",
  "image",
@@ -4352,6 +4355,7 @@ dependencies = [
  "libloading 0.8.9",
  "objc2-foundation",
  "ort",
+ "quick-xml",
  "rand_chacha 0.10.0",
  "rand_core 0.10.1",
  "rust-sak",
@@ -4363,6 +4367,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -5583,10 +5588,11 @@ checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 [[package]]
 name = "rust-sak"
 version = "26.10.6"
-source = "git+https://github.com/vegidio/rust-sak?tag=26.10.6#10c6ee4a0e5c502c971ce7288d0dc253c050db28"
+source = "git+https://github.com/reagle/rust-sak?tag=26.10.6-meta.6#14613d79c74e91cba2e9468398e08ddd1da70af7"
 dependencies = [
  "avif-rs",
  "cap-std",
+ "crc32fast",
  "dirs 7.0.0",
  "enough",
  "futures-util",
@@ -5598,6 +5604,8 @@ dependencies = [
  "libloading 0.8.9",
  "liblzma",
  "machine-uid",
+ "md5",
+ "miniz_oxide 0.8.9",
  "moka",
  "o11y-macros",
  "objc2",
@@ -6778,6 +6786,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-window-state"
+version = "2.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73736611e14142408d15353e21e3cca2f12a3cfb523ad0ce85999b6d2ef1a704"
+dependencies = [
+ "bitflags 2.13.2",
+ "log",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "tauri-runtime"
 version = "2.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6910,6 +6933,16 @@ dependencies = [
  "rustix",
  "signal-hook",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "terminal_size"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
+dependencies = [
+ "rustix",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

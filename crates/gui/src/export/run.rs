@@ -10,7 +10,7 @@
 use opai::{Enhanced, InferenceError, OutputDepth, ProcessOptions};
 use serde::Serialize;
 
-use opai::export::{Named, WriteError, WriteOptions, Written, write};
+use opai::export::{Loss, Named, WriteError, WriteOptions, Written, write};
 
 use super::Exports;
 use super::names::ExportNaming;
@@ -31,6 +31,9 @@ pub(crate) enum Exported {
         path: String,
         /// How many bytes were written.
         bytes: u64,
+        /// What the file lost against its source — HDR, bit depth, its colour profile — as `opai` assessed the write;
+        /// empty when nothing was lost.
+        losses: Vec<Loss>,
     },
     /// The export was stopped before its file was written. Nothing is left at any name it tried.
     Stopped,
@@ -123,7 +126,7 @@ pub(crate) struct Request {
 ///   8. name and claim the destination  --> refused: unwritable, naming it
 ///   9. write                       --> refused: unwritable; the claim gives the name back
 ///  10. commit the claim             --> refused: unwritable; an overwrite's destination left as it was
-///  11. answer its path and bytes
+///  11. answer its path, its bytes and what it lost against the source
 /// ```
 ///
 /// **No slot is written.** [`Runs`](crate::enhance::Runs) is not touched, so an export can neither stop the run the
@@ -206,7 +209,7 @@ pub(crate) async fn export_with<E: Enhancer>(
 
     // The folder is not created: one the user removed since choosing it fails the export rather than reappearing.
     let options = WriteOptions { quality: request.quality, overwrite: request.overwrite, create_parent: false };
-    let Written { path: written, bytes } =
+    let Written { path: written, bytes, losses } =
         write(&picture, &destination, format.into(), options).await.map_err(|error| {
             let message = match error {
                 WriteError::Unwritable { source, .. } => source.to_string(),
@@ -217,7 +220,7 @@ pub(crate) async fn export_with<E: Enhancer>(
         })?;
     tracing::info!(path = %written.display(), bytes, "a photograph was exported");
 
-    Ok(Exported::Exported { path: written.to_string_lossy().into_owned(), bytes })
+    Ok(Exported::Exported { path: written.to_string_lossy().into_owned(), bytes, losses })
 }
 
 #[cfg(test)]
@@ -237,7 +240,7 @@ mod tests {
     /// What a fake enhancer hands back: `pixels` at `identity`, on the source's own path.
     fn enhanced(source: &Picture, pixels: image::DynamicImage, identity: &str) -> Enhanced {
         Enhanced {
-            picture: Picture::new(source.path(), pixels, identity),
+            picture: source.derive(pixels, identity),
             providers: no_providers(),
             faces: opai::ChainFaces::NotAsked,
         }
@@ -413,7 +416,7 @@ mod tests {
 
     /// `pixels` written to `path` as `format` and admitted beside the fixture's photograph, answering its identity.
     fn admit(fixture: &Fixture, path: &Path, pixels: &image::DynamicImage, format: opai::ImageFormat) -> String {
-        opai::image::save_blocking(pixels, path, format, None).expect("writable");
+        opai::image::save_blocking(pixels, &opai::image::Metadata::default(), path, format, None).expect("writable");
         tauri::async_runtime::block_on(crate::images::files::describe_and_admit(
             vec![path.to_path_buf()],
             &fixture.opened,
@@ -447,6 +450,7 @@ mod tests {
             Exported::Exported {
                 path: destination.to_string_lossy().into_owned(),
                 bytes: std::fs::metadata(&destination).expect("written").len(),
+                losses: Vec::new(),
             }
         );
         assert_eq!(decoded(&destination).0, (16, 12), "the chain's result was not what was written");
@@ -512,11 +516,11 @@ mod tests {
         }));
         let identity = admit(&fixture, &deep, &pixels, opai::ImageFormat::Png);
 
-        for (format, name, color) in [
-            (ExportFormat::Png, "deep-opai.png", image::ColorType::Rgb16),
-            (ExportFormat::Jpeg, "deep-opai.jpg", image::ColorType::Rgb8),
+        for (format, name, color, lost) in [
+            (ExportFormat::Png, "deep-opai.png", image::ColorType::Rgb16, Vec::<&str>::new()),
+            (ExportFormat::Jpeg, "deep-opai.jpg", image::ColorType::Rgb8, vec!["16-bit → 8-bit in JPEG"]),
         ] {
-            fixture
+            let answer = fixture
                 .export(
                     &Recording::default(),
                     None,
@@ -528,6 +532,9 @@ mod tests {
                 .expect("exportable");
 
             assert_eq!(decoded(fixture.out.path().join(name)).1, color, "{format:?}");
+            // And the answer says what the narrower file lost.
+            let Exported::Exported { losses, .. } = answer else { panic!("nothing stopped this export") };
+            assert_eq!(losses.iter().map(ToString::to_string).collect::<Vec<_>>(), lost, "{format:?}");
         }
     }
 
@@ -614,6 +621,7 @@ mod tests {
             Exported::Exported {
                 path: numbered.to_string_lossy().into_owned(),
                 bytes: std::fs::metadata(&numbered).expect("written").len(),
+                losses: Vec::new(),
             }
         );
         assert_eq!(
@@ -905,7 +913,7 @@ mod tests {
     #[test]
     fn every_answer_and_refusal_crosses_under_the_tag_the_window_matches_on() {
         let answers = [
-            (Exported::Exported { path: "/a.png".to_string(), bytes: 3 }, "exported"),
+            (Exported::Exported { path: "/a.png".to_string(), bytes: 3, losses: Vec::new() }, "exported"),
             (Exported::Stopped, "stopped"),
         ];
         for (answer, outcome) in answers {
@@ -937,8 +945,9 @@ mod tests {
         }
 
         assert_eq!(
-            serde_json::to_value(Exported::Exported { path: "/a.png".to_string(), bytes: 3 }).expect("serializable"),
-            serde_json::json!({ "outcome": "exported", "path": "/a.png", "bytes": 3 })
+            serde_json::to_value(Exported::Exported { path: "/a.png".to_string(), bytes: 3, losses: Vec::new() })
+                .expect("serializable"),
+            serde_json::json!({ "outcome": "exported", "path": "/a.png", "bytes": 3, "losses": [] })
         );
     }
 
@@ -1153,7 +1162,7 @@ mod tests {
                     .await
                     .expect("exportable");
 
-                    let Exported::Exported { path: written, bytes } = answer else {
+                    let Exported::Exported { path: written, bytes, .. } = answer else {
                         panic!("nothing stopped this export, and it answered stopped");
                     };
 
@@ -1198,7 +1207,7 @@ mod tests {
             assert_eq!(CommandError::ended(&error).cell(), cell, "{error:?}");
         }
 
-        let answer = Exported::Exported { path: s(), bytes: 1 };
+        let answer = Exported::Exported { path: s(), bytes: 1, losses: Vec::new() };
         assert_eq!(Answer::ended(&answer).cell(), "finished");
         assert_eq!(Answer::ended(&Exported::Stopped).cell(), "stopped");
     }

@@ -123,11 +123,11 @@ pub(crate) fn identical(left: &image::DynamicImage, right: &image::DynamicImage)
 
 /// The top-left `width` by `height` of `source`, as a photograph of its own.
 pub(crate) fn cropped(source: &crate::Picture, width: u32, height: u32) -> crate::Picture {
-    // A distinct identity per crop, which is the one thing `Picture::new` leaves to its caller: these are different
+    // A distinct identity per crop, which is the one thing `Picture::derive` leaves to its caller: these are different
     // photographs, and two sharing one identity would have the second served the first's cached result — which would
-    // make a check pass over a pipeline that never ran.
-    crate::Picture::new(
-        source.path(),
+    // make a check pass over a pipeline that never ran. Derived, so the crop keeps the source's metadata as every
+    // production crop does.
+    source.derive(
         source.pixels().crop_imm(0, 0, width, height),
         format!("{}-crop-{width}x{height}", source.identity()),
     )
@@ -261,7 +261,7 @@ impl StrengthFamily {
                 let keep =
                     std::env::temp_dir().join(format!("opai-live-{codename}-{precision:?}-{provider}-t{strength}.png"));
 
-                crate::image::save(produced.shared_pixels(), &keep, ImageFormat::Png, None)
+                crate::image::save(produced.shared_pixels(), produced.shared_metadata(), &keep, ImageFormat::Png, None)
                     .await
                     .expect("a result must encode to PNG");
                 println!("  inspect at {}", keep.display());

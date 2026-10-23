@@ -1,8 +1,10 @@
 import type { TFunction } from "i18next";
 import { describe, expect, it } from "vitest";
+import i18n from "@/i18n";
 import type { Operation } from "@/ipc/enhance";
+import type { Loss } from "@/ipc/export";
 import { EXPORT_FORMATS } from "@/test/support";
-import { describeExportError, FORMAT_CHOICES, groupByChain, qualityFor, queueQualityFor } from "./export";
+import { describeExportError, FORMAT_CHOICES, formatLoss, groupByChain, qualityFor, queueQualityFor } from "./export";
 import { directoryOf } from "./paths";
 
 /** A `t` that shows which key it was asked for and with what, so a test reads the composition rather than English. */
@@ -127,5 +129,58 @@ describe("describeExportError", () => {
             "export.queue.analysisFailed the detector failed",
         );
         expect(describeExportError(t, { cause: "analysis" })).toBe("export.queue.analysisFailed");
+    });
+});
+
+describe("formatLoss", () => {
+    // The English catalogue itself, so these read as the window does; every locale has the same keys (`parity.test`).
+    const english = i18n.getFixedT("en");
+    const words = (loss: Loss) => formatLoss(english, loss);
+    const eight = { bits: 8, float: false };
+
+    it("words an HDR loss to the format by how the source declared it", () => {
+        expect(words({ kind: "hdr", hdr: "gainMap", format: "PNG", cause: "format" })).toBe(
+            "HDR gain map dropped: PNG output is SDR only for now",
+        );
+        expect(words({ kind: "hdr", hdr: "pq", format: "PNG", cause: "format" })).toBe(
+            "HDR (PQ) dropped: PNG output is SDR only for now",
+        );
+    });
+
+    it("words a gain map a JPEG could not carry", () => {
+        expect(words({ kind: "hdr", hdr: "gainMap", format: "JPEG", cause: "notCarried" })).toBe(
+            "HDR gain map dropped: it could not be carried",
+        );
+    });
+
+    it("words a depth loss, floats included", () => {
+        expect(words({ kind: "depth", from: { bits: 16, float: false }, to: eight, format: "JPEG" })).toBe(
+            "16-bit → 8-bit in JPEG",
+        );
+        expect(
+            words({ kind: "depth", from: { bits: 32, float: true }, to: { bits: 16, float: false }, format: "PNG" }),
+        ).toBe("32-bit float → 16-bit in PNG");
+    });
+
+    it("words each profile loss, naming HEIF as the window does and an unnamed profile as ICC", () => {
+        const profile = { kind: "profile", profile: "Display P3", colourSpace: "RGB", format: "AVIF" } as const;
+
+        expect(words({ ...profile, cause: "format" })).toBe("Display P3 profile not embedded in AVIF");
+        expect(words({ ...profile, format: "HEIF", cause: "format" })).toBe("Display P3 profile not embedded in HEIC");
+        expect(words({ ...profile, profile: null, format: "GIF", cause: "format" })).toBe(
+            "ICC profile not embedded in GIF",
+        );
+        expect(words({ ...profile, colourSpace: "GRAY", format: "WebP", cause: "colourModel" })).toBe(
+            "Display P3 profile not embedded in WebP: it is for GRAY, not the file's colors",
+        );
+        expect(words({ ...profile, profile: "SWOP", colourSpace: "CMYK", cause: "discarded" })).toBe(
+            "SWOP profile dropped: it is for CMYK, not the image's pixels",
+        );
+        expect(words({ ...profile, colourSpace: "", format: "PNG", cause: "coded" })).toBe(
+            "Display P3 color description not written in PNG",
+        );
+        expect(words({ ...profile, profile: "sRGB IEC61966-2.1", format: "JPEG", cause: "notWritten" })).toBe(
+            "sRGB IEC61966-2.1 profile not embedded in JPEG: the encoder could not write it",
+        );
     });
 });

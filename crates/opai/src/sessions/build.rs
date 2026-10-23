@@ -71,7 +71,8 @@ pub(crate) struct BuildRequest {
     pub(crate) artifact: ArtifactId,
     /// What to attach, with what, and the settings the session itself is built with.
     pub(crate) plan: SessionPlan,
-    /// The two directories the providers compile into. Only the timing one is read here, and only to drop it.
+    /// The two directories the providers compile into. The timing one is read here only to drop it, and the engine one
+    /// only to share the two copies of the weights CoreML leaves in it.
     pub(crate) paths: CachePaths,
     /// The graph file on disk.
     pub(crate) model: PathBuf,
@@ -116,6 +117,13 @@ pub(crate) fn build(request: BuildRequest) -> Result<Session, SessionError> {
     // A build is where the runtime's bursts happen, so its end is where their tallies are written — inside the span
     // above, so they name the model too.
     diagnostics::flush();
+
+    // After the build rather than at install or launch, because a build is what the CoreML provider writes its cache
+    // in — and a cache hit too, so an engine compiled before this existed is shared the next time it is opened.
+    #[cfg(unix)]
+    if session.is_ok() && plan.providers.iter().any(|options| options.provider == Accelerator::CoreMl) {
+        super::caches::share_coreml_weights(&paths.engine);
+    }
 
     session
 }

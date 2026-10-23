@@ -35,6 +35,10 @@
             "export": {
                 "title": "書き出し",
                 "description": "非可逆形式の品質。値を下げるとファイルが小さくなります。形式が異なると目盛りは比較できません。"
+            },
+            "keyboard": {
+                "title": "キーボード",
+                "description": "拡大、フィット、元画像の表示に使うキー。変更は保存をクリックすると適用されます。"
             }
         },
         "app": {
@@ -109,7 +113,62 @@
             },
             "autopilotLabel": "自動補正: {{name}}"
         },
-        "reset": "既定値に戻す"
+        "reset": "既定値に戻す",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "拡大",
+                "zoomOut": "縮小",
+                "fit": "ウィンドウに合わせる",
+                "actualPixels": "実際のピクセル (100%)",
+                "toggleZoom": "フィットと実際のピクセルを切り替え",
+                "panLeft": "左へ移動",
+                "panRight": "右へ移動",
+                "panUp": "上へ移動",
+                "panDown": "下へ移動",
+                "showOriginal": "押している間は元画像を表示",
+                "cyclePreview": "比較表示を切り替え",
+                "toggleDrawer": "画像の表示/非表示",
+                "previousImage": "前の画像",
+                "nextImage": "次の画像",
+                "revealImage": "画像をファイルマネージャーで表示",
+                "toggleAutopilot": "自動補正のオン/オフ",
+                "addEnhancement": "補正を追加",
+                "removeEnhancement": "選択中の補正を削除",
+                "openOptions1": "補正 1 のオプション",
+                "openOptions2": "補正 2 のオプション",
+                "openOptions3": "補正 3 のオプション",
+                "openOptions4": "補正 4 のオプション",
+                "openOptions5": "補正 5 のオプション",
+                "openOptions6": "補正 6 のオプション",
+                "openOptions7": "補正 7 のオプション",
+                "cropRotate": "切り抜き/回転",
+                "showShortcuts": "キーボードショートカットを表示"
+            },
+            "add": "ショートカットを追加",
+            "addLabel": "{{action}}にショートカットを追加",
+            "recording": "キーを押してください…",
+            "prompt": "{{action}}のキーを押してください。Escapeでキャンセルします。",
+            "none": "ショートカットなし",
+            "remove": "{{binding}}を削除、{{action}}",
+            "refused": {
+                "navigation": "{{binding}}はウィンドウ内の移動用に予約されています。",
+                "system": "{{binding}}はシステムが使用しています。",
+                "application": "{{binding}}はアプリケーションが使用しています。"
+            },
+            "conflict": "{{binding}}はすでに{{action}}で使用されています。",
+            "useHere": "代わりにここで使う",
+            "space": "スペース",
+            "appActions": {
+                "open": "画像を開く",
+                "export": "画像を書き出す",
+                "settings": "設定を開く",
+                "closeImage": "画像を閉じる",
+                "closeAll": "すべての画像を閉じる",
+                "quit": "終了"
+            },
+            "application": "アプリケーション",
+            "applicationHint": "これらのキーは固定で、変更できません。"
+        }
     },
     "navbar": {
         "about": "このアプリについて",
@@ -219,6 +278,22 @@
             "running_other": "{{count}} 個中 {{written}} 個を書き込み済み · 残り {{remaining}} 個",
             "ended_other": "{{count}} 個中 {{written}} 個を書き込み済み",
             "endedFailed_other": "{{count}} 個中 {{written}} 個を書き込み済み、{{failed}} 個が失敗"
+        },
+        "loss": {
+            "notice": "{{total}} 枚中 {{count}} 枚の画像は、この形式で品質が失われます。内容は各行の警告にポインターを合わせると表示されます。",
+            "warning": "この形式では品質が失われます",
+            "hdrGainMap": "HDR ゲインマップを破棄: {{format}} は現在 SDR でのみ書き出されます",
+            "hdrGainMapNotCarried": "HDR ゲインマップを破棄: 引き継げませんでした",
+            "hdrTransfer": "HDR ({{transfer}}) を破棄: {{format}} は現在 SDR でのみ書き出されます",
+            "depth": "{{format}} で {{from}} → {{to}}",
+            "bits": "{{bits}} ビット",
+            "bitsFloat": "{{bits}} ビット浮動小数点",
+            "profileFormat": "{{profile}} プロファイルは {{format}} に埋め込まれません",
+            "profileColourModel": "{{profile}} プロファイルは {{format}} に埋め込まれません: {{colourSpace}} 用のプロファイルで、ファイルの色には合いません",
+            "profileDiscarded": "{{profile}} プロファイルを破棄: {{colourSpace}} 用のプロファイルで、画像のピクセルには合いません",
+            "profileNotWritten": "{{profile}} プロファイルは {{format}} に埋め込まれません: エンコーダーが書き込めませんでした",
+            "profileCoded": "{{profile}} の色情報は {{format}} に書き込まれません",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {
@@ -378,6 +453,34 @@
             "showIn": "ファイルマネージャーで表示",
             "showIn_darwin": "Finder で表示",
             "showIn_windows": "エクスプローラーで表示"
+        },
+        "bar": {
+            "about": "{{name}}について",
+            "services": "サービス",
+            "hide": "{{name}}を非表示",
+            "hideOthers": "ほかを非表示",
+            "showAll": "すべてを表示",
+            "quit": "{{name}}を終了",
+            "file": "ファイル",
+            "open": "開く…",
+            "export": "書き出す…",
+            "closeImage": "画像を閉じる",
+            "closeAll": "すべての画像を閉じる",
+            "settings": "設定…",
+            "edit": "編集",
+            "undo": "取り消す",
+            "redo": "やり直す",
+            "cut": "カット",
+            "copy": "コピー",
+            "paste": "ペースト",
+            "selectAll": "すべてを選択",
+            "view": "表示",
+            "fullscreen": "フルスクリーンにする",
+            "window": "ウインドウ",
+            "minimize": "しまう",
+            "zoom": "拡大／縮小",
+            "bringAllToFront": "すべてを手前に移動",
+            "help": "ヘルプ"
         }
     },
     "errors": {
@@ -391,6 +494,25 @@
             "title": "問題が発生しました",
             "message": "Open Photo AI で予期しないエラーが発生したため、処理を続行できません。再読み込みすればたいてい解決します。設定は保持されますが、現在のセッションで保存していない作業は失われます。",
             "reload": "再読み込み"
+        }
+    },
+    "shortcuts": {
+        "title": "キーボードショートカット",
+        "description": "現在それぞれの操作に割り当てられているキー。",
+        "hint": "設定 > キーボードで変更できます。",
+        "tooltip": "{{name}} ({{key}})",
+        "tooltipCycle": "{{name}} ({{key}} で切り替え)",
+        "settingsHint": "どこでも {{key}} を押すとこのショートカットを表示します。",
+        "sections": {
+            "view": "表示",
+            "images": "画像",
+            "enhancements": "補正"
+        },
+        "rows": {
+            "zoom": "拡大 / 縮小",
+            "pan": "移動",
+            "images": "前の画像 / 次の画像",
+            "options": "補正 1–7 のオプション"
         }
     }
 }

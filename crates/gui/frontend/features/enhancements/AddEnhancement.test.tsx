@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useShortcuts } from "@/hooks/useShortcuts";
 import "@/i18n";
 import { forgetCatalogue } from "@/ipc/catalogue";
 import { track } from "@/lib/faro";
@@ -28,6 +29,10 @@ vi.mock("@/lib/faro", () => ({
     // Untraced, as before Faro starts: the request goes out exactly as `invoke` alone would send it.
     traced: (_name: string, send: () => Promise<unknown>) => send(),
 }));
+
+// The real `platform()` reads a global the plugin's init script installs, which jsdom has none of - and
+// the shortcut hints ask it, to write their keys as this platform does.
+vi.mock("@/ipc/os", () => ({ isMacOs: vi.fn(() => false), isWindows: vi.fn(() => false) }));
 
 // The catalogue is an `invoke`, and what the menu adds is built from it: the model, its precision
 // and the tier behind it all come from what the library publishes. So is the scale a new upscale starts
@@ -295,5 +300,61 @@ describe("adding an enhancement", () => {
         fireEvent.click(await upscale());
 
         expect(stack()).toHaveLength(1);
+    });
+});
+
+/** The button with the window's keys listening, as the shell mounts both. */
+const WithKeys = () => {
+    useShortcuts();
+
+    return <AddEnhancement />;
+};
+
+/** Presses a key on the page, bubbling to the window, and answers the dispatched event. */
+const press = (key: string) => {
+    const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+    act(() => {
+        document.body.dispatchEvent(event);
+    });
+
+    return event;
+};
+
+describe("the Add enhancement key", () => {
+    beforeEach(() => {
+        localStorage.clear();
+        forgetCatalogue();
+        resetFileStore();
+        useEnhancementStore.setState({ autopilot: true, enhancements: new Map() });
+        useSettingsStore.setState({ models: {}, autopilotExcluded: [] });
+    });
+
+    it("opens the menu with E, with the focus on its first entry so the arrows and Enter pick one", async () => {
+        openFiles(HOLIDAY);
+        render(<WithKeys />);
+
+        const event = press("e");
+
+        expect(event.defaultPrevented).toBe(true);
+        await waitFor(() => expect(screen.getByRole("menuitem", { name: "Denoise" })).toHaveFocus());
+
+        fireEvent.keyDown(screen.getByRole("menuitem", { name: "Denoise" }), { key: "ArrowDown" });
+        await waitFor(() => expect(screen.getByRole("menuitem", { name: "Face Recovery" })).toHaveFocus());
+    });
+
+    it("opens nothing with no image open, as the button is unavailable, and leaves the key alone", () => {
+        render(<WithKeys />);
+
+        const event = press("e");
+
+        expect(screen.queryByRole("menu")).toBeNull();
+        expect(event.defaultPrevented).toBe(false);
+    });
+
+    it("tells assistive technology the button's key", () => {
+        openFiles(HOLIDAY);
+        render(<WithKeys />);
+
+        expect(button()).toHaveAttribute("aria-keyshortcuts", "e");
     });
 });

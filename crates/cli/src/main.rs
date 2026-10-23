@@ -1,18 +1,19 @@
 //! `opai` — the terminal front end for Open Photo AI.
 //!
-//! Photographs and directories of them in, each enhanced by the same chain, written to one file or under a directory:
+//! Photographs and directories of them in, each enhanced by the same chain, written to one file, under a directory,
+//! or without `-o` beside each source:
 //!
 //! ```text
 //! opai <input>... <enhancement flags> [-r] [--format F] [--prefix P] [--suffix S] [--overwrite] [-q hd|sd]
-//!      [-p PROCESSOR] -o <output>
+//!      [-p PROCESSOR] [-o <output>]
 //! ```
 //!
 //! or, with `--gui`, handed to Open Photo AI's window instead (`opai --gui <input>... [-r]`).
 //!
 //! Everything the run does is the library's, naming each result included (`opai::export`). What lives here is the
 //! terminal's own vocabulary — the flags, the mapping from them to `opai` constructors, expanding the inputs, reading
-//! `-o` as a file or a directory and mirroring directory inputs under it, the lines, the rows and the bar the terminal
-//! shows, and the exit status.
+//! `-o` as a file or a directory and mirroring directory inputs under it (or, without it, the `_opai` default suffix),
+//! the lines, the rows and the bar the terminal shows, and the exit status.
 //!
 //! # Where the output goes
 //!
@@ -69,6 +70,7 @@ mod look;
 mod output;
 mod progress;
 mod run;
+mod settings;
 #[cfg(test)]
 mod test_support;
 mod update;

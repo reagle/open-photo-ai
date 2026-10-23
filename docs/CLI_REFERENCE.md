@@ -1,6 +1,6 @@
 # CLI Reference
 
-`opai` is the command-line version of **Open Photo AI**. It runs the same AI models as the GUI. One command can enhance a single image or a whole batch: any mix of files, wildcards and directories, written to one file or into an output directory.
+`opai` is the command-line version of **Open Photo AI**. It runs the same AI models as the GUI. One command can enhance a single image or a whole batch: any mix of files, wildcards and directories, written to one file, into an output directory, or beside each source.
 
 - [Synopsis](#synopsis)
 - [Quick start](#quick-start)
@@ -8,6 +8,7 @@
 - [Where the results go](#where-the-results-go)
 - [Enhancements](#enhancements)
 - [Autopilot](#autopilot)
+- [GUI settings](#gui-settings)
 - [Processing order](#processing-order)
 - [Supported formats](#supported-formats)
 - [What happens during a run](#what-happens-during-a-run)
@@ -20,7 +21,7 @@
 ## Synopsis
 
 ```bash
-opai <INPUT>... <ENHANCEMENT FLAGS...> [OPTIONS] --output <OUTPUT>
+opai <INPUT>... <ENHANCEMENT FLAGS...> [OPTIONS] [--output <OUTPUT>]
 opai --gui <INPUT>... [-r]
 ```
 
@@ -33,14 +34,17 @@ The rules in short:
 
 - The `INPUT`s come **first**, before any flag. Each one is an image or a directory of images.
 - You need **at least one** enhancement flag, or [`--autopilot`](#autopilot) to let `opai` choose them per image.
-- `--output` / `-o` is **required**. It's a [file or a directory](#where-the-results-go).
-- With [`--gui`](#--gui), the images are opened in the GUI instead, and neither an enhancement nor `-o` is needed.
+- `--output` / `-o` is **optional**. It's a [file or a directory](#where-the-results-go); without it, each result is written [beside its source](#no--o-beside-each-source), named `<name>_opai.<ext>`.
+- With [`--gui`](#--gui), the images are opened in the GUI instead, and no enhancement is needed.
 - The order of the enhancement flags doesn't matter. The enhancements always run in a [fixed order](#processing-order).
 - An existing file is **never overwritten** unless you pass `--overwrite`. The result is [numbered](#numbering-and---overwrite) instead.
 
 ## Quick start
 
 ```bash
+# Let autopilot enhance a photo, writing photo_opai.jpg beside it
+opai photo.jpg --ap
+
 # Upscale with the default model (Tokyo), at the scale the photo needs
 opai photo.jpg --up -o photo-large.png
 
@@ -94,9 +98,9 @@ error: invalid value 'photo.jpg' for '--upscale [<MODEL>]'
   [possible values: kyoto, osaka, tokyo, saitama]
 ```
 
-### `-o, --output <OUTPUT>` (required)
+### `-o, --output <OUTPUT>`
 
-Where the results go: one file, or a directory. See [Where the results go](#where-the-results-go).
+Where the results go: one file, or a directory. Without it, each result is written beside its source. See [Where the results go](#where-the-results-go).
 
 ### `--gui`
 
@@ -115,6 +119,8 @@ $ opai beach.jpg --up osaka -q sd -o out --gui
 🖼️ Opening 1 image in Open Photo AI
 ```
 
+`--no-gui-settings` is ignored with a warning too, since the GUI always uses its own [settings](#gui-settings). `--verbose` is accepted without a warning and changes nothing.
+
 `--gui` works while the GUI is open, unlike a normal run (see [One instance at a time](#one-instance-at-a-time)), and it sends no usage data. Options that can't be combined (such as `--ap` with an enhancement flag) are still refused, as they would be in a run.
 
 On macOS the images are handed to the GUI with `open -b io.vinicius.opai`, so it must be installed where macOS can find it, for example in Applications. On Windows and Linux, `opai` starts the GUI's program (`OpenPhotoAI`), found beside `opai` or on your `PATH`.
@@ -125,7 +131,7 @@ A directory input contributes its **whole tree**, not only the images directly i
 
 ### `--format <FORMAT>` (default: `preserve`)
 
-The format every result is written in. Only accepted when the output is a **directory**; with an output file, its extension chooses the format.
+The format every result is written in. Not accepted with an output **file**, whose extension chooses the format.
 
 | Value | Result |
 |-------|--------|
@@ -136,19 +142,27 @@ The value is case-insensitive, and `jpg`, `tif` and `heif` are accepted for `jpe
 
 ### `--prefix <TEXT>`, `--suffix <TEXT>`
 
-Text added before and after each image's name, before the extension: `--prefix new- --suffix -opai` turns `beach.jpg` into `new-beach-opai.jpg`. Only accepted when the output is a **directory**. Both are empty by default.
+Text added before and after each image's name, before the extension: `--prefix new- --suffix -opai` turns `beach.jpg` into `new-beach-opai.jpg`. Not accepted with an output **file**. Both are empty by default, except that [without `-o`](#no--o-beside-each-source) the suffix is `_opai` unless either one is given.
 
 ### `--overwrite`
 
 Replaces a file that already exists at a destination instead of [numbering](#numbering-and---overwrite) the result.
 
+### `--verbose`
+
+Names, on each written image's line, the enhancements it received: each model, its strength, bias or upscale factor, and whether the [run cache](#run-cache) served them, as in `🖼️ [100%] Enhancements applied to photo.jpg: Denoise Stockholm strength 100, Upscale Tokyo 2x`. Without it, the line ends with the path. It has no short form: `-v` prints the version. See [Terminal output](#terminal-output).
+
+### `--no-gui-settings`
+
+Ignores the [GUI's saved settings](#gui-settings) for this run: every setting you don't give on the command line is the built-in default.
+
 ### `--autopilot`, `--ap`
 
 Analyses each image and applies the enhancements it calls for, instead of the ones you name. It can't be combined with the enhancement flags or their options. See [Autopilot](#autopilot).
 
-### `-q, --quality <hd|sd>` (default: `hd`)
+### `-q, --quality <hd|sd>` (default: `hd`, or the GUI's)
 
-Picks which build of each model to run. It applies to **every** enhancement in the command.
+Picks which build of each model to run. It applies to **every** enhancement in the command. Without it, each enhancement runs at the quality of the model chosen for it in the [GUI's settings](#gui-settings), and at `hd` where none was chosen, so one run can mix `hd` and `sd`; the processor line then reads `quality mixed`.
 
 | Quality      | Most models | Osaka (upscale) | Trade-off                                     |
 |--------------|-------------|-----------------|-----------------------------------------------|
@@ -157,9 +171,9 @@ Picks which build of each model to run. It applies to **every** enhancement in t
 
 The value is case-insensitive (`-q SD` works).
 
-### `-p, --processor <PROCESSOR>` (default: `auto`)
+### `-p, --processor <PROCESSOR>` (default: `auto`, or the GUI's)
 
-Picks the hardware every model of the run is asked to run on, face detection included. Which values exist depends on the operating system `opai` was built for:
+Picks the hardware every model of the run is asked to run on, face detection included. Without it, the processor chosen in the [GUI's settings](#gui-settings) is used, or `auto`. Which values exist depends on the operating system `opai` was built for:
 
 | Processor        | Runs on                                                                              | macOS | Windows / Linux |
 |------------------|--------------------------------------------------------------------------------------|:-----:|:---------------:|
@@ -172,7 +186,7 @@ Picks the hardware every model of the run is asked to run on, face detection inc
 
 The value is case-insensitive (`-p CPU` and `--processor WebGPU` work). `opai --help` lists only the values your build accepts, and any other value is refused straight away, before anything is installed.
 
-A value your build accepts is then checked against what **this machine** offers, once [dependencies are installed](#what-happens-during-a-run). This is the same check the GUI uses to build its list of processors: CUDA needs a supported NVIDIA GPU and driver, TensorRT also needs a GPU that can run it, CoreML needs macOS 12 or newer, and WebGPU needs a GPU the runtime can reach. If the machine doesn't offer the processor, the run stops with one line naming the processors it does offer, for example `🧨 the processor webgpu is not available on this machine; use auto, cpu or coreml`, and exits with [code 2](#exit-codes). No image is loaded and nothing is written.
+A value your build accepts is then checked against what **this machine** offers, once [dependencies are installed](#what-happens-during-a-run). This is the same check the GUI uses to build its list of processors: CUDA needs a supported NVIDIA GPU and driver, TensorRT also needs a GPU that can run it, CoreML needs macOS 12 or newer, and WebGPU needs a GPU the runtime can reach. If the machine doesn't offer the processor, the run stops with one line naming the processors it does offer, for example `🧨 the processor webgpu is not available on this machine; use auto, cpu or coreml`, and exits with [code 2](#exit-codes). No image is loaded and nothing is written. A processor that comes from the [GUI's settings](#gui-settings) is never refused: if this build or this machine doesn't offer it, the run uses `auto` and the [log file](#log-file) records a warning.
 
 ## Where the results go
 
@@ -184,7 +198,7 @@ A value your build accepts is then checked against what **this machine** offers,
 2. **A path whose extension** (any case: `.png`, `.PNG`) is one `opai` [writes](#output-formats) is a **file**, saved in that format.
 3. **Anything else** is a **directory**. It's created, with any missing parents, when the first result is written into it. `-o out` and `-o out.xyz` are both directories.
 
-An output **file** takes exactly **one input file**: more than one input, or a directory input, fails with exit code `2`. So do `--format`, `--prefix` and `--suffix`, which need an output directory. The file's own directory must already exist.
+An output **file** takes exactly **one input file**: more than one input, or a directory input, fails with exit code `2`. So do `--format`, `--prefix` and `--suffix`, which are not accepted with an output file. The file's own directory must already exist.
 
 An output **directory** fails with exit code `2` if a file (not a directory) already exists at that path.
 
@@ -200,6 +214,31 @@ Under an output directory:
 - **In place:** with `-o` naming the input directory itself (`opai photos --dn -o photos`), each result lands beside its source.
 
 The file name is the same one the GUI's export would use: the prefix, the source's name, the suffix, and the extension of the [`--format`](#--format-format-default-preserve) chosen.
+
+### No `-o`: beside each source
+
+Without `-o`, each result is written into the directory that holds its source, and no directory is created:
+
+- **A file named as an input** gets its result beside it. `opai photo.jpg --ap` writes `photo_opai.jpg` in the current directory; `opai pictures/beach.jpg --dn` writes `pictures/beach_opai.jpg` and nothing in the current directory.
+- **An image found in a directory input**, with or without `-r`, gets its result beside itself in that tree. `opai photos -r --up` writes `photos/a_opai.jpg` and `photos/2024/b_opai.jpg`.
+
+The name follows the same [export rule](#--format-format-default-preserve) as under an output directory, with one difference: when neither `--prefix` nor `--suffix` is given, the suffix is **`_opai`**, because the result's name is the only thing that tells it from its source. Giving either one replaces that default, the other staying empty:
+
+| Command | Result for `photo.jpg` |
+|---------|------------------------|
+| `opai photo.jpg --up` | `photo_opai.jpg` |
+| `opai photo.jpg --up --suffix -big` | `photo-big.jpg` |
+| `opai photo.jpg --up --prefix new-` | `new-photo.jpg` |
+| `opai shot.nef --dn --format webp` | `shot_opai.webp` (for `shot.nef`) |
+| `opai photo.jpg --dn --suffix "" --overwrite` | `photo.jpg`, replaced in place |
+
+[Numbering](#numbering-and---overwrite) works as everywhere else: if `photo_opai.jpg` already exists, the result is `photo_opai_1.jpg`, and with `--overwrite` the earlier `photo_opai.jpg` is replaced. The source itself is only replaced when you ask for it twice: an empty `--suffix ""` (or a `--prefix`/`--suffix` that gives the source's own name) **and** `--overwrite`. `--overwrite` never replaces **another input** of the run: with `opai a.jpg a_opai.jpg --dn --overwrite`, `a.jpg`'s result would be `a_opai.jpg`, which you also gave, so it's kept and the result is numbered (`a_opai_1.jpg`) instead, with a warning in the [log file](#log-file). The same holds when a re-run over a directory finds its earlier `_opai` results.
+
+A later run over the same directory sees the earlier `_opai` results as inputs too, just as it would with `-o` naming that directory, so `opai photos --ap` run twice also enhances `photos/a_opai.jpg` (into `photos/a_opai_opai.jpg`). Use `-o` to keep results apart.
+
+A source directory that can't be written to (a read-only card or share) fails that image with a line naming the destination, and the run goes on with the next one; use `-o` to write elsewhere.
+
+For more than one image, the summary line reads `✨ <count> images enhanced successfully; files saved beside their sources`. For one, it names the file written, as with `-o`.
 
 ### Numbering and `--overwrite`
 
@@ -380,11 +419,17 @@ opai photos --ap -o enhanced
 - **Each enhancement uses its default strength or bias**: strength `100` for denoise and sharpen, bias `50` for light adjustment and color balance. An upscale runs at the factor the image's size calls for (see [Upscale](#upscale---upscale-model---up-model)); an image above 4 MP is not upscaled.
 - **An image that needs nothing is still written**, unchanged, in the format asked for. Its row ends with `Enhancements applied to` as any other.
 - **If face detection can't run** (for example, its model can't be downloaded), the image still gets the other enhancements, without face recovery, and the [log file](#log-file) records a warning.
-- **What was chosen for each image** is recorded in the [log file](#log-file). The terminal shows each enhancement in the image's row while it runs.
+- **What was chosen for each image** is recorded in the [log file](#log-file). The terminal shows each enhancement in the image's row while it runs, and with [`--verbose`](#--verbose) the image's line names them once it is written, with their models and parameters:
+
+  ```bash
+  opai photos --ap -o enhanced --verbose
+  # 🖼️ [100%] Enhancements applied to       photos/a.jpg: Denoise Stockholm strength 100, Upscale Tokyo 4x
+  # 🖼️ [100%] Enhancements applied to       photos/b.jpg: Color Balance Rio bias 50
+  ```
 
 ### Choosing the models
 
-Each enhancement runs with its default model unless an environment variable names another one:
+Each enhancement runs with its default model unless an environment variable names another one, or, where the variable isn't set, the [GUI's settings](#gui-settings) choose a model or switch the enhancement off for Autopilot:
 
 | Enhancement      | Environment variable    | Default model | Accepted values                       |
 |------------------|-------------------------|---------------|---------------------------------------|
@@ -414,6 +459,44 @@ OPAI_AP_SHARPEN=off OPAI_AP_FACE=off OPAI_AP_DENOISE=malmo opai photos --ap -o o
     [possible values: kyoto, osaka, tokyo, saitama, off]
   ```
 - The variables are read **only with `--ap`**. Without it they're ignored and not checked: `OPAI_AP_UPSCALE=paris opai photo.jpg --up -o out.png` upscales with Tokyo. The GUI never reads them; its Autopilot uses the models chosen in its settings.
+
+## GUI settings
+
+`opai` follows the settings you saved in the GUI, for the settings it has a flag or variable for: the processor, the quality of each enhancement, and, with [`--ap`](#autopilot), each enhancement's model and whether Autopilot may suggest it. You don't need shell aliases or `OPAI_AP_*` variables to make the command line match the GUI.
+
+Every time the GUI starts, and every time you **Save** a change to one of these settings, it writes them to `gui-settings.json` in the application's configuration directory, beside its [log file](#log-file):
+
+| OS      | File                                                                 |
+|---------|----------------------------------------------------------------------|
+| macOS   | `~/Library/Application Support/io.vinicius.opai/gui-settings.json`   |
+| Windows | `%APPDATA%\io.vinicius.opai\gui-settings.json`                       |
+| Linux   | `~/.config/io.vinicius.opai/gui-settings.json`                       |
+
+`opai` reads it at startup. Each setting comes from the first of these that gives one:
+
+| Setting                         | 1. Flag            | 2. Variable  | 3. GUI settings                                               | 4. Default            |
+|---------------------------------|--------------------|--------------|---------------------------------------------------------------|-----------------------|
+| Processor                       | `-p`               |              | The GUI's processor                                           | `auto`                |
+| Quality of each enhancement     | `-q` (all of them) |              | The quality (HD or SD) of the model chosen for it             | `hd`                  |
+| Autopilot's model (with `--ap`) |                    | `OPAI_AP_*`  | The model chosen for it, or `off` where Autopilot may not suggest it | The [default model](#choosing-the-models) |
+
+```bash
+# The GUI has every model at SD and Color Balance and Colorization off for Autopilot:
+opai photos --ap -o out                        # SD, no colour balance, no colorization
+opai photos --ap -q hd -o out                  # HD instead
+OPAI_AP_COLOR=rio opai photos --ap -o out      # colour balance back on, with Rio
+opai photos --ap --no-gui-settings -o out      # the built-in defaults, as if the GUI had never run
+```
+
+- The bare enhancement flags keep their own default models: `--up` runs Tokyo whatever the GUI chose. Only the quality comes from the GUI for them.
+- With [`--verbose`](#--verbose), the processor line says where each value came from, and with `--ap` a second line lists each enhancement's model or `off` and its source:
+
+  ```
+  🧠 Running inference using the processor Auto (from GUI settings); quality SD (from GUI settings)
+  🤖 Autopilot models: Denoise Stockholm (from GUI settings), Face Recovery Athens (from GUI settings), Colorize off (from GUI settings), ...
+  ```
+- The file never stops a run. If it's missing, `opai` uses its defaults. If it can't be read, isn't a settings file, or comes from a newer version, it's ignored and the [log file](#log-file) records why. A single entry naming a model or processor that doesn't exist is ignored on its own.
+- `opai` never writes the file, and the GUI never reads it back: the GUI's own settings stay the source of truth. Export settings, language and background aren't shared.
 
 ## Processing order
 
@@ -467,9 +550,25 @@ Camera RAW files are developed to 16 bits per channel before processing. Some ot
 
 With an output **file**, the format is the one its extension names. With an output **directory**, it's chosen by [`--format`](#--format-format-default-preserve). The quality and compression settings are the same ones the GUI uses when exporting. They can't currently be changed from the CLI.
 
-**Bit depth:** the output keeps the bit depth of the input. A 16-bit source (a 16-bit PNG/TIFF or any camera RAW) produces a 16-bit result, saved as 16-bit if the output format supports it. For RAW files, use PNG, TIFF, AVIF or HEIF to keep the extra depth.
+**Bit depth:** the output keeps the bit depth of the input. A 16-bit source (a 16-bit PNG/TIFF or any camera RAW) produces a 16-bit result, saved as 16-bit if the output format supports it. For RAW files, use PNG or TIFF to keep the extra depth: AVIF and HEIF are written at 8 bits for now.
 
 **Transparency is not kept.** Transparent areas are filled with black during processing.
+
+**Colour profile:** if the input embeds an ICC colour profile (a Display P3 photograph from a phone or camera, an Adobe RGB scan), the result embeds the same profile when it is written as JPEG, PNG, TIFF or WebP, so it shows in the same colours as the input. BMP, GIF, AVIF and HEIF results are written without it for now, and the [log file](#log-file) records a warning naming the format. Colours are not converted: the profile is carried over unchanged, and an input without one produces a result without one. Camera RAW inputs have none.
+
+**HDR (Ultra HDR):** an Ultra HDR JPEG — a JPEG with an HDR gain map, as Lightroom, Camera Raw and Android phones write them (ISO 21496-1 or Adobe `hdrgm`) — stays one when the result is written as JPEG: its gain map is carried through every enhancement and written back after the result, so an HDR display still shows it in HDR. The gain map keeps its own resolution and is never enlarged: after an upscale it is smaller than the result, which the format allows and every viewer resamples. When the result is not cropped and not smaller than the gain map, the gain map is written back exactly as the input had it, so enhancing a result again loses nothing of it; otherwise it is re-encoded at the result's JPEG quality, but never below 90, with its own gain-map metadata. A gain map without gain-map metadata of its own is not one any viewer can apply, and is left out; so is one whose result would have more XMP metadata than a JPEG's main XMP segment holds, since viewers would not find the declaration that the gain map is there. Results in any other format are SDR, and say so (below). A gain map that cannot be read or written is left out, and the result is an ordinary SDR JPEG that says so. **One caveat:** the gain map records how much brighter each part of the original was in HDR, so enhancements that change the photograph's brightness or colour — light adjustment, color balance and colorization — leave its HDR rendition slightly off; denoise, sharpen, face recovery and upscale barely change it.
+
+**Metadata:** the result keeps the input's EXIF — capture date and time zone, camera, lens and exposure, GPS location, copyright and the rest — and its XMP — rating, label, keywords and their hierarchy, title, caption, creator, rights and edit history — whenever it is written as JPEG, PNG or WebP, and its IPTC (keywords, caption, creator, copyright) when it is written as JPEG; a PNG or WebP result carries the IPTC values in its XMP instead. There is no option to strip it, location included. A few fields are rewritten so that they stay true of the result: the software becomes `Open Photo AI <version> (<date>)`, the modification time and its offset become the time of the export, the pixel dimensions become the result's, the embedded thumbnail is removed (it would show the unenhanced, uncropped input), the result gets a new XMP document ID that names the input as its source, and the edit history gains an Open Photo AI entry. Lightroom's develop settings (`crs:`) are dropped, since Lightroom would apply them again to the already developed result. The camera's private MakerNote is kept byte for byte; in the rare case that the rewritten EXIF would not fit a JPEG, it is left out and the [log file](#log-file) says so. Nothing is written for BMP, GIF, TIFF, AVIF or HEIF results yet; the log file records a warning naming the format. Camera RAW inputs carry no metadata over yet.
+
+**What a result loses is shown.** When a result holds less than its input, the command always says so on the terminal, with one line per affected input:
+
+```text
+⚠️ hawk.jpg: HDR gain map dropped: PNG output is SDR only for now
+⚠️ scan.tif: 16-bit → 8-bit in JPEG
+⚠️ phone.jpg: Display P3 profile not embedded in AVIF
+```
+
+It names an **HDR** input written as SDR: an Ultra HDR / ISO 21496-1 gain-map JPEG written as anything but JPEG, or written as JPEG when its gain map could not be carried (`HDR gain map dropped: it could not be carried`), or a PQ or HLG PNG, AVIF or HEIF, which every format writes as SDR for now; **fewer bits per channel** than the input, or integer samples from a floating-point one; and a **colour profile** that is not in the result (the format cannot hold one, it is for another colour model, the encoder could not write it — a profile too large for the format — or the input carried a coded colour description such as Display P3 instead of a profile). A plain sRGB profile left out of an AVIF or HEIF result is not reported: those formats read as sRGB without one. Off a terminal the line follows that input's own line; on one it is printed once the progress view finishes, before the summary. With several inputs a count follows, such as `⚠️ 2 of 5 images lost something: 2 HDR, 1 bit depth`. Each loss is also recorded in the [log file](#log-file). **The exit status is unchanged:** a loss is a warning, and the result is still written. Not detected yet: AVIF and HEIF gain maps, and the private gain maps of older iPhones.
 
 ## What happens during a run
 
@@ -504,7 +603,7 @@ By default (`-p auto`), the CLI uses the fastest hardware available, trying in t
 
 ### Run cache
 
-Every step's result is cached on disk for **24 hours**. If you run the same enhancements on the same image again within that time, the cached results are reused and the run finishes almost immediately. Changing anything (a model, strength, bias, scale or quality) creates a new cache entry from that step onwards.
+Every step's result is cached on disk for **24 hours**. If you run the same enhancements on the same image again within that time, the cached results are reused and the run finishes almost immediately. Changing anything (a model, strength, bias, scale or quality) creates a new cache entry from that step onwards. With [`--verbose`](#--verbose), a re-run's line ends `(cached)` when every step was reused, or `(2 of 3 cached)` when only some were.
 
 ### One instance at a time
 
@@ -545,18 +644,19 @@ And once the run ends, the view stays as it was last drawn, with the summary und
   - `🖼️ [  0%] Choosing enhancements for <path>` with [`--autopilot`](#autopilot), while the image is analysed. On the first run, this includes downloading the face detection model, so it can stay at `0%` for a while;
   - `🖼️ [ 12%] Downloading <enhancement> for <path>` while a model is downloaded;
   - `🖼️ [ 42%] Applying <enhancement> to <path>` while an enhancement runs or is served from the [run cache](#run-cache);
-  - `🖼️ [100%] Enhancements applied to <path>` once its result is written;
+  - `🖼️ [100%] Enhancements applied to <path>` once its result is written, followed under [`--verbose`](#--verbose) by `: <applied>` (see below);
   - `🧨 [ 42%] Failed to enhance <path>` once it has failed;
   - `🧨 [ 42%] Stopped enhancing <path>` when you [stopped the run](#stopping-a-run) while it was being worked on.
 
   `<enhancement>` is the enhancement's name as the GUI shows it: `Denoise`, `Face Recovery`, `Colorize`, `Light Adjust`, `Color Balance`, `Sharpen` or `Upscale`.
-- **The summary** starts with a success line when at least one image was written. For exactly one image it names the file written, so a numbered name is visible: `✨ Image enhanced successfully; file saved at out_1.png`. For more, it names the output directory: `✨ 7 images enhanced successfully; files saved under out`. Then a `🧨` line gives the reason for each image that failed, in the order they ran, since a failure can have scrolled out of the list. Last comes the run's closing `🧨` line, if it didn't succeed (see [Exit codes](#exit-codes)).
+- **With `--verbose`**, a written image's row ends with `: <applied>`, what it received, in the order it ran: each enhancement's name, its model as the GUI names it (`Malmö`, `São Paulo`), and its parameter, `strength <n>` for denoise and sharpen, `bias <n>` for light adjustment and color balance, `<factor>x` for an upscale (`2x`, `1.5x`), none for face recovery and colorization. It ends with ` (cached)` when the [run cache](#run-cache) served every step, or ` (<k> of <n> cached)` when it served some. An image that needed nothing reads `no enhancement needed`. The text is drawn in the terminal's default color, and in the live view a row wider than the terminal is cut at its edge; the plain lines and the [log file](#log-file) carry it whole. Failed and stopped rows carry none. For example, `opai photo.jpg --dn --la --up --scale 2 -o out.png --verbose` ends with `🖼️ [100%] Enhancements applied to       photo.jpg: Denoise Stockholm strength 100, Light Adjust Paris bias 50, Upscale Tokyo 2x`.
+- **The summary** starts with a success line when at least one image was written. For exactly one image it names the file written, so a numbered name is visible: `✨ Image enhanced successfully; file saved at out_1.png`. For more, it names the output directory: `✨ 7 images enhanced successfully; files saved under out`, or, without `-o`, ends `files saved beside their sources`. Then a `🧨` line gives the reason for each image that failed, in the order they ran, since a failure can have scrolled out of the list. Last comes the run's closing `🧨` line, if it didn't succeed (see [Exit codes](#exit-codes)).
 
 In color, the dependency's name and its percentage are bold white, the spinner magenta and the `✓` green. In the processor line, the processor is green and the quality yellow. The bar is drawn in a color gradient. In a `🖼️` row, the percentage (with its `%`) is blue, the enhancement's name (or the word `Enhancements`) magenta and the path cyan and underlined; a `🧨` row is red throughout. The success line is bold yellow.
 
 With a single image, the view is three rows tall: the bar, a blank row and the image's row.
 
-When stderr is **not** a terminal (for example, when redirected to a file or run in CI), there's no dependency line, no view and no progress bar. The processor line comes first, followed by a blank line. Then each image prints one line, without colors, when it ends, with the words its row ends with, its percentage included; a failed image's line adds the reason. Then come the summary's success line and the closing line:
+When stderr is **not** a terminal (for example, when redirected to a file or run in CI), there's no dependency line, no view and no progress bar. The processor line comes first, followed by a blank line. Then each image prints one line, without colors, when it ends, with the words its row ends with, its percentage included; a failed image's line adds the reason, and under `--verbose` a written image's line adds what it received. Then come the summary's success line and the closing line:
 
 ```
 🧠 Running inference using the processor Auto; quality HD
@@ -616,7 +716,7 @@ What's in it that the terminal doesn't show:
 - With [`--autopilot`](#autopilot), the enhancements chosen for each image, and a warning when part of the analysis (such as face detection) couldn't run.
 - A file found in a directory that was skipped because it couldn't be read, and why.
 - Face detection results, e.g. `found 3 faces, restoring 2`, or `no faces were found; none will be restored`.
-- Each file written, with its size and format, and the hardware it ran on, e.g. `ran on CoreML, CPU` or `served from cache`.
+- Each file written, with its size and format, the hardware it ran on, e.g. `ran on CoreML, CPU` or `served from cache`, and the enhancements it received, e.g. `applied Denoise Stockholm strength 100 (cached)`, with or without `--verbose`.
 - The full error behind any `🧨` line.
 
 **Please attach this file when [reporting a bug](https://github.com/vegidio/open-photo-ai/issues).**
@@ -628,7 +728,6 @@ What's in it that the terminal doesn't show:
 | `error: at least one enhancement is required: --denoise (--dn), …`             | No enhancement flag was given. Add at least one, or `--ap`. |
 | `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`   | `--ap` chooses the enhancements itself. Drop `--ap`, or drop the enhancement flags and their options. |
 | `error: invalid value 'paris' for the environment variable OPAI_AP_UPSCALE` followed by `[possible values: …]` | An `OPAI_AP_*` variable names a model of another enhancement, or a misspelt one. Pick one from the list shown, `off`, or unset it. |
-| `error: the following required arguments were not provided: --output <OUTPUT>` | `-o`/`--output` is missing. |
 | `error: invalid value 'foo' for '--upscale [<MODEL>]'` followed by `[possible values: …]` | Unknown model name. Pick one from the list shown. |
 | `error: invalid value 'photo.jpg' for '--upscale [<MODEL>]'`                   | An input was placed after a flag. Put the `INPUT`s first. |
 | `error: invalid value '9' for '--scale <FACTOR>': the scale must be from 1.0 to 8.0` | `--scale` out of range or not a number. |
@@ -644,9 +743,9 @@ What's in it that the terminal doesn't show:
 | `🧨 could not open Open Photo AI; is it installed? …`                          | `--gui` on macOS couldn't find or start the GUI. Install it in Applications and open it once. |
 | `🧨 could not find Open Photo AI: OpenPhotoAI is neither beside opai nor on PATH` | `--gui` on Windows or Linux couldn't find the GUI's program. Put its folder on your `PATH`. |
 | `🧨 an output file takes exactly one input file; …`                            | `-o` names a file, but there are several inputs or a directory input. Give a directory instead. |
-| `🧨 --suffix needs an output directory; …`                                     | `--format`, `--prefix` and `--suffix` only work when `-o` is a directory. |
+| `🧨 --suffix needs an output directory; …`                                     | `--format`, `--prefix` and `--suffix` don't work when `-o` is a file. Name a directory, or leave `-o` out to write beside the source. |
 | `🧨 cannot write into out: it is a file, not a directory, …`                   | `-o` would be a directory, but a file already exists there. |
-| `🧨 cannot write out/a.png: …`                                                 | The result couldn't be written there: the directory is missing or not writable, or every numbered name up to `_999` is taken. |
+| `🧨 cannot write out/a.png: …`                                                 | The result couldn't be written there: the directory is missing or not writable, or every numbered name up to `_999` is taken. Without `-o`, this is the source's own directory; give `-o` to write elsewhere. |
 | `🧨 Open Photo AI is already running …; close it and try again`                | Another `opai` process or the GUI is running. Close it and try again. |
 | `🧨 the processor … is not available on this machine; use …`                   | This machine doesn't offer the processor given with `-p` (for example, no supported NVIDIA GPU for `cuda`). Use one of the processors listed, or leave `-p` out. Exit code `2`. |
 | `🧨 [ 42%] Failed to enhance photos/b.jpg`                                      | That image failed; the rest of the batch went on. Its reason is listed under the view when the run ends. |

@@ -1,6 +1,6 @@
 import type { TFunction } from "i18next";
 import type { Operation } from "@/ipc/enhance";
-import type { ExportFormat, ExportFormats, ExportNaming, FormatChoice, QualityRange } from "@/ipc/export";
+import type { Depth, ExportFormat, ExportFormats, ExportNaming, FormatChoice, Loss, QualityRange } from "@/ipc/export";
 import { directoryOf, fileName } from "@/lib/paths";
 
 export type { FormatChoice };
@@ -156,4 +156,47 @@ export const describeExportError = (t: TFunction, failure: ExportFailure): strin
     // `enhance` and `unreadableSource` carry the library's sentence. `notReady`, `unknownSource` and
     // `unknownOperation` are this window's own mistakes rather than the user's, and carry their kind for the report.
     return followedBy(t("export.queue.enhanceFailed"), message ?? kind);
+};
+
+/** The library's name for a format, as the window names it: HEIF is offered as HEIC. Format names are not translated. */
+const formatLabel = (format: string) => (format === "HEIF" ? "HEIC" : format);
+
+/** `16-bit`, or `32-bit float`, translated. */
+const depthLabel = (t: TFunction, { bits, float }: Depth) =>
+    float ? t("export.loss.bitsFloat", { bits }) : t("export.loss.bits", { bits });
+
+/**
+ * What a written file lost against its source, in words: one {@link Loss} as a row's warning lists it. The words are
+ * the window's; which losses there are is Rust's.
+ */
+export const formatLoss = (t: TFunction, loss: Loss): string => {
+    const format = formatLabel(loss.format);
+
+    switch (loss.kind) {
+        case "hdr":
+            if (loss.cause === "notCarried") {
+                return t("export.loss.hdrGainMapNotCarried");
+            }
+            return loss.hdr === "gainMap"
+                ? t("export.loss.hdrGainMap", { format })
+                : t("export.loss.hdrTransfer", {
+                      transfer: loss.hdr === "other" ? "HDR" : loss.hdr.toUpperCase(),
+                      format,
+                  });
+        case "depth":
+            return t("export.loss.depth", { from: depthLabel(t, loss.from), to: depthLabel(t, loss.to), format });
+        case "profile": {
+            const profile = loss.profile ?? t("export.loss.unnamedProfile");
+            const colourSpace = loss.colourSpace;
+            const key = {
+                format: "export.loss.profileFormat",
+                colourModel: "export.loss.profileColourModel",
+                discarded: "export.loss.profileDiscarded",
+                coded: "export.loss.profileCoded",
+                notWritten: "export.loss.profileNotWritten",
+            } as const;
+
+            return t(key[loss.cause], { profile, colourSpace, format });
+        }
+    }
 };

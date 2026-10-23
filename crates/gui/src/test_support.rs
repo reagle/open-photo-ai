@@ -17,7 +17,8 @@ pub(crate) fn admitted(dir: &tempfile::TempDir, opened: &Opened) -> String {
         image::Rgb([(x * 8) as u8, (y * 8) as u8, 96])
     }));
 
-    opai::image::save_blocking(&pixels, &path, opai::ImageFormat::Png, None).expect("writable");
+    opai::image::save_blocking(&pixels, &opai::image::Metadata::default(), &path, opai::ImageFormat::Png, None)
+        .expect("writable");
 
     tauri::async_runtime::block_on(crate::images::files::describe_and_admit(vec![path.clone()], opened))
         .expect("the runtime is alive");
@@ -322,4 +323,25 @@ impl tracing::field::Visit for Fields {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
         self.0.push((field.name().to_string(), format!("{value:?}")));
     }
+}
+
+/// A Display P3 ICC profile, the CC0 compact one `opai`'s tests embed too, from the workspace's `fixtures/`.
+pub(crate) const DISPLAY_P3: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/DisplayP3-v4.icc"));
+
+/// Metadata carrying [`DISPLAY_P3`], as `opai::image::load` attaches it to a Display P3 photograph.
+pub(crate) fn display_p3() -> opai::image::Metadata {
+    let mut metadata = opai::image::Metadata::default();
+    metadata.icc_profile = Some(DISPLAY_P3.to_vec());
+    metadata
+}
+
+/// [`display_p3`] plus the descriptive blocks a camera and a cataloguing tool leave: an EXIF block whose IFD0 holds
+/// `Orientation` = 6 (the one a browser would act on), an XMP packet and an IPTC resource block.
+pub(crate) fn described() -> opai::image::Metadata {
+    let mut metadata = display_p3();
+    metadata.exif = Some(b"MM\0\x2a\0\0\0\x08\0\x01\x01\x12\0\x03\0\0\0\x01\0\x06\0\0\0\0\0\0".to_vec());
+    metadata.xmp = Some(b"<x:xmpmeta xmlns:x='adobe:ns:meta/'/>".to_vec());
+    metadata.iptc = Some(b"8BIM\x04\x04\0\0\0\0\0\x09\x1c\x02\x19\0\x04hawk\0".to_vec());
+    metadata
 }

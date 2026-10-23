@@ -35,6 +35,10 @@
             "export": {
                 "title": "Export",
                 "description": "Kvalitet för de förstörande formaten. Lägre värden ger mindre filer; skalorna är inte jämförbara mellan format."
+            },
+            "keyboard": {
+                "title": "Tangentbord",
+                "description": "Tangenterna som zoomar, anpassar och visar originalet. Ändringar gäller när du klickar på Spara."
             }
         },
         "app": {
@@ -109,7 +113,62 @@
             },
             "autopilotLabel": "Autopilot: {{name}}"
         },
-        "reset": "Återställ standardvärden"
+        "reset": "Återställ standardvärden",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Zooma in",
+                "zoomOut": "Zooma ut",
+                "fit": "Anpassa till fönstret",
+                "actualPixels": "Faktiska pixlar (100 %)",
+                "toggleZoom": "Växla mellan anpassad och faktiska pixlar",
+                "panLeft": "Panorera åt vänster",
+                "panRight": "Panorera åt höger",
+                "panUp": "Panorera uppåt",
+                "panDown": "Panorera nedåt",
+                "showOriginal": "Visa original medan tangenten hålls ned",
+                "cyclePreview": "Växla jämförelsevy",
+                "toggleDrawer": "Visa eller dölj bilder",
+                "previousImage": "Föregående bild",
+                "nextImage": "Nästa bild",
+                "revealImage": "Visa bilden i filhanteraren",
+                "toggleAutopilot": "Slå på eller av Autopilot",
+                "addEnhancement": "Lägg till förbättring",
+                "removeEnhancement": "Ta bort markerad förbättring",
+                "openOptions1": "Alternativ för förbättring 1",
+                "openOptions2": "Alternativ för förbättring 2",
+                "openOptions3": "Alternativ för förbättring 3",
+                "openOptions4": "Alternativ för förbättring 4",
+                "openOptions5": "Alternativ för förbättring 5",
+                "openOptions6": "Alternativ för förbättring 6",
+                "openOptions7": "Alternativ för förbättring 7",
+                "cropRotate": "Beskär/Rotera",
+                "showShortcuts": "Visa kortkommandon"
+            },
+            "add": "Lägg till kortkommando",
+            "addLabel": "Lägg till kortkommando för {{action}}",
+            "recording": "Tryck på tangenter…",
+            "prompt": "Tryck på tangenterna för {{action}}, eller Escape för att avbryta.",
+            "none": "Inget kortkommando",
+            "remove": "Ta bort {{binding}}, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} är reserverad för att röra sig i fönstret.",
+                "system": "{{binding}} används av systemet.",
+                "application": "{{binding}} används av programmet."
+            },
+            "conflict": "{{binding}} används redan av {{action}}.",
+            "useHere": "Använd här i stället",
+            "space": "Blanksteg",
+            "appActions": {
+                "open": "Öppna bilder",
+                "export": "Exportera bilder",
+                "settings": "Öppna inställningar",
+                "closeImage": "Stäng bild",
+                "closeAll": "Stäng alla bilder",
+                "quit": "Avsluta"
+            },
+            "application": "Program",
+            "applicationHint": "Dessa tangenter är fasta och kan inte ändras."
+        }
     },
     "navbar": {
         "about": "Om",
@@ -225,6 +284,22 @@
             "ended_other": "{{written}} av {{count}} skrivna",
             "endedFailed_one": "{{written}} av {{count}} skrivna, {{failed}} misslyckades",
             "endedFailed_other": "{{written}} av {{count}} skrivna, {{failed}} misslyckades"
+        },
+        "loss": {
+            "notice": "{{count}} av {{total}} bilder förlorar kvalitet i det här formatet. Håll pekaren över varningen på en rad för att se vad.",
+            "warning": "Kvalitetsförlust i det här formatet",
+            "hdrGainMap": "HDR-förstärkningskarta borttagen: {{format}} skrivs tills vidare bara som SDR",
+            "hdrGainMapNotCarried": "HDR-förstärkningskarta borttagen: den kunde inte föras över",
+            "hdrTransfer": "HDR ({{transfer}}) borttaget: {{format}} skrivs tills vidare bara som SDR",
+            "depth": "{{from}} → {{to}} i {{format}}",
+            "bits": "{{bits}} bitar",
+            "bitsFloat": "{{bits}} bitar flyttal",
+            "profileFormat": "{{profile}}-profilen bäddas inte in i {{format}}",
+            "profileColourModel": "{{profile}}-profilen bäddas inte in i {{format}}: den är för {{colourSpace}}, inte för filens färger",
+            "profileDiscarded": "{{profile}}-profilen togs bort: den är för {{colourSpace}}, inte för bildens pixlar",
+            "profileNotWritten": "{{profile}}-profilen bäddas inte in i {{format}}: kodaren kunde inte skriva den",
+            "profileCoded": "{{profile}}-färgbeskrivningen skrivs inte i {{format}}",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {
@@ -388,6 +463,34 @@
             "showIn": "Visa i filhanteraren",
             "showIn_darwin": "Visa i Finder",
             "showIn_windows": "Visa i Utforskaren"
+        },
+        "bar": {
+            "about": "Om {{name}}",
+            "services": "Tjänster",
+            "hide": "Göm {{name}}",
+            "hideOthers": "Göm övriga",
+            "showAll": "Visa alla",
+            "quit": "Avsluta {{name}}",
+            "file": "Arkiv",
+            "open": "Öppna…",
+            "export": "Exportera…",
+            "closeImage": "Stäng bild",
+            "closeAll": "Stäng alla bilder",
+            "settings": "Inställningar…",
+            "edit": "Redigera",
+            "undo": "Ångra",
+            "redo": "Gör om",
+            "cut": "Klipp ut",
+            "copy": "Kopiera",
+            "paste": "Klistra in",
+            "selectAll": "Markera allt",
+            "view": "Visa",
+            "fullscreen": "Starta helskärmsläge",
+            "window": "Fönster",
+            "minimize": "Minimera",
+            "zoom": "Zooma",
+            "bringAllToFront": "Lägg alla överst",
+            "help": "Hjälp"
         }
     },
     "errors": {
@@ -401,6 +504,25 @@
             "title": "Något gick fel",
             "message": "Open Photo AI råkade ut för ett oväntat fel och kan inte fortsätta. Att ladda om brukar lösa det; dina inställningar behålls, men allt osparat arbete i den aktuella sessionen går förlorat.",
             "reload": "Ladda om"
+        }
+    },
+    "shortcuts": {
+        "title": "Kortkommandon",
+        "description": "Tangenterna som just nu är kopplade till varje åtgärd.",
+        "hint": "Ändra dem under Inställningar > Tangentbord.",
+        "tooltip": "{{name}} ({{key}})",
+        "tooltipCycle": "{{name}} ({{key}} växlar)",
+        "settingsHint": "Tryck på {{key}} var som helst för att se kortkommandona.",
+        "sections": {
+            "view": "Visning",
+            "images": "Bilder",
+            "enhancements": "Förbättringar"
+        },
+        "rows": {
+            "zoom": "Zooma in / Zooma ut",
+            "pan": "Panorera",
+            "images": "Föregående bild / Nästa bild",
+            "options": "Alternativ för förbättring 1–7"
         }
     }
 }

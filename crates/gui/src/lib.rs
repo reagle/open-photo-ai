@@ -17,9 +17,11 @@ mod enhance;
 mod export;
 mod faces;
 mod frontend;
+mod gui_settings;
 mod images;
 mod links;
 mod logs;
+mod menu;
 mod opened;
 mod reveal;
 mod setup;
@@ -100,6 +102,11 @@ pub fn run(prepared: Result<(), opai::InitError>) {
     }
 
     builder
+        // The window reopens where the user left it. After the single-instance plugin, so a refused second launch
+        // never reads or writes the saved frame, and before `setup`, so the frame is restored while the window is
+        // still hidden. See `window_state_flags` for what is restored. Registers no command the frontend may call, so
+        // no permission is granted.
+        .plugin(tauri_plugin_window_state::Builder::default().with_state_flags(window_state_flags()).build())
         // Backs the init script's `platform` value; registers no command of its own, so no permission is granted.
         .plugin(tauri_plugin_os::init())
         // Needed for the file picker (`DialogExt::dialog()` reads state this registers). Its own commands are left
@@ -148,6 +155,10 @@ pub fn run(prepared: Result<(), opai::InitError>) {
 
             window::reveal_when_late(app.handle());
 
+            // This application's own menu in place of Tauri's default, whose Command-W closed the window and so quit.
+            #[cfg(target_os = "macos")]
+            menu::install(app.handle())?;
+
             // The files this launch was started to open. Windows and Linux name them on the command line; macOS
             // sends `RunEvent::Opened` instead, but a path given to the binary directly is honoured there too.
             if let Ok(cwd) = std::env::current_dir() {
@@ -156,14 +167,18 @@ pub fn run(prepared: Result<(), opai::InitError>) {
 
             Ok(())
         })
+        // Forwards the menu's items of this application's own to the window, which acts on them (`src/menu.rs`).
+        .on_menu_event(menu::forward)
         .invoke_handler(tauri::generate_handler![
             version,
             telemetry_ids,
             analytics::set_analytics,
+            gui_settings::set_gui_settings,
             frontend::log,
             setup::initialize,
             setup::quit,
             logs::reveal_log,
+            menu::configure_menu,
             links::open_link,
             update::is_outdated,
             catalogue::catalogue,
@@ -179,6 +194,7 @@ pub fn run(prepared: Result<(), opai::InitError>) {
             export::cancel_export,
             export::export_formats,
             export::export_names,
+            export::export_losses,
             export::directory::pick_directory,
             export::written::reveal_export,
             images::files::open_images,
@@ -221,6 +237,16 @@ fn closing(uptime: std::time::Duration, stop: impl FnOnce()) {
     tracing::info!(target: "gui", ?uptime, "Open Photo AI is closing");
 
     stop();
+}
+
+/// What the window-state plugin saves and restores: the frame and whether it was maximised, and nothing else.
+///
+/// `VISIBLE` is left out on purpose: restoring it would show the window before React has painted, undoing the
+/// handshake in `src/window.rs`. `FULLSCREEN` too, since reopening into a full-screen Space is disorienting.
+fn window_state_flags() -> tauri_plugin_window_state::StateFlags {
+    use tauri_plugin_window_state::StateFlags;
+
+    StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED
 }
 
 /// Whether to register the single-instance plugin at all. See [`single_instance::session_bus_is_usable`] for the
@@ -425,6 +451,41 @@ mod tests {
             window["backgroundColor"].as_str(),
             Some(background),
             "the window's pre-paint colour has drifted from `--background` in frontend/style.css"
+        );
+    }
+
+    /// The window opens at its own size rather than filling the screen, so the frame the window-state plugin restores
+    /// is the user's, and a first launch with nothing saved is centred and not maximised. It still ships hidden:
+    /// neither flag may come back in a form that shows it before React paints (on Windows, `maximized` does).
+    #[test]
+    fn the_window_opens_at_its_own_size_and_still_hidden() {
+        let raw = include_str!("../tauri.conf.json");
+        let conf: serde_json::Value = serde_json::from_str(raw).expect("tauri.conf.json is not valid JSON");
+        let window = &conf["app"]["windows"][0];
+
+        for flag in ["maximized", "fullscreen"] {
+            assert_ne!(
+                window[flag],
+                serde_json::json!(true),
+                "the main window is `{flag}` again, which overrides the frame the window-state plugin restores"
+            );
+        }
+        assert_eq!(window["center"], serde_json::json!(true), "a first launch should open centred");
+        assert_eq!(window["visible"], serde_json::json!(false), "the main window no longer ships hidden");
+    }
+
+    /// The plugin restores the frame and the maximised state, never visibility (the window would show before React
+    /// paints) and never full screen.
+    #[test]
+    fn the_window_state_plugin_restores_the_frame_and_nothing_else() {
+        use tauri_plugin_window_state::StateFlags;
+
+        let flags = super::window_state_flags();
+
+        assert_eq!(flags.bits(), (StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED).bits());
+        assert!(
+            !flags.contains(StateFlags::VISIBLE),
+            "a restored visibility would show the window before it paints"
         );
     }
 

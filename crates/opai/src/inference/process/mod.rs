@@ -262,7 +262,11 @@ where
     // deliberately no part of it: a result computed on a GPU and one computed on the CPU are the same pixels and are
     // interchangeable, so a provider in the identity would halve the run cache's hit rate on a machine whose GPU is
     // sometimes busy, for no correctness gain at all.
-    let picture = Picture::new(source.path(), pixels, identity_after(source.identity(), operations, depth));
+    //
+    // Built with `derive`, so the result keeps the source's metadata — its colour profile — whether the pixels were
+    // computed just now or served from the run cache, which stores pixels only: the profile is re-attached here from
+    // the source on every path, and the source identity already covers its bytes.
+    let picture = source.derive(pixels, identity_after(source.identity(), operations, depth));
 
     Ok(Enhanced { picture, providers, faces })
 }

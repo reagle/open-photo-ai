@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, CircleAlert, Folder } from "lucide-react";
+import { ArrowRight, CircleAlert, Folder, TriangleAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { showInLabel } from "@/features/files/FileOptionsMenu";
 import { framedDimensions } from "@/ipc/crop";
-import { type ExportName, revealExport } from "@/ipc/export";
+import { type ExportName, type Loss, revealExport } from "@/ipc/export";
 import { renditionFor } from "@/ipc/images";
 import { upscaleFactor } from "@/lib/enhancements";
+import { formatLoss } from "@/lib/export";
 import { report } from "@/lib/report";
 import { cn, formatBytes, formatDimensions } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
@@ -99,6 +100,35 @@ const StagePill = ({ row }: { row: Row }) => {
     );
 };
 
+/**
+ * The warning that this file loses something against its source in its format - HDR, bit depth, its color profile -
+ * with each loss in words in its tooltip. Focusable, so the tooltip is reachable from the keyboard too.
+ */
+const LossWarning = ({ losses }: { losses: readonly Loss[] }) => {
+    const { t } = useTranslation();
+
+    return (
+        <Tooltip>
+            <TooltipTrigger
+                type="button"
+                data-slot="export-loss"
+                aria-label={t("export.loss.warning")}
+                className="flex size-4 flex-none items-center justify-center rounded-sm text-warning focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+            >
+                <TriangleAlert className="size-3.5" strokeWidth={2} aria-hidden="true" />
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={6} className="max-w-75 text-left">
+                <ul data-slot="export-loss-list" className="flex flex-col gap-0.5">
+                    {losses.map((loss) => {
+                        const words = formatLoss(t, loss);
+                        return <li key={words}>{words}</li>;
+                    })}
+                </ul>
+            </TooltipContent>
+        </Tooltip>
+    );
+};
+
 /** The control that shows a written file in the file manager, named as the drawer's menu names the same act. */
 const RevealButton = ({ path }: { path: string }) => {
     const { t } = useTranslation();
@@ -125,7 +155,8 @@ const RevealButton = ({ path }: { path: string }) => {
 
 /**
  * One queued file: its thumbnail, the name it will be written under, its dimensions before and after, its sizes, its
- * types and its stage.
+ * types and its stage, and a warning where it loses HDR, bit depth or its color profile: `predicted` before it is
+ * written, as Rust foresees from the file (see `useExportLosses`), and what Rust answered for the write once it is.
  *
  * **What it shows is read live** - the dimensions from the stack and the framing, and `name` from what Rust answers
  * for the export settings (see `useExportNames`) - so a change while idle is seen at once, and the column being
@@ -137,10 +168,12 @@ const RevealButton = ({ path }: { path: string }) => {
 export const ExportRow = ({
     path,
     name,
+    predicted,
     follow = false,
 }: {
     path: string;
     name?: ExportName | undefined;
+    predicted?: readonly Loss[] | undefined;
     follow?: boolean;
 }) => {
     const file = useFileByPath(path);
@@ -164,6 +197,8 @@ export const ExportRow = ({
     const scale = upscaleFactor(stack);
     const types = `${file.extension.toUpperCase()} → ${name.extension.toUpperCase()}`;
     const fraction = row.stage === "enhancing" ? row.fraction : row.stage === "writing" ? 1 : 0;
+    // What was written, once it was; until then, what will be. A failed row wrote nothing to warn about.
+    const losses = row.stage === "done" ? row.losses : row.stage === "failed" ? [] : (predicted ?? []);
 
     return (
         <div
@@ -186,7 +221,10 @@ export const ExportRow = ({
                 </div>
 
                 <div className="flex min-w-0 flex-1 flex-col gap-0.75">
-                    <span className="truncate text-[13px]">{name.name}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-[13px]">{name.name}</span>
+                        {losses.length > 0 && <LossWarning losses={losses} />}
+                    </span>
                     <span className="flex items-center gap-2 text-foreground-dim text-xs">
                         {width !== undefined && height !== undefined && (
                             <>
