@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
-import { isMacOs } from "@/ipc/os";
+import { isMacOs, isWindows } from "@/ipc/os";
 import { useSettingsStore } from "@/stores/settings";
 import { useShortcutsListStore } from "@/stores/shortcutsList";
 import { render } from "@/test/support";
@@ -22,6 +22,7 @@ const keysFor = (list: HTMLElement, action: string) =>
 
 beforeEach(() => {
     vi.mocked(isMacOs).mockReturnValue(false);
+    vi.mocked(isWindows).mockReturnValue(false);
     localStorage.clear();
     useSettingsStore.setState(useSettingsStore.getInitialState(), true);
     useShortcutsListStore.setState({ open: false });
@@ -57,6 +58,21 @@ describe("the keyboard shortcuts list", () => {
 
         expect(keysFor(list, "Zoom in")).toBe("Shift+Z");
         expect(keysFor(list, "Fit to window")).toBe("No shortcut");
+    });
+
+    it.each([
+        ["macOS", true, false, "⌘ W", "⌘ Q"],
+        ["Windows", false, true, "Ctrl+W", "Alt+F4"],
+        ["Linux", false, false, "Ctrl+W", "Ctrl+Q"],
+    ])("heads the list with the application's own keys on %s", (_platform, mac, windows, close, quit) => {
+        vi.mocked(isMacOs).mockReturnValue(mac);
+        vi.mocked(isWindows).mockReturnValue(windows);
+        const list = openList();
+
+        const group = within(list).getByRole("region", { name: "Application" });
+        expect(keysFor(group, "Close image")).toBe(close);
+        expect(keysFor(group, "Quit")).toBe(quit);
+        expect(keysFor(group, "Open images")).toBe(mac ? "⌘ O" : "Ctrl+O");
     });
 
     it("closes with Escape", () => {

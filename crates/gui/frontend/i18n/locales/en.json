@@ -134,11 +134,21 @@
             "remove": "Remove {{binding}}, {{action}}",
             "refused": {
                 "navigation": "{{binding}} is kept for moving around the window.",
-                "system": "{{binding}} is used by the system."
+                "system": "{{binding}} is used by the system.",
+                "application": "{{binding}} is used by the application."
             },
             "conflict": "{{binding}} is already used by {{action}}.",
             "useHere": "Use here instead",
-            "space": "Space"
+            "space": "Space",
+            "appActions": {
+                "open": "Open images",
+                "settings": "Open Settings",
+                "closeImage": "Close image",
+                "closeAll": "Close all images",
+                "quit": "Quit"
+            },
+            "application": "Application",
+            "applicationHint": "These keys are fixed and cannot be changed."
         }
     },
     "navbar": {
@@ -418,6 +428,33 @@
             "showIn": "Show in File Manager",
             "showIn_darwin": "Show in Finder",
             "showIn_windows": "Show in Explorer"
+        },
+        "bar": {
+            "about": "About {{name}}",
+            "services": "Services",
+            "hide": "Hide {{name}}",
+            "hideOthers": "Hide Others",
+            "showAll": "Show All",
+            "quit": "Quit {{name}}",
+            "file": "File",
+            "open": "Open…",
+            "closeImage": "Close Image",
+            "closeAll": "Close All Images",
+            "settings": "Settings…",
+            "edit": "Edit",
+            "undo": "Undo",
+            "redo": "Redo",
+            "cut": "Cut",
+            "copy": "Copy",
+            "paste": "Paste",
+            "selectAll": "Select All",
+            "view": "View",
+            "fullscreen": "Enter Full Screen",
+            "window": "Window",
+            "minimize": "Minimize",
+            "zoom": "Zoom",
+            "bringAllToFront": "Bring All to Front",
+            "help": "Help"
         }
     },
     "errors": {

@@ -134,11 +134,21 @@
             "remove": "Quitar {{binding}}, {{action}}",
             "refused": {
                 "navigation": "{{binding}} se reserva para moverse por la ventana.",
-                "system": "{{binding}} lo usa el sistema."
+                "system": "{{binding}} lo usa el sistema.",
+                "application": "{{binding}} lo usa la aplicación."
             },
             "conflict": "{{binding}} ya lo usa {{action}}.",
             "useHere": "Usar aquí en su lugar",
-            "space": "Espacio"
+            "space": "Espacio",
+            "appActions": {
+                "open": "Abrir imágenes",
+                "settings": "Abrir Ajustes",
+                "closeImage": "Cerrar imagen",
+                "closeAll": "Cerrar todas las imágenes",
+                "quit": "Salir"
+            },
+            "application": "Aplicación",
+            "applicationHint": "Estas teclas son fijas y no se pueden cambiar."
         }
     },
     "navbar": {
@@ -418,6 +428,33 @@
             "showIn": "Mostrar en el gestor de archivos",
             "showIn_darwin": "Mostrar en Finder",
             "showIn_windows": "Mostrar en el Explorador de archivos"
+        },
+        "bar": {
+            "about": "Acerca de {{name}}",
+            "services": "Servicios",
+            "hide": "Ocultar {{name}}",
+            "hideOthers": "Ocultar otros",
+            "showAll": "Mostrar todo",
+            "quit": "Salir de {{name}}",
+            "file": "Archivo",
+            "open": "Abrir…",
+            "closeImage": "Cerrar imagen",
+            "closeAll": "Cerrar todas las imágenes",
+            "settings": "Ajustes…",
+            "edit": "Edición",
+            "undo": "Deshacer",
+            "redo": "Rehacer",
+            "cut": "Cortar",
+            "copy": "Copiar",
+            "paste": "Pegar",
+            "selectAll": "Seleccionar todo",
+            "view": "Visualización",
+            "fullscreen": "Entrar en pantalla completa",
+            "window": "Ventana",
+            "minimize": "Minimizar",
+            "zoom": "Zoom",
+            "bringAllToFront": "Traer todo al frente",
+            "help": "Ayuda"
         }
     },
     "errors": {

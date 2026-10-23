@@ -6,6 +6,7 @@ import { SetupDialog } from "@/features/setup/SetupDialog";
 import { TensorRTDialog } from "@/features/setup/TensorRTDialog";
 import { ShortcutsDialog } from "@/features/shortcuts/ShortcutsDialog";
 import { Sidebar } from "@/features/sidebar/Sidebar";
+import { useAppActions } from "@/hooks/useAppActions";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { initialize } from "@/ipc/setup";
 import { track } from "@/lib/faro";
@@ -49,6 +50,9 @@ const App = () => {
     // Here because the shortcuts are the window's, not any one region's, and this is mounted exactly
     // once for the window's whole life.
     useShortcuts();
+    // The application's own actions - Open, Settings, Close Image, Close All Images, Quit - from the
+    // macOS menu bar or, elsewhere, their keys; mounted here for the same reason.
+    useAppActions();
 
     /** One attempt at starting the application, from the mount effect and from Try again alike. */
     const start = useCallback(() => {

@@ -20,6 +20,7 @@ mod frontend;
 mod images;
 mod links;
 mod logs;
+mod menu;
 mod reveal;
 mod setup;
 mod single_instance;
@@ -137,8 +138,14 @@ pub fn run(prepared: Result<(), opai::InitError>) {
 
             window::reveal_when_late(app.handle());
 
+            // This application's own menu in place of Tauri's default, whose Command-W closed the window and so quit.
+            #[cfg(target_os = "macos")]
+            menu::install(app.handle())?;
+
             Ok(())
         })
+        // Forwards the menu's items of this application's own to the window, which acts on them (`src/menu.rs`).
+        .on_menu_event(menu::forward)
         .invoke_handler(tauri::generate_handler![
             version,
             telemetry_ids,
@@ -147,6 +154,7 @@ pub fn run(prepared: Result<(), opai::InitError>) {
             setup::initialize,
             setup::quit,
             logs::reveal_log,
+            menu::configure_menu,
             links::open_link,
             update::is_outdated,
             catalogue::catalogue,

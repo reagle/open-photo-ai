@@ -134,11 +134,21 @@
             "remove": "{{binding}} verwijderen, {{action}}",
             "refused": {
                 "navigation": "{{binding}} is gereserveerd voor navigatie in het venster.",
-                "system": "{{binding}} wordt door het systeem gebruikt."
+                "system": "{{binding}} wordt door het systeem gebruikt.",
+                "application": "{{binding}} wordt door de applicatie gebruikt."
             },
             "conflict": "{{binding}} wordt al gebruikt door {{action}}.",
             "useHere": "Hier gebruiken",
-            "space": "Spatie"
+            "space": "Spatie",
+            "appActions": {
+                "open": "Afbeeldingen openen",
+                "settings": "Instellingen openen",
+                "closeImage": "Afbeelding sluiten",
+                "closeAll": "Alle afbeeldingen sluiten",
+                "quit": "Afsluiten"
+            },
+            "application": "Applicatie",
+            "applicationHint": "Deze toetsen liggen vast en kunnen niet worden gewijzigd."
         }
     },
     "navbar": {
@@ -418,6 +428,33 @@
             "showIn": "Tonen in bestandsbeheer",
             "showIn_darwin": "Tonen in Finder",
             "showIn_windows": "Tonen in Verkenner"
+        },
+        "bar": {
+            "about": "Over {{name}}",
+            "services": "Voorzieningen",
+            "hide": "Verberg {{name}}",
+            "hideOthers": "Verberg andere",
+            "showAll": "Toon alles",
+            "quit": "Stop {{name}}",
+            "file": "Archief",
+            "open": "Open…",
+            "closeImage": "Afbeelding sluiten",
+            "closeAll": "Alle afbeeldingen sluiten",
+            "settings": "Instellingen…",
+            "edit": "Wijzig",
+            "undo": "Herstel",
+            "redo": "Opnieuw",
+            "cut": "Knip",
+            "copy": "Kopieer",
+            "paste": "Plak",
+            "selectAll": "Selecteer alles",
+            "view": "Weergave",
+            "fullscreen": "Ga naar schermvullende weergave",
+            "window": "Venster",
+            "minimize": "Minimaliseer",
+            "zoom": "Zoom",
+            "bringAllToFront": "Alles naar voorgrond",
+            "help": "Help"
         }
     },
     "errors": {

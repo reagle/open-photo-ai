@@ -134,11 +134,21 @@
             "remove": "{{binding}}を削除、{{action}}",
             "refused": {
                 "navigation": "{{binding}}はウィンドウ内の移動用に予約されています。",
-                "system": "{{binding}}はシステムが使用しています。"
+                "system": "{{binding}}はシステムが使用しています。",
+                "application": "{{binding}}はアプリケーションが使用しています。"
             },
             "conflict": "{{binding}}はすでに{{action}}で使用されています。",
             "useHere": "代わりにここで使う",
-            "space": "スペース"
+            "space": "スペース",
+            "appActions": {
+                "open": "画像を開く",
+                "settings": "設定を開く",
+                "closeImage": "画像を閉じる",
+                "closeAll": "すべての画像を閉じる",
+                "quit": "終了"
+            },
+            "application": "アプリケーション",
+            "applicationHint": "これらのキーは固定で、変更できません。"
         }
     },
     "navbar": {
@@ -408,6 +418,33 @@
             "showIn": "ファイルマネージャーで表示",
             "showIn_darwin": "Finder で表示",
             "showIn_windows": "エクスプローラーで表示"
+        },
+        "bar": {
+            "about": "{{name}}について",
+            "services": "サービス",
+            "hide": "{{name}}を非表示",
+            "hideOthers": "ほかを非表示",
+            "showAll": "すべてを表示",
+            "quit": "{{name}}を終了",
+            "file": "ファイル",
+            "open": "開く…",
+            "closeImage": "画像を閉じる",
+            "closeAll": "すべての画像を閉じる",
+            "settings": "設定…",
+            "edit": "編集",
+            "undo": "取り消す",
+            "redo": "やり直す",
+            "cut": "カット",
+            "copy": "コピー",
+            "paste": "ペースト",
+            "selectAll": "すべてを選択",
+            "view": "表示",
+            "fullscreen": "フルスクリーンにする",
+            "window": "ウインドウ",
+            "minimize": "しまう",
+            "zoom": "拡大／縮小",
+            "bringAllToFront": "すべてを手前に移動",
+            "help": "ヘルプ"
         }
     },
     "errors": {

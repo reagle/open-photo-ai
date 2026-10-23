@@ -134,11 +134,21 @@
             "remove": "{{binding}} हटाएँ, {{action}}",
             "refused": {
                 "navigation": "{{binding}} विंडो में घूमने के लिए आरक्षित है।",
-                "system": "{{binding}} सिस्टम द्वारा उपयोग किया जाता है।"
+                "system": "{{binding}} सिस्टम द्वारा उपयोग किया जाता है।",
+                "application": "{{binding}} ऐप्लिकेशन द्वारा उपयोग किया जाता है।"
             },
             "conflict": "{{binding}} पहले से {{action}} द्वारा उपयोग में है।",
             "useHere": "इसके बजाय यहाँ उपयोग करें",
-            "space": "स्पेस"
+            "space": "स्पेस",
+            "appActions": {
+                "open": "छवियाँ खोलें",
+                "settings": "सेटिंग्स खोलें",
+                "closeImage": "छवि बंद करें",
+                "closeAll": "सभी छवियाँ बंद करें",
+                "quit": "बंद करें"
+            },
+            "application": "ऐप्लिकेशन",
+            "applicationHint": "ये कुंजियाँ निश्चित हैं और बदली नहीं जा सकतीं।"
         }
     },
     "navbar": {
@@ -418,6 +428,33 @@
             "showIn": "फ़ाइल मैनेजर में दिखाएँ",
             "showIn_darwin": "Finder में दिखाएँ",
             "showIn_windows": "Explorer में दिखाएँ"
+        },
+        "bar": {
+            "about": "{{name}} के बारे में",
+            "services": "सेवाएँ",
+            "hide": "{{name}} छिपाएँ",
+            "hideOthers": "अन्य छिपाएँ",
+            "showAll": "सभी दिखाएँ",
+            "quit": "{{name}} बंद करें",
+            "file": "फ़ाइल",
+            "open": "खोलें…",
+            "closeImage": "छवि बंद करें",
+            "closeAll": "सभी छवियाँ बंद करें",
+            "settings": "सेटिंग्स…",
+            "edit": "संपादित करें",
+            "undo": "पूर्ववत करें",
+            "redo": "फिर से करें",
+            "cut": "काटें",
+            "copy": "कॉपी करें",
+            "paste": "पेस्ट करें",
+            "selectAll": "सभी चुनें",
+            "view": "देखें",
+            "fullscreen": "फ़ुल स्क्रीन में जाएँ",
+            "window": "विंडो",
+            "minimize": "छोटा करें",
+            "zoom": "ज़ूम करें",
+            "bringAllToFront": "सभी को सामने लाएँ",
+            "help": "सहायता"
         }
     },
     "errors": {

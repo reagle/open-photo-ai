@@ -134,11 +134,21 @@
             "remove": "Rimuovi {{binding}}, {{action}}",
             "refused": {
                 "navigation": "{{binding}} è riservato alla navigazione nella finestra.",
-                "system": "{{binding}} è usato dal sistema."
+                "system": "{{binding}} è usato dal sistema.",
+                "application": "{{binding}} è usato dall'applicazione."
             },
             "conflict": "{{binding}} è già usato da {{action}}.",
             "useHere": "Usa qui invece",
-            "space": "Spazio"
+            "space": "Spazio",
+            "appActions": {
+                "open": "Apri immagini",
+                "settings": "Apri Impostazioni",
+                "closeImage": "Chiudi immagine",
+                "closeAll": "Chiudi tutte le immagini",
+                "quit": "Esci"
+            },
+            "application": "Applicazione",
+            "applicationHint": "Questi tasti sono fissi e non si possono cambiare."
         }
     },
     "navbar": {
@@ -428,6 +438,33 @@
             "showIn": "Mostra nel file manager",
             "showIn_darwin": "Mostra nel Finder",
             "showIn_windows": "Mostra in Esplora file"
+        },
+        "bar": {
+            "about": "Informazioni su {{name}}",
+            "services": "Servizi",
+            "hide": "Nascondi {{name}}",
+            "hideOthers": "Nascondi altre",
+            "showAll": "Mostra tutte",
+            "quit": "Esci da {{name}}",
+            "file": "File",
+            "open": "Apri…",
+            "closeImage": "Chiudi immagine",
+            "closeAll": "Chiudi tutte le immagini",
+            "settings": "Impostazioni…",
+            "edit": "Modifica",
+            "undo": "Annulla",
+            "redo": "Ripeti",
+            "cut": "Taglia",
+            "copy": "Copia",
+            "paste": "Incolla",
+            "selectAll": "Seleziona tutto",
+            "view": "Vista",
+            "fullscreen": "Attiva modalità a tutto schermo",
+            "window": "Finestra",
+            "minimize": "Contrai",
+            "zoom": "Ridimensiona",
+            "bringAllToFront": "Porta tutto in primo piano",
+            "help": "Aiuto"
         }
     },
     "errors": {
