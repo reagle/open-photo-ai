@@ -134,11 +134,21 @@
             "remove": "Hapus {{binding}}, {{action}}",
             "refused": {
                 "navigation": "{{binding}} dicadangkan untuk berpindah di dalam jendela.",
-                "system": "{{binding}} digunakan oleh sistem."
+                "system": "{{binding}} digunakan oleh sistem.",
+                "application": "{{binding}} digunakan oleh aplikasi."
             },
             "conflict": "{{binding}} sudah digunakan oleh {{action}}.",
             "useHere": "Gunakan di sini saja",
-            "space": "Spasi"
+            "space": "Spasi",
+            "appActions": {
+                "open": "Buka gambar",
+                "settings": "Buka Pengaturan",
+                "closeImage": "Tutup gambar",
+                "closeAll": "Tutup semua gambar",
+                "quit": "Keluar"
+            },
+            "application": "Aplikasi",
+            "applicationHint": "Tombol ini tetap dan tidak dapat diubah."
         }
     },
     "navbar": {
@@ -408,6 +418,33 @@
             "showIn": "Tampilkan di Pengelola File",
             "showIn_darwin": "Tampilkan di Finder",
             "showIn_windows": "Tampilkan di Explorer"
+        },
+        "bar": {
+            "about": "Tentang {{name}}",
+            "services": "Layanan",
+            "hide": "Sembunyikan {{name}}",
+            "hideOthers": "Sembunyikan Lainnya",
+            "showAll": "Tampilkan Semua",
+            "quit": "Keluar dari {{name}}",
+            "file": "File",
+            "open": "Buka…",
+            "closeImage": "Tutup gambar",
+            "closeAll": "Tutup semua gambar",
+            "settings": "Pengaturan…",
+            "edit": "Edit",
+            "undo": "Urungkan",
+            "redo": "Ulangi",
+            "cut": "Potong",
+            "copy": "Salin",
+            "paste": "Tempel",
+            "selectAll": "Pilih Semua",
+            "view": "Tampilan",
+            "fullscreen": "Masuk ke Layar Penuh",
+            "window": "Jendela",
+            "minimize": "Minimalkan",
+            "zoom": "Perbesar/Perkecil",
+            "bringAllToFront": "Bawa Semua ke Depan",
+            "help": "Bantuan"
         }
     },
     "errors": {

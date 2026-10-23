@@ -134,11 +134,21 @@
             "remove": "{{binding}} entfernen, {{action}}",
             "refused": {
                 "navigation": "{{binding}} ist für die Navigation im Fenster reserviert.",
-                "system": "{{binding}} wird vom System verwendet."
+                "system": "{{binding}} wird vom System verwendet.",
+                "application": "{{binding}} wird von der Anwendung verwendet."
             },
             "conflict": "{{binding}} wird bereits von {{action}} verwendet.",
             "useHere": "Stattdessen hier verwenden",
-            "space": "Leertaste"
+            "space": "Leertaste",
+            "appActions": {
+                "open": "Bilder öffnen",
+                "settings": "Einstellungen öffnen",
+                "closeImage": "Bild schließen",
+                "closeAll": "Alle Bilder schließen",
+                "quit": "Beenden"
+            },
+            "application": "Anwendung",
+            "applicationHint": "Diese Tasten sind fest und können nicht geändert werden."
         }
     },
     "navbar": {
@@ -418,6 +428,33 @@
             "showIn": "Im Dateimanager anzeigen",
             "showIn_darwin": "Im Finder anzeigen",
             "showIn_windows": "Im Explorer anzeigen"
+        },
+        "bar": {
+            "about": "Über {{name}}",
+            "services": "Dienste",
+            "hide": "{{name}} ausblenden",
+            "hideOthers": "Andere ausblenden",
+            "showAll": "Alle einblenden",
+            "quit": "{{name}} beenden",
+            "file": "Ablage",
+            "open": "Öffnen …",
+            "closeImage": "Bild schließen",
+            "closeAll": "Alle Bilder schließen",
+            "settings": "Einstellungen …",
+            "edit": "Bearbeiten",
+            "undo": "Widerrufen",
+            "redo": "Wiederholen",
+            "cut": "Ausschneiden",
+            "copy": "Kopieren",
+            "paste": "Einsetzen",
+            "selectAll": "Alles auswählen",
+            "view": "Darstellung",
+            "fullscreen": "Vollbildmodus aktivieren",
+            "window": "Fenster",
+            "minimize": "Im Dock ablegen",
+            "zoom": "Zoomen",
+            "bringAllToFront": "Alle nach vorne bringen",
+            "help": "Hilfe"
         }
     },
     "errors": {

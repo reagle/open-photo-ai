@@ -134,11 +134,21 @@
             "remove": "Retirer {{binding}}, {{action}}",
             "refused": {
                 "navigation": "{{binding}} est réservé à la navigation dans la fenêtre.",
-                "system": "{{binding}} est utilisé par le système."
+                "system": "{{binding}} est utilisé par le système.",
+                "application": "{{binding}} est utilisé par l'application."
             },
             "conflict": "{{binding}} est déjà utilisé par {{action}}.",
             "useHere": "Utiliser ici à la place",
-            "space": "Espace"
+            "space": "Espace",
+            "appActions": {
+                "open": "Ouvrir des images",
+                "settings": "Ouvrir les paramètres",
+                "closeImage": "Fermer l'image",
+                "closeAll": "Fermer toutes les images",
+                "quit": "Quitter"
+            },
+            "application": "Application",
+            "applicationHint": "Ces touches sont fixes et ne peuvent pas être modifiées."
         }
     },
     "navbar": {
@@ -428,6 +438,33 @@
             "showIn": "Afficher dans le gestionnaire de fichiers",
             "showIn_darwin": "Afficher dans le Finder",
             "showIn_windows": "Afficher dans l'Explorateur"
+        },
+        "bar": {
+            "about": "À propos de {{name}}",
+            "services": "Services",
+            "hide": "Masquer {{name}}",
+            "hideOthers": "Masquer les autres",
+            "showAll": "Tout afficher",
+            "quit": "Quitter {{name}}",
+            "file": "Fichier",
+            "open": "Ouvrir…",
+            "closeImage": "Fermer l'image",
+            "closeAll": "Fermer toutes les images",
+            "settings": "Paramètres…",
+            "edit": "Édition",
+            "undo": "Annuler",
+            "redo": "Rétablir",
+            "cut": "Couper",
+            "copy": "Copier",
+            "paste": "Coller",
+            "selectAll": "Tout sélectionner",
+            "view": "Présentation",
+            "fullscreen": "Passer en mode plein écran",
+            "window": "Fenêtre",
+            "minimize": "Placer dans le Dock",
+            "zoom": "Réduire/agrandir",
+            "bringAllToFront": "Tout ramener au premier plan",
+            "help": "Aide"
         }
     },
     "errors": {

@@ -3,6 +3,7 @@ import type { ParseKeys } from "i18next";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { useAppShortcuts } from "@/hooks/useAppShortcuts";
 import { isMacOs } from "@/ipc/os";
 import {
     bindingFromEvent,
@@ -127,6 +128,43 @@ const Recorder = ({
 };
 
 /**
+ * The application's own actions and their keys, read-only: Open, Settings, Close Image, Close All
+ * Images and Quit hold the same keys as the macOS menu bar, and recording one of those keys for an
+ * action below is refused (`refusal`'s `application`).
+ */
+const ApplicationShortcuts = () => {
+    const { t } = useTranslation();
+    const headingId = useId();
+    const rows = useAppShortcuts();
+
+    return (
+        <section aria-labelledby={headingId} className="flex flex-col gap-2">
+            <div className="flex items-baseline justify-between gap-4">
+                <h3 id={headingId} className="m-0 font-medium text-sm">
+                    {t("settings.keyboard.application")}
+                </h3>
+                <p className="m-0 text-[12px] text-muted-foreground">{t("settings.keyboard.applicationHint")}</p>
+            </div>
+
+            <SettingsCard>
+                {rows.map(({ action, name, keys }) => (
+                    <div
+                        key={action}
+                        data-slot="app-shortcut-row"
+                        className="flex items-center justify-between gap-6 px-4 py-3"
+                    >
+                        <span className="text-sm">{name}</span>
+                        <kbd className="inline-flex h-7 items-center rounded-md border border-border bg-background px-2 font-mono text-[12px] text-muted-foreground">
+                            {keys}
+                        </kbd>
+                    </div>
+                ))}
+            </SettingsCard>
+        </section>
+    );
+};
+
+/**
  * The Keyboard page: every action the keyboard performs, with the keys it is bound to.
  *
  * **Edits the draft like every other page**, so nothing changes until Save, Cancel discards, and the
@@ -134,7 +172,8 @@ const Recorder = ({
  * What it shows is what `resolveShortcuts` puts in force, so a page and the window cannot disagree.
  *
  * Changing one action stores that action's whole list; an action never touched stays absent and keeps
- * following the defaults of whatever build is running.
+ * following the defaults of whatever build is running. The application's own actions are listed above
+ * the rest, fixed.
  */
 export const KeyboardPage = () => {
     const { t } = useTranslation();
@@ -196,6 +235,8 @@ export const KeyboardPage = () => {
 
     return (
         <>
+            <ApplicationShortcuts />
+
             <SettingsCard>
                 {SHORTCUT_ACTIONS.map((action) => {
                     const name = t(actionKey(action));

@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+    APP_ACTIONS,
     actionFor,
+    appActionFor,
+    appShortcuts,
     ariaKeyShortcuts,
     bindingFromEvent,
     DEFAULT_SHORTCUTS,
     formatBinding,
+    isAppAction,
+    isOverlayOpen,
     isWindowShortcut,
     type KeyLike,
     MAX_BINDINGS,
@@ -299,9 +304,45 @@ describe("refusal", () => {
         expect(refusal("Alt+Enter", PC)).toBeUndefined();
     });
 
-    it.each(["Mod+q", "Mod+w", "Mod+h", "Mod+m", "Meta+q", "Mod+Shift+w"])("refuses %s on macOS only", (binding) => {
+    it.each(["Mod+h", "Mod+m", "Meta+q"])("refuses %s on macOS only", (binding) => {
         expect(refusal(binding, MAC)).toBe("system");
         expect(refusal(binding, PC)).toBeUndefined();
+    });
+
+    // macOS's own keys stay the system's there; elsewhere the application's actions hold them.
+    it.each(["Mod+q", "Mod+w", "Mod+Shift+w"])(
+        "refuses %s as the system's on macOS, the application's elsewhere",
+        (binding) => {
+            expect(refusal(binding, MAC)).toBe("system");
+            expect(refusal(binding, PC)).toBe("application");
+        },
+    );
+
+    it.each(["Mod+o", "Mod+,", "Mod+Shift+,"])("refuses %s as the application's everywhere", (binding) => {
+        expect(refusal(binding, MAC)).toBe("application");
+        expect(refusal(binding, PC)).toBe("application");
+    });
+
+    it("refuses Command-O on macOS, which is Mod there, and leaves Control-O alone", () => {
+        expect(refusal("Meta+o", MAC)).toBe("application");
+        expect(refusal("Ctrl+o", MAC)).toBeUndefined();
+        expect(refusal("Ctrl+o", PC)).toBe("application");
+        expect(refusal("Meta+o", PC)).toBeUndefined();
+    });
+
+    it("leaves the application's keys with another modifier, or none, alone", () => {
+        for (const binding of ["o", "w", "Mod+Alt+o", "Mod+Shift+o", "Ctrl+Alt+w", "Shift+w"]) {
+            expect(refusal(binding, MAC)).toBeUndefined();
+            expect(refusal(binding, PC)).toBeUndefined();
+        }
+    });
+
+    it("refuses every key the application's actions hold, on every platform", () => {
+        for (const platform of ["macos", "windows", "linux"] as const) {
+            for (const binding of Object.values(appShortcuts(platform))) {
+                expect(refusal(binding, platform === "macos")).toBeDefined();
+            }
+        }
     });
 
     it("refuses Alt+F4 off macOS only", () => {
@@ -422,11 +463,17 @@ describe("repairShortcuts", () => {
     });
 
     it("drops malformed, everywhere-refused and repeated bindings, and keeps at most four", () => {
-        expect(repairShortcuts({ fit: ["Mod+", "Escape", "Mod+9", "Mod+9", "Mod+q", "1", "2", "3"] })).toEqual({
-            // `Mod+q` is refused on macOS only, so it is kept here and dropped where it is resolved.
-            fit: ["Mod+9", "Mod+q", "1", "2"],
+        expect(repairShortcuts({ fit: ["Mod+", "Escape", "Mod+9", "Mod+9", "Mod+h", "1", "2", "3"] })).toEqual({
+            // `Mod+h` is refused on macOS only, so it is kept here and dropped where it is resolved.
+            fit: ["Mod+9", "Mod+h", "1", "2"],
         });
         expect(MAX_BINDINGS).toBe(4);
+    });
+
+    it("drops a stored application key, which is refused on every platform", () => {
+        expect(repairShortcuts({ fit: ["Mod+o", "Mod+9"], zoomIn: ["Mod+,", "Mod+Shift+w", "Mod+q"] })).toEqual({
+            fit: ["Mod+9"],
+        });
     });
 
     it("keeps an empty list as a choice, and reads a list emptied by repair as the defaults", () => {
@@ -455,10 +502,72 @@ describe("resolveShortcuts", () => {
     });
 
     it("drops what this platform refuses, and honours an empty list", () => {
-        const table = resolveShortcuts({ fit: ["Mod+q", "Mod+9"], showOriginal: [] }, MAC);
+        const table = resolveShortcuts({ fit: ["Mod+h", "Mod+9"], showOriginal: [] }, MAC);
 
         expect(table.fit).toEqual(["Mod+9"]);
         expect(table.showOriginal).toEqual([]);
-        expect(resolveShortcuts({ fit: ["Mod+q"] }, PC).fit).toEqual(["Mod+q"]);
+        expect(resolveShortcuts({ fit: ["Mod+h"] }, PC).fit).toEqual(["Mod+h"]);
+    });
+});
+
+describe("the application's actions", () => {
+    it("holds the same keys on every platform but Quit's", () => {
+        expect(appShortcuts("macos")).toEqual({
+            open: "Mod+o",
+            settings: "Mod+,",
+            closeImage: "Mod+w",
+            closeAll: "Mod+Shift+w",
+            quit: "Mod+q",
+        });
+        expect(appShortcuts("windows").quit).toBe("Alt+F4");
+        expect(appShortcuts("linux").quit).toBe("Mod+q");
+        expect(APP_ACTIONS).toEqual(["open", "settings", "closeImage", "closeAll", "quit"]);
+    });
+
+    it("names an action by its id, and nothing else", () => {
+        expect(isAppAction("closeImage")).toBe(true);
+        expect(isAppAction("zoomIn")).toBe(false);
+        expect(isAppAction(undefined)).toBe(false);
+    });
+
+    it.each([
+        ["o", {}, "open"],
+        [",", {}, "settings"],
+        ["w", {}, "closeImage"],
+        ["W", { shiftKey: true }, "closeAll"],
+    ] as const)("matches Ctrl with %s on Windows and Linux", (pressed, extra, action) => {
+        for (const platform of ["windows", "linux"] as const) {
+            expect(appActionFor(key(pressed, { ctrlKey: true, ...extra }), platform)).toBe(action);
+        }
+    });
+
+    it("quits with Ctrl+Q on Linux only, and leaves Alt+F4 to Windows itself", () => {
+        expect(appActionFor(key("q", { ctrlKey: true }), "linux")).toBe("quit");
+        expect(appActionFor(key("q", { ctrlKey: true }), "windows")).toBeUndefined();
+        expect(appActionFor(key("F4", { altKey: true }), "windows")).toBeUndefined();
+    });
+
+    it("matches nothing on macOS, whose menu holds the keys", () => {
+        expect(appActionFor(key("w", { metaKey: true }), "macos")).toBeUndefined();
+        expect(appActionFor(key("o", { metaKey: true }), "macos")).toBeUndefined();
+    });
+
+    it("matches no key without its modifier, or with another", () => {
+        expect(appActionFor(key("w"), "linux")).toBeUndefined();
+        expect(appActionFor(key("w", { metaKey: true }), "linux")).toBeUndefined();
+        expect(appActionFor(key("w", { ctrlKey: true, altKey: true }), "windows")).toBeUndefined();
+    });
+
+    it("sees a dialog or a menu open over the window", () => {
+        expect(isOverlayOpen(document)).toBe(false);
+
+        const dialog = document.createElement("div");
+        dialog.setAttribute("role", "dialog");
+        document.body.append(dialog);
+        expect(isOverlayOpen(document)).toBe(true);
+
+        dialog.setAttribute("role", "menu");
+        expect(isOverlayOpen(document)).toBe(true);
+        dialog.remove();
     });
 });

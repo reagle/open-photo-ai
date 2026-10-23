@@ -134,11 +134,21 @@
             "remove": "移除 {{binding}}，{{action}}",
             "refused": {
                 "navigation": "{{binding}} 保留用于在窗口中移动。",
-                "system": "{{binding}} 被系统占用。"
+                "system": "{{binding}} 被系统占用。",
+                "application": "{{binding}} 被应用程序占用。"
             },
             "conflict": "{{binding}} 已被{{action}}使用。",
             "useHere": "改为在此使用",
-            "space": "空格"
+            "space": "空格",
+            "appActions": {
+                "open": "打开图片",
+                "settings": "打开设置",
+                "closeImage": "关闭图片",
+                "closeAll": "关闭所有图片",
+                "quit": "退出"
+            },
+            "application": "应用程序",
+            "applicationHint": "这些按键是固定的，无法更改。"
         }
     },
     "navbar": {
@@ -408,6 +418,33 @@
             "showIn": "在文件管理器中显示",
             "showIn_darwin": "在访达中显示",
             "showIn_windows": "在资源管理器中显示"
+        },
+        "bar": {
+            "about": "关于 {{name}}",
+            "services": "服务",
+            "hide": "隐藏 {{name}}",
+            "hideOthers": "隐藏其他",
+            "showAll": "全部显示",
+            "quit": "退出 {{name}}",
+            "file": "文件",
+            "open": "打开…",
+            "closeImage": "关闭图片",
+            "closeAll": "关闭所有图片",
+            "settings": "设置…",
+            "edit": "编辑",
+            "undo": "撤销",
+            "redo": "重做",
+            "cut": "剪切",
+            "copy": "拷贝",
+            "paste": "粘贴",
+            "selectAll": "全选",
+            "view": "显示",
+            "fullscreen": "进入全屏幕",
+            "window": "窗口",
+            "minimize": "最小化",
+            "zoom": "缩放",
+            "bringAllToFront": "前置全部窗口",
+            "help": "帮助"
         }
     },
     "errors": {

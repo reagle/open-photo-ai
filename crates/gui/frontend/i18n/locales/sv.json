@@ -134,11 +134,21 @@
             "remove": "Ta bort {{binding}}, {{action}}",
             "refused": {
                 "navigation": "{{binding}} är reserverad för att röra sig i fönstret.",
-                "system": "{{binding}} används av systemet."
+                "system": "{{binding}} används av systemet.",
+                "application": "{{binding}} används av programmet."
             },
             "conflict": "{{binding}} används redan av {{action}}.",
             "useHere": "Använd här i stället",
-            "space": "Blanksteg"
+            "space": "Blanksteg",
+            "appActions": {
+                "open": "Öppna bilder",
+                "settings": "Öppna inställningar",
+                "closeImage": "Stäng bild",
+                "closeAll": "Stäng alla bilder",
+                "quit": "Avsluta"
+            },
+            "application": "Program",
+            "applicationHint": "Dessa tangenter är fasta och kan inte ändras."
         }
     },
     "navbar": {
@@ -418,6 +428,33 @@
             "showIn": "Visa i filhanteraren",
             "showIn_darwin": "Visa i Finder",
             "showIn_windows": "Visa i Utforskaren"
+        },
+        "bar": {
+            "about": "Om {{name}}",
+            "services": "Tjänster",
+            "hide": "Göm {{name}}",
+            "hideOthers": "Göm övriga",
+            "showAll": "Visa alla",
+            "quit": "Avsluta {{name}}",
+            "file": "Arkiv",
+            "open": "Öppna…",
+            "closeImage": "Stäng bild",
+            "closeAll": "Stäng alla bilder",
+            "settings": "Inställningar…",
+            "edit": "Redigera",
+            "undo": "Ångra",
+            "redo": "Gör om",
+            "cut": "Klipp ut",
+            "copy": "Kopiera",
+            "paste": "Klistra in",
+            "selectAll": "Markera allt",
+            "view": "Visa",
+            "fullscreen": "Starta helskärmsläge",
+            "window": "Fönster",
+            "minimize": "Minimera",
+            "zoom": "Zooma",
+            "bringAllToFront": "Lägg alla överst",
+            "help": "Hjälp"
         }
     },
     "errors": {

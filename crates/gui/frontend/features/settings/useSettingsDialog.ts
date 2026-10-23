@@ -3,6 +3,7 @@ import i18n from "@/i18n";
 import type { SettingKey } from "@/lib/events";
 import { track } from "@/lib/faro";
 import { type SettingsData, settingsData, useSettingsStore } from "@/stores/settings";
+import { useSettingsDialogStore } from "@/stores/settingsDialog";
 import { useDraftState } from "./draft";
 
 /**
@@ -42,9 +43,24 @@ export const useSettingsDialog = () => {
     // (every preference written the instant a control is touched, with Cancel unable to take it back)
     // nor a missed commit (settings silently stop persisting for the rest of the session) throws, so
     // both fail quietly. Here there is no pairing to get wrong: Cancel is the absence of a write.
-    const [open, setOpen] = useState(false);
+    //
+    // Whether it is open is the store's, so the application's Settings action can open it from outside
+    // the navbar; the draft is still this hook's.
+    const open = useSettingsDialogStore((state) => state.open);
+    const opened = useSettingsDialogStore((state) => state.opened);
+    const openSettings = useSettingsDialogStore((state) => state.openSettings);
+    const closeSettings = useSettingsDialogStore((state) => state.closeSettings);
     const { draft, reopen } = useDraftState();
     const apply = useSettingsStore((state) => state.apply);
+
+    // Every open re-seeds the draft, whoever asked for it, and during the render that sees the request
+    // rather than in an effect after it - so the dialog is never drawn, for even a frame, on the draft
+    // a cancelled visit left behind. React's own pattern for state that follows a change in props.
+    const [seeded, setSeeded] = useState(opened);
+    if (seeded !== opened) {
+        setSeeded(opened);
+        reopen();
+    }
 
     const close = (save: boolean) => {
         if (save) {
@@ -63,7 +79,7 @@ export const useSettingsDialog = () => {
             void i18n.changeLanguage(draft.values.language);
         }
 
-        setOpen(false);
+        closeSettings();
     };
 
     return {
@@ -71,10 +87,7 @@ export const useSettingsDialog = () => {
         draft,
 
         /** Opens the dialog on a draft of what is currently in force. */
-        openSettings: () => {
-            reopen();
-            setOpen(true);
-        },
+        openSettings,
 
         /** Ends the dialog, keeping the draft (`close(true)`, Save) or discarding it (`close(false)`). */
         close,

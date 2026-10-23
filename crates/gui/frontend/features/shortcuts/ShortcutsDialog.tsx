@@ -3,6 +3,7 @@ import type { ParseKeys } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { DialogTitleBar } from "@/components/ui/dialog-title-bar";
+import { useAppShortcuts } from "@/hooks/useAppShortcuts";
 import { useShortcutBindings } from "@/hooks/useShortcuts";
 import { isMacOs } from "@/ipc/os";
 import { formatBinding, SHORTCUT_ACTIONS } from "@/lib/shortcuts";
@@ -15,7 +16,8 @@ import { useShortcutsListStore } from "@/stores/shortcutsList";
  * Read-only on purpose. Changing a binding is a draft with Save and Cancel, which the settings dialog
  * already is; a second place to edit them would be a second draft to keep in step. The line under the
  * list says where that is. While it is open the window's shortcuts are off - it is a dialog - so the
- * key that opened it does not close it; Escape, the close box and a click outside do.
+ * key that opened it does not close it; Escape, the close box and a click outside do. The
+ * application's own keys (Open, Settings, Close Image, Close All Images, Quit) head the list, fixed.
  */
 export const ShortcutsDialog = () => {
     const { t } = useTranslation();
@@ -24,6 +26,8 @@ export const ShortcutsDialog = () => {
     const bindings = useShortcutBindings();
     const mac = isMacOs();
     const descriptionId = useId();
+    const applicationId = useId();
+    const fixed = useAppShortcuts();
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
@@ -39,6 +43,25 @@ export const ShortcutsDialog = () => {
                     <p id={descriptionId} className="m-0 text-[13px] text-muted-foreground">
                         {t("shortcuts.description")}
                     </p>
+
+                    {/* The application's own keys first, fixed: the same group the Keyboard page shows. */}
+                    <section aria-labelledby={applicationId} className="flex flex-col gap-2">
+                        <h3 id={applicationId} className="m-0 font-medium text-[13px] text-muted-foreground">
+                            {t("settings.keyboard.application")}
+                        </h3>
+                        <dl className="m-0 flex flex-col divide-y divide-border rounded-lg border border-border">
+                            {fixed.map(({ action, name, keys }) => (
+                                <div key={action} className="flex items-center justify-between gap-6 px-4 py-2">
+                                    <dt className="text-sm">{name}</dt>
+                                    <dd className="m-0 flex flex-wrap justify-end gap-1.5">
+                                        <kbd className="rounded-md border border-border bg-background px-2 py-0.5 font-mono text-[12px]">
+                                            {keys}
+                                        </kbd>
+                                    </dd>
+                                </div>
+                            ))}
+                        </dl>
+                    </section>
 
                     <dl className="m-0 flex flex-col divide-y divide-border rounded-lg border border-border">
                         {SHORTCUT_ACTIONS.map((action) => (

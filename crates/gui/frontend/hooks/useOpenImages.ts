@@ -25,9 +25,10 @@ import { useFileStore } from "@/stores/files";
  * in an application that is on its way out.
  *
  * `source` names the control for the `files_added` event: the drawer's Add images browses, the empty
- * canvas's control is its own. A dismissal adds nothing, and sends nothing.
+ * canvas's control is its own, and the application's Open action - the macOS menu's Open… or Ctrl+O -
+ * is `menu`. A dismissal adds nothing, and sends nothing.
  */
-export const useOpenImages = (source: "browse" | "empty") => {
+export const useOpenImages = (source: "browse" | "empty" | "menu") => {
     const { t } = useTranslation();
     const addFiles = useFileStore((state) => state.addFiles);
 

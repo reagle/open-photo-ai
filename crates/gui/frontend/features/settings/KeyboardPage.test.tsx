@@ -1,7 +1,7 @@
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
-import { isMacOs } from "@/ipc/os";
+import { isMacOs, isWindows } from "@/ipc/os";
 import type { StoredShortcuts } from "@/lib/shortcuts";
 import { type SettingsData, useSettingsStore } from "@/stores/settings";
 import { DraftHarness, render } from "@/test/support";
@@ -55,6 +55,7 @@ const record = (action: string, init: KeyboardEventInit) => {
 
 beforeEach(() => {
     vi.mocked(isMacOs).mockReturnValue(false);
+    vi.mocked(isWindows).mockReturnValue(false);
     localStorage.clear();
     useSettingsStore.setState(useSettingsStore.getInitialState(), true);
 });
@@ -166,6 +167,58 @@ describe("the Keyboard page", () => {
 
         expect(screen.getByText("⌘ Q is used by the system.")).toBeInTheDocument();
         expect(drafted().shortcuts).toEqual({});
+    });
+
+    it("refuses Command-O on macOS as the application's", () => {
+        vi.mocked(isMacOs).mockReturnValue(true);
+        renderPage();
+
+        record("Zoom in", { key: "o", metaKey: true });
+
+        expect(screen.getByText("⌘ O is used by the application.")).toBeInTheDocument();
+        expect(drafted().shortcuts).toEqual({});
+    });
+
+    it("refuses Ctrl+W and Ctrl+comma elsewhere as the application's", () => {
+        renderPage();
+
+        record("Zoom in", { key: "w", ctrlKey: true });
+        expect(screen.getByText("Ctrl+W is used by the application.")).toBeInTheDocument();
+
+        record("Zoom in", { key: ",", ctrlKey: true });
+        expect(screen.getByText("Ctrl+, is used by the application.")).toBeInTheDocument();
+        expect(drafted().shortcuts).toEqual({});
+    });
+
+    describe("the application's own keys", () => {
+        /** The keys one fixed row shows, by the action's name. */
+        const fixedKeys = (name: string) =>
+            within(screen.getByRole("region", { name: "Application" }))
+                .getByText(name)
+                .closest("[data-slot='app-shortcut-row']")?.textContent;
+
+        it.each([
+            ["macOS", true, false, ["⌘ O", "⌘ ,", "⌘ W", "⇧⌘ W", "⌘ Q"]],
+            ["Windows", false, true, ["Ctrl+O", "Ctrl+,", "Ctrl+W", "Ctrl+Shift+W", "Alt+F4"]],
+            ["Linux", false, false, ["Ctrl+O", "Ctrl+,", "Ctrl+W", "Ctrl+Shift+W", "Ctrl+Q"]],
+        ])("are listed on %s, as that platform writes them", (_platform, mac, windows, keys) => {
+            vi.mocked(isMacOs).mockReturnValue(mac);
+            vi.mocked(isWindows).mockReturnValue(windows);
+            renderPage();
+
+            const names = ["Open images", "Open Settings", "Close image", "Close all images", "Quit"];
+            names.forEach((name, at) => {
+                expect(fixedKeys(name)).toBe(`${name}${keys[at]}`);
+            });
+            expect(screen.getByText("These keys are fixed and cannot be changed.")).toBeInTheDocument();
+        });
+
+        it("are read-only: nothing to remove, nothing to add", () => {
+            renderPage();
+
+            const group = screen.getByRole("region", { name: "Application" });
+            expect(within(group).queryAllByRole("button")).toEqual([]);
+        });
     });
 
     it("refuses a key another action holds, and moves it with one click", async () => {
