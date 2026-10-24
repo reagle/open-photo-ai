@@ -997,7 +997,9 @@ pub(crate) mod tests {
                         );
                         continue;
                     }
-                    SharpenVariant::Moscow(precision) | SharpenVariant::Novgorod(precision) => {
+                    SharpenVariant::Moscow(precision)
+                    | SharpenVariant::Novgorod(precision)
+                    | SharpenVariant::Kazan(precision) => {
                         precision == FloatPrecision::Fp16
                     }
                 },

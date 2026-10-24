@@ -263,7 +263,7 @@ mod tests {
             ("OPAI_AP_COLORIZATION", "delhi, mumbai, jaipur, off"),
             ("OPAI_AP_LIGHT", "paris, lyon, off"),
             ("OPAI_AP_COLOR", "rio, saopaulo, off"),
-            ("OPAI_AP_SHARPEN", "moscow, petersburg, novgorod, off"),
+            ("OPAI_AP_SHARPEN", "moscow, petersburg, novgorod, kazan, off"),
         ] {
             let error = read(&[(variable, "tokyo")]).expect_err(variable);
             let message = error.to_string();

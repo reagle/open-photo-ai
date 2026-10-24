@@ -7,7 +7,8 @@ use super::super::filter::Guard;
 use super::super::precision::{FloatPrecision, Precision};
 use super::super::simple::SimpleVariant;
 
-use super::{moscow, novgorod, petersburg};
+use super::{kazan, moscow, novgorod, petersburg};
+use imaging::TileGeometry;
 
 use crate::providers::profile::EpProfile;
 
@@ -23,8 +24,12 @@ pub(crate) const PETERSBURG: SimpleVariant =
 pub(crate) const NOVGOROD: SimpleVariant =
     SimpleVariant { codename: "novgorod", label: "Novgorod", parameters: &STRENGTH_PARAMETER };
 
+/// Kazan, the generative sharpener: redraws detail rather than estimating it.
+pub(crate) const KAZAN: SimpleVariant =
+    SimpleVariant { codename: "kazan", label: "Kazan", parameters: &STRENGTH_PARAMETER };
+
 /// Every sharpen row, in the order a chooser should offer them. Read by the catalogue.
-pub(crate) const ALL: [SimpleVariant; 3] = [MOSCOW, PETERSBURG, NOVGOROD];
+pub(crate) const ALL: [SimpleVariant; 4] = [MOSCOW, PETERSBURG, NOVGOROD, KAZAN];
 
 /// Which sharpen model an operation runs, and at which precision.
 ///
@@ -39,13 +44,17 @@ pub enum SharpenVariant {
     Petersburg(FloatPrecision),
     /// Novgorod.
     Novgorod(FloatPrecision),
+    /// Kazan.
+    Kazan(FloatPrecision),
 }
 
 impl SharpenVariant {
     /// The precision this variant was asked for, widened to the common currency artifact names are composed from.
     pub fn precision(self) -> Precision {
         match self {
-            Self::Moscow(precision) | Self::Petersburg(precision) | Self::Novgorod(precision) => precision.into(),
+            Self::Moscow(precision) | Self::Petersburg(precision) | Self::Novgorod(precision) | Self::Kazan(precision) => {
+                precision.into()
+            }
         }
     }
 
@@ -60,6 +69,16 @@ impl SharpenVariant {
             Self::Moscow(precision) => moscow::profile(precision.into()),
             Self::Petersburg(precision) => petersburg::profile(precision.into()),
             Self::Novgorod(precision) => novgorod::profile(precision.into()),
+            Self::Kazan(precision) => kazan::profile(precision.into()),
+        }
+    }
+
+    /// The tile this variant's graph accepts and how far tiles overlap: [`kazan::GEOMETRY`] for Kazan, and the shared
+    /// default for the three exported at 256.
+    pub(crate) const fn geometry(self) -> TileGeometry {
+        match self {
+            Self::Kazan(_) => kazan::GEOMETRY,
+            Self::Moscow(_) | Self::Petersburg(_) | Self::Novgorod(_) => TileGeometry::DEFAULT,
         }
     }
 
@@ -71,7 +90,7 @@ impl SharpenVariant {
         // run unguarded, as they do in the reference.
         match self {
             Self::Petersburg(_) => Some(petersburg::GUARD),
-            Self::Moscow(_) | Self::Novgorod(_) => None,
+            Self::Moscow(_) | Self::Novgorod(_) | Self::Kazan(_) => None,
         }
     }
 
@@ -83,7 +102,7 @@ impl SharpenVariant {
     pub fn from_codename(codename: &str, precision: Precision) -> Option<Self> {
         let precision = FloatPrecision::narrow(precision)?;
 
-        [Self::Moscow(precision), Self::Petersburg(precision), Self::Novgorod(precision)]
+        [Self::Moscow(precision), Self::Petersburg(precision), Self::Novgorod(precision), Self::Kazan(precision)]
             .into_iter()
             .find(|variant| variant.codename() == codename)
     }
@@ -95,6 +114,7 @@ impl SharpenVariant {
             Self::Moscow(_) => MOSCOW,
             Self::Petersburg(_) => PETERSBURG,
             Self::Novgorod(_) => NOVGOROD,
+            Self::Kazan(_) => KAZAN,
         }
     }
 
@@ -122,6 +142,7 @@ pub(crate) mod tests {
                 SharpenVariant::Moscow(precision),
                 SharpenVariant::Petersburg(precision),
                 SharpenVariant::Novgorod(precision),
+                SharpenVariant::Kazan(precision),
             ]);
         }
 
@@ -133,6 +154,7 @@ pub(crate) mod tests {
         assert_eq!(SharpenVariant::Moscow(FloatPrecision::Fp32).label(), "Moscow");
         assert_eq!(SharpenVariant::Petersburg(FloatPrecision::Fp32).label(), "Petersburg");
         assert_eq!(SharpenVariant::Novgorod(FloatPrecision::Fp32).label(), "Novgorod");
+        assert_eq!(SharpenVariant::Kazan(FloatPrecision::Fp32).label(), "Kazan");
 
         for variant in every_variant() {
             assert_eq!(variant.codename(), variant.label().to_lowercase(), "{variant:?}");
@@ -192,10 +214,14 @@ pub(crate) mod tests {
                 SharpenVariant::Petersburg(precision) => {
                     assert_eq!(variant.profile(), petersburg::profile(precision.into()), "{variant:?}");
                 }
-                SharpenVariant::Moscow(FloatPrecision::Fp16) | SharpenVariant::Novgorod(FloatPrecision::Fp16) => {
+                SharpenVariant::Moscow(FloatPrecision::Fp16)
+                | SharpenVariant::Novgorod(FloatPrecision::Fp16)
+                | SharpenVariant::Kazan(FloatPrecision::Fp16) => {
                     assert_ne!(variant.profile(), EpProfile::default(), "{variant:?} lost its measured profile");
                 }
-                SharpenVariant::Moscow(FloatPrecision::Fp32) | SharpenVariant::Novgorod(FloatPrecision::Fp32) => {
+                SharpenVariant::Moscow(FloatPrecision::Fp32)
+                | SharpenVariant::Novgorod(FloatPrecision::Fp32)
+                | SharpenVariant::Kazan(FloatPrecision::Fp32) => {
                     assert_eq!(variant.profile(), EpProfile::default(), "{variant:?} declared a setting at FP32");
                 }
             }

@@ -45,6 +45,13 @@ const COMPILED_IN: &str = include_str!("published.json");
 /// The copy of the listing kept from the last successful read, written directly into the models directory.
 pub(crate) const CACHE_NAME: &str = ".listing.json";
 
+// Fork-only, not for upstream: a model this fork exports itself (Kazan) is published nowhere, so no listing names it
+// and the install would refuse it. Its files and their hashes are written here, beside the cache, by the script that
+// places the files; the same format, read the same way, and consulted only for an artifact the published listing does
+// not name — so it can add a model but never replace a published one's hashes.
+/// A local listing of fork-exported model files, consulted only for artifacts the published listing does not name.
+pub(crate) const FORK_NAME: &str = ".fork-listing.json";
+
 /// How many times a failed listing request is retried before the read gives up and the next source is tried. The
 /// backoff between attempts is `rust-sak`'s.
 const READ_RETRIES: u32 = 2;
@@ -305,7 +312,16 @@ impl Listing {
     /// **An empty cache counts as absent.** A listing naming no files would answer every lookup with "no published
     /// hash", turning a cache written by some earlier failure into a blanket refusal.
     pub(crate) fn read_cached(dir: &Path) -> Option<Self> {
-        let bytes = std::fs::read(dir.join(CACHE_NAME)).ok()?;
+        Self::read_named(dir, CACHE_NAME)
+    }
+
+    /// Reads the fork's local listing from `dir`; see [`FORK_NAME`]. Absent, unreadable and empty read as `None`.
+    pub(crate) fn read_fork(dir: &Path) -> Option<Self> {
+        Self::read_named(dir, FORK_NAME)
+    }
+
+    fn read_named(dir: &Path, name: &str) -> Option<Self> {
+        let bytes = std::fs::read(dir.join(name)).ok()?;
         let listing: Self = serde_json::from_slice(&bytes).ok()?;
 
         (!listing.files.is_empty()).then_some(listing)
