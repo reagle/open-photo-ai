@@ -282,6 +282,7 @@ impl VariantEntry {
                 SharpenVariant::Moscow(precision) => Sharpen::moscow(precision, values.strength),
                 SharpenVariant::Petersburg(precision) => Sharpen::stpetersburg(precision, values.strength),
                 SharpenVariant::Novgorod(precision) => Sharpen::novgorod(precision, values.strength),
+                SharpenVariant::Kazan(precision) => Sharpen::kazan(precision, values.strength),
             },
             Family::LightAdjustment => {
                 match LightAdjustmentVariant::from_codename(codename, precision).ok_or_else(unpublished)? {

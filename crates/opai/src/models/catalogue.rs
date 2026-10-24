@@ -565,7 +565,7 @@ mod tests {
         );
         assert_eq!(
             variants(Family::Sharpen),
-            vec![("moscow", "Moscow"), ("petersburg", "Petersburg"), ("novgorod", "Novgorod")]
+            vec![("moscow", "Moscow"), ("petersburg", "Petersburg"), ("novgorod", "Novgorod"), ("kazan", "Kazan")]
         );
         assert_eq!(variants(Family::LightAdjustment), vec![("paris", "Paris"), ("lyon", "Lyon")]);
         assert_eq!(variants(Family::ColorBalance), vec![("rio", "Rio"), ("saopaulo", "São Paulo")]);
