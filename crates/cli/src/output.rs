@@ -41,9 +41,11 @@ pub enum Target {
 ///
 /// [`CliError::Usage`], naming the path or the flag, where the output is a file but there is more than one input, the
 /// input is a directory, or `--format`, `--prefix` or `--suffix` is given; and where the output is a directory but a
-/// file that is not one already exists there.
+/// file that is not one already exists there; and where there is no output, which only `--gui` leaves out.
 pub fn target(args: &Args) -> Result<Target, CliError> {
-    let path = &args.output;
+    let Some(path) = &args.output else {
+        return Err(CliError::Usage("--output is required to write the results".to_owned()));
+    };
 
     // An existing directory wins whatever its name, so `-o shots.png` can still mean the directory the user made.
     if !path.is_dir()

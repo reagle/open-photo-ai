@@ -81,6 +81,9 @@ pub async fn run(mut args: Args, look: Look) -> Result<(), CliError> {
         Target::Directory { path, .. } => std::fs::canonicalize(path).ok(),
         Target::File { .. } => None,
     };
+    let output = match &target {
+        Target::Directory { path, .. } | Target::File { path, .. } => path.clone(),
+    };
     let sources = inputs::expand(&args.inputs, args.recursive, skip.as_deref())?;
     events::files_added(&sources.iter().map(|source| source.path.as_path()).collect::<Vec<_>>());
 
@@ -196,7 +199,7 @@ pub async fn run(mut args: Args, look: Look) -> Result<(), CliError> {
     let live = view.finish_batch();
     events::export_finished(sources.len(), written.len(), !stopped, began.elapsed().as_millis());
 
-    for line in summary(&written, &args.output, &failures, live, sources.len(), look.color) {
+    for line in summary(&written, &output, &failures, live, sources.len(), look.color) {
         eprintln!("{line}");
     }
 

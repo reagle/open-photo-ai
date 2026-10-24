@@ -2,11 +2,12 @@
 //!
 //! | Status | When |
 //! |---|---|
-//! | `0` | every image was written |
+//! | `0` | every image was written, or `--gui` handed them to the application |
 //! | `2` | a usage error: bad arguments, an unreadable named input, an output that cannot be used as asked, no image to
 //! enhance, or a processor this machine does not offer (clap's own too) |
 //! | `130` | stopped by Ctrl-C |
-//! | `1` | anything else: initialization, or any image that failed to decode, enhance or be written |
+//! | `1` | anything else: initialization, `--gui` failing to start the application, or any image that failed to decode,
+//! enhance or be written |
 //!
 //! A failed image is a [`CliError::Image`], whose status is its cause's. A run of one image ends with that image's own
 //! line; a run of more ends with [`CliError::Batch`], each image's line having been printed already.
@@ -31,6 +32,10 @@ pub enum CliError {
     /// The enhancement failed.
     #[error(transparent)]
     Inference(InferenceError),
+
+    /// `--gui` could not start Open Photo AI, or hand it the photographs. The message says which, and why.
+    #[error("{0}")]
+    Launch(String),
 
     /// The user pressed Ctrl-C.
     #[error("stopped: nothing more was written")]
@@ -92,7 +97,12 @@ impl CliError {
             Self::Image { source, .. } => source.exit_code(),
             Self::Usage(_) => 2,
             Self::Cancelled => 130,
-            Self::Init(_) | Self::Inference(_) | Self::Load(_) | Self::Write(_) | Self::Batch { .. } => 1,
+            Self::Launch(_)
+            | Self::Init(_)
+            | Self::Inference(_)
+            | Self::Load(_)
+            | Self::Write(_)
+            | Self::Batch { .. } => 1,
         }
     }
 }
