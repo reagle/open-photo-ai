@@ -22,7 +22,7 @@ opai = { path = "../opai" }
 # Argument parsing, as `perf` already does it. The derive API gives the optional-value flags (`--up [MODEL]`), the
 # `requires` between `--scale` and `--upscale`, the aliases, `--help` and `--version` from one struct; `argh` and
 # `bpaf` are smaller and are not what a Rust developer expects to find.
-clap = { version = "4.6.7", features = ["derive"] }
+clap = { version = "4.6.7", features = ["derive", "wrap_help"] }
 
 # The dependency line's styled text, and the colour of the plain lines through its `crossterm` re-export, so no direct
 # `crossterm` dependency is needed. Declared as `perf` declares it, minus `scrolling-regions`, which only `perf`'s
