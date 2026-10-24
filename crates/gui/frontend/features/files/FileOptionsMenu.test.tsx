@@ -5,6 +5,7 @@ import i18n from "@/i18n";
 import { revealImage } from "@/ipc/images";
 import { isMacOs, isWindows } from "@/ipc/os";
 import { useFileStore } from "@/stores/files";
+import { useSettingsStore } from "@/stores/settings";
 import { useTransformStore } from "@/stores/transform";
 import { HOLIDAY, openFiles, render, resetFileStore, SUNSET } from "@/test/support";
 import { FileOptionsMenu, NAVBAR_ANCHOR } from "./FileOptionsMenu";
@@ -61,6 +62,7 @@ beforeEach(() => {
     onWindows.mockReturnValue(false);
     revealed.mockResolvedValue(undefined);
     resetFileStore();
+    useSettingsStore.setState(useSettingsStore.getInitialState(), true);
     useTransformStore.setState(useTransformStore.getInitialState(), true);
 });
 
@@ -75,9 +77,9 @@ describe("FileOptionsMenu", () => {
         // is only meaningful against.
         const items = await screen.findAllByRole("menuitem");
         expect(items.map((item) => item.textContent)).toEqual([
-            "Close image",
-            "Close all images",
-            "Show in File Manager",
+            "Close imageCtrl+W",
+            "Close all imagesCtrl+Shift+W",
+            "Show in File ManagerCtrl+Shift+R",
         ]);
 
         expect(screen.getByRole("separator")).toBeInTheDocument();
@@ -168,5 +170,49 @@ describe("FileOptionsMenu", () => {
 
         await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
         expect(paths()).toEqual([]);
+    });
+
+    it.each([
+        [true, ["⌘ W", "⇧⌘ W", "⇧⌘ R"]],
+        [false, ["Ctrl+W", "Ctrl+Shift+W", "Ctrl+Shift+R"]],
+    ])("writes each item's key at its trailing edge, as this platform does (mac: %s)", async (mac, keys) => {
+        onMacOs.mockReturnValue(mac);
+        openFiles(HOLIDAY);
+        mount();
+
+        open();
+
+        const items = await screen.findAllByRole("menuitem");
+        expect(items.map((item) => item.querySelector("[data-slot='dropdown-menu-shortcut']")?.textContent)).toEqual(
+            keys,
+        );
+        expect(items[2]).toHaveAttribute("aria-keyshortcuts", mac ? "Meta+Shift+r" : "Control+Shift+r");
+    });
+
+    it("keeps the key out of an item's accessible name", async () => {
+        openFiles(HOLIDAY);
+        mount();
+
+        open();
+
+        expect(await screen.findByRole("menuitem", { name: "Close image" })).toBeInTheDocument();
+    });
+
+    it("follows a rebinding of Show in File Manager, and drops the key once it is unbound", async () => {
+        useSettingsStore.getState().apply({ shortcuts: { revealImage: ["Mod+Shift+f"] } });
+        openFiles(HOLIDAY);
+        mount();
+
+        open();
+        expect(await screen.findByRole("menuitem", { name: "Show in File Manager" })).toHaveTextContent("Ctrl+Shift+F");
+
+        useSettingsStore.getState().apply({ shortcuts: { revealImage: [] } });
+
+        await waitFor(() =>
+            expect(screen.getByRole("menuitem", { name: "Show in File Manager" })).toHaveTextContent(
+                /^Show in File Manager$/,
+            ),
+        );
+        expect(screen.getByRole("menuitem", { name: "Show in File Manager" })).not.toHaveAttribute("aria-keyshortcuts");
     });
 });

@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { familyEntry, useCatalogue } from "@/hooks/useCatalogue";
+import { removeEnhancementOf } from "@/lib/editorActions";
 import { ENHANCEMENTS } from "@/lib/enhancements";
-import { track } from "@/lib/faro";
 import { useAnalysing } from "@/stores/autopilot";
 import { useEnhancementStore, useFileEnhancements } from "@/stores/enhancements";
 import { useCurrentFile } from "@/stores/files";
@@ -38,7 +38,6 @@ export const EnhancementList = () => {
     // catalogue - as each enhancement is added, so the list drawn here and the chain that runs are the same
     // order rather than two orderings that could disagree.
     const stack = useFileEnhancements(file?.path);
-    const removeEnhancement = useEnhancementStore((state) => state.removeEnhancement);
     const replaceEnhancement = useEnhancementStore((state) => state.replaceEnhancement);
     const analysing = useAnalysing(file?.path);
 
@@ -51,15 +50,18 @@ export const EnhancementList = () => {
 
     if (stack.length === 0) return;
 
+    // A family `ENHANCEMENTS` does not name draws nothing rather than an unnamed row: it cannot arrive from the
+    // menu, and a row with no icon and no name says less than no row at all. Counted after that, so a row's place
+    // is the one the digit keys open it by - see `openOptionsAt`.
+    const rows = stack.flatMap((operation) => {
+        const enhancement = ENHANCEMENTS.find((entry) => entry.family === operation.family);
+
+        return enhancement ? [{ operation, enhancement }] : [];
+    });
+
     return (
         <div className="flex flex-col py-2" data-slot="enhancement-list">
-            {stack.map((operation) => {
-                const enhancement = ENHANCEMENTS.find((entry) => entry.family === operation.family);
-                // A family `ENHANCEMENTS` does not name draws nothing rather than an unnamed row: it
-                // cannot arrive from the menu, and a row with no icon and no name says less than no
-                // row at all.
-                if (!enhancement) return null;
-
+            {rows.map(({ operation, enhancement }, index) => {
                 return (
                     <EnhancementRow
                         // The family, which the store's one-entry-per-family rule makes unique within
@@ -67,13 +69,12 @@ export const EnhancementList = () => {
                         // for persisted state; nothing here is persisted.
                         key={operation.family}
                         enhancement={enhancement}
+                        place={index + 1}
                         operation={operation}
                         entry={familyEntry(families, operation.family)}
                         {...(file.identity && { identity: file.identity })}
-                        onRemove={() => {
-                            removeEnhancement(file.path, operation.family);
-                            track("enhancement_removed", { family: operation.family });
-                        }}
+                        // Shared with the Delete key, so the two routes are one.
+                        onRemove={() => removeEnhancementOf(file.path, operation.family)}
                         onChange={(changed) => replaceEnhancement(file.path, changed)}
                     />
                 );

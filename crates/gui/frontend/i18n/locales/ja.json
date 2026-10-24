@@ -121,9 +121,27 @@
                 "fit": "ウィンドウに合わせる",
                 "actualPixels": "実際のピクセル (100%)",
                 "toggleZoom": "フィットと実際のピクセルを切り替え",
+                "panLeft": "左へ移動",
+                "panRight": "右へ移動",
+                "panUp": "上へ移動",
+                "panDown": "下へ移動",
                 "showOriginal": "押している間は元画像を表示",
+                "cyclePreview": "比較表示を切り替え",
+                "toggleDrawer": "画像の表示/非表示",
                 "previousImage": "前の画像",
                 "nextImage": "次の画像",
+                "revealImage": "画像をファイルマネージャーで表示",
+                "toggleAutopilot": "自動補正のオン/オフ",
+                "addEnhancement": "補正を追加",
+                "removeEnhancement": "選択中の補正を削除",
+                "openOptions1": "補正 1 のオプション",
+                "openOptions2": "補正 2 のオプション",
+                "openOptions3": "補正 3 のオプション",
+                "openOptions4": "補正 4 のオプション",
+                "openOptions5": "補正 5 のオプション",
+                "openOptions6": "補正 6 のオプション",
+                "openOptions7": "補正 7 のオプション",
+                "cropRotate": "切り抜き/回転",
                 "showShortcuts": "キーボードショートカットを表示"
             },
             "add": "ショートカットを追加",
@@ -467,6 +485,18 @@
         "description": "現在それぞれの操作に割り当てられているキー。",
         "hint": "設定 > キーボードで変更できます。",
         "tooltip": "{{name}} ({{key}})",
-        "settingsHint": "どこでも {{key}} を押すとこのショートカットを表示します。"
+        "tooltipCycle": "{{name}} ({{key}} で切り替え)",
+        "settingsHint": "どこでも {{key}} を押すとこのショートカットを表示します。",
+        "sections": {
+            "view": "表示",
+            "images": "画像",
+            "enhancements": "補正"
+        },
+        "rows": {
+            "zoom": "拡大 / 縮小",
+            "pan": "移動",
+            "images": "前の画像 / 次の画像",
+            "options": "補正 1–7 のオプション"
+        }
     }
 }

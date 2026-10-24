@@ -121,9 +121,27 @@
                 "fit": "Ajustar a la ventana",
                 "actualPixels": "Píxeles reales (100 %)",
                 "toggleZoom": "Alternar ajuste y píxeles reales",
+                "panLeft": "Desplazar a la izquierda",
+                "panRight": "Desplazar a la derecha",
+                "panUp": "Desplazar hacia arriba",
+                "panDown": "Desplazar hacia abajo",
                 "showOriginal": "Ver el original mientras se mantiene",
+                "cyclePreview": "Cambiar vista de comparación",
+                "toggleDrawer": "Mostrar u ocultar imágenes",
                 "previousImage": "Imagen anterior",
                 "nextImage": "Imagen siguiente",
+                "revealImage": "Mostrar imagen en el gestor de archivos",
+                "toggleAutopilot": "Activar o desactivar el piloto automático",
+                "addEnhancement": "Añadir mejora",
+                "removeEnhancement": "Quitar la mejora seleccionada",
+                "openOptions1": "Opciones de la mejora 1",
+                "openOptions2": "Opciones de la mejora 2",
+                "openOptions3": "Opciones de la mejora 3",
+                "openOptions4": "Opciones de la mejora 4",
+                "openOptions5": "Opciones de la mejora 5",
+                "openOptions6": "Opciones de la mejora 6",
+                "openOptions7": "Opciones de la mejora 7",
+                "cropRotate": "Recortar/Girar",
                 "showShortcuts": "Mostrar atajos de teclado"
             },
             "add": "Añadir atajo",
@@ -477,6 +495,18 @@
         "description": "Las teclas asignadas ahora a cada acción.",
         "hint": "Cámbialas en Ajustes > Teclado.",
         "tooltip": "{{name}} ({{key}})",
-        "settingsHint": "Pulsa {{key}} en cualquier lugar para ver estos atajos."
+        "tooltipCycle": "{{name}} ({{key}} alterna)",
+        "settingsHint": "Pulsa {{key}} en cualquier lugar para ver estos atajos.",
+        "sections": {
+            "view": "Vista",
+            "images": "Imágenes",
+            "enhancements": "Mejoras"
+        },
+        "rows": {
+            "zoom": "Acercar / Alejar",
+            "pan": "Desplazar",
+            "images": "Imagen anterior / Imagen siguiente",
+            "options": "Opciones de la mejora 1–7"
+        }
     }
 }

@@ -121,9 +121,27 @@
                 "fit": "适合窗口",
                 "actualPixels": "实际像素 (100%)",
                 "toggleZoom": "在适合窗口与实际像素间切换",
+                "panLeft": "向左平移",
+                "panRight": "向右平移",
+                "panUp": "向上平移",
+                "panDown": "向下平移",
                 "showOriginal": "按住时显示原图",
+                "cyclePreview": "切换对比视图",
+                "toggleDrawer": "显示或隐藏图片",
                 "previousImage": "上一张图像",
                 "nextImage": "下一张图像",
+                "revealImage": "在文件管理器中显示图像",
+                "toggleAutopilot": "开启或关闭自动优化",
+                "addEnhancement": "添加增强",
+                "removeEnhancement": "移除所选增强",
+                "openOptions1": "增强 1 的选项",
+                "openOptions2": "增强 2 的选项",
+                "openOptions3": "增强 3 的选项",
+                "openOptions4": "增强 4 的选项",
+                "openOptions5": "增强 5 的选项",
+                "openOptions6": "增强 6 的选项",
+                "openOptions7": "增强 7 的选项",
+                "cropRotate": "裁剪/旋转",
                 "showShortcuts": "显示键盘快捷键"
             },
             "add": "添加快捷键",
@@ -467,6 +485,18 @@
         "description": "当前分配给每个操作的按键。",
         "hint": "可在 设置 > 键盘 中更改。",
         "tooltip": "{{name}} ({{key}})",
-        "settingsHint": "在任意位置按 {{key}} 查看这些快捷键。"
+        "tooltipCycle": "{{name}} ({{key}} 切换)",
+        "settingsHint": "在任意位置按 {{key}} 查看这些快捷键。",
+        "sections": {
+            "view": "视图",
+            "images": "图像",
+            "enhancements": "增强"
+        },
+        "rows": {
+            "zoom": "放大 / 缩小",
+            "pan": "平移",
+            "images": "上一张图像 / 下一张图像",
+            "options": "增强 1–7 的选项"
+        }
     }
 }

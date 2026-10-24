@@ -121,9 +121,27 @@
                 "fit": "Sesuaikan dengan jendela",
                 "actualPixels": "Piksel sebenarnya (100%)",
                 "toggleZoom": "Beralih antara pas dan piksel sebenarnya",
+                "panLeft": "Geser ke kiri",
+                "panRight": "Geser ke kanan",
+                "panUp": "Geser ke atas",
+                "panDown": "Geser ke bawah",
                 "showOriginal": "Tampilkan asli selama ditahan",
+                "cyclePreview": "Ganti tampilan perbandingan",
+                "toggleDrawer": "Tampilkan atau sembunyikan gambar",
                 "previousImage": "Gambar sebelumnya",
                 "nextImage": "Gambar berikutnya",
+                "revealImage": "Tampilkan gambar di Pengelola File",
+                "toggleAutopilot": "Nyalakan atau matikan Autopilot",
+                "addEnhancement": "Tambah peningkatan",
+                "removeEnhancement": "Hapus peningkatan yang dipilih",
+                "openOptions1": "Opsi peningkatan 1",
+                "openOptions2": "Opsi peningkatan 2",
+                "openOptions3": "Opsi peningkatan 3",
+                "openOptions4": "Opsi peningkatan 4",
+                "openOptions5": "Opsi peningkatan 5",
+                "openOptions6": "Opsi peningkatan 6",
+                "openOptions7": "Opsi peningkatan 7",
+                "cropRotate": "Pangkas/Putar",
                 "showShortcuts": "Tampilkan pintasan papan ketik"
             },
             "add": "Tambah pintasan",
@@ -467,6 +485,18 @@
         "description": "Tombol yang saat ini terikat ke setiap tindakan.",
         "hint": "Ubah di Pengaturan > Papan ketik.",
         "tooltip": "{{name}} ({{key}})",
-        "settingsHint": "Tekan {{key}} di mana saja untuk melihat pintasan ini."
+        "tooltipCycle": "{{name}} ({{key}} berganti)",
+        "settingsHint": "Tekan {{key}} di mana saja untuk melihat pintasan ini.",
+        "sections": {
+            "view": "Tampilan",
+            "images": "Gambar",
+            "enhancements": "Peningkatan"
+        },
+        "rows": {
+            "zoom": "Perbesar / Perkecil",
+            "pan": "Geser",
+            "images": "Gambar sebelumnya / Gambar berikutnya",
+            "options": "Opsi peningkatan 1–7"
+        }
     }
 }

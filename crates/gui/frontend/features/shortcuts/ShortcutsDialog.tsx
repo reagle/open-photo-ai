@@ -1,13 +1,12 @@
 import { useId } from "react";
-import type { ParseKeys } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { DialogTitleBar } from "@/components/ui/dialog-title-bar";
 import { useAppShortcuts } from "@/hooks/useAppShortcuts";
 import { useShortcutBindings } from "@/hooks/useShortcuts";
 import { isMacOs } from "@/ipc/os";
-import { formatBinding, SHORTCUT_ACTIONS } from "@/lib/shortcuts";
 import { useShortcutsListStore } from "@/stores/shortcutsList";
+import { LIST_SECTIONS, rowKeys } from "./rows.ts";
 
 /**
  * The keyboard shortcuts list: every action with the keys it is bound to now, as this platform writes
@@ -18,6 +17,7 @@ import { useShortcutsListStore } from "@/stores/shortcutsList";
  * list says where that is. While it is open the window's shortcuts are off - it is a dialog - so the
  * key that opened it does not close it; Escape, the close box and a click outside do. The
  * application's own keys (Open, Export, Settings, Close Image, Close All Images, Quit) head the list, fixed.
+ * The rest sit under View, Images and Enhancements, with alike actions on one row - see `rows.ts`.
  */
 export const ShortcutsDialog = () => {
     const { t } = useTranslation();
@@ -27,6 +27,7 @@ export const ShortcutsDialog = () => {
     const mac = isMacOs();
     const descriptionId = useId();
     const applicationId = useId();
+    const sectionId = useId();
     const fixed = useAppShortcuts();
 
     return (
@@ -39,7 +40,8 @@ export const ShortcutsDialog = () => {
             >
                 <DialogTitleBar title={t("shortcuts.title")} />
 
-                <div className="flex flex-col gap-4 px-6 pt-3 pb-6">
+                {/* Scrolled rather than grown: the list outgrows a small window now that the editor has keys. */}
+                <div className="flex max-h-[75vh] flex-col gap-4 overflow-y-auto px-6 pt-3 pb-6">
                     <p id={descriptionId} className="m-0 text-[13px] text-muted-foreground">
                         {t("shortcuts.description")}
                     </p>
@@ -68,29 +70,51 @@ export const ShortcutsDialog = () => {
                         </dl>
                     </section>
 
-                    <dl className="m-0 flex flex-col divide-y divide-border rounded-lg border border-border">
-                        {SHORTCUT_ACTIONS.map((action) => (
-                            <div key={action} className="flex items-center justify-between gap-6 px-4 py-2">
-                                <dt className="text-sm">{t(`settings.keyboard.actions.${action}` as ParseKeys)}</dt>
-                                <dd className="m-0 flex flex-wrap justify-end gap-1.5">
-                                    {bindings[action].length === 0 ? (
-                                        <span className="text-[13px] text-muted-foreground">
-                                            {t("settings.keyboard.none")}
-                                        </span>
-                                    ) : (
-                                        bindings[action].map((binding) => (
-                                            <kbd
-                                                key={binding}
-                                                className="rounded-md border border-border bg-background px-2 py-0.5 font-mono text-[12px]"
-                                            >
-                                                {formatBinding(binding, mac, t("settings.keyboard.space"))}
-                                            </kbd>
-                                        ))
-                                    )}
-                                </dd>
-                            </div>
-                        ))}
-                    </dl>
+                    {LIST_SECTIONS.map((section) => (
+                        <section
+                            key={section.id}
+                            aria-labelledby={`${sectionId}-${section.id}`}
+                            className="flex flex-col gap-2"
+                        >
+                            <h3
+                                id={`${sectionId}-${section.id}`}
+                                className="m-0 font-medium text-[13px] text-muted-foreground"
+                            >
+                                {t(`shortcuts.sections.${section.id}`)}
+                            </h3>
+                            <dl className="m-0 flex flex-col divide-y divide-border rounded-lg border border-border">
+                                {section.rows.map((row) => {
+                                    const keys = rowKeys(
+                                        row.actions.map((action) => bindings[action]),
+                                        mac,
+                                        t("settings.keyboard.space"),
+                                    );
+
+                                    return (
+                                        <div key={row.id} className="flex items-center justify-between gap-6 px-4 py-2">
+                                            <dt className="text-sm">{t(row.label)}</dt>
+                                            <dd className="m-0 flex flex-wrap justify-end gap-1.5">
+                                                {keys.length === 0 ? (
+                                                    <span className="text-[13px] text-muted-foreground">
+                                                        {t("settings.keyboard.none")}
+                                                    </span>
+                                                ) : (
+                                                    keys.map((shown) => (
+                                                        <kbd
+                                                            key={shown}
+                                                            className="rounded-md border border-border bg-background px-2 py-0.5 font-mono text-[12px]"
+                                                        >
+                                                            {shown}
+                                                        </kbd>
+                                                    ))
+                                                )}
+                                            </dd>
+                                        </div>
+                                    );
+                                })}
+                            </dl>
+                        </section>
+                    ))}
 
                     <p className="m-0 text-[12px] text-muted-foreground">{t("shortcuts.hint")}</p>
                 </div>

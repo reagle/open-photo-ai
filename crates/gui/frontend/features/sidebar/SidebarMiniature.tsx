@@ -1,9 +1,11 @@
-import { useState } from "react";
 import { Crop } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { HintTooltip } from "@/components/HintTooltip";
 import { Button } from "@/components/ui/button";
 import { CropRotate } from "@/features/crop/CropRotate";
 import { useCurrentRendition } from "@/hooks/useCurrentRendition";
+import { useShortcutHint } from "@/hooks/useShortcuts";
+import { useCropDialogStore } from "@/stores/cropDialog";
 import { useTransformStore } from "@/stores/transform";
 
 /**
@@ -20,7 +22,12 @@ export const SidebarMiniature = () => {
     // has nothing to do with whether a dialog is open, and a `useState` for that in the sidebar would be
     // the first piece of state in a component that is otherwise all layout. A plain `useState` - there
     // is no draft to keep, so it needs no `useSettingsDialog`-shaped hook.
-    const [cropping, setCropping] = useState(false);
+    //
+    // Since then a store's, so the window's key (`C` by default) opens the same dialog. Open only while
+    // the button is drawn: the key asks for an image with pixels, and the dialog is mounted with it.
+    const cropping = useCropDialogStore((state) => state.open);
+    const setCropping = useCropDialogStore((state) => state.setOpen);
+    const hint = useShortcutHint("cropRotate", t("crop.open"));
 
     return (
         <div className="relative flex h-36 flex-none items-center justify-center border-b border-border">
@@ -86,17 +93,20 @@ export const SidebarMiniature = () => {
                      * photograph is drawn 256x85 in this 256x144 box, and a button pinned to the
                      * picture's own corner would float a third of the way up the panel.
                      */}
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="icon-sm"
-                        aria-label={t("crop.open")}
-                        onClick={() => setCropping(true)}
-                        className="absolute right-3 bottom-3 border-input bg-secondary dark:bg-secondary [&_svg:not([class*='size-'])]:size-4.5"
-                        data-slot="sidebar-crop"
-                    >
-                        <Crop />
-                    </Button>
+                    <HintTooltip tip={hint.tooltip}>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="icon-sm"
+                            aria-label={t("crop.open")}
+                            aria-keyshortcuts={hint.ariaKeyShortcuts}
+                            onClick={() => setCropping(true)}
+                            className="absolute right-3 bottom-3 border-input bg-secondary dark:bg-secondary [&_svg:not([class*='size-'])]:size-4.5"
+                            data-slot="sidebar-crop"
+                        >
+                            <Crop />
+                        </Button>
+                    </HintTooltip>
 
                     <CropRotate open={cropping} onClose={() => setCropping(false)} />
                 </>

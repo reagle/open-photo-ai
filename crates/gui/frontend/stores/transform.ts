@@ -269,6 +269,35 @@ export const toggleZoom = () => {
     else actualPixels();
 };
 
+/** Which way a pan key moves the view: the way it points, so `right` shows more of the right-hand side. */
+export type PanDirection = "left" | "right" | "up" | "down";
+
+/**
+ * Moves the view of the photograph the canvas is drawing by one pan step, or answers `false` where it
+ * could not: nothing is drawn, or the photograph is drawn whole and there is nowhere to move it.
+ */
+type Panner = (direction: PanDirection) => boolean;
+
+// A registration rather than a store write, because a pan is a question about where the photograph is
+// *drawn* - which the pane resolves against its own measured size and which the stored position is not
+// after an anchored zoom - and only the pane can answer it. `registerFileOwner` is the same shape.
+let panner: Panner | undefined;
+
+/**
+ * Makes `pan` the one that answers {@link panCurrent}: the pane that publishes the viewport registers
+ * itself. Answers the unregistration, which leaves a later registration alone.
+ */
+export const registerPanner = (pan: Panner) => {
+    panner = pan;
+
+    return () => {
+        if (panner === pan) panner = undefined;
+    };
+};
+
+/** Moves the current photograph's view one pan step, as the pan keys do. `false` where nothing moved. */
+export const panCurrent = (direction: PanDirection): boolean => panner?.(direction) ?? false;
+
 /*
  * Registered as a per-file owner - see `FileOwner` for why, and for why the file store hands over
  * both keys. Keyed by identity, so a file whose bytes could not be read has nothing here to forget,

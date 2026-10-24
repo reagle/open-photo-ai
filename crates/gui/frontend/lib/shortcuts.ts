@@ -15,9 +15,27 @@ export const SHORTCUT_ACTIONS = [
     "fit",
     "actualPixels",
     "toggleZoom",
+    "panLeft",
+    "panRight",
+    "panUp",
+    "panDown",
     "showOriginal",
+    "cyclePreview",
+    "toggleDrawer",
     "previousImage",
     "nextImage",
+    "revealImage",
+    "toggleAutopilot",
+    "addEnhancement",
+    "removeEnhancement",
+    "openOptions1",
+    "openOptions2",
+    "openOptions3",
+    "openOptions4",
+    "openOptions5",
+    "openOptions6",
+    "openOptions7",
+    "cropRotate",
     "showShortcuts",
 ] as const;
 
@@ -44,9 +62,36 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, readonly string[]> = {
     actualPixels: ["Mod+1"],
     toggleZoom: ["z"],
     showOriginal: ["\\"],
+    // The view moves the way the arrow points - `Mod →` shows more of the right-hand side - as scrolling
+    // would. With Mod, because the bare arrows already step through the images.
+    panLeft: ["Mod+ArrowLeft"],
+    panRight: ["Mod+ArrowRight"],
+    panUp: ["Mod+ArrowUp"],
+    panDown: ["Mod+ArrowDown"],
+    // Full, side by side, split and round again: one key for the drawer's three comparison toggles.
+    cyclePreview: ["v"],
+    // `Mod \` shows or hides the strip of open images, as an editor's sidebar key does. Not the bare
+    // backslash, which shows the original.
+    toggleDrawer: ["Mod+\\"],
     // Lightroom's filmstrip keys.
     previousImage: ["ArrowLeft"],
     nextImage: ["ArrowRight"],
+    // With Shift, because `Mod R` alone reloads a web page.
+    revealImage: ["Mod+Shift+r"],
+    toggleAutopilot: ["a"],
+    addEnhancement: ["e"],
+    // Both, because a Mac's Delete key sends `Backspace` and its Forward Delete sends `Delete`. Acts only
+    // while the focus is on an enhancement's row - see `lib/editorActions.ts`.
+    removeEnhancement: ["Delete", "Backspace"],
+    // The enhancements in the order the sidebar lists them. Bare digits: `Mod 1` is actual pixels.
+    openOptions1: ["1"],
+    openOptions2: ["2"],
+    openOptions3: ["3"],
+    openOptions4: ["4"],
+    openOptions5: ["5"],
+    openOptions6: ["6"],
+    openOptions7: ["7"],
+    cropRotate: ["c"],
     // A symbol, so Shift is ignored: it matches on every layout that types a `?`. `Mod /` is Topaz's key
     // for its shortcuts panel - a default here like `?`, not a fixed application key, so the one action
     // keeps all its keys in one rebindable row.
@@ -418,6 +463,9 @@ const writtenKey = (binding: string) =>
 /** The arrows as they are printed on the keys. */
 const ARROWS: Record<string, string> = { ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓" };
 
+/** The two deleting keys as macOS's menus print them: Delete, which the web calls `Backspace`, and Forward Delete. */
+const MAC_KEYS: Record<string, string> = { Backspace: "⌫", Delete: "⌦" };
+
 /** macOS's modifier glyphs, in the order its menus print them. */
 const MAC_GLYPHS: [Modifier, string][] = [
     ["Ctrl", "⌃"],
@@ -449,7 +497,9 @@ export const formatBinding = (binding: string, mac: boolean, spaceName: string):
     const key =
         parsed.key === "Space"
             ? spaceName
-            : (ARROWS[written] ?? (written.length === 1 ? written.toUpperCase() : written));
+            : (ARROWS[written] ??
+              (mac ? MAC_KEYS[written] : undefined) ??
+              (written.length === 1 ? written.toUpperCase() : written));
 
     // A set, because on macOS `Mod` and `Meta` are both Command and one glyph says so.
     const names = new Set(
