@@ -22,7 +22,7 @@ use crate::autopilot::AutopilotModels;
 /// `--prefix` or `--suffix` is given. An existing file is never overwritten unless `--overwrite` is given: the result
 /// is numbered `_1`, `_2`, … instead.
 #[derive(Debug, Parser)]
-#[command(name = "opai", display_name = "Open Photo AI - CLI", version = opai::version(), disable_version_flag = true, override_usage = "opai <INPUT>... [OPTIONS] [--output <OUTPUT>]")]
+#[command(name = "opai", display_name = "Open Photo AI - CLI", version = opai::version(), disable_version_flag = true, disable_help_flag = true, max_term_width = 100, override_usage = "opai <INPUT>... [OPTIONS] [--output <OUTPUT>]")]
 pub struct Args {
     // Positional and first, so a bare enhancement flag is never handed an input as its model name. A user who writes
     // `opai --up photo.jpg` is told `photo.jpg` is not a model, which is clear and costs nothing.
@@ -30,67 +30,83 @@ pub struct Args {
     #[arg(value_name = "INPUT", required = true, num_args = 1..)]
     pub inputs: Vec<PathBuf>,
 
-    /// The enhancements, and their parameters.
-    #[command(flatten)]
-    pub selection: Selection,
-
     /// Analyse each photograph and apply the enhancements it calls for, each with its family's default model. Cannot
     /// be combined with the enhancement flags or their parameters.
     ///
     /// A family's model is chosen with its environment variable, set to one of that family's models or to `off`,
     /// which leaves the family out: OPAI_AP_DENOISE, OPAI_AP_FACE, OPAI_AP_COLORIZATION, OPAI_AP_LIGHT,
     /// OPAI_AP_COLOR, OPAI_AP_SHARPEN and OPAI_AP_UPSCALE.
-    #[arg(long = "autopilot", visible_alias = "ap", conflicts_with = "Selection")]
+    #[arg(
+        help_heading = "Enhancements",
+        long = "autopilot",
+        visible_alias = "ap",
+        conflicts_with = "Selection"
+    )]
     pub autopilot: bool,
 
+    /// The enhancements, and their parameters.
+    #[command(flatten, next_help_heading = "Enhancements")]
+    pub selection: Selection,
+
     /// `hd` runs every model at its higher-fidelity build, `sd` at its lighter, faster one.
-    #[arg(long, short = 'q', value_enum, default_value_t = Quality::Hd, ignore_case = true)]
+    #[arg(help_heading = "Processing", long, short = 'q', value_enum, default_value_t = Quality::Hd, ignore_case = true)]
     pub quality: Quality,
 
     /// The hardware to run on: `auto` (the best this machine has; the default), or one processor by name. One this
     /// machine does not offer is refused once initialization has finished.
-    #[arg(long, short = 'p', value_enum, default_value_t = Processor::Auto, ignore_case = true)]
+    #[arg(help_heading = "Processing", long, short = 'p', value_enum, default_value_t = Processor::Auto, ignore_case = true)]
     pub processor: Processor,
 
     /// Take a directory input's whole tree, not only the images directly inside it.
-    #[arg(long, short = 'r')]
+    #[arg(help_heading = "Processing", long, short = 'r')]
     pub recursive: bool,
+
+    /// The file or directory to write to. Without it, each result is written beside its source, named with the suffix
+    /// `_opai` unless `--prefix` or `--suffix` is given.
+    #[arg(help_heading = "Output", long, short = 'o', value_name = "OUTPUT")]
+    pub output: Option<PathBuf>,
 
     /// The format every result is written in, unless the output is a file: `preserve` (each source's own, TIFF for
     /// camera RAW; the default), avif, bmp, gif, heic, jpeg, png, tiff or webp.
-    #[arg(long, value_name = "FORMAT", value_parser = parse_format)]
+    #[arg(help_heading = "Output", long, value_name = "FORMAT", value_parser = parse_format)]
     pub format: Option<FormatChoice>,
 
     /// Written before each source's name, unless the output is a file.
-    #[arg(long, value_name = "TEXT", allow_hyphen_values = true)]
+    #[arg(help_heading = "Output", long, value_name = "TEXT", allow_hyphen_values = true)]
     pub prefix: Option<String>,
 
     /// Written after each source's name, before the extension, unless the output is a file. Without an output it
     /// defaults to `_opai`, unless `--prefix` is given; `--suffix ""` turns it off.
-    #[arg(long, value_name = "TEXT", allow_hyphen_values = true)]
+    #[arg(help_heading = "Output", long, value_name = "TEXT", allow_hyphen_values = true)]
     pub suffix: Option<String>,
 
     /// Replace a file already at a destination, once the new one is complete, instead of numbering the result.
-    #[arg(long)]
+    #[arg(help_heading = "Output", long)]
     pub overwrite: bool,
-
-    /// The file or directory to write to. Without it, each result is written beside its source, named with the suffix
-    /// `_opai` unless `--prefix` or `--suffix` is given.
-    #[arg(long, short = 'o', value_name = "OUTPUT")]
-    pub output: Option<PathBuf>,
 
     /// Name, on each written image's line, the enhancements it received: each model, its strength, bias or upscale
     /// factor, and whether the run cache served them. Without it the line names only the path.
-    #[arg(long)]
+    #[arg(help_heading = "Output", long)]
     pub verbose: bool,
 
     /// Send no usage or diagnostic data to the project for this run. Setting OPAI_ANALYTICS to 0, off, false or no
     /// does the same.
-    #[arg(long)]
+    #[arg(help_heading = "Options", long)]
     pub no_analytics: bool,
 
+    // Declared here, not left to clap, so it sits in the same section as the other generic options.
+    #[arg(
+        help_heading = "Options",
+        long,
+        short = 'h',
+        action = ArgAction::Help,
+        help = "Print help (see more with '--help')",
+        long_help = "Print help"
+    )]
+    help: (),
+
     /// Print version.
-    #[arg(long, short = 'v', action = ArgAction::Version)]
+    #[arg(help_heading = "Options", long, short = 'v', action = ArgAction::Version)]
     version: (),
 
     /// The model autopilot runs each family with, read from the `OPAI_AP_*` variables by [`parse`] under
@@ -989,8 +1005,46 @@ mod tests {
     }
 
     #[test]
+    fn help_groups_the_options_under_headings_in_order() {
+        let help = Args::command().term_width(10_000).max_term_width(10_000).render_help().to_string();
+        // By line, not by text: the usage line and the descriptions name flags too.
+        let lines: Vec<_> = help.lines().map(str::trim_start).collect();
+        let position = |text: &str| {
+            let line = lines.iter().position(|line| line.starts_with(text) || line.contains(&format!(", {text}")));
+            line.unwrap_or_else(|| panic!("{text} is not in the help: {help}"))
+        };
+        let order = [
+            "Enhancements:",
+            "--autopilot",
+            "--denoise",
+            "--dn-str",
+            "--upscale",
+            "--scale",
+            "Processing:",
+            "--quality",
+            "--processor",
+            "--recursive",
+            "Output:",
+            "--output",
+            "--format",
+            "--prefix",
+            "--suffix",
+            "--overwrite",
+            "--verbose",
+            "Options:",
+            "--no-analytics",
+            "--help",
+            "--version",
+        ];
+
+        let positions: Vec<_> = order.iter().map(|text| position(text)).collect();
+        assert!(positions.is_sorted(), "{help}");
+    }
+
+    #[test]
     fn help_lists_exactly_this_builds_processors() {
-        let help = Args::command().render_help().to_string();
+        // Wide enough that nothing wraps, so a line holds a whole description whatever the terminal this runs in.
+        let help = Args::command().term_width(10_000).max_term_width(10_000).render_help().to_string();
         let line = help.lines().find(|line| line.contains("--processor")).expect("--processor is in the help");
 
         assert!(line.trim_start().starts_with("-p, --processor <PROCESSOR>"), "{line}");
