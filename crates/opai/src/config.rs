@@ -8,7 +8,7 @@ use crate::error::InitError;
 
 /// Resolves and creates `<platform config dir>/<name>`, the directory every dependency installs beneath.
 ///
-/// `~/.config/<name>` on Linux, `~/Library/Application Support/<name>` on macOS, `%APPDATA%\<name>` on Windows — so
+/// `~/.config/<name>` on Linux, `~/Library/Application Support/<name>` on macOS, `%LOCALAPPDATA%\<name>` on Windows — so
 /// the same `name` has to be passed on every run for an installation to be found again.
 ///
 /// # Errors
@@ -18,6 +18,33 @@ use crate::error::InitError;
 pub(crate) fn app_dir(name: &str) -> Result<PathBuf, InitError> {
     validate_name(name)?;
     Ok(fs::mk_user_config_dir(name, "")?)
+}
+
+/// Deletes `%APPDATA%\<name>`, the roaming directory releases before `rust-sak` moved the configuration root to
+/// `%LOCALAPPDATA%` installed into, so its models and libraries do not linger on disk.
+///
+/// Best effort: a directory that is absent is the ordinary case, and one that cannot be removed is recorded and
+/// otherwise ignored, since nothing this run needs lives there.
+// TODO: Remove this, and its call in `Opai::initialize`, once users have had time to upgrade past the release that
+// moved the directory.
+#[cfg(target_os = "windows")]
+pub(crate) fn remove_roaming_dir(name: &str, app_dir: &Path) {
+    let Some(old) = dirs::config_dir().map(|root| root.join(name)) else {
+        return;
+    };
+
+    if old == app_dir || !old.exists() {
+        return;
+    }
+
+    match std::fs::remove_dir_all(&old) {
+        Ok(()) => tracing::info!(path = %old.display(), "removed the application directory older releases used"),
+        Err(error) => tracing::warn!(
+            path = %old.display(),
+            %error,
+            "the application directory older releases used could not be removed"
+        ),
+    }
 }
 
 /// Resolves and creates `<app_dir>/<sub>`.

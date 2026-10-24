@@ -249,6 +249,38 @@ mod tests {
         }
     }
 
+    /// [`written_jpeg`] with an EXIF segment recording `orientation`, inserted straight after the SOI marker.
+    fn jpeg_oriented(orientation: u8) -> Vec<u8> {
+        let mut exif = vec![0xFF, 0xE1, 0x00, 0x22];
+        exif.extend_from_slice(b"Exif\0\0");
+        // A big-endian TIFF header, then one IFD holding a single SHORT: tag 0x0112, Orientation.
+        exif.extend_from_slice(&[b'M', b'M', 0x00, 0x2A, 0x00, 0x00, 0x00, 0x08, 0x00, 0x01]);
+        exif.extend_from_slice(&[0x01, 0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x01, 0x00, orientation, 0x00, 0x00]);
+        exif.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+
+        let mut bytes = written_jpeg();
+        bytes.splice(2..2, exif);
+        bytes
+    }
+
+    #[test]
+    fn a_photograph_turned_on_its_side_is_probed_at_the_size_it_loads_to() {
+        let dir = tempdir().expect("a temporary directory");
+        let (width, height) = FIXTURE_SIZE;
+
+        for (orientation, expected) in
+            [(1, (width, height)), (3, (width, height)), (6, (height, width)), (8, (height, width))]
+        {
+            let path = write_fixture(dir.path(), &format!("portrait-{orientation}.jpg"), &jpeg_oriented(orientation));
+
+            let probed = probe_blocking(&path).expect("the header is readable");
+            let loaded = load_blocking(&path).expect("decodable");
+
+            assert_eq!((probed.width, probed.height), expected, "orientation {orientation} probed at the wrong size");
+            assert_eq!(loaded.dimensions(), expected, "orientation {orientation} loaded at the wrong size");
+        }
+    }
+
     #[test]
     fn a_missing_file_is_refused_as_unreadable_the_way_loading_refuses_it() {
         // A file listing probes constantly and meets missing files constantly, so this is the common case rather than

@@ -45,7 +45,7 @@ workspace = true
 # the session id and the export thread are all `o11y`'s. `tracing` and `tracing-subscriber` are named below, and the
 # exporter's `reqwest` is the one `fetch` already builds; the one crate it adds is `machine-uid`, which `o11y` hashes
 # into the machine id it reports.
-rust-sak = { git = "https://github.com/vegidio/rust-sak", tag = "26.10.6", features = [
+rust-sak = { git = "https://github.com/vegidio/rust-sak", tag = "26.10.1", features = [
     "crypto",
     "fetch",
     "fs",
@@ -215,7 +215,12 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["s
 # Loaded rather than linked, because a machine without an NVIDIA driver has no `libcuda.so.1`. Already in the tree
 # through `rust-sak`'s `sysinfo` feature, at the same version.
 [target.'cfg(target_os = "linux")'.dependencies]
-libloading = "0.8"
+libloading = "0.9"
+
+# Only to find the roaming `%APPDATA%` directory older releases installed into, so it can be removed. Already in the
+# tree through `rust-sak`'s `fs` feature, at the same version.
+[target.'cfg(target_os = "windows")'.dependencies]
+dirs = "7.0"
 
 [dev-dependencies]
 # The same pin as the dependency above, so it resolves to the one crate. Declared again because an integration test

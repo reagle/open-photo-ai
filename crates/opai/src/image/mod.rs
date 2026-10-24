@@ -37,7 +37,8 @@
 //! # What is not here
 //!
 //! No caching: the identity is designed to key one, and the cache itself lives in `crate::cache`. No colour
-//! management, EXIF orientation or ICC profiles.
+//! management or ICC profiles. EXIF orientation is applied by `rust-sak` when a JPEG, PNG or TIFF is decoded, and
+//! [`fn@probe`] reports the upright size to match.
 
 // Both forms exist because the GUI's runtime is shared with the window and the IPC plumbing: a decode is tens of
 // milliseconds for a phone photograph and seconds for a 100-megapixel scan, and inline it would stop the event loop
@@ -59,8 +60,8 @@
 // JPEG that predates the sensor — and lives in `rust-sak`'s encode dispatch, where every consumer gets it; nothing in
 // this module converts pixels before handing them over.
 //
-// Colour management, EXIF orientation and ICC profiles are absent because neither the reference nor `rust-sak`
-// handles them today, so nothing here differs either way.
+// Colour management and ICC profiles are absent because neither the reference nor `rust-sak` handles them today, so
+// nothing here differs either way.
 
 mod encode;
 mod error;

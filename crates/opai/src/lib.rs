@@ -457,7 +457,7 @@ impl Opai {
     /// Installs everything the application needs on disk and returns a handle to it.
     ///
     /// `name` determines the configuration directory — `~/.config/<name>` on Linux, `~/Library/Application
-    /// Support/<name>` on macOS, `%APPDATA%\<name>` on Windows.
+    /// Support/<name>` on macOS, `%LOCALAPPDATA%\<name>` on Windows.
     ///
     /// `options` is [`InitOptions`], or `None` for its defaults.
     ///
@@ -578,6 +578,9 @@ impl Opai {
 
         // Resolved first: the claim below is recorded inside this directory.
         let app_dir = config::app_dir(name)?;
+
+        #[cfg(target_os = "windows")]
+        config::remove_roaming_dir(name, &app_dir);
 
         // A declared identity, or `name` by default — validated either way, since the record is one line split
         // on the first space and `name` permits a space.

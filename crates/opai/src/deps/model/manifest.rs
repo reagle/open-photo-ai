@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use rust_sak::fetch::{Fetch, reqwest};
+use rust_sak::fetch::{Fetch, FetchError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::OnceCell;
@@ -113,13 +113,13 @@ struct Lfs {
 #[derive(Debug, Error)]
 pub(crate) enum ReadError {
     /// The request itself failed — a transport error, a timeout, or a status the endpoint refused with.
-    #[error("requesting the model listing at {url} failed: {source}")]
+    #[error("the model listing at {url} could not be read: {source}")]
     Request {
         /// The page being requested, which the underlying error does not carry.
         url: String,
         /// What `rust-sak` reported.
         #[source]
-        source: reqwest::Error,
+        source: FetchError,
     },
 
     /// The response arrived and is not a tree listing.

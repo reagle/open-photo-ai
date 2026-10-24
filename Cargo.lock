@@ -427,9 +427,9 @@ dependencies = [
 
 [[package]]
 name = "avif-rs"
-version = "26.10.1"
+version = "26.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77da5e6aa87431abb702f1a83906b2cfb8cfe0fd34ea95474edd4910bf9c0714"
+checksum = "3b791f6df67f5e5c1601225a9e5f0b46789fc8702283aad7310027363dbe9901"
 dependencies = [
  "bindgen",
  "image",
@@ -1095,9 +1095,12 @@ checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
 name = "constant_time_eq"
-version = "0.4.2"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
+checksum = "9eb6feb175df65d0a3ccd3e73484e940d0ac664e8034f0519fd49a93db3071d9"
+dependencies = [
+ "rustversion",
+]
 
 [[package]]
 name = "convert_case"
@@ -2500,9 +2503,9 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "heif-rs"
-version = "26.10.0"
+version = "26.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "721921ba2f543e851dd39cbcfcd4fd81cfe227957a4e238e77cbec9d21100c0a"
+checksum = "dc5863cecbc91f3b87a0cb508e864f76bafac4b772420ab26b5fa7219c939253"
 dependencies = [
  "bindgen",
  "image",
@@ -2580,6 +2583,12 @@ name = "httparse"
 version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
+
+[[package]]
+name = "httpdate"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hybrid-array"
@@ -3618,18 +3627,12 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "lzma-rust2"
-version = "0.16.5"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca93e534d1142d1d0dcca6d25fe302508a5dfb40b302802904577725ea0b695b"
+checksum = "f1c46f3fcd2e888afdb01a07efc071cb21300e07c68d32c3e8b01b5c8cb1fcaa"
 dependencies = [
  "sha2 0.11.0",
 ]
-
-[[package]]
-name = "lzma-rust2"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fde178a3caf126c440fa15628147772d8ee590a39477d711353fbe2e58a73a5b"
 
 [[package]]
 name = "mac_address"
@@ -4106,8 +4109,8 @@ checksum = "6aa2c4e539b869820a2b82e1aef6ff40aa85e65decdd5185e83fb4b1249cd00f"
 
 [[package]]
 name = "o11y-macros"
-version = "26.10.6"
-source = "git+https://github.com/vegidio/rust-sak?tag=26.10.6#10c6ee4a0e5c502c971ce7288d0dc253c050db28"
+version = "26.10.8"
+source = "git+https://github.com/vegidio/rust-sak?tag=26.10.1#1d3f4878aaee0cd88c81c7376493000333a5443d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4346,10 +4349,11 @@ name = "opai"
 version = "26.10.0"
 dependencies = [
  "ctor",
+ "dirs 7.0.0",
  "file-rotate",
  "image",
  "imaging",
- "libloading 0.8.9",
+ "libloading 0.9.0",
  "objc2-foundation",
  "ort",
  "rand_chacha 0.10.0",
@@ -5582,8 +5586,8 @@ checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
 name = "rust-sak"
-version = "26.10.6"
-source = "git+https://github.com/vegidio/rust-sak?tag=26.10.6#10c6ee4a0e5c502c971ce7288d0dc253c050db28"
+version = "26.10.8"
+source = "git+https://github.com/vegidio/rust-sak?tag=26.10.1#1d3f4878aaee0cd88c81c7376493000333a5443d"
 dependencies = [
  "avif-rs",
  "cap-std",
@@ -5593,9 +5597,11 @@ dependencies = [
  "heif-rs",
  "hex",
  "hmac",
+ "http",
+ "httpdate",
  "image",
  "libc",
- "libloading 0.8.9",
+ "libloading 0.9.0",
  "liblzma",
  "machine-uid",
  "moka",
@@ -6072,9 +6078,9 @@ dependencies = [
 
 [[package]]
 name = "sevenz-rust2"
-version = "0.23.0"
+version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a4f883677093690e91fef8ae81fad8bce9e2c3a079b61054f05ce0d3ecf681e"
+checksum = "2f0c68c0e8289bfd09e49ef433e8de02c7c464afc1d7f5a275c99749a880e301"
 dependencies = [
  "aes",
  "bzip2",
@@ -6082,7 +6088,7 @@ dependencies = [
  "crc32fast",
  "getrandom 0.4.3",
  "js-sys",
- "lzma-rust2 0.21.0",
+ "lzma-rust2",
  "ppmd-rust",
  "sha2 0.11.0",
  "wasm-bindgen",
@@ -7431,9 +7437,9 @@ checksum = "5283634e518fe9e82c7b20520bb4bc209009fd16c82077c802f8111ecbb0117a"
 
 [[package]]
 name = "typed-path"
-version = "0.12.3"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
+checksum = "9ce898823d8cd0f028662d2f349694b1af0a5cc9be83f1d213a00d3147445e1e"
 
 [[package]]
 name = "typeid"
@@ -7863,9 +7869,9 @@ dependencies = [
 
 [[package]]
 name = "webp-rs"
-version = "26.10.0"
+version = "26.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fa8c547dc998cf613e78564a7893398eaa63221dff0900de4ec23486177fd0d"
+checksum = "dd13d85b965ff37598865cb160449e6b0b77d1f03992513885b587ca88d6d927"
 dependencies = [
  "bindgen",
  "image",
@@ -8863,9 +8869,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "8.6.0"
+version = "9.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
+checksum = "2886b00003a72c4ccee3f42cfc34908d33b2508a74d827dc2a4244706475c704"
 dependencies = [
  "aes",
  "bzip2",
@@ -8875,11 +8881,13 @@ dependencies = [
  "getrandom 0.4.3",
  "hmac",
  "indexmap 2.14.2",
- "lzma-rust2 0.16.5",
+ "lzma-rust2",
  "memchr",
+ "nix 0.31.3",
  "pbkdf2",
  "sha1",
  "typed-path",
+ "windows-sys 0.61.2",
  "zeroize",
  "zopfli",
  "zstd",
@@ -8911,27 +8919,27 @@ dependencies = [
 
 [[package]]
 name = "zstd"
-version = "0.13.3"
+version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
+checksum = "db3ae9bf90af6e40197bef767eeefc46ad6397420fe873830bd85e5fbbfb3c70"
 dependencies = [
  "zstd-safe",
 ]
 
 [[package]]
 name = "zstd-safe"
-version = "7.3.0"
+version = "8.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64d80649ab6db9d9f6f9c80a40becd948eda4714a0a5ac8c4d157a32231c7882"
+checksum = "ded520f16b29e1a9b771c722221b2b0a0398c2316d9bb3c42b458a5414d7434b"
 dependencies = [
  "zstd-sys",
 ]
 
 [[package]]
 name = "zstd-sys"
-version = "2.1.0+zstd.1.5.7"
+version = "2.1.2+zstd.1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ef0a8027ec3ee71300ab3bcbcd0393f434aa72b91ca6d635a39941deae8eea0"
+checksum = "481ada9c543b2323cbb7bbdbb5249177fbf0188ed959ed2c15e4b22421c84ed3"
 dependencies = [
  "cc",
  "pkg-config",

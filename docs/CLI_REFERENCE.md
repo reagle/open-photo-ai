@@ -582,7 +582,7 @@ Each run writes detailed records to a log file shared by the CLI and the GUI:
 |---------|-------------------------------------------------------------------|
 | macOS   | `~/Library/Application Support/io.vinicius.opai/logs/opai.log`    |
 | Linux   | `~/.config/io.vinicius.opai/logs/opai.log`                        |
-| Windows | `%APPDATA%\io.vinicius.opai\logs\opai.log`                        |
+| Windows | `%LOCALAPPDATA%\io.vinicius.opai\logs\opai.log`                   |
 
 What's in it that the terminal doesn't show:
 
