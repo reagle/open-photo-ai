@@ -121,9 +121,27 @@
                 "fit": "Ajustar à janela",
                 "actualPixels": "Pixels reais (100%)",
                 "toggleZoom": "Alternar entre ajustado e pixels reais",
+                "panLeft": "Mover para a esquerda",
+                "panRight": "Mover para a direita",
+                "panUp": "Mover para cima",
+                "panDown": "Mover para baixo",
                 "showOriginal": "Mostrar original enquanto pressionado",
+                "cyclePreview": "Alternar visualização de comparação",
+                "toggleDrawer": "Mostrar ou ocultar imagens",
                 "previousImage": "Imagem anterior",
                 "nextImage": "Próxima imagem",
+                "revealImage": "Mostrar imagem no gerenciador de arquivos",
+                "toggleAutopilot": "Ativar ou desativar o piloto automático",
+                "addEnhancement": "Adicionar melhoria",
+                "removeEnhancement": "Remover a melhoria selecionada",
+                "openOptions1": "Opções da melhoria 1",
+                "openOptions2": "Opções da melhoria 2",
+                "openOptions3": "Opções da melhoria 3",
+                "openOptions4": "Opções da melhoria 4",
+                "openOptions5": "Opções da melhoria 5",
+                "openOptions6": "Opções da melhoria 6",
+                "openOptions7": "Opções da melhoria 7",
+                "cropRotate": "Recortar/Girar",
                 "showShortcuts": "Mostrar atalhos de teclado"
             },
             "add": "Adicionar atalho",
@@ -477,6 +495,18 @@
         "description": "As teclas atribuídas agora a cada ação.",
         "hint": "Altere-as em Configurações > Teclado.",
         "tooltip": "{{name}} ({{key}})",
-        "settingsHint": "Pressione {{key}} em qualquer lugar para ver estes atalhos."
+        "tooltipCycle": "{{name}} ({{key}} alterna)",
+        "settingsHint": "Pressione {{key}} em qualquer lugar para ver estes atalhos.",
+        "sections": {
+            "view": "Visualização",
+            "images": "Imagens",
+            "enhancements": "Melhorias"
+        },
+        "rows": {
+            "zoom": "Aumentar zoom / Reduzir zoom",
+            "pan": "Mover",
+            "images": "Imagem anterior / Próxima imagem",
+            "options": "Opções da melhoria 1–7"
+        }
     }
 }

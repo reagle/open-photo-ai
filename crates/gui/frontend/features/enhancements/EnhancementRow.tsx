@@ -1,18 +1,22 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { HintTooltip } from "@/components/HintTooltip";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger } from "@/components/ui/popover";
 import { SelectFacesDialog } from "@/features/faces/SelectFacesDialog";
+import { useShortcutHint } from "@/hooks/useShortcuts";
 import type { FamilyEntry } from "@/ipc/catalogue";
 import type { Operation } from "@/ipc/enhance";
 import { detectFaces } from "@/ipc/faces";
 import { type Enhancement, modelValue, optionFor, parameterOf, qualityLabel } from "@/lib/enhancements";
 import { enabledFaces } from "@/lib/faces";
 import { report } from "@/lib/report";
+import type { ShortcutAction } from "@/lib/shortcuts";
 import { toPercent } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useFaceChoice, useFacesStore, useImageFaces } from "@/stores/faces";
+import { useOptionsPanelStore } from "@/stores/optionsPanel";
 import { useSettingsStore } from "@/stores/settings";
 import { ColorBalanceOptions } from "./ColorBalanceOptions";
 import { ColorizationOptions } from "./ColorizationOptions";
@@ -37,11 +41,27 @@ type EnhancementRowProps = {
      * reports no count and can only ever report none.
      */
     identity?: string;
+    /**
+     * This row's place in the list, counting from 1, which is what the digit keys open the options by. Absent
+     * for a row drawn outside the list, which then names no key.
+     */
+    place?: number;
     /** Takes this enhancement off the image's stack. */
     onRemove: () => void;
     /** Puts a changed version of this enhancement back on the stack, which re-runs the preview. */
     onChange: (operation: Operation) => void;
 };
+
+/** The actions that open a row's options, by the row's place in the list: `1` to `7`. */
+const OPEN_OPTIONS: readonly ShortcutAction[] = [
+    "openOptions1",
+    "openOptions2",
+    "openOptions3",
+    "openOptions4",
+    "openOptions5",
+    "openOptions6",
+    "openOptions7",
+];
 
 // The reference's own `toFixed(3)`, and it is there to hide float noise rather than to round: a
 // value typed as 1.5 and carried through a parse can arrive as 1.4999999999999998, and three places
@@ -64,6 +84,7 @@ export const EnhancementRow = ({
     operation,
     entry,
     identity,
+    place,
     onRemove,
     onChange,
 }: EnhancementRowProps) => {
@@ -103,7 +124,21 @@ export const EnhancementRow = ({
      * The panel is closed deliberately as the dialog opens, rather than left to Radix: the design
      * draws one thing on screen at a time, not a panel peeking out from behind a modal.
      */
-    const [panelOpen, setPanelOpen] = useState(false);
+    //
+    // A store's rather than this row's, so the window's keys (`1` to `7`) can open a row's panel by its
+    // place in the list.
+    const panelOpen = useOptionsPanelStore((state) => state.family === operation.family);
+    const setPanelOpen = (open: boolean) => {
+        const { openPanel, closePanel } = useOptionsPanelStore.getState();
+
+        if (open) openPanel(operation.family);
+        else closePanel(operation.family);
+    };
+
+    // Each control's key, from the user's bindings: the row's is its place in the list (`1` to `7`), and the
+    // remove button's is Delete - `⌫` on a Mac - which acts on the row with the focus.
+    const rowHint = useShortcutHint(place === undefined ? undefined : OPEN_OPTIONS[place - 1], t(enhancement.nameKey));
+    const removeHint = useShortcutHint("removeEnhancement", t("enhancements.remove"));
 
     /*
      * **The picker's own detection**: a face recovery's options opened over a photograph whose faces are
@@ -280,35 +315,45 @@ export const EnhancementRow = ({
     };
 
     return (
-        <div className="group relative border-b border-border" data-slot="enhancement-row">
+        <div
+            className="group relative border-b border-border"
+            data-slot="enhancement-row"
+            data-family={operation.family}
+        >
             <Popover open={panelOpen} onOpenChange={setPanelOpen}>
-                <PopoverTrigger asChild>
-                    {/*
-                     * The whole row is the trigger, which is the reference's arrangement and the
-                     * design's (screen 14).
-                     *
-                     * `min-h` rather than a fixed height: the two lines are 13px and 12px in every
-                     * language, but a model name long enough to wrap has to be able to. The panel is
-                     * anchored against `ENHANCEMENT_ROW_HEIGHT`, which is this `min-h-13`.
-                     *
-                     * `data-[state=open]:bg-secondary` beside the hover, because the design paints an
-                     * open row exactly as it paints a hovered one (screen 11) - a row whose panel is
-                     * up with nothing marking it is a panel with no visible source.
-                     */}
-                    <button
-                        type="button"
-                        className="flex min-h-13 w-full items-center gap-3 py-2 pr-10 pl-4 text-left hover:bg-secondary data-[state=open]:bg-secondary"
-                    >
-                        <Icon className="size-5 flex-none" />
+                <HintTooltip tip={rowHint.tooltip}>
+                    <PopoverTrigger asChild>
+                        {/*
+                         * The whole row is the trigger, which is the reference's arrangement and the
+                         * design's (screen 14).
+                         *
+                         * `min-h` rather than a fixed height: the two lines are 13px and 12px in every
+                         * language, but a model name long enough to wrap has to be able to. The panel is
+                         * anchored against `ENHANCEMENT_ROW_HEIGHT`, which is this `min-h-13`.
+                         *
+                         * `aria-expanded:bg-secondary` beside the hover, because the design paints an
+                         * open row exactly as it paints a hovered one (screen 11) - a row whose panel is
+                         * up with nothing marking it is a panel with no visible source. Not
+                         * `data-[state=open]`: the tooltip around the trigger writes its own `data-state`
+                         * over the popover's.
+                         */}
+                        <button
+                            type="button"
+                            data-slot="enhancement-trigger"
+                            aria-keyshortcuts={rowHint.ariaKeyShortcuts}
+                            className="flex min-h-13 w-full items-center gap-3 py-2 pr-10 pl-4 text-left hover:bg-secondary aria-expanded:bg-secondary"
+                        >
+                            <Icon className="size-5 flex-none" />
 
-                        <span className="flex min-w-0 flex-col gap-px">
-                            <span className="text-[13px]">{t(enhancement.nameKey)}</span>
-                            <span className="text-xs text-foreground-dim italic" data-slot="enhancement-info">
-                                {info()}
+                            <span className="flex min-w-0 flex-col gap-px">
+                                <span className="text-[13px]">{t(enhancement.nameKey)}</span>
+                                <span className="text-xs text-foreground-dim italic" data-slot="enhancement-info">
+                                    {info()}
+                                </span>
                             </span>
-                        </span>
-                    </button>
-                </PopoverTrigger>
+                        </button>
+                    </PopoverTrigger>
+                </HintTooltip>
 
                 <OptionsPanel title={t(enhancement.nameKey)}>{options()}</OptionsPanel>
             </Popover>
@@ -322,20 +367,23 @@ export const EnhancementRow = ({
                 <SelectFacesDialog open={choosingFaces} onClose={() => setChoosingFaces(false)} />
             )}
 
-            <Button
-                variant="secondary"
-                size="icon-sm"
-                aria-label={t("enhancements.remove")}
-                onClick={onRemove}
-                // Hover alone is the design's rule and the reference's, and it is what keeps a list of
-                // several reading as a list rather than as a column of buttons - but hover is not
-                // reachable from a keyboard, so the control is in the tab order and shows itself when
-                // it is focused. Drawn at zero opacity rather than not drawn at all, which is what
-                // keeps it focusable in the first place.
-                className="absolute top-1/2 right-2 size-6.5 -translate-y-1/2 bg-input opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
-            >
-                <X className="size-4" />
-            </Button>
+            <HintTooltip tip={removeHint.tooltip}>
+                <Button
+                    variant="secondary"
+                    size="icon-sm"
+                    aria-label={t("enhancements.remove")}
+                    aria-keyshortcuts={removeHint.ariaKeyShortcuts}
+                    onClick={onRemove}
+                    // Hover alone is the design's rule and the reference's, and it is what keeps a list of
+                    // several reading as a list rather than as a column of buttons - but hover is not
+                    // reachable from a keyboard, so the control is in the tab order and shows itself when
+                    // it is focused. Drawn at zero opacity rather than not drawn at all, which is what
+                    // keeps it focusable in the first place.
+                    className="absolute top-1/2 right-2 size-6.5 -translate-y-1/2 bg-input opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+                >
+                    <X className="size-4" />
+                </Button>
+            </HintTooltip>
         </div>
     );
 };

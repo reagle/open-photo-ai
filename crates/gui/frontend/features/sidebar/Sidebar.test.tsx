@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { useShortcuts } from "@/hooks/useShortcuts";
 import "@/i18n";
 import { renditionUrl } from "@/ipc/images";
 import { THUMBNAIL_BOUND } from "@/lib/constants";
@@ -21,6 +22,10 @@ import {
     SUNSET,
 } from "@/test/support";
 import { Sidebar } from "./Sidebar";
+
+// The real `platform()` reads a global the plugin's init script installs, which jsdom has none of - and
+// the shortcut hints ask it, to write their keys as this platform does.
+vi.mock("@/ipc/os", () => ({ isMacOs: vi.fn(() => false), isWindows: vi.fn(() => false) }));
 
 // `convertFileSrc` reads a global Tauri's init script installs, which jsdom has none of. The
 // miniature's URL is asserted against `renditionUrl`'s own answer below rather than against a literal
@@ -239,5 +244,80 @@ describe("the miniature's viewport rectangle", () => {
         render(<Sidebar />);
 
         expect(rectangle()).toBeNull();
+    });
+});
+
+/** The sidebar with the window's keys listening, as the shell mounts both. */
+const WithKeys = () => {
+    useShortcuts();
+
+    return <Sidebar />;
+};
+
+describe("the sidebar's keys", () => {
+    beforeEach(() => {
+        localStorage.clear();
+        resetFileStore();
+        resetCropStore();
+        useEnhancementStore.setState({ autopilot: true, enhancements: new Map() });
+        useAutopilotStore.setState(useAutopilotStore.getInitialState(), true);
+    });
+
+    /** Presses a key at `target`, bubbling to the window, and answers the dispatched event. */
+    const press = (key: string, target: Element = document.body) => {
+        const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+        act(() => {
+            target.dispatchEvent(event);
+        });
+
+        return event;
+    };
+
+    it("turns Autopilot off and on with A, as its switch does, with or without an image open", () => {
+        render(<WithKeys />);
+        const autopilot = screen.getByRole("switch", { name: "Autopilot" });
+
+        const event = press("a");
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(useEnhancementStore.getState().autopilot).toBe(false);
+        expect(autopilot).toHaveAttribute("aria-checked", "false");
+
+        press("a");
+        expect(useEnhancementStore.getState().autopilot).toBe(true);
+    });
+
+    it("tells assistive technology the switch's key", () => {
+        render(<WithKeys />);
+
+        expect(screen.getByRole("switch", { name: "Autopilot" })).toHaveAttribute("aria-keyshortcuts", "a");
+    });
+
+    it("leaves A to a text field", () => {
+        render(<WithKeys />);
+        const field = document.createElement("input");
+        document.body.append(field);
+
+        press("a", field);
+
+        expect(useEnhancementStore.getState().autopilot).toBe(true);
+    });
+
+    it("moves the focus to Add enhancement once Delete removes the last row", async () => {
+        openFiles(HOLIDAY);
+        useEnhancementStore.setState({
+            autopilot: false,
+            enhancements: new Map([
+                [HOLIDAY.path, [{ family: "upscale", codename: "kyoto", precision: "fp32", parameters: { scale: 2 } }]],
+            ]),
+        });
+        render(<WithKeys />);
+        const row = document.querySelector<HTMLElement>("[data-slot='enhancement-trigger']");
+        row?.focus();
+
+        press("Delete", row ?? document.body);
+
+        expect(useEnhancementStore.getState().enhancements.get(HOLIDAY.path)).toEqual([]);
+        expect(screen.getByRole("button", { name: "Add enhancement" })).toHaveFocus();
     });
 });

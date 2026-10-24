@@ -1,20 +1,20 @@
 import type { ReactNode } from "react";
 import { ChevronsDown, ChevronsUp, Minus, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { HintTooltip } from "@/components/HintTooltip";
 import { PreviewFullIcon, PreviewSideIcon, PreviewSplitIcon } from "@/components/icons/preview-modes";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useAppShortcutHint } from "@/hooks/useAppShortcuts";
 import { useCurrentTransform } from "@/hooks/useCurrentTransform";
 import { useOpenImages } from "@/hooks/useOpenImages";
-import { useShortcutBindings } from "@/hooks/useShortcuts";
-import { isMacOs } from "@/ipc/os";
+import { useShortcutHint, useShortcutKeys } from "@/hooks/useShortcuts";
 import { ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
 import { track } from "@/lib/faro";
-import { ariaKeyShortcuts, formatBinding } from "@/lib/shortcuts";
+import type { ShortcutAction } from "@/lib/shortcuts";
 import { useDrawerStore } from "@/stores/drawer";
 import { useCurrentFile, useFileStore, useHasFiles } from "@/stores/files";
 import { isPreviewMode, PREVIEW_MODES, usePreviewStore } from "@/stores/preview";
@@ -28,49 +28,37 @@ const MODES = {
 } as const;
 
 /**
- * One of the zoom control's two step buttons, with a tooltip naming it and the first key it is bound
- * to now - the first only, since a tooltip is a glance and the shortcuts list holds the rest -
- * or its name alone when it has none. `aria-keyshortcuts` names every binding.
+ * One of the zoom control's two step buttons, with a tooltip naming it and the first key its action is
+ * bound to now, or its name alone when it has none. `aria-keyshortcuts` names every binding.
  */
 const ZoomStepButton = ({
     label,
-    bindings,
-    mac,
+    action,
     disabled,
     onPress,
     children,
 }: {
     label: string;
-    bindings: readonly string[];
-    mac: boolean;
+    action: ShortcutAction;
     disabled: boolean;
     onPress: () => void;
     children: ReactNode;
 }) => {
-    const { t } = useTranslation();
-    const first = bindings[0];
-    const tip =
-        first === undefined
-            ? label
-            : t("shortcuts.tooltip", { name: label, key: formatBinding(first, mac, t("settings.keyboard.space")) });
+    const hint = useShortcutHint(action, label);
 
     return (
-        <Tooltip>
-            <TooltipTrigger asChild>
-                <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    disabled={disabled}
-                    onClick={onPress}
-                    aria-label={label}
-                    aria-keyshortcuts={ariaKeyShortcuts(bindings, mac) || undefined}
-                >
-                    {children}
-                </Button>
-            </TooltipTrigger>
-
-            <TooltipContent>{tip}</TooltipContent>
-        </Tooltip>
+        <HintTooltip tip={hint.tooltip}>
+            <Button
+                variant="ghost"
+                size="icon-sm"
+                disabled={disabled}
+                onClick={onPress}
+                aria-label={label}
+                aria-keyshortcuts={hint.ariaKeyShortcuts}
+            >
+                {children}
+            </Button>
+        </HintTooltip>
     );
 };
 
@@ -130,8 +118,11 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
     const transform = useCurrentTransform();
     const setTransform = useTransformStore((state) => state.setTransform);
 
-    const mac = isMacOs();
-    const bindings = useShortcutBindings();
+    const foldHint = useShortcutHint("toggleDrawer", t(open ? "drawer.hideImages" : "drawer.showImages"));
+    const addHint = useAppShortcutHint("open", t("drawer.addImages"));
+    // The comparison's key steps through the three rather than choosing one, so each toggle's tooltip
+    // says it cycles - "Full (V cycles)" - and the group names it to assistive technology.
+    const cycle = useShortcutKeys("cyclePreview");
 
     const setScale = (scale: number) => {
         if (!file?.identity) return;
@@ -146,23 +137,34 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
              * images while the strip is showing is the instruction, and the icon is the state. The
              * `data-slot` stays, because tests query by it.
              */}
-            <Button
-                variant="ghost"
-                size="icon-sm"
-                disabled={disabled}
-                onClick={toggleDrawer}
-                aria-label={t(open ? "drawer.hideImages" : "drawer.showImages")}
-                data-slot="drawer-fold"
-            >
-                {open ? <ChevronsDown className="size-5" /> : <ChevronsUp className="size-5" />}
-            </Button>
+            <HintTooltip tip={foldHint.tooltip}>
+                <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={disabled}
+                    onClick={toggleDrawer}
+                    aria-label={t(open ? "drawer.hideImages" : "drawer.showImages")}
+                    aria-keyshortcuts={foldHint.ariaKeyShortcuts}
+                    data-slot="drawer-fold"
+                >
+                    {open ? <ChevronsDown className="size-5" /> : <ChevronsUp className="size-5" />}
+                </Button>
+            </HintTooltip>
 
             <Separator orientation="vertical" className="data-[orientation=vertical]:h-5" />
 
-            <Button variant="ghost" size="sm" className="font-normal" onClick={openImages}>
-                <Plus className="size-4.5" />
-                {t("drawer.addImages")}
-            </Button>
+            <HintTooltip tip={addHint.tooltip}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="font-normal"
+                    onClick={openImages}
+                    aria-keyshortcuts={addHint.ariaKeyShortcuts}
+                >
+                    <Plus className="size-4.5" />
+                    {t("drawer.addImages")}
+                </Button>
+            </HintTooltip>
 
             <Separator orientation="vertical" className="data-[orientation=vertical]:h-5" />
 
@@ -227,6 +229,7 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
                  * and sets the 2px gap the design draws, in one place instead of two fighting rules.
                  */
                 spacing={0.5}
+                aria-keyshortcuts={cycle.aria}
                 className="h-8 rounded-lg bg-secondary p-0.5"
             >
                 {PREVIEW_MODES.map((mode) => {
@@ -234,51 +237,54 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
                     const label = t(labelKey);
 
                     return (
-                        <Tooltip key={mode}>
-                            <TooltipTrigger asChild>
-                                {/*
-                                 * The tooltip's own text as the accessible name, which is the one
-                                 * place these three icon-only buttons already have a catalogue
-                                 * string to use - `drawer.preview.*` names the mode, not the
-                                 * tooltip.
-                                 *
-                                 * Keyed off `aria-checked`, not the `data-[state=on]` the generated
-                                 * toggle styles itself with, because the tooltip above destroys it:
-                                 * `asChild` hands the trigger's own props to this item, the item
-                                 * spreads them last, and the tooltip's `data-state="closed"` lands
-                                 * on top of the toggle's "on", and every mode renders as
-                                 * unselected. `aria-checked` is Radix's own answer for a
-                                 * `role="radio"`, it is what assistive technology already reads
-                                 * here, and nothing overwrites it.
-                                 *
-                                 * The colour it switches to is the design's, and it has to be: both
-                                 * `--accent` (what the generated style reaches for) and
-                                 * `--secondary` (the tray) are #27272a in this palette, so even an
-                                 * intact `data-[state=on]:bg-accent` would have painted the pill
-                                 * exactly the colour of the tray behind it. The design raises the
-                                 * chosen one a tier - #3f3f46 on #27272a - and dims the two it is
-                                 * not, so the group reads at a glance.
-                                 *
-                                 * `bg-input` is that #3f3f46, used as a surface rather than a
-                                 * border, as the Autopilot switch's unchecked track already does.
-                                 *
-                                 * The `aria-checked:hover:*` pair is not redundant: the base
-                                 * variants carry a plain `hover:bg-muted`, which ties on specificity
-                                 * with a single-variant `aria-checked:bg-input` and would drop the
-                                 * selected pill back to the tray colour for as long as the pointer
-                                 * sat on it. Two variants beat one, so the selection holds.
-                                 */}
-                                <ToggleGroupItem
-                                    value={mode}
-                                    aria-label={label}
-                                    className="h-7 w-11 rounded-md px-0 text-muted-foreground hover:bg-transparent hover:text-foreground aria-checked:bg-input aria-checked:text-foreground aria-checked:hover:bg-input"
-                                >
-                                    <Icon className="size-4.5" />
-                                </ToggleGroupItem>
-                            </TooltipTrigger>
-
-                            <TooltipContent>{label}</TooltipContent>
-                        </Tooltip>
+                        <HintTooltip
+                            key={mode}
+                            tip={
+                                cycle.key === undefined
+                                    ? label
+                                    : t("shortcuts.tooltipCycle", { name: label, key: cycle.key })
+                            }
+                        >
+                            {/*
+                             * The tooltip's own text as the accessible name, which is the one
+                             * place these three icon-only buttons already have a catalogue
+                             * string to use - `drawer.preview.*` names the mode, not the
+                             * tooltip.
+                             *
+                             * Keyed off `aria-checked`, not the `data-[state=on]` the generated
+                             * toggle styles itself with, because the tooltip above destroys it:
+                             * `asChild` hands the trigger's own props to this item, the item
+                             * spreads them last, and the tooltip's `data-state="closed"` lands
+                             * on top of the toggle's "on", and every mode renders as
+                             * unselected. `aria-checked` is Radix's own answer for a
+                             * `role="radio"`, it is what assistive technology already reads
+                             * here, and nothing overwrites it.
+                             *
+                             * The colour it switches to is the design's, and it has to be: both
+                             * `--accent` (what the generated style reaches for) and
+                             * `--secondary` (the tray) are #27272a in this palette, so even an
+                             * intact `data-[state=on]:bg-accent` would have painted the pill
+                             * exactly the colour of the tray behind it. The design raises the
+                             * chosen one a tier - #3f3f46 on #27272a - and dims the two it is
+                             * not, so the group reads at a glance.
+                             *
+                             * `bg-input` is that #3f3f46, used as a surface rather than a
+                             * border, as the Autopilot switch's unchecked track already does.
+                             *
+                             * The `aria-checked:hover:*` pair is not redundant: the base
+                             * variants carry a plain `hover:bg-muted`, which ties on specificity
+                             * with a single-variant `aria-checked:bg-input` and would drop the
+                             * selected pill back to the tray colour for as long as the pointer
+                             * sat on it. Two variants beat one, so the selection holds.
+                             */}
+                            <ToggleGroupItem
+                                value={mode}
+                                aria-label={label}
+                                className="h-7 w-11 rounded-md px-0 text-muted-foreground hover:bg-transparent hover:text-foreground aria-checked:bg-input aria-checked:text-foreground aria-checked:hover:bg-input"
+                            >
+                                <Icon className="size-4.5" />
+                            </ToggleGroupItem>
+                        </HintTooltip>
                     );
                 })}
             </ToggleGroup>
@@ -301,8 +307,7 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
                  */}
                 <ZoomStepButton
                     label={t("drawer.zoomOut")}
-                    bindings={bindings.zoomOut}
-                    mac={mac}
+                    action="zoomOut"
                     disabled={disabled}
                     onPress={() => stepZoom(-1)}
                 >
@@ -339,8 +344,7 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
 
                 <ZoomStepButton
                     label={t("drawer.zoomIn")}
-                    bindings={bindings.zoomIn}
-                    mac={mac}
+                    action="zoomIn"
                     disabled={disabled}
                     onPress={() => stepZoom(1)}
                 >

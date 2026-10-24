@@ -2,19 +2,20 @@ import { type ComponentProps, type ReactNode, useState } from "react";
 import type { TFunction } from "i18next";
 import { Ellipsis } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuSeparator,
+    DropdownMenuShortcut,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAppShortcutKeys } from "@/hooks/useAppShortcuts";
+import { useShortcutKeys } from "@/hooks/useShortcuts";
 import type { ImageRecord } from "@/ipc/images";
-import { revealImage } from "@/ipc/images";
 import { isMacOs, isWindows } from "@/ipc/os";
 import { FILE_MENU_GAP, FILE_MENU_GLYPH } from "@/lib/constants";
-import { report } from "@/lib/report";
+import { revealInFileManager } from "@/lib/editorActions";
 import { cn } from "@/lib/utils";
 import { useFileStore } from "@/stores/files";
 
@@ -142,6 +143,12 @@ export const FileOptionsMenu = ({ file, anchor, container, children }: FileOptio
     // to return focus into a subtree that has gone.
     const [open, setOpen] = useState(false);
 
+    // The keys the three items have, written at the item's trailing edge as a menu does: the two Close keys are
+    // the application's, fixed; Show in Finder's is the user's, and an item whose action has none shows none.
+    const closeKeys = useAppShortcutKeys("closeImage");
+    const closeAllKeys = useAppShortcutKeys("closeAll");
+    const revealKeys = useShortcutKeys("revealImage");
+
     const closeFile = useFileStore((state) => state.closeFile);
     const closeAll = useFileStore((state) => state.closeAll);
 
@@ -160,14 +167,10 @@ export const FileOptionsMenu = ({ file, anchor, container, children }: FileOptio
      * moved or deleted after it was opened, and a menu item that quietly does nothing reads as a broken
      * one. The reason in full goes to the console and the catalogue's own sentence goes to the user -
      * a toast fades before anyone copies a path out of it.
+     *
+     * Shared with the window's key (`Mod Shift R` by default), so the two routes are one.
      */
-    const reveal = () =>
-        act(() => {
-            revealImage(file.path).catch((error: unknown) => {
-                report("showing the image in the file manager failed", error);
-                toast.error(t("errors.revealFileFailed"));
-            });
-        });
+    const reveal = () => act(() => revealInFileManager(file.path));
 
     return (
         /*
@@ -204,18 +207,29 @@ export const FileOptionsMenu = ({ file, anchor, container, children }: FileOptio
                 data-slot="file-options-menu"
             >
                 {/* 13px is the reference's size for these items, and the design's. */}
-                <DropdownMenuItem className="text-[13px]" onSelect={() => act(() => closeFile(file.path))}>
+                <DropdownMenuItem
+                    className="text-[13px]"
+                    aria-keyshortcuts={closeKeys.aria}
+                    onSelect={() => act(() => closeFile(file.path))}
+                >
                     {t("menu.file.close")}
+                    {closeKeys.key && <DropdownMenuShortcut aria-hidden>{closeKeys.key}</DropdownMenuShortcut>}
                 </DropdownMenuItem>
 
-                <DropdownMenuItem className="text-[13px]" onSelect={() => act(closeAll)}>
+                <DropdownMenuItem
+                    className="text-[13px]"
+                    aria-keyshortcuts={closeAllKeys.aria}
+                    onSelect={() => act(closeAll)}
+                >
                     {t("menu.file.closeAll")}
+                    {closeAllKeys.key && <DropdownMenuShortcut aria-hidden>{closeAllKeys.key}</DropdownMenuShortcut>}
                 </DropdownMenuItem>
 
                 <DropdownMenuSeparator />
 
-                <DropdownMenuItem className="text-[13px]" onSelect={reveal}>
+                <DropdownMenuItem className="text-[13px]" aria-keyshortcuts={revealKeys.aria} onSelect={reveal}>
                     {showInLabel(t)}
+                    {revealKeys.key && <DropdownMenuShortcut aria-hidden>{revealKeys.key}</DropdownMenuShortcut>}
                 </DropdownMenuItem>
             </DropdownMenuContent>
         </DropdownMenu>

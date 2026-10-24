@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { HintTooltip } from "@/components/HintTooltip";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { FileMenuTrigger, FileOptionsMenu, NAVBAR_ANCHOR } from "@/features/files/FileOptionsMenu";
@@ -7,6 +8,7 @@ import { AboutDialog } from "@/features/navbar/AboutDialog";
 import { NavbarDimensions } from "@/features/navbar/NavbarDimensions";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import { useSettingsDialog } from "@/features/settings/useSettingsDialog";
+import { useAppShortcutHint } from "@/hooks/useAppShortcuts";
 import { appVersion, isOutdated } from "@/ipc/app";
 import { openLink } from "@/ipc/links";
 import { isMacOs } from "@/ipc/os";
@@ -31,6 +33,7 @@ export const Navbar = () => {
     // The dialog's open state and its draft, which live and die together - see `useSettingsDialog`.
     // The navbar presses the button and renders the surface; it does not operate the settings store.
     const { open: settingsOpen, openSettings, close: closeSettings, draft } = useSettingsDialog();
+    const settingsHint = useAppShortcutHint("settings", t("settings.title"));
     // Held here rather than in a hook like Settings': About has no draft, only whether it is showing.
     const [aboutOpen, setAboutOpen] = useState(false);
     // Whether a newer release is published. One boolean with one reader, so local state rather than a
@@ -123,9 +126,16 @@ export const Navbar = () => {
              */}
             {file && <NavbarDimensions file={file} />}
 
-            <Button variant="ghost" size="sm" onClick={openSettings}>
-                {t("settings.title")}
-            </Button>
+            <HintTooltip tip={settingsHint.tooltip}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={openSettings}
+                    aria-keyshortcuts={settingsHint.ariaKeyShortcuts}
+                >
+                    {t("settings.title")}
+                </Button>
+            </HintTooltip>
 
             <SettingsDialog open={settingsOpen} close={closeSettings} draft={draft} />
 

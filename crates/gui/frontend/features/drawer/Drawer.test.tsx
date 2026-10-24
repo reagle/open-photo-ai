@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { Preview } from "@/features/preview/Preview";
+import { useShortcuts } from "@/hooks/useShortcuts";
 import "@/i18n";
 import { isMacOs } from "@/ipc/os";
 import { ZOOM_BUTTON_STEP, ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
@@ -836,5 +837,159 @@ describe("the strip following the current image", () => {
         scrollTo.mockClear();
         await act(async () => useFileStore.getState().setCurrentIndex(25));
         await waitFor(() => expect((scrollTo.mock.lastCall?.[0] as { left?: number })?.left).toBeGreaterThan(0));
+    });
+});
+
+/** The window's keys, listening as the shell mounts them. */
+const Keys = () => {
+    useShortcuts();
+
+    return null;
+};
+
+/** Presses a key on the page, bubbling to the window, and answers the dispatched event. */
+const press = (init: KeyboardEventInit) => {
+    const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+    act(() => {
+        document.body.dispatchEvent(event);
+    });
+
+    return event;
+};
+
+describe("the drawer's keys", () => {
+    beforeEach(() => {
+        vi.mocked(isMacOs).mockReturnValue(false);
+        vi.mocked(track).mockClear();
+    });
+
+    it("steps through the comparisons with V, full, side by side, split and round again", () => {
+        openFiles(HOLIDAY);
+        usePreviewStore.setState({ previewMode: "full" });
+        render(
+            <>
+                <Keys />
+                <Drawer />
+            </>,
+        );
+
+        const event = press({ key: "v" });
+        expect(event.defaultPrevented).toBe(true);
+        expect(mode("Side by Side")).toHaveAttribute("aria-checked", "true");
+
+        press({ key: "v" });
+        expect(mode("Split")).toHaveAttribute("aria-checked", "true");
+
+        press({ key: "v" });
+        expect(mode("Full")).toHaveAttribute("aria-checked", "true");
+        expect(track).toHaveBeenLastCalledWith("preview_mode_changed", { mode: "full" });
+    });
+
+    it("leaves the comparison as it is with no image open, as the group is unavailable", () => {
+        render(
+            <>
+                <Keys />
+                <Drawer />
+            </>,
+        );
+
+        const event = press({ key: "v" });
+
+        expect(usePreviewStore.getState().previewMode).toBe("side");
+        expect(event.defaultPrevented).toBe(false);
+    });
+
+    it("names the comparison's key on the group, for assistive technology", () => {
+        renderWithImage();
+
+        expect(mode("Full").parentElement).toHaveAttribute("aria-keyshortcuts", "v");
+    });
+
+    it.each([
+        ["Command-backslash on macOS", true, { metaKey: true }],
+        ["Ctrl+backslash elsewhere", false, { ctrlKey: true }],
+    ])("shows and hides the images with %s, as the fold toggle does", (_name, mac, mod) => {
+        vi.mocked(isMacOs).mockReturnValue(mac);
+        openFiles(HOLIDAY);
+        render(
+            <>
+                <Keys />
+                <Drawer />
+            </>,
+        );
+
+        const event = press({ key: "\\", code: "Backslash", ...mod });
+        expect(event.defaultPrevented).toBe(true);
+        expect(fold("Hide images")).toBeInTheDocument();
+
+        press({ key: "\\", code: "Backslash", ...mod });
+        expect(fold()).toBeInTheDocument();
+    });
+
+    it("leaves the drawer folded with no image open, as the fold toggle is unavailable", () => {
+        render(
+            <>
+                <Keys />
+                <Drawer />
+            </>,
+        );
+
+        press({ key: "\\", code: "Backslash", ctrlKey: true });
+
+        expect(useDrawerStore.getState().open).toBe(false);
+    });
+
+    it("names the fold's key in its tooltip and to assistive technology", async () => {
+        vi.mocked(isMacOs).mockReturnValue(true);
+        renderWithImage();
+
+        await act(async () => {
+            fireEvent.focus(fold());
+        });
+
+        expect(await screen.findByRole("tooltip")).toHaveTextContent("Show images (⌘ \\)");
+        expect(fold()).toHaveAttribute("aria-keyshortcuts", "Meta+\\");
+    });
+
+    /** Focuses a control and answers the tooltip it opens. */
+    const tooltipOf = async (control: HTMLElement) => {
+        await act(async () => {
+            fireEvent.focus(control);
+        });
+
+        return screen.findByRole("tooltip");
+    };
+
+    it("says each comparison's tooltip that the key cycles, as this platform writes it", async () => {
+        vi.mocked(isMacOs).mockReturnValue(false);
+        renderWithImage();
+
+        expect(await tooltipOf(mode("Side by Side"))).toHaveTextContent("Side by Side (V cycles)");
+    });
+
+    it("leaves the key out of a comparison's tooltip once the cycle is unbound", async () => {
+        useSettingsStore.getState().apply({ shortcuts: { cyclePreview: [] } });
+        renderWithImage();
+
+        expect(await tooltipOf(mode("Split"))).toHaveTextContent(/^Split$/);
+    });
+
+    it("follows a rebinding of the cycle key", async () => {
+        useSettingsStore.getState().apply({ shortcuts: { cyclePreview: ["Shift+c"] } });
+        renderWithImage();
+
+        expect(await tooltipOf(mode("Full"))).toHaveTextContent("Full (Shift+C cycles)");
+    });
+
+    it.each([
+        [true, "Add images (⌘ O)", "Meta+o"],
+        [false, "Add images (Ctrl+O)", "Control+o"],
+    ])("names Open's fixed key on Add images (mac: %s)", async (mac, tip, aria) => {
+        vi.mocked(isMacOs).mockReturnValue(mac);
+        renderWithImage();
+        const button = screen.getByRole("button", { name: "Add images" });
+
+        expect(await tooltipOf(button)).toHaveTextContent(tip);
+        expect(button).toHaveAttribute("aria-keyshortcuts", aria);
     });
 });

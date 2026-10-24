@@ -1,6 +1,7 @@
 import { act, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EnhancementRun } from "@/hooks/useEnhancementRun";
+import { useShortcuts } from "@/hooks/useShortcuts";
 import "@/i18n";
 import type { Family } from "@/ipc/catalogue";
 import { cropQuery } from "@/ipc/crop";
@@ -12,13 +13,17 @@ import { useFacesStore } from "@/stores/faces";
 import { useFileStore } from "@/stores/files";
 import { usePeekStore } from "@/stores/peek";
 import { usePreviewStore } from "@/stores/preview";
-import { type ImageTransform, useTransformStore } from "@/stores/transform";
+import { type ImageTransform, panCurrent, useTransformStore } from "@/stores/transform";
 import { FRAMING, frame, HOLIDAY, openFiles, render, resetCropStore, resetFileStore, SUNSET } from "@/test/support";
 import { PreviewImage } from "./PreviewImage";
 
 // `convertFileSrc` reads a global Tauri's init script installs, which jsdom has none of. Mocked to
 // answer the identity it was asked for, so a test can tell which photograph a pane is drawing without
 // restating the platform-dependent URL - which is the one thing `ipc/images.ts` exists to own.
+// The real `platform()` reads a global the plugin's init script installs, which jsdom has none of - and the
+// window's keys ask it, for which modifier `Mod` is.
+vi.mock("@/ipc/os", () => ({ isMacOs: vi.fn(() => false), isWindows: vi.fn(() => false) }));
+
 vi.mock("@tauri-apps/api/core", () => ({
     convertFileSrc: vi.fn((identity: string) => `opai://localhost/${identity}`),
 }));
@@ -500,6 +505,106 @@ describe("panning", () => {
 });
 
 /** The wheel, and the trackpad pinch the webview delivers as one. */
+describe("the pan keys", () => {
+    /** The canvas with the window's keys listening, as the shell mounts both. */
+    const WithKeys = () => {
+        useShortcuts();
+
+        return <PreviewImage />;
+    };
+
+    const press = (key: string) => {
+        const event = new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true });
+        act(() => {
+            document.body.dispatchEvent(event);
+        });
+
+        return event;
+    };
+
+    it("moves a magnified photograph a tenth of the pane the way the arrow points", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        usePreviewStore.setState({ previewMode: "full" });
+        render(<WithKeys />);
+
+        // The view moves right, so the photograph moves left: a tenth of the 1000px pane.
+        const right = press("ArrowRight");
+        expect(right.defaultPrevented).toBe(true);
+        expect(drawn()).toEqual({ x: -200, y: -50, scale: 2 });
+
+        press("ArrowDown");
+        expect(drawn()).toEqual({ x: -200, y: -110, scale: 2 });
+
+        press("ArrowLeft");
+        press("ArrowUp");
+        expect(drawn()).toEqual({ x: -100, y: -50, scale: 2 });
+    });
+
+    it("stops at the photograph's own edge, as a drag does", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -50, y: -30 });
+        draw("full");
+
+        act(() => {
+            panCurrent("left");
+            panCurrent("up");
+        });
+
+        expect(drawn()).toEqual({ x: 0, y: 0, scale: 2 });
+    });
+
+    it("moves from where the photograph is drawn, not from where the store last left it", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+        // A step of the zoom keeps the middle of the pane still, so what is drawn is not what is stored.
+        magnify({ scale: 3, x: -100, y: -50 });
+        const before = drawn();
+
+        act(() => {
+            panCurrent("right");
+        });
+
+        expect(drawn()).toEqual({ x: before.x - 100, y: before.y, scale: 3 });
+    });
+
+    it("does nothing to a photograph drawn whole, and leaves the key alone", () => {
+        stubPaneGeometry();
+        usePreviewStore.setState({ previewMode: "full" });
+        render(<WithKeys />);
+
+        const event = press("ArrowRight");
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(drawn()).toEqual({ x: 50, y: 0, scale: 1 });
+        expect(useTransformStore.getState().transforms.get(HOLIDAY.identity ?? "")).toBeUndefined();
+    });
+
+    it("moves both panes of side by side together, by one step", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("side");
+
+        act(() => {
+            panCurrent("right");
+        });
+
+        expect(drawn(0)).toEqual({ x: -200, y: -50, scale: 2 });
+        expect(drawn(1)).toEqual({ x: -200, y: -50, scale: 2 });
+    });
+
+    it("answers that nothing moved once the canvas is gone", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        const { unmount } = draw("full");
+
+        unmount();
+
+        expect(panCurrent("right")).toBe(false);
+    });
+});
+
 describe("the wheel", () => {
     const wheel = (element: Element, { deltaY = -100, clientX = 500, clientY = 300 } = {}) => {
         const event = new WheelEvent("wheel", { deltaY, clientX, clientY, cancelable: true, bubbles: true });

@@ -121,9 +121,27 @@
                 "fit": "Anpassa till fönstret",
                 "actualPixels": "Faktiska pixlar (100 %)",
                 "toggleZoom": "Växla mellan anpassad och faktiska pixlar",
+                "panLeft": "Panorera åt vänster",
+                "panRight": "Panorera åt höger",
+                "panUp": "Panorera uppåt",
+                "panDown": "Panorera nedåt",
                 "showOriginal": "Visa original medan tangenten hålls ned",
+                "cyclePreview": "Växla jämförelsevy",
+                "toggleDrawer": "Visa eller dölj bilder",
                 "previousImage": "Föregående bild",
                 "nextImage": "Nästa bild",
+                "revealImage": "Visa bilden i filhanteraren",
+                "toggleAutopilot": "Slå på eller av Autopilot",
+                "addEnhancement": "Lägg till förbättring",
+                "removeEnhancement": "Ta bort markerad förbättring",
+                "openOptions1": "Alternativ för förbättring 1",
+                "openOptions2": "Alternativ för förbättring 2",
+                "openOptions3": "Alternativ för förbättring 3",
+                "openOptions4": "Alternativ för förbättring 4",
+                "openOptions5": "Alternativ för förbättring 5",
+                "openOptions6": "Alternativ för förbättring 6",
+                "openOptions7": "Alternativ för förbättring 7",
+                "cropRotate": "Beskär/Rotera",
                 "showShortcuts": "Visa kortkommandon"
             },
             "add": "Lägg till kortkommando",
@@ -477,6 +495,18 @@
         "description": "Tangenterna som just nu är kopplade till varje åtgärd.",
         "hint": "Ändra dem under Inställningar > Tangentbord.",
         "tooltip": "{{name}} ({{key}})",
-        "settingsHint": "Tryck på {{key}} var som helst för att se kortkommandona."
+        "tooltipCycle": "{{name}} ({{key}} växlar)",
+        "settingsHint": "Tryck på {{key}} var som helst för att se kortkommandona.",
+        "sections": {
+            "view": "Visning",
+            "images": "Bilder",
+            "enhancements": "Förbättringar"
+        },
+        "rows": {
+            "zoom": "Zooma in / Zooma ut",
+            "pan": "Panorera",
+            "images": "Föregående bild / Nästa bild",
+            "options": "Alternativ för förbättring 1–7"
+        }
     }
 }

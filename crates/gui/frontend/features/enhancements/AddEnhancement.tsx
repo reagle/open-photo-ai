@@ -1,6 +1,6 @@
-import { useState } from "react";
 import { Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { HintTooltip } from "@/components/HintTooltip";
 import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
@@ -9,10 +9,12 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { familyEntry, useCatalogue } from "@/hooks/useCatalogue";
+import { useShortcutHint } from "@/hooks/useShortcuts";
 import type { Operation } from "@/ipc/enhance";
 import { ADD_MENU_GAP, SIDEBAR_PADDING } from "@/lib/constants";
 import { applyOrder, ENHANCEMENTS, newOperation, startingScale } from "@/lib/enhancements";
 import { track } from "@/lib/faro";
+import { useAddEnhancementMenuStore } from "@/stores/addEnhancementMenu";
 import { useImageCrop } from "@/stores/crop";
 import { useEnhancementStore, useFileEnhancements } from "@/stores/enhancements";
 import { useCurrentFile } from "@/stores/files";
@@ -39,11 +41,14 @@ const MENU_ALIGN = 20;
  * **An enhancement already in the stack is drawn unavailable rather than removed.**
  *
  * The button is unavailable with no image open, because there is nothing for an enhancement to be
- * added to.
+ * added to. Its key (`E` by default) opens the same menu, with the focus on its first entry so the
+ * arrows and Enter pick one - see `useAddEnhancementMenuStore`.
  */
 export const AddEnhancement = () => {
     const { t } = useTranslation();
-    const [open, setOpen] = useState(false);
+    const open = useAddEnhancementMenuStore((state) => state.open);
+    const setOpen = useAddEnhancementMenuStore((state) => state.setOpen);
+    const hint = useShortcutHint("addEnhancement", t("enhancements.add"));
 
     const file = useCurrentFile();
     const families = useCatalogue();
@@ -78,13 +83,23 @@ export const AddEnhancement = () => {
     };
 
     return (
-        <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
-            <DropdownMenuTrigger asChild>
-                <Button variant="outline" disabled={!file} className="h-10 w-full">
-                    <Plus className="size-4.5" />
-                    {t("enhancements.add")}
-                </Button>
-            </DropdownMenuTrigger>
+        // Open only with an image to add to: the key cannot open it without one, and closing the image
+        // while it is open takes it down rather than leaving it hanging off a disabled button.
+        <DropdownMenu open={open && file !== undefined} onOpenChange={setOpen} modal={false}>
+            <HintTooltip tip={hint.tooltip}>
+                <DropdownMenuTrigger asChild>
+                    <Button
+                        variant="outline"
+                        disabled={!file}
+                        aria-keyshortcuts={hint.ariaKeyShortcuts}
+                        className="h-10 w-full"
+                        data-slot="add-enhancement"
+                    >
+                        <Plus className="size-4.5" />
+                        {t("enhancements.add")}
+                    </Button>
+                </DropdownMenuTrigger>
+            </HintTooltip>
 
             {/*
              * `side="left"` with the menu's top edge at the button's vertical centre, which is the

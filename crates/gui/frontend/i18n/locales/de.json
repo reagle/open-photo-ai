@@ -121,9 +121,27 @@
                 "fit": "An Fenster anpassen",
                 "actualPixels": "Originalpixel (100 %)",
                 "toggleZoom": "Zwischen Einpassen und Originalpixeln wechseln",
+                "panLeft": "Nach links schwenken",
+                "panRight": "Nach rechts schwenken",
+                "panUp": "Nach oben schwenken",
+                "panDown": "Nach unten schwenken",
                 "showOriginal": "Original anzeigen, solange gedrückt",
+                "cyclePreview": "Vergleichsansicht wechseln",
+                "toggleDrawer": "Bilder ein- oder ausblenden",
                 "previousImage": "Vorheriges Bild",
                 "nextImage": "Nächstes Bild",
+                "revealImage": "Bild im Dateimanager anzeigen",
+                "toggleAutopilot": "Autopilot ein- oder ausschalten",
+                "addEnhancement": "Verbesserung hinzufügen",
+                "removeEnhancement": "Ausgewählte Verbesserung entfernen",
+                "openOptions1": "Optionen von Verbesserung 1",
+                "openOptions2": "Optionen von Verbesserung 2",
+                "openOptions3": "Optionen von Verbesserung 3",
+                "openOptions4": "Optionen von Verbesserung 4",
+                "openOptions5": "Optionen von Verbesserung 5",
+                "openOptions6": "Optionen von Verbesserung 6",
+                "openOptions7": "Optionen von Verbesserung 7",
+                "cropRotate": "Zuschneiden/Drehen",
                 "showShortcuts": "Tastaturkürzel anzeigen"
             },
             "add": "Kürzel hinzufügen",
@@ -477,6 +495,18 @@
         "description": "Die Tasten, die jeder Aktion derzeit zugewiesen sind.",
         "hint": "Ändern Sie sie unter Einstellungen > Tastatur.",
         "tooltip": "{{name}} ({{key}})",
-        "settingsHint": "Drücken Sie überall {{key}}, um diese Kürzel zu sehen."
+        "tooltipCycle": "{{name}} ({{key}} wechselt)",
+        "settingsHint": "Drücken Sie überall {{key}}, um diese Kürzel zu sehen.",
+        "sections": {
+            "view": "Ansicht",
+            "images": "Bilder",
+            "enhancements": "Verbesserungen"
+        },
+        "rows": {
+            "zoom": "Vergrößern / Verkleinern",
+            "pan": "Schwenken",
+            "images": "Vorheriges Bild / Nächstes Bild",
+            "options": "Optionen von Verbesserung 1–7"
+        }
     }
 }
