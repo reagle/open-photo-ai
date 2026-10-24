@@ -18,6 +18,7 @@ use super::strength::Strength;
 use crate::models::filter;
 use crate::pipeline::Backend;
 use crate::pipeline::Shared;
+use imaging::TileGeometry;
 use imaging::tensor::Normalisation;
 use rust_sak::ai::Tuning;
 
@@ -118,6 +119,7 @@ impl Denoise {
             RANGE,
             self.params().strength,
             self.variant.guard(),
+            TileGeometry::DEFAULT,
         )
     }
 
