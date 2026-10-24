@@ -1,6 +1,13 @@
 import { useTranslation } from "react-i18next";
 import { isMacOs, isWindows } from "@/ipc/os";
-import { APP_ACTIONS, type AppAction, appShortcuts, formatBinding, type Platform } from "@/lib/shortcuts";
+import {
+    APP_ACTIONS,
+    type AppAction,
+    appShortcuts,
+    ariaKeyShortcuts,
+    formatBinding,
+    type Platform,
+} from "@/lib/shortcuts";
 
 /** The platform as far as the application's keys differ. Asked again on each call; it never changes. */
 export const currentPlatform = (): Platform => (isMacOs() ? "macos" : isWindows() ? "windows" : "linux");
@@ -22,4 +29,35 @@ export const useAppShortcuts = (): { action: AppAction; name: string; keys: stri
             formatBinding(binding, platform === "macos", t("settings.keyboard.space")),
         ),
     }));
+};
+
+/**
+ * What a control standing for one of the application's actions says about its keys: the action's first
+ * key as this platform writes it, `undefined` where it has none, and `aria-keyshortcuts` naming them all.
+ * Fixed rather than rebindable, so nothing here follows the settings store.
+ */
+export const useAppShortcutKeys = (action: AppAction): { key: string | undefined; aria: string | undefined } => {
+    const { t } = useTranslation();
+    const platform = currentPlatform();
+    const bindings = appShortcuts(platform)[action];
+    const first = bindings[0];
+
+    return {
+        key: first === undefined ? undefined : formatBinding(first, platform === "macos", t("settings.keyboard.space")),
+        aria: ariaKeyShortcuts(bindings, platform === "macos") || undefined,
+    };
+};
+
+/** The tooltip and `aria-keyshortcuts` of a control for an application action - see `useShortcutHint`. */
+export const useAppShortcutHint = (
+    action: AppAction,
+    label: string,
+): { tooltip: string; ariaKeyShortcuts: string | undefined } => {
+    const { t } = useTranslation();
+    const { key, aria } = useAppShortcutKeys(action);
+
+    return {
+        tooltip: key === undefined ? label : t("shortcuts.tooltip", { name: label, key }),
+        ariaKeyShortcuts: aria,
+    };
 };

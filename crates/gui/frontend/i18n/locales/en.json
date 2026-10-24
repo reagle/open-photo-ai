@@ -121,9 +121,27 @@
                 "fit": "Fit to window",
                 "actualPixels": "Actual pixels (100%)",
                 "toggleZoom": "Toggle fit and actual pixels",
+                "panLeft": "Pan left",
+                "panRight": "Pan right",
+                "panUp": "Pan up",
+                "panDown": "Pan down",
                 "showOriginal": "Show original while held",
+                "cyclePreview": "Cycle comparison view",
+                "toggleDrawer": "Show or hide images",
                 "previousImage": "Previous image",
                 "nextImage": "Next image",
+                "revealImage": "Show image in file manager",
+                "toggleAutopilot": "Turn Autopilot on or off",
+                "addEnhancement": "Add enhancement",
+                "removeEnhancement": "Remove focused enhancement",
+                "openOptions1": "Options of enhancement 1",
+                "openOptions2": "Options of enhancement 2",
+                "openOptions3": "Options of enhancement 3",
+                "openOptions4": "Options of enhancement 4",
+                "openOptions5": "Options of enhancement 5",
+                "openOptions6": "Options of enhancement 6",
+                "openOptions7": "Options of enhancement 7",
+                "cropRotate": "Crop/Rotate",
                 "showShortcuts": "Show keyboard shortcuts"
             },
             "add": "Add shortcut",
@@ -477,6 +495,18 @@
         "description": "The keys bound to each action now.",
         "hint": "Change them in Settings > Keyboard.",
         "tooltip": "{{name}} ({{key}})",
-        "settingsHint": "Press {{key}} anywhere to see these shortcuts."
+        "tooltipCycle": "{{name}} ({{key}} cycles)",
+        "settingsHint": "Press {{key}} anywhere to see these shortcuts.",
+        "sections": {
+            "view": "View",
+            "images": "Images",
+            "enhancements": "Enhancements"
+        },
+        "rows": {
+            "zoom": "Zoom in / Zoom out",
+            "pan": "Pan",
+            "images": "Previous image / Next image",
+            "options": "Options of enhancement 1–7"
+        }
     }
 }

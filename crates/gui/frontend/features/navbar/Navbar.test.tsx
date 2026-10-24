@@ -177,9 +177,9 @@ describe("the navbar's file options control", () => {
 
         const items = await screen.findAllByRole("menuitem");
         expect(items.map((item) => item.textContent)).toEqual([
-            "Close image",
-            "Close all images",
-            "Show in File Manager",
+            "Close imageCtrl+W",
+            "Close all imagesCtrl+Shift+W",
+            "Show in File ManagerCtrl+Shift+R",
         ]);
     });
 

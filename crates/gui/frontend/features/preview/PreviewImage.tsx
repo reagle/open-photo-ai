@@ -6,13 +6,20 @@ import { useResizeObserver } from "@/hooks/useResizeObserver";
 import { useSettledFile } from "@/hooks/useSettledFile";
 import { framedDimensions } from "@/ipc/crop";
 import { renditionFor } from "@/ipc/images";
-import { DRAWER_HEIGHT, ZOOM_WHEEL_STEP } from "@/lib/constants";
+import { DRAWER_HEIGHT, PAN_KEY_STEP, ZOOM_MIN, ZOOM_WHEEL_STEP } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useDrawerStore } from "@/stores/drawer";
 import { usePeekStore } from "@/stores/peek";
 import { usePreviewStore } from "@/stores/preview";
-import { clampScale, type ImageTransform, useImageTransform, useTransformStore } from "@/stores/transform";
+import {
+    clampScale,
+    type ImageTransform,
+    type PanDirection,
+    registerPanner,
+    useImageTransform,
+    useTransformStore,
+} from "@/stores/transform";
 import { constrain, constrainPosition, fitInside, imageFraction, type Size } from "./geometry";
 import { ProgressBar } from "./ProgressBar";
 
@@ -397,6 +404,52 @@ const Pane = ({
         },
         [setTransform],
     );
+
+    /*
+     * The pan keys (`Mod` with an arrow by default), answered by the pane that publishes the viewport -
+     * one pane, since in side by side both draw the same part of the photograph. Moved from where the
+     * photograph is *drawn*, as a drag is, and held inside the pane the same way; a step is a share of
+     * the pane, `PAN_KEY_STEP`. Nothing moves while the photograph is drawn whole.
+     */
+    const panned = useRef<ImageTransform>(undefined);
+
+    useEffect(() => {
+        if (!publishViewport) return;
+
+        return registerPanner((direction: PanDirection) => {
+            const { drawn: shown, fitted: fittedNow, measured: measuredNow, identity: id } = live.current;
+            if (id === undefined || shown.scale <= ZOOM_MIN) return false;
+
+            // A press that lands before the last one has been drawn moves on from where that one put the
+            // photograph rather than undoing it - the store still holds exactly what it wrote. Anything
+            // else in the store since (a zoom, a drag) is resolved by now, so what is drawn is the answer.
+            const stored = useTransformStore.getState().transforms.get(id);
+            const last = panned.current;
+            const current =
+                stored && last && stored.scale === last.scale && stored.x === last.x && stored.y === last.y
+                    ? last
+                    : shown;
+
+            const step = { x: measuredNow.width * PAN_KEY_STEP, y: measuredNow.height * PAN_KEY_STEP };
+            // The photograph moves against the arrow, so the view moves with it.
+            const delta = {
+                left: { x: step.x, y: 0 },
+                right: { x: -step.x, y: 0 },
+                up: { x: 0, y: step.y },
+                down: { x: 0, y: -step.y },
+            }[direction];
+
+            const position = constrainPosition(
+                { x: current.x + delta.x, y: current.y + delta.y },
+                scaled(fittedNow, current.scale),
+                measuredNow,
+            );
+            panned.current = { scale: current.scale, ...position };
+            setTransform(id, panned.current);
+
+            return true;
+        });
+    }, [publishViewport, setTransform]);
 
     return (
         <div

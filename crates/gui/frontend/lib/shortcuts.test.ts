@@ -168,9 +168,75 @@ describe("the defaults added for discovery", () => {
         expect(actionFor(key("/", { metaKey: true }), DEFAULT_SHORTCUTS, PC)).toBeUndefined();
     });
 
-    it("leave a modified arrow or Z alone", () => {
-        expect(actionFor(key("ArrowRight", { metaKey: true }), DEFAULT_SHORTCUTS, MAC)).toBeUndefined();
+    it("leave an arrow with Shift or Alt, and Z with Shift, alone", () => {
+        // Command with an arrow pans since the editor's keys - see below.
+        expect(actionFor(key("ArrowRight", { shiftKey: true }), DEFAULT_SHORTCUTS, MAC)).toBeUndefined();
+        expect(actionFor(key("ArrowRight", { altKey: true }), DEFAULT_SHORTCUTS, PC)).toBeUndefined();
         expect(actionFor(key("Z", { shiftKey: true }), DEFAULT_SHORTCUTS, PC)).toBeUndefined();
+    });
+});
+
+describe("the editor's defaults", () => {
+    it("bind the bare letters, Delete and Backspace, and the digits on both platforms", () => {
+        for (const mac of [MAC, PC]) {
+            expect(actionFor(key("a"), DEFAULT_SHORTCUTS, mac)).toBe("toggleAutopilot");
+            expect(actionFor(key("e"), DEFAULT_SHORTCUTS, mac)).toBe("addEnhancement");
+            expect(actionFor(key("c"), DEFAULT_SHORTCUTS, mac)).toBe("cropRotate");
+            expect(actionFor(key("v"), DEFAULT_SHORTCUTS, mac)).toBe("cyclePreview");
+            expect(actionFor(key("Delete"), DEFAULT_SHORTCUTS, mac)).toBe("removeEnhancement");
+            expect(actionFor(key("Backspace"), DEFAULT_SHORTCUTS, mac)).toBe("removeEnhancement");
+
+            for (const place of [1, 2, 3, 4, 5, 6, 7]) {
+                expect(actionFor(key(String(place)), DEFAULT_SHORTCUTS, mac)).toBe(`openOptions${place}`);
+            }
+        }
+    });
+
+    it.each([
+        ["macOS", MAC, { metaKey: true }],
+        ["Windows and Linux", PC, { ctrlKey: true }],
+    ])("bind the drawer, reveal and the pans with the platform's modifier on %s", (_platform, mac, mod) => {
+        expect(actionFor(key("\\", mod), DEFAULT_SHORTCUTS, mac)).toBe("toggleDrawer");
+        expect(actionFor(key("R", { ...mod, shiftKey: true }), DEFAULT_SHORTCUTS, mac)).toBe("revealImage");
+        expect(actionFor(key("ArrowLeft", mod), DEFAULT_SHORTCUTS, mac)).toBe("panLeft");
+        expect(actionFor(key("ArrowRight", mod), DEFAULT_SHORTCUTS, mac)).toBe("panRight");
+        expect(actionFor(key("ArrowUp", mod), DEFAULT_SHORTCUTS, mac)).toBe("panUp");
+        expect(actionFor(key("ArrowDown", mod), DEFAULT_SHORTCUTS, mac)).toBe("panDown");
+    });
+
+    it("keep a digit with Mod for actual pixels, and backslash without it for the original", () => {
+        expect(actionFor(key("1", { metaKey: true }), DEFAULT_SHORTCUTS, MAC)).toBe("actualPixels");
+        expect(actionFor(key("1", { ctrlKey: true }), DEFAULT_SHORTCUTS, PC)).toBe("actualPixels");
+        expect(actionFor(key("\\"), DEFAULT_SHORTCUTS, MAC)).toBe("showOriginal");
+    });
+
+    it("leave a letter with Mod to the menus and the system: Command-C, -V and -A copy, paste and select", () => {
+        for (const letter of ["a", "c", "e", "v"]) {
+            expect(actionFor(key(letter, { metaKey: true }), DEFAULT_SHORTCUTS, MAC)).toBeUndefined();
+            expect(actionFor(key(letter, { ctrlKey: true }), DEFAULT_SHORTCUTS, PC)).toBeUndefined();
+        }
+        // Mod with R alone is a reload in a browser; only Shift with it reveals.
+        expect(actionFor(key("r", { metaKey: true }), DEFAULT_SHORTCUTS, MAC)).toBeUndefined();
+    });
+
+    it("leave a digit typed with Shift alone, and Shift with a letter", () => {
+        expect(actionFor(key("!", { shiftKey: true }), DEFAULT_SHORTCUTS, PC)).toBeUndefined();
+        expect(actionFor(key("1", { shiftKey: true }), DEFAULT_SHORTCUTS, PC)).toBeUndefined();
+        expect(actionFor(key("A", { shiftKey: true }), DEFAULT_SHORTCUTS, MAC)).toBeUndefined();
+    });
+
+    it("claim no key press twice, and none the system or the application holds, on either platform", () => {
+        for (const mac of [MAC, PC]) {
+            const all = Object.values(DEFAULT_SHORTCUTS).flat();
+            for (const binding of all) expect(refusal(binding, mac)).toBeUndefined();
+
+            for (const [index, binding] of all.entries()) {
+                for (const other of all.slice(index + 1)) expect(overlaps(binding, other, mac)).toBe(false);
+            }
+
+            // So resolving the defaults drops none of them.
+            expect(resolveShortcuts({}, mac)).toEqual(DEFAULT_SHORTCUTS);
+        }
     });
 });
 
@@ -455,6 +521,15 @@ describe("formatBinding", () => {
         expect(formatBinding("Mod+=", PC, "Space")).toBe("Ctrl+=");
         expect(formatBinding("Mod++", PC, "Space")).toBe("Ctrl++");
         expect(formatBinding("Alt+Shift+z", PC, "Space")).toBe("Alt+Shift+Z");
+    });
+
+    it("prints the deleting keys as macOS's menus do, and by name elsewhere", () => {
+        expect(formatBinding("Backspace", MAC, "Space")).toBe("⌫");
+        expect(formatBinding("Delete", MAC, "Space")).toBe("⌦");
+        expect(formatBinding("Backspace", PC, "Space")).toBe("Backspace");
+        expect(formatBinding("Delete", PC, "Space")).toBe("Delete");
+        expect(formatBinding("Mod+\\", MAC, "Space")).toBe("⌘ \\");
+        expect(formatBinding("Mod+Shift+r", PC, "Space")).toBe("Ctrl+Shift+R");
     });
 
     it("names Space in the user's language, and shows junk as it is", () => {

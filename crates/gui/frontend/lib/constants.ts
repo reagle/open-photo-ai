@@ -36,6 +36,11 @@ export const ZOOM_WHEEL_STEP = 0.05;
 /** How far the minus/plus buttons move the zoom, as the reference. */
 export const ZOOM_BUTTON_STEP = 0.5;
 
+// A fraction of the pane rather than a number of pixels, so one press moves the view by the same share
+// of what is on screen in a small window and a large one; ten presses cross one pane's width.
+/** How far one press of a pan key moves a magnified photograph: this share of the pane's own size. */
+export const PAN_KEY_STEP = 0.1;
+
 /**
  * Longest edge requested for a thumbnail (see design.md D4 for the sizing math). 384 covers a 104px
  * cover-cropped thumbnail at 2x density for both 3:2 and 16:9 photos. The sidebar miniature reuses

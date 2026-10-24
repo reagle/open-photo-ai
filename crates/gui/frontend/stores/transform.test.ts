@@ -2,7 +2,16 @@ import { act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ZOOM_BUTTON_STEP, ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
 import { HOLIDAY, openFiles, resetFileStore, SUNSET } from "@/test/support";
-import { actualPixels, FITTED, fitCurrent, stepZoom, toggleZoom, useTransformStore } from "./transform";
+import {
+    actualPixels,
+    FITTED,
+    fitCurrent,
+    panCurrent,
+    registerPanner,
+    stepZoom,
+    toggleZoom,
+    useTransformStore,
+} from "./transform";
 
 const identity = (record: { identity?: string }) => record.identity ?? "";
 
@@ -197,5 +206,34 @@ describe("actualPixels and toggleZoom", () => {
         fitted(0.25);
 
         expect(useTransformStore.getState().fit).toBe(first);
+    });
+});
+
+describe("panCurrent", () => {
+    it("answers that nothing moved while no canvas has registered", () => {
+        expect(panCurrent("left")).toBe(false);
+    });
+
+    it("asks the registered canvas, and stops once it unregisters", () => {
+        const pan = vi.fn(() => true);
+        const unregister = registerPanner(pan);
+
+        expect(panCurrent("down")).toBe(true);
+        expect(pan).toHaveBeenCalledExactlyOnceWith("down");
+
+        unregister();
+        expect(panCurrent("down")).toBe(false);
+    });
+
+    it("leaves a later registration in place when an earlier one unregisters", () => {
+        const first = registerPanner(() => true);
+        const second = vi.fn(() => true);
+        const unregisterSecond = registerPanner(second);
+
+        first();
+        panCurrent("up");
+
+        expect(second).toHaveBeenCalledOnce();
+        unregisterSecond();
     });
 });

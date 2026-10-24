@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { usePreviewStore } from "./preview";
+import { nextPreviewMode, usePreviewStore } from "./preview";
 
 // The key the Wails app used, asserted here rather than imported: a rename would keep this test
 // passing if it read the value from the module, while silently discarding every existing user's
@@ -42,5 +42,13 @@ describe("usePreviewStore", () => {
         await usePreviewStore.persist.rehydrate();
 
         expect(usePreviewStore.getState().previewMode).toBe("split");
+    });
+});
+
+describe("nextPreviewMode", () => {
+    it("steps through the three in the control's order and round again", () => {
+        expect(nextPreviewMode("full")).toBe("side");
+        expect(nextPreviewMode("side")).toBe("split");
+        expect(nextPreviewMode("split")).toBe("full");
     });
 });

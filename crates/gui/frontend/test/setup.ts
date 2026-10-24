@@ -5,7 +5,10 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
+import { useAddEnhancementMenuStore } from "@/stores/addEnhancementMenu";
+import { useCropDialogStore } from "@/stores/cropDialog";
 import { useExportDialogStore } from "@/stores/exportDialog";
+import { useOptionsPanelStore } from "@/stores/optionsPanel";
 import { useSettingsDialogStore } from "@/stores/settingsDialog";
 
 // Registered by hand because `globals` is off in vite.config.ts: Testing Library's automatic cleanup
@@ -19,6 +22,11 @@ afterEach(cleanup);
 afterEach(() => useSettingsDialogStore.setState(useSettingsDialogStore.getInitialState(), true));
 // The export dialog's likewise, for every test that mounts the sidebar.
 afterEach(() => useExportDialogStore.setState(useExportDialogStore.getInitialState(), true));
+// And the three the editor's keys open from outside their components: the Add enhancement menu, an
+// enhancement's options panel and Crop/Rotate, for every test that mounts the sidebar.
+afterEach(() => useAddEnhancementMenuStore.setState(useAddEnhancementMenuStore.getInitialState(), true));
+afterEach(() => useOptionsPanelStore.setState(useOptionsPanelStore.getInitialState(), true));
+afterEach(() => useCropDialogStore.setState(useCropDialogStore.getInitialState(), true));
 
 // jsdom implements no layout, so it ships no `ResizeObserver` - and Radix measures its Slider thumb
 // with one the moment the component mounts, which throws before any assertion runs. A no-op is the

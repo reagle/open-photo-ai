@@ -53,3 +53,7 @@ export const usePreviewStore = create<PreviewStore>()(
         },
     ),
 );
+
+/** The comparison after this one, in the control's order and round again: full, side by side, split, full. */
+export const nextPreviewMode = (mode: PreviewMode): PreviewMode =>
+    PREVIEW_MODES[(PREVIEW_MODES.indexOf(mode) + 1) % PREVIEW_MODES.length] ?? "full";

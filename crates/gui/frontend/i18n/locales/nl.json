@@ -121,9 +121,27 @@
                 "fit": "Passend in venster",
                 "actualPixels": "Werkelijke pixels (100%)",
                 "toggleZoom": "Wisselen tussen passend en werkelijke pixels",
+                "panLeft": "Naar links schuiven",
+                "panRight": "Naar rechts schuiven",
+                "panUp": "Omhoog schuiven",
+                "panDown": "Omlaag schuiven",
                 "showOriginal": "Origineel tonen zolang ingedrukt",
+                "cyclePreview": "Vergelijkingsweergave wisselen",
+                "toggleDrawer": "Afbeeldingen tonen of verbergen",
                 "previousImage": "Vorige afbeelding",
                 "nextImage": "Volgende afbeelding",
+                "revealImage": "Afbeelding tonen in bestandsbeheer",
+                "toggleAutopilot": "Autopilot aan- of uitzetten",
+                "addEnhancement": "Verbetering toevoegen",
+                "removeEnhancement": "Geselecteerde verbetering verwijderen",
+                "openOptions1": "Opties van verbetering 1",
+                "openOptions2": "Opties van verbetering 2",
+                "openOptions3": "Opties van verbetering 3",
+                "openOptions4": "Opties van verbetering 4",
+                "openOptions5": "Opties van verbetering 5",
+                "openOptions6": "Opties van verbetering 6",
+                "openOptions7": "Opties van verbetering 7",
+                "cropRotate": "Bijsnijden/Draaien",
                 "showShortcuts": "Sneltoetsen tonen"
             },
             "add": "Sneltoets toevoegen",
@@ -477,6 +495,18 @@
         "description": "De toetsen die nu aan elke actie zijn gekoppeld.",
         "hint": "Wijzig ze in Instellingen > Toetsenbord.",
         "tooltip": "{{name}} ({{key}})",
-        "settingsHint": "Druk overal op {{key}} om deze sneltoetsen te zien."
+        "tooltipCycle": "{{name}} ({{key}} wisselt)",
+        "settingsHint": "Druk overal op {{key}} om deze sneltoetsen te zien.",
+        "sections": {
+            "view": "Weergave",
+            "images": "Afbeeldingen",
+            "enhancements": "Verbeteringen"
+        },
+        "rows": {
+            "zoom": "Inzoomen / Uitzoomen",
+            "pan": "Schuiven",
+            "images": "Vorige afbeelding / Volgende afbeelding",
+            "options": "Opties van verbetering 1–7"
+        }
     }
 }

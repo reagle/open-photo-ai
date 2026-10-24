@@ -1,8 +1,10 @@
 import { act, fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useShortcuts } from "@/hooks/useShortcuts";
 import "@/i18n";
 import type { Face } from "@/ipc/faces";
 import { renditionUrl } from "@/ipc/images";
+import { isMacOs } from "@/ipc/os";
 import { THUMBNAIL_BOUND } from "@/lib/constants";
 import { useFacesStore } from "@/stores/faces";
 import { type ImageViewport, useTransformStore } from "@/stores/transform";
@@ -18,6 +20,10 @@ import {
     stubCanvas2D,
 } from "@/test/support";
 import { SidebarMiniature } from "./SidebarMiniature";
+
+// The real `platform()` reads a global the plugin's init script installs, which jsdom has none of - and
+// the shortcut hints ask it, to write their keys as this platform does.
+vi.mock("@/ipc/os", () => ({ isMacOs: vi.fn(() => false), isWindows: vi.fn(() => false) }));
 
 // `convertFileSrc` reads a global Tauri's init script installs, which jsdom has none of.
 vi.mock("@tauri-apps/api/core", () => ({
@@ -150,5 +156,62 @@ describe("SidebarMiniature", () => {
         expect(document.querySelectorAll("[data-slot='face-boxes']")).toHaveLength(0);
 
         useFacesStore.setState(useFacesStore.getInitialState(), true);
+    });
+});
+
+/** The miniature with the window's keys listening, as the shell mounts both. */
+const WithKeys = () => {
+    useShortcuts();
+
+    return <SidebarMiniature />;
+};
+
+/** Presses a key on the page, bubbling to the window, and answers the dispatched event. */
+const press = (key: string) => {
+    const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+    act(() => {
+        document.body.dispatchEvent(event);
+    });
+
+    return event;
+};
+
+describe("the Crop/Rotate key", () => {
+    beforeEach(() => {
+        vi.mocked(isMacOs).mockReturnValue(false);
+        resetFileStore();
+        resetCropStore();
+    });
+
+    it("opens the surface for the current image with C", () => {
+        openFiles(HOLIDAY);
+        render(<WithKeys />);
+
+        const event = press("c");
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(screen.getByRole("dialog", { name: "Crop/Rotate" })).toBeInTheDocument();
+    });
+
+    it("opens nothing with no image open, when the button is not drawn either", () => {
+        render(<WithKeys />);
+
+        const event = press("c");
+
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(event.defaultPrevented).toBe(false);
+    });
+
+    it("names its key in the button's tooltip, as this platform writes it, and to assistive technology", async () => {
+        openFiles(HOLIDAY);
+        render(<WithKeys />);
+        const button = screen.getByRole("button", { name: "Crop/Rotate" });
+
+        await act(async () => {
+            fireEvent.focus(button);
+        });
+
+        expect(await screen.findByRole("tooltip")).toHaveTextContent("Crop/Rotate (C)");
+        expect(button).toHaveAttribute("aria-keyshortcuts", "c");
     });
 });

@@ -121,9 +121,27 @@
                 "fit": "Adatta alla finestra",
                 "actualPixels": "Pixel reali (100%)",
                 "toggleZoom": "Alterna adattato e pixel reali",
+                "panLeft": "Sposta a sinistra",
+                "panRight": "Sposta a destra",
+                "panUp": "Sposta in alto",
+                "panDown": "Sposta in basso",
                 "showOriginal": "Mostra l’originale finché premuto",
+                "cyclePreview": "Cambia vista di confronto",
+                "toggleDrawer": "Mostra o nascondi immagini",
                 "previousImage": "Immagine precedente",
                 "nextImage": "Immagine successiva",
+                "revealImage": "Mostra l'immagine nel file manager",
+                "toggleAutopilot": "Attiva o disattiva l'autopilota",
+                "addEnhancement": "Aggiungi miglioramento",
+                "removeEnhancement": "Rimuovi il miglioramento selezionato",
+                "openOptions1": "Opzioni del miglioramento 1",
+                "openOptions2": "Opzioni del miglioramento 2",
+                "openOptions3": "Opzioni del miglioramento 3",
+                "openOptions4": "Opzioni del miglioramento 4",
+                "openOptions5": "Opzioni del miglioramento 5",
+                "openOptions6": "Opzioni del miglioramento 6",
+                "openOptions7": "Opzioni del miglioramento 7",
+                "cropRotate": "Ritaglia/Ruota",
                 "showShortcuts": "Mostra scorciatoie da tastiera"
             },
             "add": "Aggiungi scorciatoia",
@@ -487,6 +505,18 @@
         "description": "I tasti assegnati ora a ciascuna azione.",
         "hint": "Modificali in Impostazioni > Tastiera.",
         "tooltip": "{{name}} ({{key}})",
-        "settingsHint": "Premi {{key}} ovunque per vedere queste scorciatoie."
+        "tooltipCycle": "{{name}} ({{key}} alterna)",
+        "settingsHint": "Premi {{key}} ovunque per vedere queste scorciatoie.",
+        "sections": {
+            "view": "Vista",
+            "images": "Immagini",
+            "enhancements": "Miglioramenti"
+        },
+        "rows": {
+            "zoom": "Ingrandisci / Riduci",
+            "pan": "Sposta",
+            "images": "Immagine precedente / Immagine successiva",
+            "options": "Opzioni del miglioramento 1–7"
+        }
     }
 }

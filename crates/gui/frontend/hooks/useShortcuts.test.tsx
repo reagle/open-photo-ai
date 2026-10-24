@@ -1,17 +1,29 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { revealImage } from "@/ipc/images";
 import { isMacOs } from "@/ipc/os";
 import { ZOOM_BUTTON_STEP, ZOOM_MIN } from "@/lib/constants";
+import { useAddEnhancementMenuStore } from "@/stores/addEnhancementMenu";
+import { useCropDialogStore } from "@/stores/cropDialog";
+import { useDrawerStore } from "@/stores/drawer";
+import { useEnhancementStore } from "@/stores/enhancements";
 import { useFileStore } from "@/stores/files";
+import { useOptionsPanelStore } from "@/stores/optionsPanel";
 import { usePeekStore } from "@/stores/peek";
 import { useSettingsStore } from "@/stores/settings";
 import { useShortcutsListStore } from "@/stores/shortcutsList";
-import { FITTED, useTransformStore } from "@/stores/transform";
+import { FITTED, registerPanner, useTransformStore } from "@/stores/transform";
 import { HOLIDAY, openFiles, resetFileStore, SUNSET } from "@/test/support";
 import { useShortcuts } from "./useShortcuts";
 
 // The real `platform()` reads a global the plugin's init script installs, which jsdom has none of.
 vi.mock("@/ipc/os", () => ({ isMacOs: vi.fn(() => false), isWindows: vi.fn(() => false) }));
+
+// What showing a file in the file manager does is Rust's; here only that it is asked for, and for which file.
+vi.mock("@/ipc/images", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("@/ipc/images")>()),
+    revealImage: vi.fn(() => Promise.resolve()),
+}));
 
 /** Presses (or releases) a key at `target`, bubbling to the window, and answers the dispatched event. */
 const fire = (type: "keydown" | "keyup", init: KeyboardEventInit, target: EventTarget = document.body) => {
@@ -370,6 +382,118 @@ describe("useShortcuts", () => {
             fire("keydown", { key: "/", code: "Slash", ctrlKey: true }, field);
 
             expect(useShortcutsListStore.getState().open).toBe(false);
+        });
+    });
+
+    describe("the editor's actions", () => {
+        beforeEach(() => {
+            vi.mocked(revealImage).mockClear();
+            useDrawerStore.setState(useDrawerStore.getInitialState(), true);
+            useEnhancementStore.setState({ autopilot: true, enhancements: new Map() });
+        });
+
+        it.each([
+            ["Command-Shift-R on macOS", true, { metaKey: true }],
+            ["Ctrl+Shift+R elsewhere", false, { ctrlKey: true }],
+        ])("shows the current image in the file manager with %s", (_name, mac, mod) => {
+            vi.mocked(isMacOs).mockReturnValue(mac);
+            renderHook(() => useShortcuts());
+
+            const event = fire("keydown", { key: "R", code: "KeyR", shiftKey: true, ...mod });
+
+            expect(event.defaultPrevented).toBe(true);
+            expect(revealImage).toHaveBeenCalledExactlyOnceWith(HOLIDAY.path);
+        });
+
+        it("reveals nothing with no image open, and leaves the key alone", () => {
+            resetFileStore();
+            renderHook(() => useShortcuts());
+
+            const event = fire("keydown", { key: "R", code: "KeyR", shiftKey: true, ctrlKey: true });
+
+            expect(revealImage).not.toHaveBeenCalled();
+            expect(event.defaultPrevented).toBe(false);
+        });
+
+        it("flips Autopilot once for one press, however long A is held", () => {
+            renderHook(() => useShortcuts());
+
+            fire("keydown", { key: "a", code: "KeyA" });
+            const repeat = fire("keydown", { key: "a", code: "KeyA", repeat: true });
+            fire("keydown", { key: "a", code: "KeyA", repeat: true });
+
+            expect(useEnhancementStore.getState().autopilot).toBe(false);
+            expect(repeat.defaultPrevented).toBe(true);
+        });
+
+        it("asks the canvas to pan, and repeats while the key is held", () => {
+            const pan = vi.fn(() => true);
+            const unregister = registerPanner(pan);
+            renderHook(() => useShortcuts());
+
+            fire("keydown", { key: "ArrowUp", code: "ArrowUp", ctrlKey: true });
+            fire("keydown", { key: "ArrowUp", code: "ArrowUp", ctrlKey: true, repeat: true });
+            fire("keydown", { key: "ArrowLeft", code: "ArrowLeft", ctrlKey: true });
+
+            expect(pan.mock.calls).toEqual([["up"], ["up"], ["left"]]);
+            // The bare arrows still step through the images.
+            expect(useFileStore.getState().currentIndex).toBe(0);
+            unregister();
+        });
+
+        it("opens the Add enhancement menu, Crop/Rotate and the first enhancement's options", () => {
+            act(() =>
+                useEnhancementStore.setState({
+                    enhancements: new Map([
+                        [HOLIDAY.path, [{ family: "upscale", codename: "kyoto", precision: "fp32", parameters: {} }]],
+                    ]),
+                }),
+            );
+            renderHook(() => useShortcuts());
+
+            fire("keydown", { key: "e", code: "KeyE" });
+            fire("keydown", { key: "c", code: "KeyC" });
+            fire("keydown", { key: "1", code: "Digit1" });
+
+            expect(useAddEnhancementMenuStore.getState().open).toBe(true);
+            expect(useCropDialogStore.getState().open).toBe(true);
+            expect(useOptionsPanelStore.getState().family).toBe("upscale");
+        });
+
+        it("leaves the editor's keys to a text field", () => {
+            renderHook(() => useShortcuts());
+            const field = document.createElement("input");
+            document.body.append(field);
+
+            for (const key of ["a", "e", "c", "v", "1", "Backspace", "Delete"]) fire("keydown", { key }, field);
+
+            expect(useEnhancementStore.getState().autopilot).toBe(true);
+            expect(useAddEnhancementMenuStore.getState().open).toBe(false);
+            expect(useCropDialogStore.getState().open).toBe(false);
+        });
+
+        it("leaves the editor's keys alone while a dialog or a menu is open", () => {
+            renderHook(() => useShortcuts());
+            const menu = document.createElement("div");
+            menu.setAttribute("role", "menu");
+            document.body.append(menu);
+
+            fire("keydown", { key: "a" });
+            fire("keydown", { key: "\\", code: "Backslash", ctrlKey: true });
+
+            expect(useEnhancementStore.getState().autopilot).toBe(true);
+            expect(useDrawerStore.getState().open).toBe(false);
+        });
+
+        it("follows a rebinding of an editor action", () => {
+            renderHook(() => useShortcuts());
+            act(() => useSettingsStore.getState().apply({ shortcuts: { toggleAutopilot: ["Shift+p"] } }));
+
+            fire("keydown", { key: "a", code: "KeyA" });
+            expect(useEnhancementStore.getState().autopilot).toBe(true);
+
+            fire("keydown", { key: "P", code: "KeyP", shiftKey: true });
+            expect(useEnhancementStore.getState().autopilot).toBe(false);
         });
     });
 });
