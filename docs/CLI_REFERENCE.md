@@ -21,6 +21,7 @@
 
 ```bash
 opai <INPUT>... <ENHANCEMENT FLAGS...> [OPTIONS] --output <OUTPUT>
+opai --gui <INPUT>... [-r]
 ```
 
 | Command          | What it does                                            |
@@ -33,6 +34,7 @@ The rules in short:
 - The `INPUT`s come **first**, before any flag. Each one is an image or a directory of images.
 - You need **at least one** enhancement flag, or [`--autopilot`](#autopilot) to let `opai` choose them per image.
 - `--output` / `-o` is **required**. It's a [file or a directory](#where-the-results-go).
+- With [`--gui`](#--gui), the images are opened in the GUI instead, and neither an enhancement nor `-o` is needed.
 - The order of the enhancement flags doesn't matter. The enhancements always run in a [fixed order](#processing-order).
 - An existing file is **never overwritten** unless you pass `--overwrite`. The result is [numbered](#numbering-and---overwrite) instead.
 
@@ -68,6 +70,9 @@ opai photo.jpg --up -p cpu -o photo-large.png
 
 # Let autopilot choose each photo's enhancements, as the GUI's Autopilot does
 opai photos --ap -o enhanced
+
+# Open a whole tree of photos in the GUI instead, to enhance them there
+opai photos -r --gui
 ```
 
 ## Arguments and global options
@@ -92,6 +97,27 @@ error: invalid value 'photo.jpg' for '--upscale [<MODEL>]'
 ### `-o, --output <OUTPUT>` (required)
 
 Where the results go: one file, or a directory. See [Where the results go](#where-the-results-go).
+
+### `--gui`
+
+Opens the images in the GUI instead of processing them, and ignores every other option. The inputs are expanded exactly as for a run, `-r` included, and every image found is added to the GUI's open images. If the GUI is already open, they are added to that window; if not, it is started first.
+
+```
+$ opai photos -r --gui
+🖼️ Opening 12 images in Open Photo AI
+```
+
+Any other option you give is ignored, with a warning that names it, because the GUI uses its own settings. Set them there:
+
+```
+$ opai beach.jpg --up osaka -q sd -o out --gui
+⚠️ --upscale, --quality and --output are ignored with --gui; set them in Open Photo AI instead
+🖼️ Opening 1 image in Open Photo AI
+```
+
+`--gui` works while the GUI is open, unlike a normal run (see [One instance at a time](#one-instance-at-a-time)), and it sends no usage data. Options that can't be combined (such as `--ap` with an enhancement flag) are still refused, as they would be in a run.
+
+On macOS the images are handed to the GUI with `open -b io.vinicius.opai`, so it must be installed where macOS can find it, for example in Applications. On Windows and Linux, `opai` starts the GUI's program (`OpenPhotoAI`), found beside `opai` or on your `PATH`.
 
 ### `-r, --recursive`
 
@@ -482,7 +508,7 @@ Every step's result is cached on disk for **24 hours**. If you run the same enha
 
 ### One instance at a time
 
-Only one Open Photo AI process can run at a time, and that includes the GUI. If another one is running, `opai` exits with [code 1](#exit-codes) and the error `Open Photo AI is already running (…); close it and try again`, naming the other process when it can (for example `gui, pid 4821`). Close it, or wait for it to finish, and try again. To process several images, give them all to one command (see [Scripting](#scripting-and-batch-processing)).
+Only one Open Photo AI process can run at a time, and that includes the GUI. If another one is running, `opai` exits with [code 1](#exit-codes) and the error `Open Photo AI is already running (…); close it and try again`, naming the other process when it can (for example `gui, pid 4821`). Close it, or wait for it to finish, and try again. To process several images, give them all to one command (see [Scripting](#scripting-and-batch-processing)). [`--gui`](#--gui) is the exception: it hands the images to the GUI that is already open.
 
 ## Terminal output
 
@@ -565,8 +591,8 @@ A file that the stopped image would have replaced with `--overwrite`, including 
 
 | Code  | Meaning                                                                                                     |
 |-------|-------------------------------------------------------------------------------------------------------------|
-| `0`   | Success. Every image was written.                                                                          |
-| `1`   | The run failed: a setup error (including another instance running), or **any** image that failed to decode, enhance or be written. The other images in the batch were still processed. |
+| `0`   | Success. Every image was written, or with `--gui`, every image was handed to the GUI.                       |
+| `1`   | The run failed: a setup error (including another instance running), the GUI couldn't be started for `--gui`, or **any** image that failed to decode, enhance or be written. The other images in the batch were still processed. |
 | `2`   | Usage error: bad arguments, an unreadable or unsupported named input, an output that can't be used as asked, no image to enhance, or a [processor](#-p---processor-processor-default-auto) this machine doesn't offer. Nothing was written. |
 | `130` | Stopped with Ctrl-C. Results already written for earlier images are kept.                                  |
 
@@ -614,6 +640,9 @@ What's in it that the terminal doesn't show:
 | `🧨 the codec refused notes.txt: could not determine an image format …`        | A named file isn't an image `opai` can read, or its extension isn't a supported format. |
 | `🧨 cannot list photos: …`                                                     | Part of a directory input's tree can't be read. Fix its permissions, or leave it out. |
 | `🧨 no image to enhance in photos`                                             | The inputs hold no image `opai` can read. Add `-r` if the images are in subfolders. |
+| `⚠️ --upscale is ignored with --gui; set it in Open Photo AI instead`          | `--gui` opens the images in the GUI, which uses its own settings. Not an error: the images are still opened. |
+| `🧨 could not open Open Photo AI; is it installed? …`                          | `--gui` on macOS couldn't find or start the GUI. Install it in Applications and open it once. |
+| `🧨 could not find Open Photo AI: OpenPhotoAI is neither beside opai nor on PATH` | `--gui` on Windows or Linux couldn't find the GUI's program. Put its folder on your `PATH`. |
 | `🧨 an output file takes exactly one input file; …`                            | `-o` names a file, but there are several inputs or a directory input. Give a directory instead. |
 | `🧨 --suffix needs an output directory; …`                                     | `--format`, `--prefix` and `--suffix` only work when `-o` is a directory. |
 | `🧨 cannot write into out: it is a file, not a directory, …`                   | `-o` would be a directory, but a file already exists there. |

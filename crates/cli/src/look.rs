@@ -1,5 +1,5 @@
 //! What the terminal's lines say and how they are coloured: the update line, the dependency line, the processor line, the list's rows
-//! and their plain lines, the summary and the failure line. Pure text, so all of it is tested without a terminal.
+//! and their plain lines, the summary, the warning line and the failure line. Pure text, so all of it is tested without a terminal.
 //!
 //! Whether to draw live lines and whether to colour is decided once, in [`Look`], the way MediaSim decides it: a
 //! terminal, and `NO_COLOR` unset or empty.
@@ -217,6 +217,11 @@ pub fn success(line: impl Display, color: bool) -> String {
     paint_bold(line, YELLOW, color)
 }
 
+/// `⚠️ <text>`, all in yellow, not bold: something the user asked for that is not done, where the command still runs.
+pub fn warning(text: impl Display, color: bool) -> String {
+    ansi(&format!("⚠️ {text}"), fg(YELLOW, color))
+}
+
 /// `🧨 <error>`, all in bold red.
 pub fn failure(error: impl Display, color: bool) -> String {
     paint_bold(format!("🧨 {error}"), RED, color)
@@ -328,6 +333,13 @@ mod tests {
     fn the_lines_without_colour_are_their_exact_text() {
         assert_eq!(success("✨ done", false), "✨ done");
         assert_eq!(failure("stopped: nothing more was written", false), "🧨 stopped: nothing more was written");
+        assert_eq!(warning("--up is ignored", false), "⚠️ --up is ignored");
+    }
+
+    #[test]
+    fn the_warning_line_is_yellow_and_not_bold() {
+        let (r, g, b) = YELLOW;
+        assert_eq!(warning("careful", true), "⚠️ careful".with(TermColor::Rgb { r, g, b }).to_string());
     }
 
     #[test]

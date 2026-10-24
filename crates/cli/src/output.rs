@@ -43,7 +43,10 @@ pub enum Target {
 /// input is a directory, or `--format`, `--prefix` or `--suffix` is given; and where the output is a directory but a
 /// file that is not one already exists there.
 pub fn target(args: &Args) -> Result<Target, CliError> {
-    let path = &args.output;
+    // Clap requires `-o` unless `--gui` is given, and `--gui` never gets here; refused rather than assumed all the same.
+    let Some(path) = &args.output else {
+        return Err(CliError::Usage("--output is required".to_owned()));
+    };
 
     // An existing directory wins whatever its name, so `-o shots.png` can still mean the directory the user made.
     if !path.is_dir()

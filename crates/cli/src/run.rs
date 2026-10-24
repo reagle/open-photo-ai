@@ -185,7 +185,8 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
     let live = view.finish_batch();
     events::export_finished(sources.len(), written.len(), !stopped, began.elapsed().as_millis());
 
-    for line in summary(&written, &args.output, &failures, live, sources.len(), look.color) {
+    let (Target::File { path: output_path, .. } | Target::Directory { path: output_path, .. }) = &target;
+    for line in summary(&written, output_path, &failures, live, sources.len(), look.color) {
         eprintln!("{line}");
     }
 

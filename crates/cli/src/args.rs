@@ -4,7 +4,8 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use clap::{ArgAction, CommandFactory, Parser, ValueEnum};
+use clap::parser::ValueSource;
+use clap::{ArgAction, ArgMatches, CommandFactory, FromArgMatches, Parser, ValueEnum};
 use opai::Scale;
 use opai::export::{ExportFormat, FormatChoice};
 
@@ -21,7 +22,7 @@ use crate::autopilot::AutopilotModels;
 /// directory input. An existing file is never overwritten unless `--overwrite` is given: the result is numbered
 /// `_1`, `_2`, … instead.
 #[derive(Debug, Parser)]
-#[command(name = "opai", display_name = "Open Photo AI - CLI", version = opai::version(), disable_version_flag = true, override_usage = "opai <INPUT>... [OPTIONS] --output <OUTPUT>")]
+#[command(name = "opai", display_name = "Open Photo AI - CLI", version = opai::version(), disable_version_flag = true, override_usage = "opai <INPUT>... [OPTIONS] --output <OUTPUT>\n       opai --gui <INPUT>... [-r]")]
 pub struct Args {
     // Positional and first, so a bare enhancement flag is never handed an input as its model name. A user who writes
     // `opai --up photo.jpg` is told `photo.jpg` is not a model, which is clear and costs nothing.
@@ -73,8 +74,12 @@ pub struct Args {
     pub overwrite: bool,
 
     /// The file or directory to write to.
-    #[arg(long, short = 'o', value_name = "OUTPUT")]
-    pub output: PathBuf,
+    #[arg(long, short = 'o', value_name = "OUTPUT", required_unless_present = "gui")]
+    pub output: Option<PathBuf>,
+
+    /// Open the photographs in Open Photo AI instead of processing them; other options are ignored.
+    #[arg(long)]
+    pub gui: bool,
 
     /// Send no usage or diagnostic data to the project for this run. Setting OPAI_ANALYTICS to 0, off, false or no
     /// does the same.
@@ -89,6 +94,11 @@ pub struct Args {
     /// `--autopilot` only, and `None` otherwise.
     #[arg(skip)]
     pub autopilot_models: Option<AutopilotModels>,
+
+    /// Under `--gui`, the options given on the command line that it ignores, as the user would recognise them
+    /// (`--upscale`, `-o`), in the order they were given; empty otherwise. Filled in by [`parse_from`].
+    #[arg(skip)]
+    pub ignored: Vec<String>,
 }
 
 /// The upscale models, as the command line names them.
@@ -379,7 +389,16 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let args = Args::try_parse_from(arguments)?;
+    let mut command = Args::command();
+    let matches = command.try_get_matches_from_mut(arguments)?;
+    let mut args = Args::from_arg_matches(&matches).map_err(|error| error.format(&mut command))?;
+
+    // `--gui` hands the inputs to the application and does nothing else, so it needs no enhancement; what else was
+    // given is collected to be warned about.
+    if args.gui {
+        args.ignored = ignored_by_gui(&command, &matches);
+        return Ok(args);
+    }
 
     // Not a clap `ArgGroup`: its refusal lists the group's members as "required arguments", where what the user needs
     // to hear is that an enhancement is.
@@ -393,6 +412,33 @@ where
     }
 
     Ok(args)
+}
+
+/// The arguments, by clap id, that `--gui` is never warned about: the inputs and `--recursive`, which choose what it
+/// opens, and `--gui` itself. Every other argument is warned about when given, so an option added later is covered
+/// without being listed; one `--gui` should accept silently is added here.
+const NOT_IGNORED_BY_GUI: &[&str] = &["inputs", "recursive", "gui"];
+
+/// The options `--gui` does not use, each named by its long flag, in the order given: every one written on the command
+/// line except those in [`NOT_IGNORED_BY_GUI`]. A default or an environment variable is not counted, only what the
+/// user wrote.
+fn ignored_by_gui(command: &clap::Command, matches: &ArgMatches) -> Vec<String> {
+    let mut given: Vec<(usize, String)> = command
+        .get_arguments()
+        .filter(|argument| !NOT_IGNORED_BY_GUI.contains(&argument.get_id().as_str()))
+        .filter(|argument| matches.value_source(argument.get_id().as_str()) == Some(ValueSource::CommandLine))
+        .map(|argument| {
+            let id = argument.get_id().as_str();
+            let name = argument.get_long().map_or_else(
+                || argument.get_short().map_or_else(|| id.to_owned(), |short| format!("-{short}")),
+                |long| format!("--{long}"),
+            );
+            (matches.index_of(id).unwrap_or(usize::MAX), name)
+        })
+        .collect();
+
+    given.sort();
+    given.into_iter().map(|(_, name)| name).collect()
 }
 
 /// A `--format` value, in any case, with every extension a format is written under — `jpg`, `tif`, `heif` — read as
@@ -476,7 +522,7 @@ mod tests {
         assert_eq!(args.selection.face_recovery, Some(FaceModel::Athens));
         assert_eq!(args.quality, Quality::Hd);
         assert_eq!(args.selection.scale, None);
-        assert_eq!(args.output, PathBuf::from("out.png"));
+        assert_eq!(args.output, Some(PathBuf::from("out.png")));
     }
 
     #[test]
@@ -717,7 +763,7 @@ mod tests {
 
         let args = parse("opai photo.jpg --la --la-bias -20 -o out.png").expect("parses");
         assert_eq!(args.selection.light_bias, Some(-20));
-        assert_eq!(args.output, PathBuf::from("out.png"));
+        assert_eq!(args.output, Some(PathBuf::from("out.png")));
 
         let args = parse("opai photo.jpg --cb --cb-bias -100 --la --la-bias 100 -o out.png").expect("parses");
         assert_eq!(args.selection.balance_bias, Some(-100));
@@ -830,12 +876,75 @@ mod tests {
     }
 
     #[test]
+    fn gui_needs_neither_an_output_nor_an_enhancement() {
+        let args = parse("opai --gui a.jpg photos").expect("parses");
+
+        assert!(args.gui);
+        assert_eq!(args.inputs, ["a.jpg", "photos"].map(PathBuf::from));
+        assert_eq!(args.output, None);
+        assert!(args.ignored.is_empty(), "{:?}", args.ignored);
+
+        let args = parse("opai photos --gui -r").expect("parses");
+        assert!(args.gui && args.recursive);
+        assert!(args.ignored.is_empty(), "-r is used by --gui: {:?}", args.ignored);
+    }
+
+    #[test]
+    fn gui_still_needs_an_input() {
+        let error = parse("opai --gui").expect_err("no input");
+
+        assert_eq!(error.kind(), ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn gui_collects_every_other_option_given_in_order_by_its_long_name() {
+        let args = parse(
+            "opai a.jpg --gui --up osaka -q sd -p cpu --format png --prefix x --suffix y --overwrite -o out \
+             --no-analytics --dn-str 50 --dn",
+        )
+        .expect("parses");
+
+        assert_eq!(
+            args.ignored,
+            [
+                "--upscale",
+                "--quality",
+                "--processor",
+                "--format",
+                "--prefix",
+                "--suffix",
+                "--overwrite",
+                "--output",
+                "--no-analytics",
+                "--dn-str",
+                "--denoise",
+            ]
+        );
+
+        assert_eq!(parse("opai a.jpg --ap --gui").expect("parses").ignored, ["--autopilot"]);
+    }
+
+    #[test]
+    fn without_gui_nothing_is_collected() {
+        assert!(parse("opai a.jpg --up -q sd -o out").expect("parses").ignored.is_empty());
+    }
+
+    #[test]
+    fn help_lists_gui_and_its_usage() {
+        let help = Args::command().render_help().to_string();
+
+        assert!(help.contains("opai --gui <INPUT>... [-r]"), "{help}");
+        assert!(help.contains("--gui"), "{help}");
+        assert!(help.contains("Open the photographs in Open Photo AI instead of processing them"), "{help}");
+    }
+
+    #[test]
     fn a_bare_flag_before_another_flag_takes_its_default() {
         let args = parse("opai photo.jpg --up -o x").expect("parses");
 
         assert_eq!(args.inputs, [PathBuf::from("photo.jpg")]);
         assert_eq!(args.selection.upscale, Some(UpscaleModel::Tokyo));
-        assert_eq!(args.output, PathBuf::from("x"));
+        assert_eq!(args.output, Some(PathBuf::from("x")));
     }
 
     #[test]
