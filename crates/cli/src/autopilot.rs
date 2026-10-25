@@ -12,16 +12,22 @@ use clap::{CommandFactory, ValueEnum};
 use opai::Family;
 
 use crate::args::{
-    Args, BalanceModel, ColorizationModel, DenoiseModel, FaceModel, LightModel, SharpenModel, UpscaleModel,
+    Args, BalanceModel, ColorizationModel, DenoiseModel, FaceModel, LightModel, RestoreModel, SharpenModel,
+    UpscaleModel,
 };
 
 /// The word that leaves a family out of the analysis. No model is named `off`, so it is free.
 const OFF: &str = "off";
 
-/// A family's model vocabulary, as autopilot reads it from the environment.
-pub trait FamilyModel: ValueEnum + Copy {
+/// A family's model vocabulary, as the command line names it: what [`plan`](crate::chain::plan) builds an operation
+/// from.
+pub trait CatalogueModel: ValueEnum + Copy {
     /// The family these models belong to.
     const FAMILY: Family;
+}
+
+/// A family's model vocabulary, as autopilot reads it from the environment.
+pub trait FamilyModel: CatalogueModel {
     /// The environment variable that chooses one.
     const VARIABLE: &'static str;
     /// The model the family's flag runs when given with no model, and autopilot's default.
@@ -33,8 +39,11 @@ pub trait FamilyModel: ValueEnum + Copy {
 
 macro_rules! family_model {
     ($model:ty, $family:expr, $variable:literal, $default:expr, $field:ident) => {
-        impl FamilyModel for $model {
+        impl CatalogueModel for $model {
             const FAMILY: Family = $family;
+        }
+
+        impl FamilyModel for $model {
             const VARIABLE: &'static str = $variable;
             const DEFAULT: Self = $default;
 
@@ -60,6 +69,12 @@ family_model!(LightModel, Family::LightAdjustment, "OPAI_AP_LIGHT", LightModel::
 family_model!(BalanceModel, Family::ColorBalance, "OPAI_AP_COLOR", BalanceModel::Rio, color_balance);
 family_model!(SharpenModel, Family::Sharpen, "OPAI_AP_SHARPEN", SharpenModel::Moscow, sharpen);
 family_model!(UpscaleModel, Family::Upscale, "OPAI_AP_UPSCALE", UpscaleModel::Tokyo, upscale);
+
+// A command-line family only. An analysis never suggests a generative redraw, so autopilot has no model to choose for
+// it and there is no `OPAI_AP_RESTORE`.
+impl CatalogueModel for RestoreModel {
+    const FAMILY: Family = Family::Restore;
+}
 
 /// Autopilot's model for every family, in the library's apply order: `None` where the family's variable says `off`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -8,7 +8,7 @@
 use opai::{Bias, Operation, ParameterKind, ParameterValues, Strength, Subject, Suggestion, VariantEntry};
 
 use crate::args::{Quality, Selection};
-use crate::autopilot::{AutopilotModels, FamilyModel};
+use crate::autopilot::{AutopilotModels, CatalogueModel};
 
 /// What a run will do, and what the user should be told about it before it starts.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,7 +48,8 @@ impl Selection {
 /// The chain `selection` asks for at `quality` over a `width` x `height` photograph.
 ///
 /// An upscale with no scale runs at the factor the photograph needs, and is left out with a note where it needs
-/// none. Every face recovery restores nobody until the faces are found and handed to it.
+/// none. A restore with no size restores at the photograph's own. Every face recovery restores nobody until the faces
+/// are found and handed to it.
 pub fn plan(selection: &Selection, quality: Quality, width: u32, height: u32) -> Plan {
     let mut operations = Vec::new();
     let mut notes = Vec::new();
@@ -90,6 +91,17 @@ pub fn plan(selection: &Selection, quality: Quality, width: u32, height: u32) ->
         }
     }
 
+    // Last, as the library runs it. The size is the catalogue's default, 1x, unless one was given; `parse_from` has
+    // already refused one above 1x beside an upscale.
+    if let Some(model) = selection.restore {
+        operations.push(build(model, quality, |values| {
+            if let Some(scale) = selection.restore_scale {
+                *values = std::mem::take(values).with_scale(scale);
+            }
+            set(values, Strength::NAME, selection.restore_strength);
+        }));
+    }
+
     Plan { operations, notes }
 }
 
@@ -98,7 +110,7 @@ pub fn plan(selection: &Selection, quality: Quality, width: u32, height: u32) ->
 ///
 /// `quality` picks a build by its position in the row's precisions, so a model published at other precisions than
 /// FP32 and FP16 — Osaka, at FP16 and INT8 — needs no case of its own.
-fn build<M: FamilyModel>(model: M, quality: Quality, overrides: impl FnOnce(&mut ParameterValues)) -> Operation {
+fn build<M: CatalogueModel>(model: M, quality: Quality, overrides: impl FnOnce(&mut ParameterValues)) -> Operation {
     let name = model.to_possible_value().expect("no model is skipped");
     let variant =
         VariantEntry::published(M::FAMILY, name.get_name()).expect("every model the command line names is published");
@@ -130,7 +142,7 @@ fn set<T: Into<f64>>(values: &mut ParameterValues, name: &str, percent: Option<T
 mod tests {
     use opai::{
         ColorBalance, Colorization, Denoise, FaceRecovery, Faces, Family, Fidelity, FloatPrecision, LightAdjustment,
-        OsakaPrecision, Scale, Sharpen, Upscale,
+        OsakaPrecision, Restore, Scale, Sharpen, Upscale,
     };
 
     use super::*;
@@ -197,6 +209,8 @@ mod tests {
             ("--sh petersburg -q sd", Sharpen::stpetersburg(FloatPrecision::Fp16, one)),
             ("--sh novgorod -q hd", Sharpen::novgorod(FloatPrecision::Fp32, one)),
             ("--sh novgorod -q sd", Sharpen::novgorod(FloatPrecision::Fp16, one)),
+            ("--rs kazan -q hd", Restore::kazan(FloatPrecision::Fp32, scale(1.0), one)),
+            ("--rs kazan -q sd", Restore::kazan(FloatPrecision::Fp16, scale(1.0), one)),
             ("--cl delhi -q hd", Colorization::delhi(FloatPrecision::Fp32)),
             ("--cl delhi -q sd", Colorization::delhi(FloatPrecision::Fp16)),
             ("--cl mumbai -q hd", Colorization::mumbai(FloatPrecision::Fp32)),
@@ -264,6 +278,27 @@ mod tests {
     }
 
     #[test]
+    fn a_restore_runs_at_the_size_and_strength_asked_for_and_otherwise_at_the_photographs_own() {
+        assert_eq!(
+            plan("opai photo.jpg --rs -o out.png", 4000, 3000).operations,
+            vec![Restore::kazan(FloatPrecision::Fp32, scale(1.0), strength(1.0))]
+        );
+        assert_eq!(
+            plan("opai photo.jpg --rs --rs-scale 2 --rs-str 40 -q sd -o out.png", 4000, 3000).operations,
+            vec![Restore::kazan(FloatPrecision::Fp16, scale(2.0), strength(0.4))]
+        );
+
+        // After an upscale, at 1x: the restore is last, at whatever size the upscale left the photograph.
+        assert_eq!(
+            plan("opai photo.jpg --rs --up -o out.png", 1000, 800).operations,
+            vec![
+                Upscale::tokyo(FloatPrecision::Fp32, scale(4.0)),
+                Restore::kazan(FloatPrecision::Fp32, scale(1.0), strength(1.0))
+            ]
+        );
+    }
+
+    #[test]
     fn each_parameter_is_a_percentage_of_its_own_enhancement() {
         let plan = plan("opai photo.jpg --dn --dn-str 200 --sh --sh-str 80 --la --la-bias -20 --cb -o x", 1, 1);
 
@@ -314,11 +349,10 @@ mod tests {
 
     #[test]
     fn the_chain_is_pushed_in_the_librarys_apply_order() {
-        let plan = plan("opai photo.jpg --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
+        let plan = plan("opai photo.jpg --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
         let families: Vec<_> = plan.operations.iter().map(Operation::family).collect();
 
-        // Every family the command line names; restore is not one of them yet.
-        assert_eq!(families, Family::APPLY_ORDER[..Family::APPLY_ORDER.len() - 1]);
+        assert_eq!(families, Family::APPLY_ORDER);
     }
 
     /// The chain autopilot plans for `suggested` with `models` at `quality` over a `width` x `height` photograph.

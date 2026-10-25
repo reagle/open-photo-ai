@@ -14,7 +14,7 @@ use crate::autopilot::AutopilotModels;
 ///
 /// Each input is a photograph or a directory of them; a directory contributes the images directly inside it, or its
 /// whole tree with `--recursive`. The enhancements run in one order whatever order the flags are given in: denoise,
-/// face recovery, colorization, light adjustment, colour balance, sharpen, and then upscale.
+/// face recovery, colorization, light adjustment, colour balance, sharpen, upscale, and then restore.
 ///
 /// The output is a file when its extension names a format opai writes and it is not an existing directory; it then
 /// takes exactly one input photograph. Any other output is a directory, created if missing, that mirrors each
@@ -121,6 +121,12 @@ pub enum SharpenModel {
     Moscow,
     Petersburg,
     Novgorod,
+}
+
+/// The restore models, as the command line names them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum RestoreModel {
+    Kazan,
 }
 
 /// The colorization models, as the command line names them.
@@ -358,6 +364,27 @@ pub struct Selection {
     /// 1 MP, 2x up to 4 MP, and no upscale above that.
     #[arg(long, value_name = "FACTOR", value_parser = parse_scale, requires = "upscale")]
     pub scale: Option<Scale>,
+
+    /// Restore the photograph generatively, last, with MODEL or Kazan where none is named. It redraws detail rather
+    /// than recovering it, so it can change faces, textures and lettering.
+    #[arg(
+        long = "restore",
+        visible_alias = "rs",
+        value_name = "MODEL",
+        num_args = 0..=1,
+        default_missing_value = "kazan",
+        ignore_case = true
+    )]
+    pub restore: Option<RestoreModel>,
+
+    /// The size to restore at: 1 (the photograph's own; the default), 2 or 4 times it. Above 1 it cannot be combined
+    /// with --upscale, since the restore enlarges the photograph itself.
+    #[arg(long = "rs-scale", value_name = "FACTOR", value_parser = parse_restore_scale, requires = "restore")]
+    pub restore_scale: Option<Scale>,
+
+    /// The restore strength, from 1 to 100 percent of the model's own output; default 100.
+    #[arg(long = "rs-str", value_name = "STRENGTH", value_parser = parse_restore_strength, requires = "restore")]
+    pub restore_strength: Option<u16>,
 }
 
 impl Selection {
@@ -370,6 +397,12 @@ impl Selection {
             && self.color_balance.is_none()
             && self.sharpen.is_none()
             && self.upscale.is_none()
+            && self.restore.is_none()
+    }
+
+    /// Whether a restore enlarges the photograph, which an upscale cannot be combined with.
+    pub fn restore_enlarges(&self) -> bool {
+        self.restore.is_some() && self.restore_scale.is_some_and(|scale| scale.get() > Scale::MIN)
     }
 }
 
@@ -387,8 +420,23 @@ where
         return Err(Args::command().error(
             clap::error::ErrorKind::MissingRequiredArgument,
             "at least one enhancement is required: --denoise (--dn), --face-recovery (--fr), --colorization (--cl), \
-             --light-adjustment (--la), --color-balance (--cb), --sharpen (--sh), --upscale (--up) or \
-             --autopilot (--ap)",
+             --light-adjustment (--la), --color-balance (--cb), --sharpen (--sh), --upscale (--up), --restore (--rs) \
+             or --autopilot (--ap)",
+        ));
+    }
+
+    // Not a clap `conflicts_with`: the conflict is with one value of --rs-scale, not the flag, and what the user needs
+    // to hear is why. Two enlargements in one chain would restore an upscale's output at up to sixteen times the
+    // photograph's pixels; a front end offers one or the other, and the GUI disables its upscale the same way.
+    if args.selection.upscale.is_some() && args.selection.restore_enlarges() {
+        let scale = args.selection.restore_scale.map_or(Scale::MIN, Scale::get);
+
+        return Err(Args::command().error(
+            clap::error::ErrorKind::ArgumentConflict,
+            format!(
+                "--upscale (--up) cannot be used with --rs-scale {scale}: the restore enlarges the photograph itself. \
+                 Leave out --up, or restore at 1x after the upscale"
+            ),
         ));
     }
 
@@ -420,7 +468,40 @@ fn parse_scale(text: &str) -> Result<Scale, String> {
     Scale::new(value).map_err(|_| range())
 }
 
-/// The lowest `--dn-str` or `--sh-str`. Not the library's 0: a strength of 0 applies nothing, which on a command line is
+/// The sizes `--rs-scale` takes: the ones a front end offers, each a whole factor the restore resamples to.
+const RESTORE_SCALES: [u8; 3] = [1, 2, 4];
+
+/// A `--rs-scale` value: one of [`RESTORE_SCALES`], refused naming them otherwise.
+fn parse_restore_scale(text: &str) -> Result<Scale, String> {
+    let sizes = || RESTORE_SCALES.map(|size| size.to_string()).join(", ");
+
+    text.trim()
+        .parse::<u8>()
+        .ok()
+        .filter(|size| RESTORE_SCALES.contains(size))
+        .and_then(|size| Scale::new(f64::from(size)).ok())
+        .ok_or_else(|| format!("the restore size must be one of {}", sizes()))
+}
+
+/// The highest `--rs-str`, the library's [`opai::Restore::MAX_STRENGTH`] as a percentage: a restoration is blended
+/// back towards the photograph, never pushed past the model's own output.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a whole, positive percentage"
+)]
+const RESTORE_STRENGTH_MAX: u16 = (opai::Restore::MAX_STRENGTH * 100.0) as u16;
+
+/// A `--rs-str` value: a whole percentage, refused with the accepted range otherwise.
+fn parse_restore_strength(text: &str) -> Result<u16, String> {
+    text.trim()
+        .parse()
+        .ok()
+        .filter(|value| (STRENGTH_MIN..=RESTORE_STRENGTH_MAX).contains(value))
+        .ok_or_else(|| format!("the strength must be a whole number from {STRENGTH_MIN} to {RESTORE_STRENGTH_MAX}"))
+}
+
+/// The lowest `--dn-str`, `--sh-str` or `--rs-str`. Not the library's 0: a strength of 0 applies nothing, which on a command line is
 /// a mistake rather than a choice.
 const STRENGTH_MIN: u16 = 1;
 
@@ -564,6 +645,7 @@ mod tests {
             ("--color-balance", "--cb"),
             ("--sharpen", "--sh"),
             ("--upscale", "--up"),
+            ("--restore", "--rs"),
             ("--autopilot", "--ap"),
         ] {
             assert!(message.contains(&format!("{flag} ({alias})")), "{flag} is not listed in: {message}");
@@ -598,6 +680,7 @@ mod tests {
             ("--cb", "--color-balance"),
             ("--sh", "--sharpen"),
             ("--up", "--upscale"),
+            ("--rs", "--restore"),
             ("--scale 2", "--scale"),
             ("--dn-str 150", "--dn-str"),
             ("--sh-str 150", "--sh-str"),
@@ -710,6 +793,63 @@ mod tests {
     }
 
     #[test]
+    fn a_bare_restore_is_kazan_at_the_photographs_own_size() {
+        let args = parse("opai photo.jpg --rs -o out.png").expect("parses");
+
+        assert_eq!(args.selection.restore, Some(RestoreModel::Kazan));
+        assert_eq!((args.selection.restore_scale, args.selection.restore_strength), (None, None));
+        assert!(!args.selection.restore_enlarges());
+
+        let args = parse("opai photo.jpg --restore KAZAN --rs-scale 4 --rs-str 60 -o out.png").expect("parses");
+        assert_eq!(args.selection.restore, Some(RestoreModel::Kazan));
+        assert_eq!(args.selection.restore_scale.map(Scale::get), Some(4.0));
+        assert_eq!(args.selection.restore_strength, Some(60));
+        assert!(args.selection.restore_enlarges());
+    }
+
+    #[test]
+    fn a_restore_size_is_one_of_the_three_offered() {
+        for size in ["1", "2", "4"] {
+            let args = parse(&format!("opai photo.jpg --rs --rs-scale {size} -o out.png")).expect(size);
+            assert_eq!(args.selection.restore_scale.map(Scale::get), size.parse().ok(), "{size}");
+        }
+
+        for size in ["3", "8", "1.5", "0", "two"] {
+            let error = parse(&format!("opai photo.jpg --rs --rs-scale {size} -o out.png")).expect_err(size);
+
+            assert_eq!(error.kind(), ErrorKind::ValueValidation, "{size}: {error}");
+            assert!(error.to_string().contains("one of 1, 2, 4"), "{error}");
+        }
+    }
+
+    #[test]
+    fn a_restore_strength_stops_at_the_models_own_output() {
+        for strength in ["0", "101", "50.5"] {
+            let error = parse(&format!("opai photo.jpg --rs --rs-str {strength} -o out.png")).expect_err(strength);
+
+            assert_eq!(error.kind(), ErrorKind::ValueValidation, "{strength}: {error}");
+            assert!(error.to_string().contains("a whole number from 1 to 100"), "{error}");
+        }
+    }
+
+    #[test]
+    fn an_enlarging_restore_cannot_follow_an_upscale() {
+        for flags in ["--up --rs --rs-scale 2", "--rs-scale 4 --rs --up kyoto --scale 2"] {
+            let error = parse(&format!("opai photo.jpg {flags} -o out.png")).expect_err(flags);
+
+            assert_eq!(error.kind(), ErrorKind::ArgumentConflict, "{flags}: {error}");
+            assert_eq!(error.exit_code(), 2);
+            let message = error.to_string();
+            assert!(message.contains("--upscale (--up) cannot be used with --rs-scale"), "{message}");
+            assert!(message.contains("restore at 1x"), "{message}");
+        }
+
+        // At 1x the restore follows the upscale and restores the photograph at its final size.
+        let args = parse("opai photo.jpg --up --rs --rs-scale 1 -o out.png").expect("a 1x restore after an upscale");
+        assert!(args.selection.upscale.is_some() && args.selection.restore.is_some());
+    }
+
+    #[test]
     fn each_parameter_is_read_for_its_own_enhancement() {
         let args = parse("opai photo.jpg --dn --dn-str 200 --sh --sh-str 80 -o out.png").expect("parses");
         assert_eq!(args.selection.denoise_strength, Some(200));
@@ -731,6 +871,8 @@ mod tests {
             ("--dn --sh-str 150", "--sharpen"),
             ("--cb --la-bias 20", "--light-adjustment"),
             ("--la --cb-bias 20", "--color-balance"),
+            ("--up --rs-scale 2", "--restore"),
+            ("--sh --rs-str 50", "--restore"),
         ] {
             let error = parse(&format!("opai photo.jpg {flags} -o out.png")).expect_err(flags);
 

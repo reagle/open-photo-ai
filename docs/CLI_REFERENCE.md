@@ -210,6 +210,7 @@ Default models are in **bold**.
 | Color Balance    | `--color-balance`    | `--cb` | **rio**, saopaulo                              | `--cb-bias` (-100 to 100)  |
 | Sharpen          | `--sharpen`          | `--sh` | **moscow**, petersburg, novgorod               | `--sh-str` (1 to 300)      |
 | Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, osaka, saitama               | `--scale` (1.0 to 8.0)     |
+| Restore          | `--restore`          | `--rs` | **kazan**                                      | `--rs-scale` (1, 2 or 4), `--rs-str` (1 to 100) |
 
 The sections below explain each enhancement briefly. For more detail on when to pick each model, see the [Enhancements section of the README](../README.md#-enhancements).
 
@@ -224,7 +225,7 @@ error: the following required arguments were not provided:
 
 There are two kinds:
 
-**Strength** (`--dn-str`, `--sh-str`): how much of the model's effect to apply.
+**Strength** (`--dn-str`, `--sh-str`, `--rs-str`): how much of the model's effect to apply. Restore's stops at `100`: a generative result is only ever blended back towards the image, never pushed past what the model drew.
 
 | Value          | Effect                                                          |
 |----------------|-----------------------------------------------------------------|
@@ -342,6 +343,25 @@ Option: `--scale <FACTOR>`, the upscale factor, from `1.0` to `8.0`. Decimals ar
 > [!IMPORTANT]
 > If the image is larger than 4 MP and you don't pass `--scale`, the upscale step is **skipped**. The terminal doesn't warn about this; it's only recorded in the [log file](#log-file). Any other enhancements in the command still run, and the file is still written at the original resolution. To upscale a large image anyway, pass `--scale`.
 
+### Restore: `--restore [MODEL]`, `--rs [MODEL]`
+
+Restores detail generatively: the model **redraws** plausible detail where the photo lost it, rather than recovering what was there. Use it when the faithful models can't do enough, such as an out-of-focus face or a photo from an old camera that was never sharp. It can change faces, textures and lettering, so lower `--rs-str` if the result looks invented. Restore always runs **last**.
+
+| Model      | Use it for                                                                                        |
+|------------|---------------------------------------------------------------------------------------------------|
+| `kazan` (default) | Soft, blurred or low-detail photos. PiSA-SR on Stable Diffusion 2.1; slow and a large download. Its builds are FP32 (`hd`) and FP16 (`sd`). |
+
+Options:
+
+- `--rs-scale <FACTOR>`, the size to restore at: `1` (the photo's own size, the default), `2` or `4`. Above `1` the photo is enlarged first and restored at the new size, so it **cannot be combined with `--up`**: use one or the other. At `1` it can follow an upscale, and then restores the upscaled image.
+- `--rs-str <STRENGTH>`, a whole number from 1 to 100 (default 100). See [Strength and bias](#strength-and-bias).
+
+```bash
+# Restore a soft photo at its own size, then at twice the size with a little less of the model's redraw
+opai soft.jpg --rs -o soft-restored.png
+opai soft.jpg --rs --rs-scale 2 --rs-str 70 -o soft-2x.png
+```
+
 ## Autopilot
 
 `--autopilot` (alias `--ap`) runs the same analysis as the GUI's Autopilot on each image, once it's loaded, and applies the enhancements that image calls for: denoise for visible grain, face recovery when there are faces to restore, colorization for a black & white photo, light adjustment for a badly exposed one, color balance for a color cast, sharpen for a blurred one, and an upscale for a small one. Different images in one batch can get different enhancements. They still run in the [fixed order](#processing-order).
@@ -350,7 +370,7 @@ Option: `--scale <FACTOR>`, the upscale factor, from `1.0` to `8.0`. Decimals ar
 opai photos --ap -o enhanced
 ```
 
-- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
+- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--rs`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--rs-scale`, `--rs-str`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
 - **Each enhancement uses its default strength or bias**: strength `100` for denoise and sharpen, bias `50` for light adjustment and color balance. An upscale runs at the factor the image's size calls for (see [Upscale](#upscale---upscale-model---up-model)); an image above 4 MP is not upscaled.
 - **An image that needs nothing is still written**, unchanged, in the format asked for. Its row ends with `Enhancements applied to` as any other.
 - **If face detection can't run** (for example, its model can't be downloaded), the image still gets the other enhancements, without face recovery, and the [log file](#log-file) records a warning.
@@ -394,7 +414,7 @@ OPAI_AP_SHARPEN=off OPAI_AP_FACE=off OPAI_AP_DENOISE=malmo opai photos --ap -o o
 The enhancements always run in this order, no matter what order you type the flags in:
 
 ```
-Denoise → Face Recovery → Colorization → Light Adjustment → Color Balance → Sharpen → Upscale
+Denoise → Face Recovery → Colorization → Light Adjustment → Color Balance → Sharpen → Upscale → Restore
 ```
 
 So these two commands do exactly the same thing:
@@ -404,7 +424,7 @@ opai photo.jpg --up --dn -o out.png
 opai photo.jpg --dn --up -o out.png
 ```
 
-The order is designed so that every step works on the cleanest image possible. For example, noise is removed before faces are restored, and the image is upscaled last so the other models work at the original resolution.
+The order is designed so that every step works on the cleanest image possible. For example, noise is removed before faces are restored, and the image is upscaled after the faithful corrections so they work at the original resolution. Restore comes last of all: it redraws detail, so it is handed the best image the faithful models can make, and nothing after it corrects what it drew.
 
 ## Supported formats
 
@@ -523,7 +543,7 @@ And once the run ends, the view stays as it was last drawn, with the summary und
   - `🧨 [ 42%] Failed to enhance <path>` once it has failed;
   - `🧨 [ 42%] Stopped enhancing <path>` when you [stopped the run](#stopping-a-run) while it was being worked on.
 
-  `<enhancement>` is the enhancement's name as the GUI shows it: `Denoise`, `Face Recovery`, `Colorize`, `Light Adjust`, `Color Balance`, `Sharpen` or `Upscale`.
+  `<enhancement>` is the enhancement's name as the GUI shows it: `Denoise`, `Face Recovery`, `Colorize`, `Light Adjust`, `Color Balance`, `Sharpen`, `Upscale` or `Restore`.
 - **The summary** starts with a success line when at least one image was written. For exactly one image it names the file written, so a numbered name is visible: `✨ Image enhanced successfully; file saved at out_1.png`. For more, it names the output directory: `✨ 7 images enhanced successfully; files saved under out`. Then a `🧨` line gives the reason for each image that failed, in the order they ran, since a failure can have scrolled out of the list. Last comes the run's closing `🧨` line, if it didn't succeed (see [Exit codes](#exit-codes)).
 
 In color, the dependency's name and its percentage are bold white, the spinner magenta and the `✓` green. In the processor line, the processor is green and the quality yellow. The bar is drawn in a color gradient. In a `🖼️` row, the percentage (with its `%`) is blue, the enhancement's name (or the word `Enhancements`) magenta and the path cyan and underlined; a `🧨` row is red throughout. The success line is bold yellow.
@@ -606,6 +626,8 @@ What's in it that the terminal doesn't show:
 | `error: invalid value 'foo' for '--upscale [<MODEL>]'` followed by `[possible values: …]` | Unknown model name. Pick one from the list shown. |
 | `error: invalid value 'photo.jpg' for '--upscale [<MODEL>]'`                   | An input was placed after a flag. Put the `INPUT`s first. |
 | `error: invalid value '9' for '--scale <FACTOR>': the scale must be from 1.0 to 8.0` | `--scale` out of range or not a number. |
+| `error: --upscale (--up) cannot be used with --rs-scale 2: …`                  | An enlarging restore replaces the upscale. Leave out `--up`, or use `--rs-scale 1` to restore after the upscale. |
+| `error: invalid value '3' for '--rs-scale <FACTOR>': the restore size must be one of 1, 2, 4` | `--rs-scale` takes only 1, 2 or 4. |
 | `error: invalid value '0.5' for '--la-bias <BIAS>': the bias must be a whole number from -100 to 100` | Strength/bias must be a whole number within range. |
 | `error: the following required arguments were not provided: --denoise [<MODEL>]` | A strength/bias/scale option was used without its enhancement flag (e.g. `--dn-str` without `--dn`, or `--scale` without `--up`). |
 | `error: invalid value 'raw' for '--format <FORMAT>': "raw" is not a format; use preserve, …` | Unknown `--format`. Pick one from the list shown. |
