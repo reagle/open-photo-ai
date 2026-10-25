@@ -8,6 +8,7 @@ import {
     exportImage,
     exportNames,
 } from "@/ipc/export";
+import { runnable } from "@/lib/enhancements";
 import { describeExportError, type ExportFailure, qualityFor } from "@/lib/export";
 import { withChoice } from "@/lib/faces";
 import { track } from "@/lib/faro";
@@ -81,7 +82,8 @@ const exportOne = async (
         }
     }
 
-    const operations = stackOf() ?? [];
+    // What runs, as the preview runs it: an upscale an enlarging restore has taken out of the chain is not exported.
+    const operations = runnable(stackOf() ?? []);
     const { processor } = useSettingsStore.getState();
 
     /*

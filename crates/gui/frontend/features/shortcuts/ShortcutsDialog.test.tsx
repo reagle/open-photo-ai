@@ -51,7 +51,7 @@ describe("the keyboard shortcuts list", () => {
         expect(keysFor(list, "Turn Autopilot on or off")).toBe("A");
         expect(keysFor(list, "Add enhancement")).toBe("E");
         expect(keysFor(list, "Remove focused enhancement")).toBe("DeleteBackspace");
-        expect(keysFor(list, "Options of enhancement 1–7")).toBe("1–7");
+        expect(keysFor(list, "Options of enhancement 1–8")).toBe("1–8");
         expect(keysFor(list, "Crop/Rotate")).toBe("C");
         expect(keysFor(list, "Cycle comparison view")).toBe("V");
         expect(keysFor(list, "Show or hide images")).toBe("Ctrl+\\");

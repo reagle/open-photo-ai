@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ParseKeys } from "i18next";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { HintTooltip } from "@/components/HintTooltip";
@@ -13,7 +14,7 @@ import { type Enhancement, modelValue, optionFor, parameterOf, qualityLabel } fr
 import { enabledFaces } from "@/lib/faces";
 import { report } from "@/lib/report";
 import type { ShortcutAction } from "@/lib/shortcuts";
-import { toPercent } from "@/lib/utils";
+import { cn, toPercent } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useFaceChoice, useFacesStore, useImageFaces } from "@/stores/faces";
 import { useOptionsPanelStore } from "@/stores/optionsPanel";
@@ -24,6 +25,7 @@ import { DenoiseOptions } from "./DenoiseOptions";
 import { FaceRecoveryOptions } from "./FaceRecoveryOptions";
 import { LightAdjustmentOptions } from "./LightAdjustmentOptions";
 import { OptionsPanel } from "./OptionsPanel";
+import { RestoreOptions } from "./RestoreOptions";
 import { SharpenOptions } from "./SharpenOptions";
 import { UpscaleOptions } from "./UpscaleOptions";
 
@@ -42,6 +44,11 @@ type EnhancementRowProps = {
      */
     identity?: string;
     /**
+     * Why this enhancement is held out of the chain while it stays on the stack, as the key of the sentence that
+     * says so - an upscale while the restore enlarges - or `undefined` where it runs. See `suspendedBecause`.
+     */
+    suspended?: ParseKeys | undefined;
+    /**
      * This row's place in the list, counting from 1, which is what the digit keys open the options by. Absent
      * for a row drawn outside the list, which then names no key.
      */
@@ -52,7 +59,7 @@ type EnhancementRowProps = {
     onChange: (operation: Operation) => void;
 };
 
-/** The actions that open a row's options, by the row's place in the list: `1` to `7`. */
+/** The actions that open a row's options, by the row's place in the list: `1` to `8`. */
 const OPEN_OPTIONS: readonly ShortcutAction[] = [
     "openOptions1",
     "openOptions2",
@@ -61,6 +68,7 @@ const OPEN_OPTIONS: readonly ShortcutAction[] = [
     "openOptions5",
     "openOptions6",
     "openOptions7",
+    "openOptions8",
 ];
 
 // The reference's own `toFixed(3)`, and it is there to hide float noise rather than to round: a
@@ -84,6 +92,7 @@ export const EnhancementRow = ({
     operation,
     entry,
     identity,
+    suspended,
     place,
     onRemove,
     onChange,
@@ -125,7 +134,7 @@ export const EnhancementRow = ({
      * draws one thing on screen at a time, not a panel peeking out from behind a modal.
      */
     //
-    // A store's rather than this row's, so the window's keys (`1` to `7`) can open a row's panel by its
+    // A store's rather than this row's, so the window's keys (`1` to `8`) can open a row's panel by its
     // place in the list.
     const panelOpen = useOptionsPanelStore((state) => state.family === operation.family);
     const setPanelOpen = (open: boolean) => {
@@ -135,7 +144,7 @@ export const EnhancementRow = ({
         else closePanel(operation.family);
     };
 
-    // Each control's key, from the user's bindings: the row's is its place in the list (`1` to `7`), and the
+    // Each control's key, from the user's bindings: the row's is its place in the list (`1` to `8`), and the
     // remove button's is Delete - `⌫` on a Mac - which acts on the row with the focus.
     const rowHint = useShortcutHint(place === undefined ? undefined : OPEN_OPTIONS[place - 1], t(enhancement.nameKey));
     const removeHint = useShortcutHint("removeEnhancement", t("enhancements.remove"));
@@ -241,6 +250,10 @@ export const EnhancementRow = ({
                 return (
                     <UpscaleOptions enhancement={enhancement} operation={operation} entry={entry} onChange={onChange} />
                 );
+            case "restore":
+                return (
+                    <RestoreOptions enhancement={enhancement} operation={operation} entry={entry} onChange={onChange} />
+                );
         }
     };
 
@@ -311,6 +324,14 @@ export const EnhancementRow = ({
                     // 1x where the scale is known to nobody: a factor that changes nothing.
                     scale: Number.parseFloat((parameterOf(operation, entry, "scale") ?? 1).toFixed(SCALE_PLACES)),
                 });
+            case "restore":
+                // Both of what a restore carries: the size, read as the upscale's is, and the strength.
+                return t("enhancements.infoRestore", {
+                    name,
+                    quality,
+                    scale: Number.parseFloat((parameterOf(operation, entry, "scale") ?? 1).toFixed(SCALE_PLACES)),
+                    intensity: toPercent(amount("strength")),
+                });
         }
     };
 
@@ -345,17 +366,36 @@ export const EnhancementRow = ({
                         >
                             <Icon className="size-5 flex-none" />
 
-                            <span className="flex min-w-0 flex-col gap-px">
+                            <span className={cn("flex min-w-0 flex-col gap-px", suspended && "opacity-60")}>
                                 <span className="text-[13px]">{t(enhancement.nameKey)}</span>
                                 <span className="text-xs text-foreground-dim italic" data-slot="enhancement-info">
-                                    {info()}
+                                    {/* What it is set to do says nothing while it does not run; why it does not, does. */}
+                                    {suspended ? t(suspended) : info()}
                                 </span>
                             </span>
                         </button>
                     </PopoverTrigger>
                 </HintTooltip>
 
-                <OptionsPanel title={t(enhancement.nameKey)}>{options()}</OptionsPanel>
+                <OptionsPanel title={t(enhancement.nameKey)}>
+                    {suspended ? (
+                        <>
+                            <p className="text-muted-foreground text-xs" data-slot="enhancement-suspended">
+                                {t(suspended)}
+                            </p>
+                            {/*
+                             * Drawn as it is set, so the user sees what will run again once the reason goes, and
+                             * unavailable: a disabled fieldset disables every control inside it, the model tray's
+                             * and the scale's alike, with no control having to know.
+                             */}
+                            <fieldset disabled className="flex min-w-0 flex-col gap-4 opacity-50">
+                                {options()}
+                            </fieldset>
+                        </>
+                    ) : (
+                        options()
+                    )}
+                </OptionsPanel>
             </Popover>
 
             {/*

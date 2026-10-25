@@ -204,6 +204,15 @@ const FACES_AND_FIDELITY: VariantEntry["parameters"] = [
 ];
 const FACES: VariantEntry["parameters"] = [{ name: "faces", kind: "faces" }];
 
+/**
+ * What every restore model publishes: a size up to `Restore::MAX_SCALE` and a strength up to
+ * `Restore::MAX_STRENGTH`, narrower than their types', starting at 1x and at the model's own output.
+ */
+const RESTORE: VariantEntry["parameters"] = [
+    { name: "scale", kind: "range", min: 1, max: 4, default: 1 },
+    { name: "strength", kind: "range", min: 0, max: 1, default: 1 },
+];
+
 /** The place `opai`'s `Family::APPLY_ORDER` gives each family in a chain; detection has none. */
 const ORDER: Partial<Record<Family, number>> = {
     denoise: 0,
@@ -213,6 +222,7 @@ const ORDER: Partial<Record<Family, number>> = {
     color_balance: 4,
     sharpen: 5,
     upscale: 6,
+    restore: 7,
 };
 
 const family = (name: Family, variants: VariantEntry[]): FamilyEntry => {
@@ -271,6 +281,7 @@ export const CATALOGUE: FamilyEntry[] = [
         variant("athens", "Athens", ["fp32", "fp16"], FACES_AND_FIDELITY),
         variant("santorini", "Santorini", ["fp32", "fp16"], FACES),
     ]),
+    family("restore", [variant("kazan", "Kazan", ["fp32", "fp16"], RESTORE)]),
 ];
 
 /**

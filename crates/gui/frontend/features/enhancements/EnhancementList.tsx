@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { familyEntry, useCatalogue } from "@/hooks/useCatalogue";
 import { removeEnhancementOf } from "@/lib/editorActions";
-import { ENHANCEMENTS } from "@/lib/enhancements";
+import { ENHANCEMENTS, suspendedBecause } from "@/lib/enhancements";
 import { useAnalysing } from "@/stores/autopilot";
 import { useEnhancementStore, useFileEnhancements } from "@/stores/enhancements";
 import { useCurrentFile } from "@/stores/files";
@@ -73,6 +73,7 @@ export const EnhancementList = () => {
                         operation={operation}
                         entry={familyEntry(families, operation.family)}
                         {...(file.identity && { identity: file.identity })}
+                        suspended={suspendedBecause(stack, operation.family)}
                         // Shared with the Delete key, so the two routes are one.
                         onRemove={() => removeEnhancementOf(file.path, operation.family)}
                         onChange={(changed) => replaceEnhancement(file.path, changed)}

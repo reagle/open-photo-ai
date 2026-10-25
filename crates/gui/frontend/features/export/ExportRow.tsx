@@ -8,7 +8,7 @@ import { showInLabel } from "@/features/files/FileOptionsMenu";
 import { framedDimensions } from "@/ipc/crop";
 import { type ExportName, revealExport } from "@/ipc/export";
 import { renditionFor } from "@/ipc/images";
-import { upscaleFactor } from "@/lib/enhancements";
+import { enlargement } from "@/lib/enhancements";
 import { report } from "@/lib/report";
 import { cn, formatBytes, formatDimensions } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
@@ -161,7 +161,7 @@ export const ExportRow = ({
     if (!file || !name) return;
 
     const { width, height } = framedDimensions(file, crop);
-    const scale = upscaleFactor(stack);
+    const scale = enlargement(stack);
     const types = `${file.extension.toUpperCase()} → ${name.extension.toUpperCase()}`;
     const fraction = row.stage === "enhancing" ? row.fraction : row.stage === "writing" ? 1 : 0;
 
