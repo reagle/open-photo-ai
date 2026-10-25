@@ -1368,7 +1368,8 @@ mod tests {
         //
         // `['dn', 'fr', 'cl', 'la', 'cb', 'sh', 'up']` in the reference's
         // `cmd/gui/frontend/src/utils/enhancement.ts`, transcribed as families. Detection is absent from it because
-        // it is not an enhancement a user adds, which is also why the apply order leaves it out.
+        // it is not an enhancement a user adds, which is also why the apply order leaves it out. Restore is absent
+        // because the reference has no such family, and appended to this order because an analysis never suggests it.
         const REFERENCE: [Family; 7] = [
             Family::Denoise,
             Family::FaceRecovery,
@@ -1380,8 +1381,8 @@ mod tests {
         ];
 
         assert_eq!(
-            Family::APPLY_ORDER,
-            REFERENCE,
+            Family::APPLY_ORDER.split_last(),
+            Some((&Family::Restore, &REFERENCE[..])),
             "the order suggestions come back in disagrees with the reference's"
         );
     }
@@ -1773,7 +1774,8 @@ mod tests {
     /// analysis can suggest is still suggested when it is the only one asked for, on a photograph that calls for it.
     #[tokio::test]
     async fn every_suggestible_family_is_suggested_when_it_is_asked_for_alone() {
-        for family in Family::ALL.into_iter().filter(|family| *family != Family::Detection) {
+        // Not detection, which is never applied, and not restore, which an analysis never suggests.
+        for family in Family::ALL.into_iter().filter(|family| !matches!(family, Family::Detection | Family::Restore)) {
             let source = match family {
                 Family::Colorization => black_and_white(512, 384),
                 _ => picture_of(everything_wrong(512, 384)),

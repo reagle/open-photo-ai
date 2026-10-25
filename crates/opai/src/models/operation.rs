@@ -1,7 +1,7 @@
 //! The values that carry an operation of any family, so that holding, storing, sending or dispatching on one does not
 //! mean knowing which family it is.
 //!
-//! **Two of them, one per run path.** [`Operation`] carries the seven families whose result is an image and is what
+//! **Two of them, one per run path.** [`Operation`] carries the eight families whose result is an image and is what
 //! [`Opai::process`](crate::Opai::process) takes; [`Analysis`] carries the one family whose result is not and is what
 //! [`Opai::execute`](crate::Opai::execute) takes. Which of the two an operation is carried in follows from the model
 //! being named — every model's constructor returns the carrier for the path it runs on — so a caller naming a model
@@ -13,8 +13,8 @@
 // Neither pairing is a refusal reported at run time, which is the whole point — a system that decided this while the
 // model was already loaded would report as an error what was never a legitimate request.
 //
-// A file directly under `models/` because it belongs to no family: it is the seam over all eight. What neither
-// carrier is is a ninth shape. Each arm holds that family's own type, unchanged, so a family that later diverges grows
+// A file directly under `models/` because it belongs to no family: it is the seam over all nine. What neither
+// carrier is is a tenth shape. Each arm holds that family's own type, unchanged, so a family that later diverges grows
 // its own type rather than widening a shape the others share.
 
 use serde::{Deserialize, Serialize};
@@ -28,6 +28,7 @@ use super::face::Faces;
 use super::face_recovery::FaceRecovery;
 use super::light_adjustment::LightAdjustment;
 use super::precision::Precision;
+use super::restore::Restore;
 use super::sharpen::Sharpen;
 use super::upscale::Upscale;
 
@@ -57,7 +58,7 @@ use crate::providers::profile::EpProfile;
 ///
 /// [`family`](Self::family), [`precision`](Self::precision), [`display_name`](Self::display_name),
 /// [`required_artifacts`](Self::required_artifacts) and [`cache_tag`](Self::cache_tag) — the five questions that
-/// mean the same thing for all eight families, each answered by the arm. [`Analysis`] answers the same five, so a
+/// mean the same thing for all nine families, each answered by the arm. [`Analysis`] answers the same five, so a
 /// consumer that only reports on a run can be written once over either. Anything only one family can answer stays
 /// on that family's type: [`Upscale::resolve`] and the per-family `params` are
 /// reached by matching this and asking the value inside.
@@ -87,6 +88,8 @@ pub enum Operation {
     Sharpen(Sharpen),
     /// An upscale run.
     Upscale(Upscale),
+    /// A generative restoration, which a chain runs last.
+    Restore(Restore),
 }
 
 // The five methods below differ in nothing but the name of the method they call, and writing the seven arms out five
@@ -106,6 +109,7 @@ macro_rules! forward {
             Self::Colorization(operation) => operation.$question(),
             Self::Sharpen(operation) => operation.$question(),
             Self::Upscale(operation) => operation.$question(),
+            Self::Restore(operation) => operation.$question(),
         }
     };
 }
@@ -123,6 +127,7 @@ impl Operation {
             Self::Colorization(_) => Family::Colorization,
             Self::Sharpen(_) => Family::Sharpen,
             Self::Upscale(_) => Family::Upscale,
+            Self::Restore(_) => Family::Restore,
         }
     }
 
@@ -146,7 +151,7 @@ impl Operation {
 
     /// The key the run cache stores this operation's result under.
     ///
-    /// Each family writes its own, and no two of them collide — the one namespace shared by all eight.
+    /// Each family writes its own, and no two of them collide — the one namespace shared by all nine.
     pub fn cache_tag(&self) -> String {
         forward!(self, cache_tag)
     }
@@ -224,6 +229,9 @@ impl Operation {
             // Wrapped for light adjustment's reason: all three variants run through one pipeline, the two contracts
             // told apart as data on the variant, so there is nothing for this seam to refuse.
             Self::Colorization(colorization) => Ok(colorization.pipeline::<B>()),
+            // Kept as a `Result`, as upscale's is: the family's contracts are not all one, and a multi-graph restorer
+            // is refused where its graph set is incomplete.
+            Self::Restore(restore) => restore.pipeline::<B>(),
         }
     }
 }
@@ -452,6 +460,7 @@ pub(crate) mod tests {
     use crate::models::fidelity::Fidelity;
     use crate::models::light_adjustment::LightAdjustmentVariant;
     use crate::models::precision::FloatPrecision;
+    use crate::models::restore::RestoreVariant;
     use crate::models::scale::Scale;
     use crate::models::sharpen::SharpenVariant;
     use crate::models::strength::Strength;
@@ -586,9 +595,9 @@ pub(crate) mod tests {
         Fidelity::new(Fidelity::MAX).expect("the maximum is in range")
     }
 
-    /// One operation of each of the seven families this carrier holds, paired with the family it belongs to.
+    /// One operation of each of the eight families this carrier holds, paired with the family it belongs to.
     ///
-    /// Seven rather than eight: detection is carried in [`Analysis`], and the tests that need all eight say so by
+    /// Eight rather than nine: detection is carried in [`Analysis`], and the tests that need all nine say so by
     /// reaching across both carriers — see `every_family_can_be_carried_by_the_carrier_for_its_own_path`.
     fn one_of_each() -> Vec<(Operation, Family)> {
         let strength = Strength::new(0.5).expect("the test supplied a strength in range");
@@ -624,6 +633,10 @@ pub(crate) mod tests {
                 Operation::Upscale(Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Int8), scale)),
                 Family::Upscale,
             ),
+            (
+                Operation::Restore(Restore::new(RestoreVariant::Kazan(FloatPrecision::Fp16), scale, strength)),
+                Family::Restore,
+            ),
         ]
     }
 
@@ -633,7 +646,7 @@ pub(crate) mod tests {
             assert_eq!(operation.family(), family, "{operation:?} reported a family it does not belong to");
         }
 
-        // Every family, and each of them once, **across both carriers**: the seven whose result is an image and the
+        // Every family, and each of them once, **across both carriers**: the eight whose result is an image and the
         // one whose result is not. A list that had drifted or repeated an arm would pass the per-operation check
         // above and still leave a family uncarried.
         let mut carried: Vec<Family> = one_of_each()
@@ -666,6 +679,7 @@ pub(crate) mod tests {
         let colorization = Colorization::new(ColorizationVariant::Delhi(FloatPrecision::Fp32));
         let sharpen = Sharpen::new(SharpenVariant::Moscow(FloatPrecision::Fp32), strength);
         let upscale = Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Int8), scale);
+        let restore = Restore::new(RestoreVariant::Kazan(FloatPrecision::Fp16), scale, strength);
 
         macro_rules! forwards {
             ($operation:expr, $arm:expr) => {{
@@ -690,6 +704,7 @@ pub(crate) mod tests {
         forwards!(colorization, Operation::Colorization(colorization));
         forwards!(sharpen, Operation::Sharpen(sharpen));
         forwards!(upscale, Operation::Upscale(upscale));
+        forwards!(restore, Operation::Restore(restore));
     }
 
     #[test]
@@ -864,7 +879,7 @@ pub(crate) mod tests {
             }
         }
 
-        // The other carrier, so the spread is over all eight families rather than the seven one of them holds.
+        // The other carrier, so the spread is over all nine families rather than the eight one of them holds.
         for analysis in every_analysis() {
             let _ = analysis.profile();
 
@@ -873,7 +888,7 @@ pub(crate) mod tests {
             }
         }
 
-        assert_eq!(families.len(), 8, "the spread did not reach all eight families: {families:?}");
+        assert_eq!(families.len(), 9, "the spread did not reach all nine families: {families:?}");
     }
 
     #[test]
@@ -997,11 +1012,13 @@ pub(crate) mod tests {
                         );
                         continue;
                     }
-                    SharpenVariant::Moscow(precision)
-                    | SharpenVariant::Novgorod(precision)
-                    | SharpenVariant::Kazan(precision) => {
+                    SharpenVariant::Moscow(precision) | SharpenVariant::Novgorod(precision) => {
                         precision == FloatPrecision::Fp16
                     }
+                },
+                // Kazan at FP16, declared off the Neural Engine for the reason Moscow is; see `kazan`.
+                Operation::Restore(restore) => match restore.variant() {
+                    RestoreVariant::Kazan(precision) => precision == FloatPrecision::Fp16,
                 },
                 // All three at FP16 only, ported from the reference. Delhi's is the reference's declaration beside
                 // Mumbai's rather than a measurement of its own graph; see `delhi`.

@@ -2,7 +2,6 @@
 
 #[cfg(test)]
 mod live;
-pub(crate) mod kazan;
 pub(crate) mod moscow;
 pub(crate) mod novgorod;
 pub(crate) mod petersburg;
@@ -20,6 +19,7 @@ use crate::models::filter;
 use crate::pipeline::Backend;
 use crate::pipeline::Shared;
 use crate::providers::profile::EpProfile;
+use imaging::TileGeometry;
 use imaging::tensor::Normalisation;
 
 pub(crate) use variant::ALL;
@@ -73,11 +73,6 @@ impl Sharpen {
         Operation::Sharpen(Self::new(SharpenVariant::Novgorod(precision), strength))
     }
 
-    /// Kazan at `precision`, applying `strength` of its output. Published at FP32 and FP16; see [`Sharpen::moscow`].
-    pub fn kazan(precision: FloatPrecision, strength: Strength) -> Operation {
-        Operation::Sharpen(Self::new(SharpenVariant::Kazan(precision), strength))
-    }
-
     /// Which model this runs, and at which precision.
     pub const fn variant(self) -> SharpenVariant {
         self.variant
@@ -126,7 +121,7 @@ impl Sharpen {
             RANGE,
             self.params().strength,
             self.variant.guard(),
-            self.variant.geometry(),
+            TileGeometry::DEFAULT,
         )
     }
 
@@ -210,8 +205,6 @@ mod tests {
             (SharpenVariant::Petersburg(FloatPrecision::Fp16), "sh_petersburg_fp16"),
             (SharpenVariant::Novgorod(FloatPrecision::Fp32), "sh_novgorod_fp32"),
             (SharpenVariant::Novgorod(FloatPrecision::Fp16), "sh_novgorod_fp16"),
-            (SharpenVariant::Kazan(FloatPrecision::Fp32), "sh_kazan_fp32"),
-            (SharpenVariant::Kazan(FloatPrecision::Fp16), "sh_kazan_fp16"),
         ];
 
         for (variant, name) in expected {

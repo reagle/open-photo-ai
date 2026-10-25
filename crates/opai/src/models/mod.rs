@@ -5,15 +5,15 @@
 //! later takes as a parameter — so they describe *what* to run and own no native resource, which is what lets one
 //! outlive and stay independent of any session built from it.
 //!
-//! All eight families are named here: [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`],
-//! [`Colorization`], [`Detection`] and [`FaceRecovery`]. Each is its own type, so no codename can be paired with the
+//! All nine families are named here: [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`],
+//! [`Colorization`], [`Detection`], [`FaceRecovery`] and [`Restore`]. Each is its own type, so no codename can be paired with the
 //! family it does not belong to.
 //!
-//! [`Operation`] is where that match lives. It carries an operation of any of the seven image families, one arm per
+//! [`Operation`] is where that match lives. It carries an operation of any of the eight image families, one arm per
 //! family holding that family's own type, and forwards the five questions they all answer; a detection run is
 //! carried by [`Analysis`] instead.
 //!
-//! Two of them break the mould the other six share. [`Detection`] is the one family whose result is not an image: a
+//! Two of them break the mould the others share. [`Detection`] is the one family whose result is not an image: a
 //! run produces a [`DetectionOutput`], the set of [`Face`]s found. [`FaceRecovery`] is the one whose per-run input is
 //! not a scalar: it carries the [`Faces`] it is to restore, supplied by a detection run rather than adjusted through
 //! a control, which is why it is `Clone` rather than `Copy`.
@@ -43,7 +43,7 @@
 //! A precision travels inside the variant, in the domain that variant is actually published in — so Osaka at FP32 is
 //! not a refused request but an unwritable one. A [`Scale`], a [`Strength`] and a [`Bias`] are each bounded and
 //! quantized on acceptance, so a value that exists is a value in range, and two requests that would have collided in
-//! the cache are one value before anything is rendered. [`fn@catalogue`] publishes both facts for all eight families,
+//! the cache are one value before anything is rendered. [`fn@catalogue`] publishes both facts for all nine families,
 //! built from the same rows and constants that enforce them, so a control cannot offer what resolution would refuse.
 //! A [`Confidence`] is bounded the same way and for a related reason — a face that exists is a face whose confidence
 //! is meaningful — and quantized too, to two decimal places, because it travels inside the [`Faces`] a face recovery
@@ -60,7 +60,7 @@
 //   all three are rows of.
 // - **Every family** (cross-family tier) — shared by two or more families, and by nothing that is not a model. Four
 //   homes, by what the thing is:
-//   - this module, for the vocabulary all eight speak — the carriers, `Subject`, the parameters, the catalogue;
+//   - this module, for the vocabulary all nine speak — the carriers, `Subject`, the parameters, the catalogue;
 //   - a file directly under `models/`, for model code two families run — `filter.rs`, the tiled filter contract
 //     denoise and sharpen both run;
 //   - `crate::pipeline`, for the contract every model is written against — the pipeline traits, `Backend` and the
@@ -120,6 +120,7 @@ pub(crate) mod light_adjustment;
 pub(crate) mod operation;
 pub(crate) mod precision;
 mod quantized;
+pub(crate) mod restore;
 pub(crate) mod scale;
 pub(crate) mod sharpen;
 pub(crate) mod simple;
@@ -143,6 +144,7 @@ pub use fidelity::Fidelity;
 pub use light_adjustment::{LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant};
 pub use operation::{Analysis, DataOperation, Operation};
 pub use precision::{FloatPrecision, Precision};
+pub use restore::{Restore, RestoreParams, RestoreVariant};
 pub use scale::{RangeError, Scale};
 pub use sharpen::{Sharpen, SharpenParams, SharpenVariant};
 pub use strength::Strength;
@@ -164,7 +166,7 @@ mod tests {
         // holds both. Asked of the operations themselves rather than counted, so a family left out of the spread
         // fails here by name instead of weakening the checks silently.
         //
-        // Across **both** carriers, which is what makes "every family" true: the seven whose result is an image and the
+        // Across **both** carriers, which is what makes "every family" true: the eight whose result is an image and the
         // one whose result is not.
         let carried: std::collections::HashSet<Family> = every_carried_family().into_iter().collect();
 

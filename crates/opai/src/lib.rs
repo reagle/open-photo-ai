@@ -14,7 +14,7 @@
 //! # Naming a model
 //!
 //! [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`], [`Colorization`], [`Detection`],
-//! [`FaceRecovery`] and friends name a model, carry its parameters, and answer which files it needs — none of
+//! [`FaceRecovery`], [`Restore`] and friends name a model, carry its parameters, and answer which files it needs — none of
 //! them run anything. [`fn@catalogue`] is what a front end reads instead of hard-coding a variant, precision or
 //! bound.
 //!
@@ -226,8 +226,8 @@ pub use models::{
     DetectionVariant, Face, FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant, Faces, Family, FamilyEntry,
     Fidelity, FloatPrecision, GraphRole, GraphSet, LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant,
     Operation, OsakaPrecision, ParameterEntry, ParameterKind, ParameterValues, Pass, Point, Precision, RangeError,
-    Rect, Resolution, Scale, Sharpen, SharpenParams, SharpenVariant, Strength, Subject, UnknownRole, Upscale,
-    UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
+    Rect, Resolution, Restore, RestoreParams, RestoreVariant, Scale, Sharpen, SharpenParams, SharpenVariant, Strength,
+    Subject, UnknownRole, Upscale, UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
 };
 pub use progress::{Dependency, OnPlan, OnProgress, Phase, PlannedDependency, Progress};
 pub use providers::{ExecutionProvider, SupportedProviders};
@@ -731,14 +731,15 @@ impl Opai {
     ///
     /// # What is refused
     ///
-    /// No published enhancement is refused. All seven image families run, each running every variant it
+    /// No published enhancement is refused. All eight image families run, each running every variant it
     /// publishes: upscale (Kyoto/Tokyo/Saitama as native passes, Osaka via diffusion), face recovery (align,
     /// run, composite through one contract), light adjustment (both models at a fixed square, applied as a
     /// gain), colour balance (both models at a fixed square, applied as a fitted colour mapping), denoise (all
     /// three models over a tile grid at the photograph's own resolution, then the strength), sharpen (all three
-    /// models over a tile grid at the photograph's own resolution, then the strength), and colorization (all
+    /// models over a tile grid at the photograph's own resolution, then the strength), colorization (all
     /// three models once over the whole photograph at a fixed square, the predicted colour put onto the
-    /// photograph's own lightness). **Detection is not among them and never will be** — its result isn't an
+    /// photograph's own lightness), and restore (Kazan over a tile grid at the requested size, after a Lanczos3
+    /// resample, then the strength). **Detection is not among them and never will be** — its result isn't an
     /// image, so it's carried in [`Analysis`] instead and can't be put in a chain.
     ///
     /// What can still refuse a run is [`InferenceError::Unsupported`], for a model whose declaration is

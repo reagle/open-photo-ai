@@ -11,8 +11,8 @@
 
 use super::{
     Analysis, Bias, ColorBalance, Colorization, Denoise, Detection, FaceRecovery, Faces, Fidelity, LightAdjustment,
-    Operation, ParameterValues, Scale, Sharpen, Strength, Upscale, catalogue, color_balance, colorization, denoise,
-    detection, face, light_adjustment, sharpen, upscale,
+    Operation, ParameterValues, Restore, Scale, Sharpen, Strength, Upscale, catalogue, color_balance, colorization,
+    denoise, detection, face, light_adjustment, restore, sharpen, upscale,
 };
 
 /// The values a front end would hand back for the controls one published row told it to draw.
@@ -86,8 +86,8 @@ pub(crate) fn every_selection() -> Vec<Faces> {
 /// still written out once here, because the spread of parameter values is this helper's own choice — what the seam
 /// removes is the second listing of what each family reports.
 ///
-/// **Seven families, not eight.** Detection is carried in [`Analysis`] and is [`every_analysis`]'s to spread. A
-/// caller that has to reach all eight — a cache-tag collision is only visible in a set holding every family — uses
+/// **Eight families, not nine.** Detection is carried in [`Analysis`] and is [`every_analysis`]'s to spread. A
+/// caller that has to reach all nine — a cache-tag collision is only visible in a set holding every family — uses
 /// [`every_cache_tag`] or [`every_artifact_name`], which cross both carriers.
 pub(crate) fn every_operation() -> Vec<Operation> {
     let strengths = [0.0, 0.5, 1.0, 2.5, 3.0];
@@ -143,12 +143,22 @@ pub(crate) fn every_operation() -> Vec<Operation> {
         }
     }
 
+    // The family's own sizes and strengths, crossed: both reach its tag, and the strengths past 1 that the other
+    // strength families spread over are brought down to 1 here, which would only repeat operations.
+    for size in [1.0, 2.0, 4.0] {
+        for value in [0.0, 0.5, 1.0] {
+            for variant in restore::variant::tests::every_variant() {
+                operations.push(Operation::Restore(Restore::new(variant, scale(size), strength(value))));
+            }
+        }
+    }
+
     operations
 }
 
 /// Every operation whose result is not an image, carried as [`Analysis`].
 ///
-/// [`every_operation`]'s counterpart on the other run path, and the other half of "all eight families" for the
+/// [`every_operation`]'s counterpart on the other run path, and the other half of "all nine families" for the
 /// checks that need it. One family and no per-run parameter, so the spread is its published precisions.
 pub(crate) fn every_analysis() -> Vec<Analysis> {
     detection::variant::tests::every_variant()
@@ -169,7 +179,7 @@ pub(crate) fn every_carried_family() -> Vec<super::Family> {
         .collect()
 }
 
-/// Every run cache tag the library can report, across both carriers and therefore all eight families.
+/// Every run cache tag the library can report, across both carriers and therefore all nine families.
 ///
 /// The run cache is one namespace shared by every family, so a collision between two of them is only visible in a
 /// set that holds both — which is why this crosses the carriers rather than being asked of either.
@@ -181,7 +191,7 @@ pub(crate) fn every_cache_tag() -> Vec<String> {
         .collect()
 }
 
-/// Every artifact name the catalogue can produce, across all eight families.
+/// Every artifact name the catalogue can produce, across all nine families.
 ///
 /// The set the manifest compiled into the binary is checked against: an entry naming an artifact absent from this is
 /// one no build can ask for, which is either a stale checked-in file or a variant renamed out from under it. The

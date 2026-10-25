@@ -30,6 +30,8 @@ pub enum Family {
     Sharpen,
     /// Upscaling.
     Upscale,
+    /// Generative restoration: a model that redraws detail rather than estimating it, optionally at a larger size.
+    Restore,
 }
 
 impl Family {
@@ -38,7 +40,7 @@ impl Family {
     /// The one list, so a family added later is covered by everything that iterates families rather than by whichever
     /// of them its author remembered to extend. Not the order the catalogue publishes — that one is a presentation
     /// decision and is pinned where it is made.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Detection,
         Self::Denoise,
         Self::FaceRecovery,
@@ -47,9 +49,10 @@ impl Family {
         Self::ColorBalance,
         Self::Sharpen,
         Self::Upscale,
+        Self::Restore,
     ];
 
-    /// The seven families whose result is an image, in the order a chain applies them.
+    /// The eight families whose result is an image, in the order a chain applies them.
     ///
     /// **The one order of a chain**, which [`Opai::process`](crate::Opai::process) puts every chain into before it
     /// runs and the catalogue publishes, so a front end draws a stack in the order it will actually run rather than
@@ -64,12 +67,18 @@ impl Family {
     ///   face restored after an upscale would be pasted at a quarter of its size.
     /// - **Colorization, then light, then colour**: colour is predicted from lightness, and light and colour balance
     ///   then correct the photograph as a whole, colour cast last so it is fitted to the exposure it will be seen at.
-    /// - **Sharpen late**, over the corrected picture, and **upscale last**, so every model before it runs at the
+    /// - **Sharpen late**, over the corrected picture, and **upscale after it**, so every model before it runs at the
     ///   photograph's own resolution rather than at up to sixty-four times its pixels.
+    /// - **Restore last of all.** A generative restorer redraws detail, so everything faithful runs first and hands it
+    ///   the best photograph there is to be conditioned on: denoised, with its faces, colour and light already
+    ///   corrected, and sharpened. What it draws is then the last word, and no faithful model is asked to correct an
+    ///   invented texture. When it also enlarges, it resamples first and restores at the new size, so it replaces an
+    ///   upscale rather than following one; a front end offers one or the other. At 1x it may follow an upscale, and
+    ///   then restores the photograph at its final size.
     ///
     /// The same order the application has always presented its enhancements in; it is [`Family::ALL`] without
     /// detection, and derived from it so the two cannot drift apart.
-    pub const APPLY_ORDER: [Self; 7] = {
+    pub const APPLY_ORDER: [Self; 8] = {
         assert!(
             matches!(Self::ALL[0], Self::Detection),
             "`ALL` must begin with the family that is never applied"
@@ -104,6 +113,7 @@ impl Family {
             Self::Colorization => "cl",
             Self::Sharpen => "sh",
             Self::Upscale => "up",
+            Self::Restore => "rs",
         }
     }
 
@@ -125,6 +135,7 @@ impl Family {
             Self::Colorization => "Colorization",
             Self::Sharpen => "Sharpen",
             Self::Upscale => "Upscale",
+            Self::Restore => "Restore",
         }
     }
 }
@@ -195,6 +206,7 @@ mod tests {
         assert_eq!(Family::Colorization.prefix(), "cl");
         assert_eq!(Family::Sharpen.prefix(), "sh");
         assert_eq!(Family::Upscale.prefix(), "up");
+        assert_eq!(Family::Restore.prefix(), "rs");
     }
 
     #[test]
@@ -203,7 +215,14 @@ mod tests {
         // coordinates.
         assert!(Family::FaceRecovery.applied_at() < Family::Upscale.applied_at());
         assert_eq!(Family::Detection.applied_at(), None);
-        assert_eq!(Family::Upscale.applied_at(), Some(Family::APPLY_ORDER.len() - 1));
+    }
+
+    #[test]
+    fn the_apply_order_restores_generatively_after_everything_faithful() {
+        // A generative restorer is conditioned on what it is handed, so every faithful correction comes first, and
+        // nothing after it is asked to correct a texture it invented.
+        assert_eq!(Family::Restore.applied_at(), Some(Family::APPLY_ORDER.len() - 1));
+        assert_eq!(Family::Upscale.applied_at(), Some(Family::APPLY_ORDER.len() - 2));
     }
 
     #[test]
