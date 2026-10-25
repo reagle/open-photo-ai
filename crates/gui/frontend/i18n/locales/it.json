@@ -383,10 +383,10 @@
             "denoise": "Riduzione rumore",
             "faceRecovery": "Recupero volti",
             "colorization": "Colorazione",
-            "lightAdjustment": "Regola luce",
-            "colorBalance": "Bilanc. colore",
+            "lightAdjustment": "Regolazione luce",
+            "colorBalance": "Bilanciamento colore",
             "upscale": "Ingrandimento",
-            "sharpen": "Nitidezza",
+            "sharpen": "Aumento nitidezza",
             "enhancing": "Miglioramento"
         }
     },

@@ -381,12 +381,12 @@
         "progress": {
             "downloading": "Téléchargement {{percent}} %",
             "denoise": "Débruitage",
-            "faceRecovery": "Visages",
+            "faceRecovery": "Restauration des visages",
             "colorization": "Colorisation",
-            "lightAdjustment": "Lumière",
-            "colorBalance": "Couleurs",
+            "lightAdjustment": "Réglage de la lumière",
+            "colorBalance": "Équilibrage des couleurs",
             "upscale": "Agrandissement",
-            "sharpen": "Netteté",
+            "sharpen": "Accentuation",
             "enhancing": "Amélioration"
         }
     },

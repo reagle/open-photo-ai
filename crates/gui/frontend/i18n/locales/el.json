@@ -370,11 +370,11 @@
         },
         "progress": {
             "downloading": "Λήψη {{percent}}%",
-            "denoise": "Θόρυβος",
-            "faceRecovery": "Πρόσωπα",
+            "denoise": "Αφαίρεση θορύβου",
+            "faceRecovery": "Αποκατάσταση προσώπων",
             "colorization": "Χρωματισμός",
-            "lightAdjustment": "Φωτισμός",
-            "colorBalance": "Χρώματα",
+            "lightAdjustment": "Ρύθμιση φωτισμού",
+            "colorBalance": "Εξισορρόπηση χρωμάτων",
             "upscale": "Μεγέθυνση",
             "sharpen": "Όξυνση",
             "enhancing": "Βελτίωση"

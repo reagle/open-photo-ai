@@ -10,20 +10,25 @@ import { report } from "@/lib/report";
 /**
  * One enhancement this application presents, and what it is called.
  *
- * Two name keys rather than one, because they are different sentences in different places: the
- * name is the enhancement's own, shared with the add menu, the sidebar and the settings dialog; the
- * short name belongs to the chip drawn over a running preview, which is 148px wide.
+ * Two keys rather than one, because they are different sentences in different places: the name is
+ * the enhancement's own, shared with the add menu, the sidebar and the settings dialog; the activity
+ * is what the chip drawn over a running preview says while the enhancement runs - *Upscaling*,
+ * *Restoring faces* - and what an export's row says in its place of a generic *Enhancing*.
  *
- * **The short name is a key of its own rather than a truncation of the full one.** Several
- * languages need a different word rather than fewer characters of the same one - the reference
- * records Russian shortening "Восстановление лиц" to "Лица" - and the catalogues have carried both
- * since `add-gui-1-foundation` ported them whole.
+ * **The activity is a sentence of its own rather than the name with a suffix.** A chain runs
+ * several operations under one bar, and a bar that says *Enhancing* through all of them - or through
+ * the minutes a model can take to load - says nothing about which one is slow. Several languages say
+ * an activity with a different construction rather than an inflection of the name (Japanese adds 中,
+ * Hindi says the work is ongoing), so each catalogue spells it out.
  */
 export type Enhancement = {
     family: Family;
     nameKey: ParseKeys;
-    /** The name the progress chip draws, in the language the rest of the window is speaking. */
-    shortNameKey: ParseKeys;
+    /**
+     * What the progress chip says while this enhancement runs - *Upscaling* - in the language the
+     * rest of the window is speaking.
+     */
+    activityKey: ParseKeys;
     /**
      * The glyph a menu entry and a sidebar row are drawn with.
      *
@@ -56,43 +61,43 @@ export const ENHANCEMENTS = [
     {
         family: "denoise",
         nameKey: "enhancements.denoise.name",
-        shortNameKey: "preview.progress.denoise",
+        activityKey: "preview.progress.denoise",
         icon: Waves,
     },
     {
         family: "face_recovery",
         nameKey: "enhancements.faceRecovery.name",
-        shortNameKey: "preview.progress.faceRecovery",
+        activityKey: "preview.progress.faceRecovery",
         icon: ScanFace,
     },
     {
         family: "colorization",
         nameKey: "enhancements.colorization.name",
-        shortNameKey: "preview.progress.colorization",
+        activityKey: "preview.progress.colorization",
         icon: Paintbrush,
     },
     {
         family: "light_adjustment",
         nameKey: "enhancements.lightAdjustment.name",
-        shortNameKey: "preview.progress.lightAdjustment",
+        activityKey: "preview.progress.lightAdjustment",
         icon: Sun,
     },
     {
         family: "color_balance",
         nameKey: "enhancements.colorBalance.name",
-        shortNameKey: "preview.progress.colorBalance",
+        activityKey: "preview.progress.colorBalance",
         icon: Palette,
     },
     {
         family: "sharpen",
         nameKey: "enhancements.sharpen.name",
-        shortNameKey: "preview.progress.sharpen",
+        activityKey: "preview.progress.sharpen",
         icon: Triangle,
     },
     {
         family: "upscale",
         nameKey: "enhancements.upscale.name",
-        shortNameKey: "preview.progress.upscale",
+        activityKey: "preview.progress.upscale",
         icon: Maximize2,
     },
 ] as const satisfies readonly Enhancement[];
@@ -420,7 +425,7 @@ const REPORTED_AS: Partial<Record<Family, Operation["family"]>> = { detection: "
  * What the progress chip calls the family a report carries, or `undefined` where this application has
  * no name for it.
  *
- * Derived from {@link ENHANCEMENTS} rather than a second table of short names: the seven that are
+ * Derived from {@link ENHANCEMENTS} rather than a second table of activities: the seven that are
  * enhancements answer their own, and {@link REPORTED_AS} redirects the one that is not.
  *
  * `undefined` is the honest answer for a family the catalogue publishes and `ENHANCEMENTS` does not
@@ -432,7 +437,7 @@ export const progressLabelKey = (family: Family | undefined): ParseKeys | undefi
 
     const reported = REPORTED_AS[family] ?? family;
 
-    return ENHANCEMENTS.find((entry) => entry.family === reported)?.shortNameKey;
+    return ENHANCEMENTS.find((entry) => entry.family === reported)?.activityKey;
 };
 
 /**

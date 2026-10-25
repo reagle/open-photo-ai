@@ -856,14 +856,14 @@ describe("what the canvas reports about a run", () => {
         expect(filled()).toHaveStyle({ transform: "translateX(-100%)" });
     });
 
-    it("names the enhancement being run, in the interface's own language", () => {
+    it("says what the enhancement being run is doing, in the interface's own language", () => {
         run = { running: true, fraction: 0.62, report: progress() };
 
         draw("side");
 
         // From the report's family rather than from its `operation`, which is the library's composed
         // English sentence and not something a front end can translate.
-        expect(bar()).toHaveTextContent("Upscale");
+        expect(bar()).toHaveTextContent("Upscaling");
         expect(filled()).toHaveStyle({ transform: "translateX(-38%)" });
     });
 
@@ -901,7 +901,7 @@ describe("what the canvas reports about a run", () => {
 
         draw("side");
 
-        expect(bar()).toHaveTextContent("Face Recovery");
+        expect(bar()).toHaveTextContent("Restoring faces");
     });
 
     it("names the enhancement generically for a family it has no name for", () => {

@@ -370,13 +370,13 @@
         },
         "progress": {
             "downloading": "Downloading {{percent}}%",
-            "denoise": "Denoise",
-            "faceRecovery": "Face Recovery",
-            "colorization": "Colorize",
-            "lightAdjustment": "Light Adjust",
-            "colorBalance": "Color Balance",
-            "upscale": "Upscale",
-            "sharpen": "Sharpen",
+            "denoise": "Denoising",
+            "faceRecovery": "Restoring faces",
+            "colorization": "Colorizing",
+            "lightAdjustment": "Adjusting light",
+            "colorBalance": "Balancing color",
+            "upscale": "Upscaling",
+            "sharpen": "Sharpening",
             "enhancing": "Enhancing"
         }
     },

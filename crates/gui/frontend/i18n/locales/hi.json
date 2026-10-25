@@ -370,13 +370,13 @@
         },
         "progress": {
             "downloading": "डाउनलोड हो रहा है {{percent}}%",
-            "denoise": "नॉइज़",
-            "faceRecovery": "चेहरे",
-            "colorization": "रंगीकरण",
-            "lightAdjustment": "प्रकाश",
-            "colorBalance": "रंग",
-            "upscale": "अपस्केल",
-            "sharpen": "शार्पन",
+            "denoise": "नॉइज़ हटाना जारी",
+            "faceRecovery": "चेहरे सुधारना जारी",
+            "colorization": "रंग भरना जारी",
+            "lightAdjustment": "प्रकाश समायोजन जारी",
+            "colorBalance": "रंग संतुलन जारी",
+            "upscale": "अपस्केलिंग जारी",
+            "sharpen": "शार्पनिंग जारी",
             "enhancing": "सुधार जारी"
         }
     },

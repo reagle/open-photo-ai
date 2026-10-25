@@ -190,11 +190,11 @@ describe("which model is selected", () => {
 });
 
 describe("what a row, a menu entry and a chip are drawn from", () => {
-    it("gives every enhancement a short name and a glyph", () => {
-        // Both are consumed without a fallback - `<entry.icon />` and `t(entry.shortNameKey)` - so an
+    it("gives every enhancement an activity and a glyph", () => {
+        // Both are consumed without a fallback - `<entry.icon />` and `t(entry.activityKey)` - so an
         // enhancement added to the list without one of them is a blank in the menu or on the chip.
-        for (const { family, shortNameKey, icon } of ENHANCEMENTS) {
-            expect(shortNameKey, family).toBeTruthy();
+        for (const { family, activityKey, icon } of ENHANCEMENTS) {
+            expect(activityKey, family).toBeTruthy();
             expect(icon, family).toBeTruthy();
         }
     });
@@ -207,10 +207,10 @@ describe("what a row, a menu entry and a chip are drawn from", () => {
         expect(new Set(icons).size).toBe(icons.length);
     });
 
-    it("gives each of them its own short name", () => {
+    it("gives each of them its own activity", () => {
         // The chip names one enhancement at a time, so two families sharing a key would draw the
         // same word for two different operations.
-        const keys = ENHANCEMENTS.map(({ shortNameKey }) => shortNameKey);
+        const keys = ENHANCEMENTS.map(({ activityKey }) => activityKey);
 
         expect(new Set(keys).size).toBe(keys.length);
     });

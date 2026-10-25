@@ -211,6 +211,8 @@ export const routeProgress = (report: ExportProgress) => {
 
     setStage(
         current.path,
-        report.phase === "writing" ? { stage: "writing" } : { stage: "enhancing", fraction: report.chainFraction },
+        report.phase === "writing"
+            ? { stage: "writing" }
+            : { stage: "enhancing", fraction: report.chainFraction, family: report.family },
     );
 };

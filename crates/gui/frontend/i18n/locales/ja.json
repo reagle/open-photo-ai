@@ -360,13 +360,13 @@
         },
         "progress": {
             "downloading": "ダウンロード中 {{percent}}%",
-            "denoise": "ノイズ除去",
-            "faceRecovery": "顔の復元",
-            "colorization": "カラー化",
-            "lightAdjustment": "明るさ調整",
-            "colorBalance": "カラーバランス",
-            "upscale": "アップスケール",
-            "sharpen": "シャープ",
+            "denoise": "ノイズ除去中",
+            "faceRecovery": "顔を復元中",
+            "colorization": "カラー化中",
+            "lightAdjustment": "明るさを調整中",
+            "colorBalance": "カラーバランス調整中",
+            "upscale": "アップスケール中",
+            "sharpen": "シャープ化中",
             "enhancing": "補正中"
         }
     },

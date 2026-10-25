@@ -370,13 +370,13 @@
         },
         "progress": {
             "downloading": "Laddar ner {{percent}} %",
-            "denoise": "Brusreducering",
-            "faceRecovery": "Ansikten",
-            "colorization": "Kolorering",
-            "lightAdjustment": "Ljusjustering",
-            "colorBalance": "Färgbalans",
-            "upscale": "Uppskalning",
-            "sharpen": "Skärpa",
+            "denoise": "Brusreducerar",
+            "faceRecovery": "Återställer ansikten",
+            "colorization": "Färglägger",
+            "lightAdjustment": "Justerar ljus",
+            "colorBalance": "Balanserar färger",
+            "upscale": "Skalar upp",
+            "sharpen": "Skärper",
             "enhancing": "Förbättrar"
         }
     },

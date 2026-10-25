@@ -8,7 +8,7 @@ import { showInLabel } from "@/features/files/FileOptionsMenu";
 import { framedDimensions } from "@/ipc/crop";
 import { type ExportName, revealExport } from "@/ipc/export";
 import { renditionFor } from "@/ipc/images";
-import { upscaleFactor } from "@/lib/enhancements";
+import { progressLabelKey, upscaleFactor } from "@/lib/enhancements";
 import { report } from "@/lib/report";
 import { cn, formatBytes, formatDimensions } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
@@ -83,18 +83,24 @@ const FailedPill = ({ reason }: { reason: string }) => {
     );
 };
 
-/** What a row's pill reads, by stage. */
+/**
+ * What a row's pill reads, by stage - and while it is enhancing, what the enhancement it is on is doing, in the words
+ * the preview's chip uses: *Upscaling* rather than *Enhancing* for every operation of the chain. *Enhancing* is what it
+ * reads until the first report names one.
+ */
 const StagePill = ({ row }: { row: Row }) => {
     const { t } = useTranslation();
 
     if (row.stage === "failed") return <FailedPill reason={row.reason} />;
+
+    const activity = row.stage === "enhancing" ? progressLabelKey(row.family) : undefined;
 
     return (
         <span
             data-slot="export-stage"
             className={cn("flex h-5 items-center rounded-full px-2 text-xs", STAGE_PILL[row.stage])}
         >
-            {t(`export.queue.${row.stage}`)}
+            {activity ? t(activity) : t(`export.queue.${row.stage}`)}
         </span>
     );
 };

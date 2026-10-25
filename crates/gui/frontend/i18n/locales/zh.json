@@ -360,13 +360,13 @@
         },
         "progress": {
             "downloading": "下载中 {{percent}}%",
-            "denoise": "降噪",
-            "faceRecovery": "人脸修复",
-            "colorization": "上色",
-            "lightAdjustment": "光线调整",
-            "colorBalance": "色彩平衡",
-            "upscale": "放大",
-            "sharpen": "锐化",
+            "denoise": "降噪中",
+            "faceRecovery": "修复人脸中",
+            "colorization": "上色中",
+            "lightAdjustment": "调整光线中",
+            "colorBalance": "平衡色彩中",
+            "upscale": "放大中",
+            "sharpen": "锐化中",
             "enhancing": "增强中"
         }
     },

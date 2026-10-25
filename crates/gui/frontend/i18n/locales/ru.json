@@ -390,13 +390,13 @@
         },
         "progress": {
             "downloading": "Загрузка {{percent}} %",
-            "denoise": "Шумоподавление",
-            "faceRecovery": "Лица",
+            "denoise": "Удаление шума",
+            "faceRecovery": "Восстановление лиц",
             "colorization": "Колоризация",
-            "lightAdjustment": "Свет",
-            "colorBalance": "Цвет",
+            "lightAdjustment": "Настройка света",
+            "colorBalance": "Балансировка цвета",
             "upscale": "Увеличение",
-            "sharpen": "Резкость",
+            "sharpen": "Повышение резкости",
             "enhancing": "Улучшение"
         }
     },
