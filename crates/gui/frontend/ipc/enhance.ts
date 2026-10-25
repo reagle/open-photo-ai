@@ -47,7 +47,13 @@ export type Operation = {
 export type FaceChoice = { skipped: string[]; restored: string[] };
 
 /** Current run phase, per Rust's `Stage`. */
-type Stage = "installing" | "running";
+type Stage = "installing" | "preparing" | "running";
+
+/**
+ * What a session is being opened on, spelled as Rust's `ExecutionProvider` serializes a resolved one - never `Auto`,
+ * which is a request rather than a provider.
+ */
+export type PreparingProvider = "CPU" | "CoreML" | "CUDA" | "TensorRT" | "WebGPU";
 
 /**
  * One progress report for a run.
@@ -68,6 +74,11 @@ export type RunProgress = {
     chainFraction: number;
     /** `0..1` progress of an active model download, if any. */
     installFraction?: number;
+    /**
+     * What the session is being opened on, while `stage` is `preparing`: the first time on CoreML or TensorRT that is
+     * a compile of minutes with nothing to measure, and `chainFraction` does not move until it is done.
+     */
+    provider?: PreparingProvider;
 };
 
 /**

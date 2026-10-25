@@ -4,6 +4,8 @@ use std::sync::{Arc, Mutex};
 
 use crate::models::{ArtifactId, Subject};
 use crate::progress::{OnProgress, Progress};
+use crate::providers::ExecutionProvider;
+use crate::sessions::OnPreparing;
 use crate::task::lock;
 
 // Carried from the reference implementation, including the detail that makes it work: the split is decided by whether
@@ -22,6 +24,18 @@ pub enum Stage {
     // Nested rather than flattened also keeps the install layer at one representation of itself.
     /// The operation's model is being put on disk, and this is the install's own report.
     Installing(Progress),
+    // A stage of its own because it is the one wait nothing else accounts for. Opening a model is a fifth of a second
+    // on the CPU and, the first time, minutes on an execution provider that compiles it — CoreML turns the graph into
+    // an MLProgram and the system then specializes that for the Neural Engine, TensorRT builds an engine — and during
+    // those minutes nothing transfers and no tile runs, so without it a front end has nothing to say but a bar
+    // sitting still. Reported once per session opened, not per request: a session already resident reports nothing.
+    //
+    // It carries the provider and not a verdict on whether this will be slow, because this layer cannot know: what
+    // CoreML compiles is cached twice, once under `engines/` and once by the system, per application, where nothing
+    // here can see it. A front end that waits a moment before saying "this can take minutes" is the one that knows.
+    /// The operation's model is on disk and a session is being opened on it, on this provider — which may mean
+    /// compiling it for that provider first. Followed by [`Running`](Self::Running) once it is open.
+    Preparing(ExecutionProvider),
     /// The model is on disk and is being run over the image.
     Running,
     // A variant of its own rather than `Running` reported at `1.0`, so that a front end can say *"Upscale — from an
@@ -157,6 +171,20 @@ impl OperationProgress {
             let fraction = (position as f64 + progress.fraction) * share;
             reporter.emit(Stage::Installing(progress.clone()), fraction, true);
         }))
+    }
+
+    /// The callback to hand to the session acquisition for a session being opened, reporting
+    /// [`Stage::Preparing`] where the install left off.
+    ///
+    /// `None` where nobody is listening, as for [`installing`](Self::installing).
+    pub(crate) fn preparing(self: &Arc<Self>) -> Option<OnPreparing> {
+        self.on_progress.as_ref()?;
+
+        let reporter = Arc::clone(self);
+        // At no fraction of its own: what opening a session will cost is unknowable, so the bar holds where the
+        // install left it — the clamp in `emit` keeps it there — and moves again with the first tile. Not an install
+        // either, so the split of the operation's range is left as it is.
+        Some(Arc::new(move |provider| reporter.emit(Stage::Preparing(provider), 0.0, false)))
     }
 
     /// Reports the run's own `0.0..=1.0` position, mapped onto whatever the install left of this operation's range.
@@ -372,6 +400,36 @@ mod tests {
     }
 
     #[test]
+    fn preparing_a_session_holds_the_bar_where_the_install_left_it() {
+        // A first CoreML compile is minutes with nothing to measure, so the report says which provider is being
+        // prepared for and leaves the bar alone; the run that follows starts where the install ended.
+        let (progress, seen) = recording(1);
+        let operation = Arc::new(progress.operation(0, kyoto(4.0)));
+
+        let install = operation.installing(&requires(&[4])).unwrap();
+        install(&installing(weights(4), 1.0));
+        operation.preparing().unwrap()(ExecutionProvider::CoreMl);
+        operation.running(0.0);
+
+        let reports = seen.lock().unwrap().clone();
+        assert_eq!(reports[1].stage, Stage::Preparing(ExecutionProvider::CoreMl));
+        assert!((reports[1].chain_fraction - INSTALL_SHARE).abs() < 1e-9, "preparing moved the bar");
+        assert!((reports[2].chain_fraction - INSTALL_SHARE).abs() < 1e-9, "the run restarted the bar");
+    }
+
+    #[test]
+    fn preparing_a_model_already_on_disk_does_not_give_up_the_install_share() {
+        // Preparing is not an install: a model that was on disk keeps the whole of its operation's range for the run.
+        let (progress, seen) = recording(1);
+        let operation = Arc::new(progress.operation(0, kyoto(2.0)));
+
+        operation.preparing().unwrap()(ExecutionProvider::Cpu);
+        operation.running(0.5);
+
+        assert_eq!(chain(&seen), vec![0.0, 0.5]);
+    }
+
+    #[test]
     fn a_caller_that_asked_for_no_reports_is_charged_nothing() {
         let progress = ChainProgress::new(None, 2);
         let operation = Arc::new(progress.operation(0, kyoto(2.0)));
@@ -379,6 +437,7 @@ mod tests {
         assert!(!progress.wanted());
         // No callback to install against, so the install layer is handed nothing rather than a closure that discards.
         assert!(operation.installing(&requires(&[2])).is_none());
+        assert!(operation.preparing().is_none());
         operation.running(0.5);
     }
 }

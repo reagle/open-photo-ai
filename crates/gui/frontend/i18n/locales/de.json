@@ -266,6 +266,7 @@
             "pipelineOrder": "in Pipeline-Reihenfolge",
             "queued": "Wartend",
             "analysing": "Analyse",
+            "preparing": "Wird geladen",
             "enhancing": "Verbessern",
             "writing": "Schreiben",
             "done": "Fertig",
@@ -462,7 +463,10 @@
             "sharpen": "Wird geschärft",
             "restore": "Wird restauriert",
             "grain": "Körnung",
-            "enhancing": "Wird verbessert"
+            "enhancing": "Wird verbessert",
+            "optimizing": "Modell {{model}} wird optimiert",
+            "loading": "Modell {{model}} wird geladen",
+            "firstUse": "Nur beim ersten Mal, kann einige Minuten dauern"
         }
     },
     "menu": {
