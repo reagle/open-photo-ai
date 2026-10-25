@@ -204,6 +204,7 @@
             "pipelineOrder": "パイプライン順",
             "queued": "待機中",
             "analysing": "分析中",
+            "preparing": "読み込み中",
             "enhancing": "補正中",
             "writing": "書き込み中",
             "done": "完了",
@@ -367,7 +368,10 @@
             "colorBalance": "カラーバランス調整中",
             "upscale": "アップスケール中",
             "sharpen": "シャープ化中",
-            "enhancing": "補正中"
+            "enhancing": "補正中",
+            "optimizing": "{{model}} モデルを最適化中",
+            "loading": "{{model}} モデルを読み込み中",
+            "firstUse": "初回のみ。数分かかることがあります"
         }
     },
     "menu": {

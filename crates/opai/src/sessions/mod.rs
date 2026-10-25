@@ -95,7 +95,7 @@ mod flight;
 mod live;
 mod resident;
 
-pub(crate) use flight::{Install, Interest};
+pub(crate) use flight::{Install, Interest, OnPreparing};
 use resident::spawn_sweeper;
 pub(crate) use resident::{SessionCache, SessionHandle};
 
@@ -406,6 +406,10 @@ impl<S: Send + 'static> Sessions<S> {
                     // The graph is the artifact's own name, the same rule the descriptor composes a model's version from;
                     // a model too large for the protobuf limit keeps its weights in a sibling the runtime opens itself.
                     let model = dir.join(format!("{artifact}.onnx"));
+                    // Reported here, after the install and before the open, because this is where the wait changes
+                    // kind: nothing more will transfer, and what follows can be a compile of minutes with nothing to
+                    // measure. On the rung's provider, so a fallback to the CPU reports itself as such.
+                    installing.preparing(resolved);
 
                     // Not stopped once it is under way, and that is deliberate: opening a model is a compile that can run
                     // to minutes, it is what a later run would have to pay all over again, and there is nothing to

@@ -64,6 +64,9 @@ pub enum Activity {
     Choosing,
     /// The model of an operation of this family is being fetched.
     Downloading(Family),
+    /// The model of an operation of this family is on disk and is being opened, which the first time on CoreML or
+    /// TensorRT is minutes of compiling it with nothing to count.
+    Loading(Family),
     /// An operation of this family runs, or is served from the run cache.
     Applying(Family),
 }
@@ -131,6 +134,7 @@ pub fn row(percent: u8, path: &str, state: RowState, color: bool) -> Line<'stati
         RowState::Working(Activity::Preparing) => ("🖼️", "Preparing to enhance", None, ""),
         RowState::Working(Activity::Choosing) => ("🖼️", "Choosing enhancements for", None, ""),
         RowState::Working(Activity::Downloading(family)) => ("🖼️", "Downloading ", Some(family_label(family)), " for"),
+        RowState::Working(Activity::Loading(family)) => ("🖼️", "Loading ", Some(family_label(family)), " for"),
         RowState::Working(Activity::Applying(family)) => ("🖼️", "Applying ", Some(family_label(family)), " to"),
         RowState::Applied => ("🖼️", "Enhancements applied to", None, ""),
         RowState::Failed => ("🧨", "Failed to enhance", None, ""),
@@ -348,6 +352,7 @@ mod tests {
         let texts = [
             row(0, path, RowState::Working(Activity::Preparing), false),
             row(12, path, RowState::Working(Activity::Downloading(Family::Upscale)), false),
+            row(20, path, RowState::Working(Activity::Loading(Family::Sharpen)), false),
             row(42, path, RowState::Working(Activity::Applying(Family::FaceRecovery)), false),
             row(42, path, APPLYING, false),
             row(100, path, RowState::Applied, false),
@@ -361,6 +366,7 @@ mod tests {
             [
                 "🖼️ [  0%] Preparing to enhance          photos/b.jpg",
                 "🖼️ [ 12%] Downloading Upscale for       photos/b.jpg",
+                "🖼️ [ 20%] Loading Sharpen for           photos/b.jpg",
                 "🖼️ [ 42%] Applying Face Recovery to     photos/b.jpg",
                 "🖼️ [ 42%] Applying Upscale to           photos/b.jpg",
                 "🖼️ [100%] Enhancements applied to       photos/b.jpg",
@@ -381,6 +387,7 @@ mod tests {
         ];
         for family in Family::ALL {
             states.push(RowState::Working(Activity::Downloading(family)));
+            states.push(RowState::Working(Activity::Loading(family)));
             states.push(RowState::Working(Activity::Applying(family)));
         }
 

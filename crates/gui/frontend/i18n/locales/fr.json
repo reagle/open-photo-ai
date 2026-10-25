@@ -208,6 +208,7 @@
             "pipelineOrder": "dans l'ordre de traitement",
             "queued": "En attente",
             "analysing": "Analyse",
+            "preparing": "Chargement",
             "enhancing": "Amélioration",
             "writing": "Écriture",
             "done": "Terminé",
@@ -387,7 +388,10 @@
             "colorBalance": "Équilibrage des couleurs",
             "upscale": "Agrandissement",
             "sharpen": "Accentuation",
-            "enhancing": "Amélioration"
+            "enhancing": "Amélioration",
+            "optimizing": "Optimisation du modèle {{model}}",
+            "loading": "Chargement du modèle {{model}}",
+            "firstUse": "Première utilisation seulement, peut prendre quelques minutes"
         }
     },
     "menu": {

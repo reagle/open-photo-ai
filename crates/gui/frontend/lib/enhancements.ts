@@ -441,6 +441,36 @@ export const progressLabelKey = (family: Family | undefined): ParseKeys | undefi
 };
 
 /**
+ * The name of the model a chain runs for the family a report carries, as the catalogue publishes it - *Kazan* - for
+ * the chip to say which model is being prepared.
+ *
+ * Read off the chain rather than the report: a report names its family and not its model, and the chain holds at most
+ * one operation per family. Where it holds none - a detection, which no menu offers - or the catalogue has not
+ * arrived or no longer publishes the model, the answer is the enhancement's own name (*Face Recovery*), or its
+ * codename, rather than nothing.
+ */
+export const preparingName = (
+    t: TFunction,
+    families: FamilyEntry[],
+    operations: readonly Operation[],
+    family: Family | undefined,
+): string | undefined => {
+    if (!family) return undefined;
+
+    const operation = operations.find((candidate) => candidate.family === family);
+    if (operation) {
+        const entry = families.find((published) => published.family === operation.family);
+
+        return variantOf(entry, operation.codename)?.label ?? operation.codename;
+    }
+
+    const reported = REPORTED_AS[family] ?? family;
+    const nameKey = ENHANCEMENTS.find((entry) => entry.family === reported)?.nameKey;
+
+    return nameKey && t(nameKey);
+};
+
+/**
  * What the library calls an upscale's multiplier: its own `Scale::NAME`, the name the catalogue publishes
  * the range under and the operation carries the value under.
  */

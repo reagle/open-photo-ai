@@ -86,14 +86,15 @@ const FailedPill = ({ reason }: { reason: string }) => {
 /**
  * What a row's pill reads, by stage - and while it is enhancing, what the enhancement it is on is doing, in the words
  * the preview's chip uses: *Upscaling* rather than *Enhancing* for every operation of the chain. *Enhancing* is what it
- * reads until the first report names one.
+ * reads until the first report names one, and *Loading* while that enhancement's session is being opened.
  */
 const StagePill = ({ row }: { row: Row }) => {
     const { t } = useTranslation();
 
     if (row.stage === "failed") return <FailedPill reason={row.reason} />;
 
-    const activity = row.stage === "enhancing" ? progressLabelKey(row.family) : undefined;
+    const activity =
+        row.stage !== "enhancing" ? undefined : row.preparing ? "export.queue.preparing" : progressLabelKey(row.family);
 
     return (
         <span

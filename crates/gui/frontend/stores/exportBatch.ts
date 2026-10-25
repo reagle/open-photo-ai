@@ -14,9 +14,10 @@ export type Row =
     | { stage: "analysing" }
     /**
      * Its enhancements are running; `fraction` is how far through the chain, from 0 to 1, and `family` the
-     * enhancement the chain is on, once a report has said - what the pill names in place of *Enhancing*.
+     * enhancement the chain is on, once a report has said - what the pill names in place of *Enhancing*. `preparing`
+     * while that enhancement's session is being opened, which the first time on CoreML or TensorRT is minutes.
      */
-    | { stage: "enhancing"; fraction: number; family?: Family }
+    | { stage: "enhancing"; fraction: number; family?: Family; preparing?: true }
     | { stage: "writing" }
     /** Written: `path` is what was actually written, the numbered name where one was, and `bytes` how much. */
     | { stage: "done"; path: string; bytes: number }

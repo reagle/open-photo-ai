@@ -213,6 +213,11 @@ export const routeProgress = (report: ExportProgress) => {
         current.path,
         report.phase === "writing"
             ? { stage: "writing" }
-            : { stage: "enhancing", fraction: report.chainFraction, family: report.family },
+            : {
+                  stage: "enhancing",
+                  fraction: report.chainFraction,
+                  family: report.family,
+                  ...(report.stage === "preparing" && { preparing: true }),
+              },
     );
 };

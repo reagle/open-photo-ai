@@ -77,7 +77,7 @@ fn installing_artifacts(reports: &[InferenceProgress]) -> Vec<String> {
         .iter()
         .filter_map(|report| match &report.stage {
             Stage::Installing(progress) => Some(progress.dependency.as_str().to_string()),
-            Stage::Running | Stage::Cached => None,
+            Stage::Preparing(_) | Stage::Running | Stage::Cached => None,
         })
         .collect()
 }

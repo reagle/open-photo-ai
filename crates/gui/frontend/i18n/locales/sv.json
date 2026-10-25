@@ -206,6 +206,7 @@
             "pipelineOrder": "i pipelineordning",
             "queued": "I kö",
             "analysing": "Analyserar",
+            "preparing": "Läser in",
             "enhancing": "Förbättrar",
             "writing": "Skriver",
             "done": "Klar",
@@ -377,7 +378,10 @@
             "colorBalance": "Balanserar färger",
             "upscale": "Skalar upp",
             "sharpen": "Skärper",
-            "enhancing": "Förbättrar"
+            "enhancing": "Förbättrar",
+            "optimizing": "Optimerar modellen {{model}}",
+            "loading": "Läser in modellen {{model}}",
+            "firstUse": "Bara första gången, kan ta några minuter"
         }
     },
     "menu": {
