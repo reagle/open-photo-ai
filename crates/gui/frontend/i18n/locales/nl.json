@@ -321,7 +321,8 @@
             "models": {
                 "moscow": "Gebruik dit model wanneer de onscherpte komt doordat de camera niet scherpstelde en niet door beweging, bijvoorbeeld portretten met een wazige achter- of voorgrond, macrofoto's die zacht zijn geworden, of elke scène waarin de lens op het verkeerde vlak scherpstelde.",
                 "petersburg": "Gebruik dit model wanneer je snelle, lichte bewegingsontscherping nodig hebt en efficiëntie belangrijker is dan het laatste beetje kwaliteit. Het is geschikt voor actiebeelden en handmatige cameratrillingen en is een solide keuze op beperkte hardware.",
-                "novgorod": "Gebruik dit model wanneer de onscherpte komt door cameratrillingen of snel bewegende onderwerpen, bijvoorbeeld sport, handmatige opnamen bij weinig licht, of elke foto waarbij er iets bewoog tijdens de belichting. Het stelt maximale herstelkwaliteit boven snelheid; goed wanneer het resultaat telt."
+                "novgorod": "Gebruik dit model wanneer de onscherpte komt door cameratrillingen of snel bewegende onderwerpen, bijvoorbeeld sport, handmatige opnamen bij weinig licht, of elke foto waarbij er iets bewoog tijdens de belichting. Het stelt maximale herstelkwaliteit boven snelheid; goed wanneer het resultaat telt.",
+                "kazan": "Gebruik dit model wanneer de onscherpte te sterk is voor de andere — bijv. een onscherp gezicht, of een foto van een oude camera die nooit echt scherp was. Het tekent aannemelijke details opnieuw in plaats van ze te herstellen, dus het kan gezichten, texturen en kleine tekst veranderen; verlaag de sterkte als het resultaat verzonnen lijkt. Het is trager dan de andere verscherpingsmodellen en een grote download."
             }
         },
         "upscale": {

@@ -321,7 +321,8 @@
             "models": {
                 "moscow": "Använd den här modellen när oskärpan beror på att kameran var ur fokus snarare än på rörelse — t.ex. porträtt med suddig bakgrund eller förgrund, makrofoton som blivit mjuka, eller motiv där objektivet inte fokuserade på rätt plan.",
                 "petersburg": "Använd den här modellen när du behöver snabb, lättviktig rörelseoskärpereducering och effektivitet betyder mer än att pressa ut varenda kvalitetsprocent. Den passar bra för actionmaterial och handhållna skakningar, och är ett stabilt val på begränsad hårdvara.",
-                "novgorod": "Använd den här modellen när oskärpan orsakas av kamerarörelse eller snabba motiv — t.ex. sport, handhållna bilder i svagt ljus, eller foton där något rörde sig under exponeringen. Den prioriterar maximal återställningskvalitet framför hastighet; bra när resultatet betyder mest."
+                "novgorod": "Använd den här modellen när oskärpan orsakas av kamerarörelse eller snabba motiv — t.ex. sport, handhållna bilder i svagt ljus, eller foton där något rörde sig under exponeringen. Den prioriterar maximal återställningskvalitet framför hastighet; bra när resultatet betyder mest.",
+                "kazan": "Använd den här modellen när oskärpan är för kraftig för de andra — t.ex. ett ansikte ur fokus, eller ett foto från en gammal kamera som aldrig var riktigt skarpt. Den ritar om trovärdiga detaljer i stället för att återställa dem, så den kan ändra ansikten, texturer och liten text; sänk styrkan om resultatet ser påhittat ut. Den är långsammare än de andra skärpemodellerna och en stor nedladdning."
             }
         },
         "upscale": {

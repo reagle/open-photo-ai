@@ -313,7 +313,8 @@
             "models": {
                 "moscow": "Gunakan model ini saat keburaman berasal dari kamera yang tidak fokus, bukan dari gerakan, misalnya potret dengan latar belakang atau latar depan yang buram, foto makro yang menjadi lembut, atau pemandangan apa pun ketika lensa gagal fokus pada bidang yang tepat.",
                 "petersburg": "Gunakan model ini saat Anda membutuhkan penghilangan blur gerakan yang cepat dan ringan, serta efisiensi lebih penting daripada mengejar kualitas terakhir. Cocok untuk rekaman aksi dan guncangan kamera saat dipegang, dan merupakan pilihan solid pada perangkat keras terbatas.",
-                "novgorod": "Gunakan model ini saat keburaman disebabkan oleh guncangan kamera atau subjek yang bergerak cepat, misalnya olahraga, foto genggam dalam cahaya redup, atau foto apa pun yang objeknya bergerak saat pencahayaan. Model ini mengutamakan kualitas pemulihan maksimal dibanding kecepatan; bagus ketika hasil adalah yang utama."
+                "novgorod": "Gunakan model ini saat keburaman disebabkan oleh guncangan kamera atau subjek yang bergerak cepat, misalnya olahraga, foto genggam dalam cahaya redup, atau foto apa pun yang objeknya bergerak saat pencahayaan. Model ini mengutamakan kualitas pemulihan maksimal dibanding kecepatan; bagus ketika hasil adalah yang utama.",
+                "kazan": "Gunakan model ini saat keburaman terlalu kuat untuk model lain — mis. wajah yang tidak fokus, atau foto dari kamera lama yang memang tidak pernah benar-benar tajam. Model ini menggambar ulang detail yang masuk akal alih-alih memulihkannya, sehingga dapat mengubah wajah, tekstur, dan teks kecil; turunkan kekuatannya jika hasilnya tampak dibuat-buat. Model ini lebih lambat daripada model penajam lain dan unduhannya besar."
             }
         },
         "upscale": {

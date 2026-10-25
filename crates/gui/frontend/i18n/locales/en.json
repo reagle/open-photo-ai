@@ -321,7 +321,8 @@
             "models": {
                 "moscow": "Use this model when blur comes from the camera being out of focus rather than from movement — e.g. portraits with a blurry background or foreground, macro photography gone soft, or any scene where a lens failed to focus on the right plane.",
                 "petersburg": "Use this model when you need fast, lightweight motion deblurring and efficiency matters more than squeezing out every last bit of quality. It's well-suited for action footage and handheld camera shake, and it's a solid choice when running on limited hardware.",
-                "novgorod": "Use this model when blur is caused by camera shake or fast-moving subjects — e.g. sports, handheld shots in low light, or any photo where something moved during exposure. It prioritizes maximum restoration quality over speed; good when results matter most."
+                "novgorod": "Use this model when blur is caused by camera shake or fast-moving subjects — e.g. sports, handheld shots in low light, or any photo where something moved during exposure. It prioritizes maximum restoration quality over speed; good when results matter most.",
+                "kazan": "Use this model when the blur is too strong for the others — e.g. an out-of-focus face, or a photo from an old camera that was never quite sharp. It redraws plausible detail rather than recovering it, so it can change faces, textures and small text; lower the strength if the result looks invented. It is slower than the other sharpeners and a large download."
             }
         },
         "upscale": {

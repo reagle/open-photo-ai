@@ -321,7 +321,8 @@
             "models": {
                 "moscow": "Verwenden Sie dieses Modell, wenn die Unschärfe von einer falsch fokussierten Kamera stammt und nicht von Bewegung, etwa Porträts mit unscharfem Hinter- oder Vordergrund, weich geratene Makroaufnahmen oder jede Szene, in der das Objektiv auf die falsche Ebene scharfgestellt hat.",
                 "petersburg": "Verwenden Sie dieses Modell, wenn Sie eine schnelle, ressourcenschonende Bewegungsentschärfung brauchen und Effizienz wichtiger ist als das letzte Quäntchen Qualität. Es eignet sich gut für Actionaufnahmen und Verwacklungen aus der Hand und ist eine solide Wahl auf begrenzter Hardware.",
-                "novgorod": "Verwenden Sie dieses Modell, wenn die Unschärfe durch Verwackeln oder schnelle Motive entsteht, etwa bei Sport, Handaufnahmen bei wenig Licht oder jedem Foto, bei dem sich während der Belichtung etwas bewegt hat. Es stellt maximale Wiederherstellungsqualität über Geschwindigkeit; gut, wenn das Ergebnis zählt."
+                "novgorod": "Verwenden Sie dieses Modell, wenn die Unschärfe durch Verwackeln oder schnelle Motive entsteht, etwa bei Sport, Handaufnahmen bei wenig Licht oder jedem Foto, bei dem sich während der Belichtung etwas bewegt hat. Es stellt maximale Wiederherstellungsqualität über Geschwindigkeit; gut, wenn das Ergebnis zählt.",
+                "kazan": "Verwende dieses Modell, wenn die Unschärfe für die anderen zu stark ist — z. B. ein unscharfes Gesicht oder ein Foto aus einer alten Kamera, das nie ganz scharf war. Es zeichnet plausible Details neu, statt sie wiederherzustellen, und kann daher Gesichter, Texturen und kleinen Text verändern; verringere die Stärke, wenn das Ergebnis erfunden wirkt. Es ist langsamer als die anderen Schärfungsmodelle und ein großer Download."
             }
         },
         "upscale": {

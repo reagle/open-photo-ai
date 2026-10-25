@@ -329,7 +329,8 @@
             "models": {
                 "moscow": "Utilisez ce modèle lorsque le flou vient d'une mise au point ratée plutôt que d'un mouvement, par exemple des portraits avec un arrière-plan ou un premier plan flou, une macro devenue molle, ou toute scène où l'objectif a fait le point sur le mauvais plan.",
                 "petersburg": "Utilisez ce modèle lorsque vous avez besoin d'un traitement du flou de mouvement rapide et léger et que l'efficacité compte plus que le dernier gramme de qualité. Il convient bien aux séquences d'action et au bougé à main levée, et c'est un choix solide sur du matériel limité.",
-                "novgorod": "Utilisez ce modèle lorsque le flou provient d'un bougé de l'appareil ou de sujets rapides : sport, prises de vue à main levée en basse lumière, ou toute photo où quelque chose a bougé pendant l'exposition. Il privilégie la qualité de restauration maximale à la vitesse ; parfait quand le résultat prime."
+                "novgorod": "Utilisez ce modèle lorsque le flou provient d'un bougé de l'appareil ou de sujets rapides : sport, prises de vue à main levée en basse lumière, ou toute photo où quelque chose a bougé pendant l'exposition. Il privilégie la qualité de restauration maximale à la vitesse ; parfait quand le résultat prime.",
+                "kazan": "Utilisez ce modèle lorsque le flou est trop fort pour les autres — p. ex. un visage hors de mise au point, ou une photo d'un vieil appareil qui n'a jamais été vraiment nette. Il redessine des détails plausibles au lieu de les récupérer, il peut donc modifier les visages, les textures et les petits textes ; baissez l'intensité si le résultat semble inventé. Il est plus lent que les autres modèles de netteté et représente un gros téléchargement."
             }
         },
         "upscale": {

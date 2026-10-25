@@ -329,7 +329,8 @@
             "models": {
                 "moscow": "Usa questo modello quando la sfocatura deriva da una fotocamera fuori fuoco e non dal movimento, ad esempio ritratti con sfondo o primo piano sfocati, macrofotografie venute morbide o qualsiasi scena in cui l'obiettivo non ha messo a fuoco il piano giusto.",
                 "petersburg": "Usa questo modello quando ti serve una rimozione del mosso rapida e leggera e l'efficienza conta più dell'ultimo briciolo di qualità. È adatto a riprese d'azione e al tremolio della fotocamera a mano libera, ed è una scelta solida su hardware limitato.",
-                "novgorod": "Usa questo modello quando la sfocatura è causata dal tremolio della fotocamera o da soggetti in rapido movimento, ad esempio sport, scatti a mano libera con poca luce o qualsiasi foto in cui qualcosa si è mosso durante l'esposizione. Privilegia la massima qualità di ripristino rispetto alla velocità; ideale quando il risultato conta più di tutto."
+                "novgorod": "Usa questo modello quando la sfocatura è causata dal tremolio della fotocamera o da soggetti in rapido movimento, ad esempio sport, scatti a mano libera con poca luce o qualsiasi foto in cui qualcosa si è mosso durante l'esposizione. Privilegia la massima qualità di ripristino rispetto alla velocità; ideale quando il risultato conta più di tutto.",
+                "kazan": "Usa questo modello quando la sfocatura è troppo forte per gli altri — ad es. un volto fuori fuoco, o una foto di una vecchia fotocamera che non è mai stata davvero nitida. Ridisegna dettagli plausibili invece di recuperarli, quindi può alterare volti, texture e testo piccolo; riduci l'intensità se il risultato sembra inventato. È più lento degli altri modelli di nitidezza e richiede un download pesante."
             }
         },
         "upscale": {

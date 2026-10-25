@@ -321,7 +321,8 @@
             "models": {
                 "moscow": "Usa este modelo cuando el desenfoque venga de una cámara desenfocada y no del movimiento, por ejemplo retratos con el fondo o el primer plano borrosos, macrofotografía que salió suave, o cualquier escena donde el objetivo no enfocó el plano correcto.",
                 "petersburg": "Usa este modelo cuando necesites un desenfoque de movimiento rápido y ligero y la eficiencia importe más que exprimir hasta la última gota de calidad. Encaja bien con escenas de acción y trepidación de cámara, y es una opción sólida en hardware limitado.",
-                "novgorod": "Usa este modelo cuando el desenfoque venga de la trepidación de la cámara o de sujetos en movimiento rápido, por ejemplo deportes, tomas a pulso con poca luz o cualquier foto donde algo se movió durante la exposición. Prioriza la máxima calidad de restauración sobre la velocidad; ideal cuando el resultado es lo que más importa."
+                "novgorod": "Usa este modelo cuando el desenfoque venga de la trepidación de la cámara o de sujetos en movimiento rápido, por ejemplo deportes, tomas a pulso con poca luz o cualquier foto donde algo se movió durante la exposición. Prioriza la máxima calidad de restauración sobre la velocidad; ideal cuando el resultado es lo que más importa.",
+                "kazan": "Usa este modelo cuando el desenfoque es demasiado fuerte para los demás — p. ej., una cara desenfocada o una foto de una cámara antigua que nunca fue del todo nítida. Redibuja detalles plausibles en lugar de recuperarlos, así que puede cambiar caras, texturas y texto pequeño; baja la intensidad si el resultado parece inventado. Es más lento que los otros modelos de nitidez y una descarga grande."
             }
         },
         "upscale": {

@@ -321,7 +321,8 @@
             "models": {
                 "moscow": "Use este modelo quando o desfoque vem de a câmera estar fora de foco, e não de movimento — por exemplo, retratos com fundo ou primeiro plano borrado, macrofotografia que saiu suave, ou qualquer cena em que a lente não focou no plano certo.",
                 "petersburg": "Use este modelo quando você precisa remover desfoque de movimento de forma rápida e leve, e a eficiência importa mais do que extrair cada última gota de qualidade. Funciona bem em imagens de ação e tremor de câmera na mão, e é uma boa escolha em hardware limitado.",
-                "novgorod": "Use este modelo quando o desfoque vem do tremor da câmera ou de objetos em movimento rápido — por exemplo, esportes, fotos na mão com pouca luz, ou qualquer imagem em que algo se moveu durante a exposição. Ele prioriza a máxima qualidade de restauração em vez da velocidade; bom quando o resultado é o que mais importa."
+                "novgorod": "Use este modelo quando o desfoque vem do tremor da câmera ou de objetos em movimento rápido — por exemplo, esportes, fotos na mão com pouca luz, ou qualquer imagem em que algo se moveu durante a exposição. Ele prioriza a máxima qualidade de restauração em vez da velocidade; bom quando o resultado é o que mais importa.",
+                "kazan": "Use este modelo quando o desfoque é forte demais para os outros — p. ex., um rosto fora de foco ou uma foto de uma câmera antiga que nunca foi bem nítida. Ele redesenha detalhes plausíveis em vez de recuperá-los, então pode alterar rostos, texturas e textos pequenos; reduza a intensidade se o resultado parecer inventado. É mais lento que os outros modelos de nitidez e um download grande."
             }
         },
         "upscale": {
