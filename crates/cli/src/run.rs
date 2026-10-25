@@ -858,6 +858,7 @@ mod tests {
                 ("color_balance", "rio_fp16"),
                 ("sharpen", "moscow_fp16"),
                 ("upscale", "tokyo_fp16"),
+                ("restore", "kazan_fp16"),
             ],
         );
         let args = |line: &str| {

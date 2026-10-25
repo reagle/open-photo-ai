@@ -207,7 +207,7 @@ mod tests {
         SharedSettings::from_gui(
             "cpu",
             ["color_balance"],
-            [("denoise", "stockholm_fp16"), ("upscale", "osaka_int8"), ("sharpen", "moscow_fp32")],
+            [("denoise", "stockholm_fp16"), ("upscale", "saitama_fp16"), ("sharpen", "moscow_fp32")],
         )
     }
 
@@ -224,6 +224,7 @@ mod tests {
                 ("color_balance", "rio_fp16"),
                 ("sharpen", "moscow_fp16"),
                 ("upscale", "tokyo_fp16"),
+                ("restore", "kazan_fp16"),
             ],
         )
     }
@@ -244,7 +245,7 @@ mod tests {
 
         assert_eq!(settings.processor, Sourced { value: Processor::Cpu, source: Source::Gui });
         assert_eq!(settings.qualities.of(Family::Denoise), Quality::Sd);
-        assert_eq!(settings.qualities.of(Family::Upscale), Quality::Sd, "Osaka's INT8 is its second build");
+        assert_eq!(settings.qualities.of(Family::Upscale), Quality::Sd, "Saitama's FP16 is its second build");
         assert_eq!(settings.qualities.of(Family::Sharpen), Quality::Hd, "Moscow's FP32 is its first");
         assert_eq!(settings.qualities.of(Family::LightAdjustment), Quality::Hd, "never chosen");
         assert_eq!(settings.qualities.label(), "mixed");

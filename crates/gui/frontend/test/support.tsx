@@ -270,9 +270,6 @@ export const CATALOGUE: FamilyEntry[] = [
         variant("tokyo", "Tokyo", ["fp32", "fp16"], SCALE),
         variant("kyoto", "Kyoto", ["fp32", "fp16"], SCALE),
         variant("saitama", "Saitama", ["fp32", "fp16"], SCALE),
-        // The one variant that does not publish the two float precisions: no fp32 build of its
-        // diffusion transformer was ever released, and it is now also published quantised to int8.
-        variant("osaka", "Osaka", ["fp16", "int8"], SCALE),
     ]),
     // Published, and drawn by nothing: "which model detects faces" is model vocabulary the library
     // declines to leave a front end to restate, but it is not an enhancement a user adds.
@@ -281,7 +278,12 @@ export const CATALOGUE: FamilyEntry[] = [
         variant("athens", "Athens", ["fp32", "fp16"], FACES_AND_FIDELITY),
         variant("santorini", "Santorini", ["fp32", "fp16"], FACES),
     ]),
-    family("restore", [variant("kazan", "Kazan", ["fp32", "fp16"], RESTORE)]),
+    family("restore", [
+        variant("kazan", "Kazan", ["fp32", "fp16"], RESTORE),
+        // The one variant that does not publish the two float precisions: no fp32 build of its
+        // diffusion transformer was ever released, and it is now also published quantised to int8.
+        variant("osaka", "Osaka", ["fp16", "int8"], RESTORE),
+    ]),
 ];
 
 /**

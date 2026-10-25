@@ -12,7 +12,9 @@ use rust_sak::ai::{self, CachePaths, ExecutionMode, ExecutionProvider, Tuning};
 
 use crate::models::operation::sealed::DataModel as _;
 use crate::models::test_support::{every_analysis, every_operation};
-use crate::models::{ArtifactId, FloatPrecision, OsakaPrecision, Scale, Upscale, UpscaleVariant};
+use crate::models::{
+    ArtifactId, FloatPrecision, OsakaPrecision, Restore, RestoreVariant, Scale, Strength, Upscale, UpscaleVariant,
+};
 use crate::pipeline::test_support::NoBackend;
 
 const ACCELERATORS: [ExecutionProvider; 4] = [
@@ -126,10 +128,20 @@ fn upscale(variant: UpscaleVariant) -> Upscale {
     Upscale::new(variant, Scale::new(4.0).expect("4.0 is in range"))
 }
 
+/// Osaka at `precision`, restoring at 4x at full strength.
+fn osaka(precision: OsakaPrecision) -> Restore {
+    Restore::new(RestoreVariant::Osaka(precision), Scale::new(4.0).expect("4.0 is in range"), Strength::clamped(1.0))
+}
+
 /// One CoreML option of `upscale`'s tuning.
 fn coreml(upscale: &Upscale, key: &str) -> String {
+    coreml_of(&upscale.profile(), key)
+}
+
+/// One CoreML option of `tuning`.
+fn coreml_of(tuning: &Tuning, key: &str) -> String {
     let artifact = crate::models::test_support::kyoto();
-    options(ExecutionProvider::CoreMl, &upscale.profile(), &artifact)[key].clone()
+    options(ExecutionProvider::CoreMl, tuning, &artifact)[key].clone()
 }
 
 #[test]
@@ -156,7 +168,7 @@ fn tokyo_and_osaka_reach_the_cpu_and_the_gpu_at_both_precisions() {
         assert_eq!(coreml(&upscale(UpscaleVariant::Tokyo(precision)), "MLComputeUnits"), "CPUAndGPU");
     }
     for precision in OsakaPrecision::ALL {
-        assert_eq!(coreml(&upscale(UpscaleVariant::Osaka(precision)), "MLComputeUnits"), "CPUAndGPU");
+        assert_eq!(coreml_of(&osaka(precision).profile(), "MLComputeUnits"), "CPUAndGPU");
     }
 }
 
@@ -166,8 +178,7 @@ fn osakas_builder_level_reaches_tensorrt_as_three_while_another_models_reaches_i
     // seconds of engine build for no runtime difference.
     let artifact = crate::models::test_support::kyoto();
     for precision in OsakaPrecision::ALL {
-        let tensorrt =
-            options(ExecutionProvider::TensorRt, &upscale(UpscaleVariant::Osaka(precision)).profile(), &artifact);
+        let tensorrt = options(ExecutionProvider::TensorRt, &osaka(precision).profile(), &artifact);
         assert_eq!(tensorrt["trt_builder_optimization_level"], "3", "at {precision:?}");
         // The two absences that are decisions rather than omissions, and the override names one key only.
         assert_eq!(tensorrt["trt_fp16_enable"], "0", "at {precision:?}");
@@ -182,8 +193,7 @@ fn osakas_builder_level_reaches_tensorrt_as_three_while_another_models_reaches_i
 fn osakas_and_tokyos_session_settings_are_what_their_graphs_need() {
     // Osaka's is correctness rather than tuning: without `SimplifiedLayerNormFusion` off the transformer does not load
     // at all. Session settings apply on every provider, the CPU included.
-    let (parallel, mem_pattern, disabled) =
-        session_settings(&upscale(UpscaleVariant::Osaka(OsakaPrecision::Fp16)).profile());
+    let (parallel, mem_pattern, disabled) = session_settings(&osaka(OsakaPrecision::Fp16).profile());
     assert!(!parallel && !mem_pattern);
     assert_eq!(disabled, "ReshapeFusion;SimplifiedLayerNormFusion");
 

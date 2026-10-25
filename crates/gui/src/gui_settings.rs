@@ -107,7 +107,7 @@ mod tests {
             r#"{
                 "processor": "coreml",
                 "autopilotExcluded": ["colorization", "color_balance"],
-                "models": { "upscale": "osaka_int8", "denoise": "retired_fp16" }
+                "models": { "restore": "osaka_int8", "denoise": "retired_fp16" }
             }"#,
         )
         .expect("the window's shape");
@@ -117,7 +117,7 @@ mod tests {
         assert_eq!(settings.processor, Some(ExecutionProvider::CoreMl));
         assert_eq!(settings.autopilot_excluded, [Family::Colorization, Family::ColorBalance]);
         assert_eq!(settings.models.len(), 1, "a model the library does not publish is dropped");
-        assert_eq!(settings.model(Family::Upscale).map(|choice| choice.codename), Some("osaka"));
+        assert_eq!(settings.model(Family::Restore).map(|choice| choice.codename), Some("osaka"));
     }
 
     #[test]

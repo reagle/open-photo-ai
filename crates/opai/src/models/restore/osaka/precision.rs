@@ -19,7 +19,7 @@ pub enum OsakaPrecision {
     /// Half-precision floating point: the full-weight build.
     Fp16,
     /// The quantized transformer — half the download and about twice as fast on the CPU. Only the transformer is
-    /// quantized; its two VAE halves stay FP16, which is why [`crate::Upscale`] resolution pins them.
+    /// quantized; its two VAE halves stay FP16, which is why [`crate::Restore`] resolution pins them.
     Int8,
 }
 

@@ -102,12 +102,12 @@ describe("what a family offers", () => {
     });
 
     it("names the tiers positionally, off each variant's own precisions", () => {
-        const { options } = modelChoice(entry("upscale"), undefined);
+        const { options } = modelChoice(entry("restore"), undefined);
 
-        // Tokyo's pair is the float convention; Osaka's is its own, and reading the position gives
+        // Kazan's pair is the float convention; Osaka's is its own, and reading the position gives
         // each of them the right tier without a map of per-model overrides.
-        expect(options.find((option) => option.value === "tokyo_fp32")?.quality).toEqual({ kind: "tier", tier: "hd" });
-        expect(options.find((option) => option.value === "tokyo_fp16")?.quality).toEqual({ kind: "tier", tier: "md" });
+        expect(options.find((option) => option.value === "kazan_fp32")?.quality).toEqual({ kind: "tier", tier: "hd" });
+        expect(options.find((option) => option.value === "kazan_fp16")?.quality).toEqual({ kind: "tier", tier: "md" });
         expect(options.find((option) => option.value === "osaka_fp16")?.quality).toEqual({ kind: "tier", tier: "hd" });
         expect(options.find((option) => option.value === "osaka_int8")?.quality).toEqual({ kind: "tier", tier: "md" });
     });
@@ -178,7 +178,9 @@ describe("which model is selected", () => {
     it("replaces a precision a published model no longer offers", () => {
         // There is no fp32 Osaka and never was; a store written against one must not leave the
         // chooser on a value none of its items carries.
-        expect(modelChoice(entry("upscale"), "osaka_fp32").selected).toBe("tokyo_fp32");
+        expect(modelChoice(entry("restore"), "osaka_fp32").selected).toBe("kazan_fp32");
+        // And one naming a model that moved to another family: Osaka is a restore model now.
+        expect(modelChoice(entry("upscale"), "osaka_fp16").selected).toBe("tokyo_fp32");
     });
 
     it("offers nothing for a family the catalogue does not publish", () => {

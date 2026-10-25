@@ -139,7 +139,7 @@ use rust_sak::ai::{CoreMlComputeUnits, Tuning};
 // Measured against ONNX Runtime 1.26 on Osaka's diffusion transformer, which opens on the CPU provider only when
 // `SimplifiedLayerNormFusion` is genuinely switched off — the one instrument this setting has, since it cannot be read
 // back. The semicolon loads in either order; a comma does not; and an unrecognised name is dropped on its own rather
-// than costing the whole value. See `models::upscale::osaka::live` for the table.
+// than costing the whole value. See `models::restore::osaka::live` for the table.
 /// What separates the names in [`Tuning::disabled_optimizers`] when `rust-sak` writes them into ONNX Runtime's
 /// `optimization.disable_specified_optimizers` config entry.
 ///
