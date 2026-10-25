@@ -453,14 +453,14 @@
         },
         "progress": {
             "downloading": "Descargando {{percent}}%",
-            "denoise": "Reducir ruido",
-            "faceRecovery": "Rostros",
-            "colorization": "Colorizar",
-            "lightAdjustment": "Ajustar luz",
-            "colorBalance": "Balance color",
-            "upscale": "Escalar",
-            "sharpen": "Enfocar",
-            "restore": "Restaurar",
+            "denoise": "Reduciendo ruido",
+            "faceRecovery": "Restaurando rostros",
+            "colorization": "Colorizando",
+            "lightAdjustment": "Ajustando luz",
+            "colorBalance": "Equilibrando color",
+            "upscale": "Escalando",
+            "sharpen": "Enfocando",
+            "restore": "Restaurando",
             "grain": "Grano",
             "enhancing": "Mejorando"
         }

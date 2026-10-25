@@ -129,6 +129,8 @@ describe("a row", () => {
         [{ stage: "queued" }, "Queued"],
         [{ stage: "analysing" }, "Analysing"],
         [{ stage: "enhancing", fraction: 0.5 }, "Enhancing"],
+        [{ stage: "enhancing", fraction: 0.5, family: "upscale" }, "Upscaling"],
+        [{ stage: "enhancing", fraction: 0.5, family: "detection" }, "Restoring faces"],
         [{ stage: "writing" }, "Writing"],
         [{ stage: "done", path: "/h.png", bytes: 2048 }, "Done"],
         [{ stage: "failed", reason: "no" }, "Failed"],

@@ -453,14 +453,14 @@
         },
         "progress": {
             "downloading": "Downloaden {{percent}}%",
-            "denoise": "Ruis",
-            "faceRecovery": "Gezichten",
+            "denoise": "Ruis verwijderen",
+            "faceRecovery": "Gezichten herstellen",
             "colorization": "Inkleuren",
-            "lightAdjustment": "Licht",
-            "colorBalance": "Kleur",
+            "lightAdjustment": "Licht aanpassen",
+            "colorBalance": "Kleuren balanceren",
             "upscale": "Opschalen",
             "sharpen": "Verscherpen",
-            "restore": "Restauratie",
+            "restore": "Restaureren",
             "grain": "Korrel",
             "enhancing": "Verbeteren"
         }

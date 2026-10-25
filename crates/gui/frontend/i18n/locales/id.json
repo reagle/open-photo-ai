@@ -443,14 +443,14 @@
         },
         "progress": {
             "downloading": "Mengunduh {{percent}}%",
-            "denoise": "Reduksi Noise",
-            "faceRecovery": "Wajah",
-            "colorization": "Pewarnaan",
-            "lightAdjustment": "Cahaya",
-            "colorBalance": "Warna",
-            "upscale": "Perbesaran",
-            "sharpen": "Penajaman",
-            "restore": "Restorasi",
+            "denoise": "Mengurangi noise",
+            "faceRecovery": "Memulihkan wajah",
+            "colorization": "Mewarnai",
+            "lightAdjustment": "Menyesuaikan cahaya",
+            "colorBalance": "Menyeimbangkan warna",
+            "upscale": "Memperbesar",
+            "sharpen": "Mempertajam",
+            "restore": "Merestorasi",
             "grain": "Butiran",
             "enhancing": "Meningkatkan"
         }
