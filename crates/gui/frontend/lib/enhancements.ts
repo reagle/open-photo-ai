@@ -1,5 +1,15 @@
 import type { ParseKeys, TFunction } from "i18next";
-import { type LucideIcon, Maximize2, Paintbrush, Palette, ScanFace, Sun, Triangle, Waves } from "lucide-react";
+import {
+    type LucideIcon,
+    Maximize2,
+    Paintbrush,
+    Palette,
+    ScanFace,
+    Sparkles,
+    Sun,
+    Triangle,
+    Waves,
+} from "lucide-react";
 import { type Suggestion, suggestedScale } from "@/ipc/autopilot";
 import type { Family, FamilyEntry, ParameterEntry, Precision, VariantEntry } from "@/ipc/catalogue";
 import { type CropInfo, framedDimensions } from "@/ipc/crop";
@@ -32,10 +42,16 @@ export type Enhancement = {
      * to this list cannot be added without one, and nothing has to keep a second table in step.
      */
     icon: LucideIcon;
+    /**
+     * Present, and `true`, for an enhancement Autopilot never suggests: a generative redraw is the
+     * user's choice about a photograph, never an automatic one, and the library's analysis has no
+     * signal for it. Its settings row draws its Autopilot switch off and unavailable.
+     */
+    manual?: true;
 };
 
 /**
- * The seven enhancements, in the order the add menu offers them.
+ * The eight enhancements, in the order the add menu offers them.
  *
  * **This is the frontend's only list of domain names, and it is not model vocabulary.** It is which
  * enhancements this application presents and in what order - a presentation decision, which is why
@@ -95,6 +111,13 @@ export const ENHANCEMENTS = [
         shortNameKey: "preview.progress.upscale",
         icon: Maximize2,
     },
+    {
+        family: "restore",
+        nameKey: "enhancements.restore.name",
+        shortNameKey: "preview.progress.restore",
+        icon: Sparkles,
+        manual: true,
+    },
 ] as const satisfies readonly Enhancement[];
 
 /**
@@ -119,6 +142,10 @@ export const applyOrder = (families: readonly FamilyEntry[]): Family[] =>
  */
 export const familiesWhere = (keep: (family: Family) => boolean): Family[] =>
     ENHANCEMENTS.map(({ family }) => family).filter(keep);
+
+/** Whether Autopilot may ever suggest `family` - every enhancement but the ones marked `manual`. */
+export const isSuggestible = (family: Family): boolean =>
+    ENHANCEMENTS.some((entry) => entry.family === family && !("manual" in entry && entry.manual));
 
 /**
  * Nothing, or the compile error that the wire carries a family {@link ENHANCEMENTS} forgot.
@@ -473,26 +500,69 @@ export const startingScale = async (file: ImageRecord | undefined, crop: CropInf
 };
 
 /**
- * How much larger a chain makes the photograph it runs over: the upscale's own scale, or 1 where the
- * stack holds none.
+ * The scale `family`'s enhancement in `operations` carries, or 1 where the stack holds none.
+ *
+ * The **first** one rather than the product of several: the sidebar offers one enhancement per
+ * family, so a stack holds at most one. A scale at or below zero is read as 1, which is the
+ * reference's own guard: the control is bounded to the catalogue's range, so such a value can only
+ * arrive through a fault - and a navbar reading "0 x 0" is a worse answer to a fault than the
+ * photograph's own size.
+ */
+const scaleOf = (operations: readonly Operation[], family: Operation["family"]): number => {
+    const scale = operations.find((operation) => operation.family === family)?.parameters[SCALE];
+
+    return scale !== undefined && Number.isFinite(scale) && scale > 0 ? scale : 1;
+};
+
+/**
+ * Whether the stack's restore enlarges the photograph - a size above 1x - which is what takes the
+ * upscale out of the chain.
+ *
+ * An enlarging restore resamples to its size and redraws at it, so it does an upscale's job and
+ * replaces it: two enlargements in one chain would hand the generative model an upscale's output at
+ * up to sixteen times the photograph's pixels. At 1x the restore follows an upscale and restores the
+ * photograph at its final size. The command line refuses the same pairing.
+ */
+export const restoreEnlarges = (operations: readonly Operation[]): boolean => scaleOf(operations, "restore") > 1;
+
+/**
+ * Why `family`'s enhancement in `operations` is held out of the chain, as the key of the sentence a
+ * row and its panel say it in - or `undefined` where it runs.
+ *
+ * One case: an upscale, while the restore enlarges. **Held out rather than removed**, so a user who
+ * takes the restore back to 1x finds the upscale where they left it; its row and its panel say why it
+ * is not running, and nothing about it is changed.
+ */
+export const suspendedBecause = (operations: readonly Operation[], family: Family): ParseKeys | undefined =>
+    family === "upscale" && restoreEnlarges(operations) ? "enhancements.upscale.suspended" : undefined;
+
+/**
+ * The operations of `operations` that run: every one {@link suspendedBecause} has no reason to hold
+ * out. What a preview run and an export send, and what the size a chain produces is read from.
+ *
+ * **The stack itself** where nothing is held out, so a caller holding it as an effect's dependency
+ * sees a new array only when the stack changed.
+ */
+export const runnable = (operations: readonly Operation[]): readonly Operation[] =>
+    operations.some((operation) => suspendedBecause(operations, operation.family))
+        ? operations.filter((operation) => !suspendedBecause(operations, operation.family))
+        : operations;
+
+/**
+ * How much larger a chain makes the photograph it runs over: the scale of the upscale that runs, times
+ * the size the restore runs at - 1 where the stack holds neither.
  *
  * Here rather than inline in the navbar, beside {@link startingScale} and the other derivations of
  * this shape, because it is the same question those answer - what the stack implies about the
  * photograph's size - and the navbar is the second region to depend on the stack's shape rather than
  * the owner of that dependency. The reference keeps the same function, in the same place.
  *
- * The **first** upscale rather than the product of every one of them: the sidebar offers one
- * enhancement per family, so a stack holds at most one. A second would be a chain this application
- * cannot build, and multiplying for it would be answering a question nobody can ask.
- *
- * A scale at or below zero is read as 1, which is the reference's own guard. The control is bounded
- * to the catalogue's range, so such a value can only arrive through a fault - and a navbar reading
- * "0 x 0" is a worse answer to a fault than the photograph's own size.
+ * **Of what runs**, so an upscale the restore has taken out of the chain does not count.
  */
-export const upscaleFactor = (operations: readonly Operation[]): number => {
-    const scale = operations.find((operation) => operation.family === "upscale")?.parameters[SCALE];
+export const enlargement = (operations: readonly Operation[]): number => {
+    const running = runnable(operations);
 
-    return scale !== undefined && Number.isFinite(scale) && scale > 0 ? scale : 1;
+    return scaleOf(running, "upscale") * scaleOf(running, "restore");
 };
 
 /**

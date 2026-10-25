@@ -290,8 +290,8 @@
         "faceRecovery": {
             "name": "Face Recovery",
             "models": {
-                "athens": "Use this model when identity fidelity matters most. It lets you preserve facial structure while restoring details, even on heavily degraded faces. Best when you want restoration without changing the person.",
-                "santorini": "Use this model when you want aggressive, fast enhancement and can tolerate identity drift. It produces sharp, visually pleasing faces on moderate degradation, but may hallucinate features and alter identity on very low-quality inputs."
+                "athens": "Use this model when identity fidelity matters most. It lets you preserve facial structure while restoring details, even on heavily degraded faces. Best when you want restoration without changing the person. With Restore, face recovery is usually unnecessary.",
+                "santorini": "Use this model when you want aggressive, fast enhancement and can tolerate identity drift. It produces sharp, visually pleasing faces on moderate degradation, but may hallucinate features and alter identity on very low-quality inputs. With Restore, face recovery is usually unnecessary."
             }
         },
         "colorization": {
@@ -321,8 +321,7 @@
             "models": {
                 "moscow": "Use this model when blur comes from the camera being out of focus rather than from movement — e.g. portraits with a blurry background or foreground, macro photography gone soft, or any scene where a lens failed to focus on the right plane.",
                 "petersburg": "Use this model when you need fast, lightweight motion deblurring and efficiency matters more than squeezing out every last bit of quality. It's well-suited for action footage and handheld camera shake, and it's a solid choice when running on limited hardware.",
-                "novgorod": "Use this model when blur is caused by camera shake or fast-moving subjects — e.g. sports, handheld shots in low light, or any photo where something moved during exposure. It prioritizes maximum restoration quality over speed; good when results matter most.",
-                "kazan": "Use this model when the blur is too strong for the others — e.g. an out-of-focus face, or a photo from an old camera that was never quite sharp. It redraws plausible detail rather than recovering it, so it can change faces, textures and small text; lower the strength if the result looks invented. It is slower than the other sharpeners and a large download."
+                "novgorod": "Use this model when blur is caused by camera shake or fast-moving subjects — e.g. sports, handheld shots in low light, or any photo where something moved during exposure. It prioritizes maximum restoration quality over speed; good when results matter most."
             }
         },
         "upscale": {
@@ -332,6 +331,15 @@
                 "kyoto": "Use this model for real-world photos (people, landscapes, products). It excels at restoring details while handling noise, blur, and compression artifacts. Ideal for practical applications where images are imperfect, and you want visually pleasing, robust results fast.",
                 "saitama": "Use this model for cartoon, drawings, line art, and digital illustrations. It preserves clean lines, flat colors, and stylized shading without introducing photo-like textures. Best when sharp edges and stylistic consistency matter more than realism.",
                 "osaka": "Use when you want the best possible quality upscale available. It rebuilds detail rather than just sharpening it, going furthest on photos that are soft or heavily compressed. It's slow, though, and needs a powerful GPU to run well."
+            },
+            "suspended": "Restore is enlarging this photograph"
+        },
+        "restore": {
+            "name": "Restore",
+            "size": "Size",
+            "generative": "Generative: redraws detail, and may change faces, textures and lettering.",
+            "models": {
+                "kazan": "Use this model when the blur is too strong for Sharpen — e.g. an out-of-focus face, or a photo from an old camera that was never quite sharp. It redraws plausible detail rather than recovering it, so it can change faces, textures and small text; lower the strength if the result looks invented. It is slow and a large download."
             }
         },
         "add": "Add enhancement",
@@ -357,7 +365,8 @@
             "button": "Select faces ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}"
     },
     "preview": {
         "empty": {
@@ -378,6 +387,7 @@
             "colorBalance": "Color Balance",
             "upscale": "Upscale",
             "sharpen": "Sharpen",
+            "restore": "Restore",
             "enhancing": "Enhancing"
         }
     },

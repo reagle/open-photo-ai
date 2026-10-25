@@ -14,7 +14,7 @@ const CUSTOM = "custom";
 // wide, as the design draws it - and the selected-state rules are long enough that a second copy is
 // one a change can be made to only half of, invisibly until someone looks at the Custom pill.
 /** How every item in the group looks, less its width. */
-const SHORTCUT_ITEM =
+export const SHORTCUT_ITEM =
     "h-7.5 rounded-md px-0 text-[13px] text-muted-foreground hover:bg-transparent hover:text-foreground aria-checked:bg-input aria-checked:text-foreground aria-checked:hover:bg-input";
 
 type ScaleControlProps = {

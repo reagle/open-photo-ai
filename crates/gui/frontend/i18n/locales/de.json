@@ -290,8 +290,8 @@
         "faceRecovery": {
             "name": "Gesichtswiederherstellung",
             "models": {
-                "athens": "Verwenden Sie dieses Modell, wenn Identitätstreue am wichtigsten ist. Es bewahrt die Gesichtsstruktur, während Details wiederhergestellt werden, selbst bei stark beschädigten Gesichtern. Am besten geeignet, wenn Sie restaurieren möchten, ohne die Person zu verändern.",
-                "santorini": "Verwenden Sie dieses Modell, wenn Sie eine aggressive, schnelle Verbesserung wollen und eine Veränderung der Identität in Kauf nehmen. Es liefert scharfe, ansprechende Gesichter bei mäßiger Degradation, kann aber bei sehr schlechter Qualität Merkmale erfinden und die Identität verändern."
+                "athens": "Verwenden Sie dieses Modell, wenn Identitätstreue am wichtigsten ist. Es bewahrt die Gesichtsstruktur, während Details wiederhergestellt werden, selbst bei stark beschädigten Gesichtern. Am besten geeignet, wenn Sie restaurieren möchten, ohne die Person zu verändern. Mit der Restaurierung ist das meist nicht nötig.",
+                "santorini": "Verwenden Sie dieses Modell, wenn Sie eine aggressive, schnelle Verbesserung wollen und eine Veränderung der Identität in Kauf nehmen. Es liefert scharfe, ansprechende Gesichter bei mäßiger Degradation, kann aber bei sehr schlechter Qualität Merkmale erfinden und die Identität verändern. Mit der Restaurierung ist das meist nicht nötig."
             }
         },
         "colorization": {
@@ -321,8 +321,7 @@
             "models": {
                 "moscow": "Verwenden Sie dieses Modell, wenn die Unschärfe von einer falsch fokussierten Kamera stammt und nicht von Bewegung, etwa Porträts mit unscharfem Hinter- oder Vordergrund, weich geratene Makroaufnahmen oder jede Szene, in der das Objektiv auf die falsche Ebene scharfgestellt hat.",
                 "petersburg": "Verwenden Sie dieses Modell, wenn Sie eine schnelle, ressourcenschonende Bewegungsentschärfung brauchen und Effizienz wichtiger ist als das letzte Quäntchen Qualität. Es eignet sich gut für Actionaufnahmen und Verwacklungen aus der Hand und ist eine solide Wahl auf begrenzter Hardware.",
-                "novgorod": "Verwenden Sie dieses Modell, wenn die Unschärfe durch Verwackeln oder schnelle Motive entsteht, etwa bei Sport, Handaufnahmen bei wenig Licht oder jedem Foto, bei dem sich während der Belichtung etwas bewegt hat. Es stellt maximale Wiederherstellungsqualität über Geschwindigkeit; gut, wenn das Ergebnis zählt.",
-                "kazan": "Verwende dieses Modell, wenn die Unschärfe für die anderen zu stark ist — z. B. ein unscharfes Gesicht oder ein Foto aus einer alten Kamera, das nie ganz scharf war. Es zeichnet plausible Details neu, statt sie wiederherzustellen, und kann daher Gesichter, Texturen und kleinen Text verändern; verringere die Stärke, wenn das Ergebnis erfunden wirkt. Es ist langsamer als die anderen Schärfungsmodelle und ein großer Download."
+                "novgorod": "Verwenden Sie dieses Modell, wenn die Unschärfe durch Verwackeln oder schnelle Motive entsteht, etwa bei Sport, Handaufnahmen bei wenig Licht oder jedem Foto, bei dem sich während der Belichtung etwas bewegt hat. Es stellt maximale Wiederherstellungsqualität über Geschwindigkeit; gut, wenn das Ergebnis zählt."
             }
         },
         "upscale": {
@@ -332,6 +331,15 @@
                 "kyoto": "Verwenden Sie dieses Modell für reale Fotos (Menschen, Landschaften, Produkte). Es stellt Details hervorragend wieder her und bewältigt dabei Rauschen, Unschärfe und Kompressionsartefakte. Ideal für den Praxiseinsatz mit unperfekten Bildern, wenn Sie schnell ansprechende, robuste Ergebnisse wollen.",
                 "saitama": "Verwenden Sie dieses Modell für Cartoons, Zeichnungen, Strichgrafiken und digitale Illustrationen. Es bewahrt saubere Linien, flache Farben und stilisierte Schattierungen, ohne fotoähnliche Texturen einzuführen. Am besten geeignet, wenn scharfe Kanten und stilistische Konsistenz wichtiger sind als Realismus.",
                 "osaka": "Verwenden Sie dieses Modell, wenn Sie die bestmögliche Hochskalierungsqualität wollen. Es baut Details neu auf, statt sie nur nachzuschärfen, und geht bei weichen oder stark komprimierten Fotos am weitesten. Es ist allerdings langsam und braucht eine leistungsstarke GPU, um gut zu laufen."
+            },
+            "suspended": "Die Restaurierung vergrößert dieses Foto"
+        },
+        "restore": {
+            "name": "Restaurierung",
+            "size": "Größe",
+            "generative": "Generativ: zeichnet Details neu und kann Gesichter, Texturen und Schrift verändern.",
+            "models": {
+                "kazan": "Verwende dieses Modell, wenn die Unschärfe für „Schärfen“ zu stark ist — z. B. ein unscharfes Gesicht oder ein Foto aus einer alten Kamera, das nie ganz scharf war. Es zeichnet plausible Details neu, statt sie wiederherzustellen, und kann daher Gesichter, Texturen und kleinen Text verändern; verringere die Stärke, wenn das Ergebnis erfunden wirkt. Es ist langsam und ein großer Download."
             }
         },
         "add": "Hinzufügen",
@@ -357,7 +365,8 @@
             "button": "Gesichter auswählen ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}"
     },
     "preview": {
         "empty": {
@@ -378,6 +387,7 @@
             "colorBalance": "Farbbalance",
             "upscale": "Hochskalieren",
             "sharpen": "Schärfen",
+            "restore": "Restaurieren",
             "enhancing": "Wird verbessert"
         }
     },

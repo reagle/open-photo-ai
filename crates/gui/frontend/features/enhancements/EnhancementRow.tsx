@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ParseKeys } from "i18next";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import { detectFaces } from "@/ipc/faces";
 import { type Enhancement, modelValue, optionFor, parameterOf, qualityLabel } from "@/lib/enhancements";
 import { enabledFaces } from "@/lib/faces";
 import { report } from "@/lib/report";
-import { toPercent } from "@/lib/utils";
+import { cn, toPercent } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useFaceChoice, useFacesStore, useImageFaces } from "@/stores/faces";
 import { useSettingsStore } from "@/stores/settings";
@@ -20,6 +21,7 @@ import { DenoiseOptions } from "./DenoiseOptions";
 import { FaceRecoveryOptions } from "./FaceRecoveryOptions";
 import { LightAdjustmentOptions } from "./LightAdjustmentOptions";
 import { OptionsPanel } from "./OptionsPanel";
+import { RestoreOptions } from "./RestoreOptions";
 import { SharpenOptions } from "./SharpenOptions";
 import { UpscaleOptions } from "./UpscaleOptions";
 
@@ -37,6 +39,11 @@ type EnhancementRowProps = {
      * reports no count and can only ever report none.
      */
     identity?: string;
+    /**
+     * Why this enhancement is held out of the chain while it stays on the stack, as the key of the sentence that
+     * says so - an upscale while the restore enlarges - or `undefined` where it runs. See `suspendedBecause`.
+     */
+    suspended?: ParseKeys | undefined;
     /** Takes this enhancement off the image's stack. */
     onRemove: () => void;
     /** Puts a changed version of this enhancement back on the stack, which re-runs the preview. */
@@ -64,6 +71,7 @@ export const EnhancementRow = ({
     operation,
     entry,
     identity,
+    suspended,
     onRemove,
     onChange,
 }: EnhancementRowProps) => {
@@ -206,6 +214,10 @@ export const EnhancementRow = ({
                 return (
                     <UpscaleOptions enhancement={enhancement} operation={operation} entry={entry} onChange={onChange} />
                 );
+            case "restore":
+                return (
+                    <RestoreOptions enhancement={enhancement} operation={operation} entry={entry} onChange={onChange} />
+                );
         }
     };
 
@@ -276,6 +288,14 @@ export const EnhancementRow = ({
                     // 1x where the scale is known to nobody: a factor that changes nothing.
                     scale: Number.parseFloat((parameterOf(operation, entry, "scale") ?? 1).toFixed(SCALE_PLACES)),
                 });
+            case "restore":
+                // Both of what a restore carries: the size, read as the upscale's is, and the strength.
+                return t("enhancements.infoRestore", {
+                    name,
+                    quality,
+                    scale: Number.parseFloat((parameterOf(operation, entry, "scale") ?? 1).toFixed(SCALE_PLACES)),
+                    intensity: toPercent(amount("strength")),
+                });
         }
     };
 
@@ -301,16 +321,35 @@ export const EnhancementRow = ({
                     >
                         <Icon className="size-5 flex-none" />
 
-                        <span className="flex min-w-0 flex-col gap-px">
+                        <span className={cn("flex min-w-0 flex-col gap-px", suspended && "opacity-60")}>
                             <span className="text-[13px]">{t(enhancement.nameKey)}</span>
                             <span className="text-xs text-foreground-dim italic" data-slot="enhancement-info">
-                                {info()}
+                                {/* What it is set to do says nothing while it does not run; why it does not, does. */}
+                                {suspended ? t(suspended) : info()}
                             </span>
                         </span>
                     </button>
                 </PopoverTrigger>
 
-                <OptionsPanel title={t(enhancement.nameKey)}>{options()}</OptionsPanel>
+                <OptionsPanel title={t(enhancement.nameKey)}>
+                    {suspended ? (
+                        <>
+                            <p className="text-muted-foreground text-xs" data-slot="enhancement-suspended">
+                                {t(suspended)}
+                            </p>
+                            {/*
+                             * Drawn as it is set, so the user sees what will run again once the reason goes, and
+                             * unavailable: a disabled fieldset disables every control inside it, the model tray's
+                             * and the scale's alike, with no control having to know.
+                             */}
+                            <fieldset disabled className="flex min-w-0 flex-col gap-4 opacity-50">
+                                {options()}
+                            </fieldset>
+                        </>
+                    ) : (
+                        options()
+                    )}
+                </OptionsPanel>
             </Popover>
 
             {/*

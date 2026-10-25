@@ -9,14 +9,18 @@ import {
     applyOrder,
     ENHANCEMENTS,
     type Enhancement,
+    enlargement,
+    isSuggestible,
     modelChoice,
     newOperation,
     parameterOf,
     progressLabelKey,
     publishedRange,
+    restoreEnlarges,
+    runnable,
     startingScale,
     suggestedOperation,
-    upscaleFactor,
+    suspendedBecause,
     withModel,
     withParameter,
 } from "./enhancements.ts";
@@ -49,8 +53,8 @@ describe("the order a chain runs in", () => {
 });
 
 describe("the enhancements this application presents", () => {
-    it("names seven", () => {
-        expect(ENHANCEMENTS).toHaveLength(7);
+    it("names eight", () => {
+        expect(ENHANCEMENTS).toHaveLength(8);
     });
 
     it("names only families the catalogue publishes", () => {
@@ -80,6 +84,7 @@ describe("the enhancements this application presents", () => {
             "color_balance",
             "sharpen",
             "upscale",
+            "restore",
         ]);
     });
 });
@@ -230,6 +235,7 @@ describe("what the progress chip calls the family a report carries", () => {
         colorization: true,
         sharpen: true,
         upscale: true,
+        restore: true,
     };
 
     it("answers a name for every family a report can carry", () => {
@@ -490,22 +496,89 @@ describe("how much larger a chain makes a photograph", () => {
     });
 
     it("is the upscale's own scale", () => {
-        expect(upscaleFactor([upscale(4)])).toBe(4);
+        expect(enlargement([upscale(4)])).toBe(4);
     });
 
     it("is one for a stack that enlarges nothing", () => {
         // Which is every stack without an upscale in it, and the empty one - the navbar then reports
         // the framing's size, or the file's, rather than a product.
-        expect(upscaleFactor([])).toBe(1);
+        expect(enlargement([])).toBe(1);
     });
 
     it("is one for a scale that could only have arrived through a fault", () => {
         // The control is bounded to the catalogue's range, so none of these is reachable by a user.
         // A navbar reading "0 x 0" is a worse answer to a fault than the photograph's own size.
-        expect(upscaleFactor([upscale(0)])).toBe(1);
-        expect(upscaleFactor([upscale(-2)])).toBe(1);
-        expect(upscaleFactor([upscale(Number.NaN)])).toBe(1);
-        expect(upscaleFactor([upscale(Number.POSITIVE_INFINITY)])).toBe(1);
+        expect(enlargement([upscale(0)])).toBe(1);
+        expect(enlargement([upscale(-2)])).toBe(1);
+        expect(enlargement([upscale(Number.NaN)])).toBe(1);
+        expect(enlargement([upscale(Number.POSITIVE_INFINITY)])).toBe(1);
+    });
+
+    const restore = (scale: number): Operation => ({
+        family: "restore",
+        codename: "kazan",
+        precision: "fp16",
+        parameters: { scale, strength: 1 },
+    });
+
+    it("is the restore's size, and an upscale's scale times a restore at 1x", () => {
+        expect(enlargement([restore(2)])).toBe(2);
+        expect(enlargement([upscale(4), restore(1)])).toBe(4);
+    });
+
+    it("leaves out an upscale an enlarging restore has taken out of the chain", () => {
+        // The restore replaces the upscale rather than following it, so the result is the restore's size alone.
+        expect(enlargement([upscale(4), restore(2)])).toBe(2);
+    });
+});
+
+describe("an upscale beside a restore", () => {
+    const upscale: Operation = { family: "upscale", codename: "kyoto", precision: "fp32", parameters: { scale: 4 } };
+    const sharpen: Operation = {
+        family: "sharpen",
+        codename: "moscow",
+        precision: "fp32",
+        parameters: { strength: 1 },
+    };
+    const restore = (scale: number): Operation => ({
+        family: "restore",
+        codename: "kazan",
+        precision: "fp16",
+        parameters: { scale, strength: 1 },
+    });
+
+    it("runs while the restore is at the photograph's own size", () => {
+        const stack = [sharpen, upscale, restore(1)];
+
+        expect(restoreEnlarges(stack)).toBe(false);
+        expect(suspendedBecause(stack, "upscale")).toBeUndefined();
+        // The stack itself, so an effect keyed on it sees no new array.
+        expect(runnable(stack)).toBe(stack);
+    });
+
+    it("is held out of the chain, and says why, while the restore enlarges", () => {
+        const stack = [sharpen, upscale, restore(2)];
+
+        expect(restoreEnlarges(stack)).toBe(true);
+        expect(suspendedBecause(stack, "upscale")).toBe("enhancements.upscale.suspended");
+        expect(suspendedBecause(stack, "restore")).toBeUndefined();
+        expect(runnable(stack)).toEqual([sharpen, restore(2)]);
+    });
+
+    it("leaves a stack with no restore alone", () => {
+        const stack = [sharpen, upscale];
+
+        expect(restoreEnlarges(stack)).toBe(false);
+        expect(runnable(stack)).toBe(stack);
+    });
+});
+
+describe("which enhancements Autopilot may suggest", () => {
+    it("is every one but restore, which a user chooses for a photograph and an analysis never does", () => {
+        expect(ENHANCEMENTS.filter(({ family }) => !isSuggestible(family)).map(({ family }) => family)).toEqual([
+            "restore",
+        ]);
+        expect(isSuggestible("detection")).toBe(false);
     });
 });
 
@@ -519,17 +592,21 @@ describe("the operation an Autopilot suggestion becomes", () => {
         colorization: "mumbai_fp16",
         face_recovery: "santorini_fp32",
         upscale: "saitama_fp16",
+        restore: "kazan_fp16",
     };
 
-    it.each(ENHANCEMENTS.map(({ family }) => family).filter((family) => family !== "upscale"))(
-        "is exactly what the add menu builds for %s, with the user's stored model",
-        (family) => {
-            const built = suggestedOperation({ family }, entry(family), stored[family]);
+    // Not restore, which no analysis suggests.
+    it.each(
+        ENHANCEMENTS.map(({ family }) => family).filter(
+            (family): family is Exclude<Family, "detection" | "upscale" | "restore"> =>
+                family !== "upscale" && isSuggestible(family),
+        ),
+    )("is exactly what the add menu builds for %s, with the user's stored model", (family) => {
+        const built = suggestedOperation({ family }, entry(family), stored[family]);
 
-            expect(built).toEqual(newOperation(family, entry(family), stored[family]));
-            expect(built?.codename).toBe(stored[family].split("_")[0]);
-        },
-    );
+        expect(built).toEqual(newOperation(family, entry(family), stored[family]));
+        expect(built?.codename).toBe(stored[family].split("_")[0]);
+    });
 
     it("carries the scale the analysis chose for an upscale", () => {
         const built = suggestedOperation({ family: "upscale", scale: 4 }, entry("upscale"), stored.upscale);

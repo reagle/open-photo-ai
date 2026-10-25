@@ -11,7 +11,7 @@ import {
 import { familyEntry, useCatalogue } from "@/hooks/useCatalogue";
 import type { Operation } from "@/ipc/enhance";
 import { ADD_MENU_GAP, SIDEBAR_PADDING } from "@/lib/constants";
-import { applyOrder, ENHANCEMENTS, newOperation, startingScale } from "@/lib/enhancements";
+import { applyOrder, ENHANCEMENTS, newOperation, startingScale, suspendedBecause } from "@/lib/enhancements";
 import { track } from "@/lib/faro";
 import { useImageCrop } from "@/stores/crop";
 import { useEnhancementStore, useFileEnhancements } from "@/stores/enhancements";
@@ -110,7 +110,12 @@ export const AddEnhancement = () => {
                         // Unavailable rather than removed: adding Upscale twice would put two upscales
                         // in one chain, and a menu that changed shape as a stack was built up would
                         // move the entries under the pointer.
-                        disabled={stack.some((operation) => operation.family === family)}
+                        // And unavailable while it would be held out of the chain on arrival: an upscale, while
+                        // the restore enlarges.
+                        disabled={
+                            stack.some((operation) => operation.family === family) ||
+                            suspendedBecause(stack, family) !== undefined
+                        }
                         onSelect={() => void add(family)}
                     >
                         <Icon />

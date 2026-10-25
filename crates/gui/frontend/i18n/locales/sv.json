@@ -290,8 +290,8 @@
         "faceRecovery": {
             "name": "Ansiktsåterställning",
             "models": {
-                "athens": "Använd den här modellen när trogenhet mot identiteten är viktigast. Den låter dig bevara ansiktets struktur samtidigt som detaljer återställs, även på kraftigt försämrade ansikten. Bäst när du vill återställa utan att förändra personen.",
-                "santorini": "Använd den här modellen när du vill ha aggressiv, snabb förbättring och kan tolerera att identiteten glider. Den ger skarpa, tilltalande ansikten vid måttlig försämring, men kan hallucinera drag och förändra identiteten vid mycket låg kvalitet på indata."
+                "athens": "Använd den här modellen när trogenhet mot identiteten är viktigast. Den låter dig bevara ansiktets struktur samtidigt som detaljer återställs, även på kraftigt försämrade ansikten. Bäst när du vill återställa utan att förändra personen. Med Restaurering behövs detta oftast inte.",
+                "santorini": "Använd den här modellen när du vill ha aggressiv, snabb förbättring och kan tolerera att identiteten glider. Den ger skarpa, tilltalande ansikten vid måttlig försämring, men kan hallucinera drag och förändra identiteten vid mycket låg kvalitet på indata. Med Restaurering behövs detta oftast inte."
             }
         },
         "colorization": {
@@ -321,8 +321,7 @@
             "models": {
                 "moscow": "Använd den här modellen när oskärpan beror på att kameran var ur fokus snarare än på rörelse — t.ex. porträtt med suddig bakgrund eller förgrund, makrofoton som blivit mjuka, eller motiv där objektivet inte fokuserade på rätt plan.",
                 "petersburg": "Använd den här modellen när du behöver snabb, lättviktig rörelseoskärpereducering och effektivitet betyder mer än att pressa ut varenda kvalitetsprocent. Den passar bra för actionmaterial och handhållna skakningar, och är ett stabilt val på begränsad hårdvara.",
-                "novgorod": "Använd den här modellen när oskärpan orsakas av kamerarörelse eller snabba motiv — t.ex. sport, handhållna bilder i svagt ljus, eller foton där något rörde sig under exponeringen. Den prioriterar maximal återställningskvalitet framför hastighet; bra när resultatet betyder mest.",
-                "kazan": "Använd den här modellen när oskärpan är för kraftig för de andra — t.ex. ett ansikte ur fokus, eller ett foto från en gammal kamera som aldrig var riktigt skarpt. Den ritar om trovärdiga detaljer i stället för att återställa dem, så den kan ändra ansikten, texturer och liten text; sänk styrkan om resultatet ser påhittat ut. Den är långsammare än de andra skärpemodellerna och en stor nedladdning."
+                "novgorod": "Använd den här modellen när oskärpan orsakas av kamerarörelse eller snabba motiv — t.ex. sport, handhållna bilder i svagt ljus, eller foton där något rörde sig under exponeringen. Den prioriterar maximal återställningskvalitet framför hastighet; bra när resultatet betyder mest."
             }
         },
         "upscale": {
@@ -332,6 +331,15 @@
                 "kyoto": "Använd den här modellen för verkliga foton (människor, landskap, produkter). Den är utmärkt på att återskapa detaljer samtidigt som den hanterar brus, oskärpa och komprimeringsartefakter. Idealisk för praktisk användning där bilderna är ofullkomliga och du snabbt vill ha tilltalande, robusta resultat.",
                 "saitama": "Använd den här modellen för tecknat, teckningar, streckkonst och digitala illustrationer. Den bevarar rena linjer, platta färger och stiliserad skuggning utan att introducera fotoliknande texturer. Bäst när skarpa kanter och stilistisk konsekvens betyder mer än realism.",
                 "osaka": "Använd den här modellen när du vill ha bästa möjliga uppskalningskvalitet. Den bygger upp detaljer på nytt i stället för att bara skärpa dem, och går längst på mjuka eller hårt komprimerade foton. Den är dock långsam och kräver ett kraftfullt grafikkort för att fungera bra."
+            },
+            "suspended": "Restaureringen förstorar det här fotot"
+        },
+        "restore": {
+            "name": "Restaurering",
+            "size": "Storlek",
+            "generative": "Generativ: ritar om detaljer och kan ändra ansikten, texturer och text.",
+            "models": {
+                "kazan": "Använd den här modellen när oskärpan är för kraftig för Skärpa — t.ex. ett ansikte ur fokus, eller ett foto från en gammal kamera som aldrig var riktigt skarpt. Den ritar om trovärdiga detaljer i stället för att återställa dem, så den kan ändra ansikten, texturer och liten text; sänk styrkan om resultatet ser påhittat ut. Den är långsam och en stor nedladdning."
             }
         },
         "add": "Lägg till förbättring",
@@ -357,7 +365,8 @@
             "button": "Välj ansikten ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}} %, {{quality}}"
     },
     "preview": {
         "empty": {
@@ -378,6 +387,7 @@
             "colorBalance": "Färgbalans",
             "upscale": "Uppskalning",
             "sharpen": "Skärpa",
+            "restore": "Restaurering",
             "enhancing": "Förbättrar"
         }
     },

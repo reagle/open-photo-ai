@@ -290,8 +290,8 @@
         "faceRecovery": {
             "name": "Recuperación de rostros",
             "models": {
-                "athens": "Usa este modelo cuando la fidelidad de la identidad sea lo más importante. Te permite preservar la estructura facial mientras restauras detalles, incluso en rostros muy degradados. Ideal cuando quieres restaurar sin cambiar a la persona.",
-                "santorini": "Usa este modelo cuando quieras una mejora agresiva y rápida y puedas tolerar cierta desviación de la identidad. Produce rostros nítidos y visualmente agradables con degradación moderada, pero puede alucinar rasgos y alterar la identidad con entradas de muy baja calidad."
+                "athens": "Usa este modelo cuando la fidelidad de la identidad sea lo más importante. Te permite preservar la estructura facial mientras restauras detalles, incluso en rostros muy degradados. Ideal cuando quieres restaurar sin cambiar a la persona. Con Restauración, normalmente no hace falta.",
+                "santorini": "Usa este modelo cuando quieras una mejora agresiva y rápida y puedas tolerar cierta desviación de la identidad. Produce rostros nítidos y visualmente agradables con degradación moderada, pero puede alucinar rasgos y alterar la identidad con entradas de muy baja calidad. Con Restauración, normalmente no hace falta."
             }
         },
         "colorization": {
@@ -321,8 +321,7 @@
             "models": {
                 "moscow": "Usa este modelo cuando el desenfoque venga de una cámara desenfocada y no del movimiento, por ejemplo retratos con el fondo o el primer plano borrosos, macrofotografía que salió suave, o cualquier escena donde el objetivo no enfocó el plano correcto.",
                 "petersburg": "Usa este modelo cuando necesites un desenfoque de movimiento rápido y ligero y la eficiencia importe más que exprimir hasta la última gota de calidad. Encaja bien con escenas de acción y trepidación de cámara, y es una opción sólida en hardware limitado.",
-                "novgorod": "Usa este modelo cuando el desenfoque venga de la trepidación de la cámara o de sujetos en movimiento rápido, por ejemplo deportes, tomas a pulso con poca luz o cualquier foto donde algo se movió durante la exposición. Prioriza la máxima calidad de restauración sobre la velocidad; ideal cuando el resultado es lo que más importa.",
-                "kazan": "Usa este modelo cuando el desenfoque es demasiado fuerte para los demás — p. ej., una cara desenfocada o una foto de una cámara antigua que nunca fue del todo nítida. Redibuja detalles plausibles en lugar de recuperarlos, así que puede cambiar caras, texturas y texto pequeño; baja la intensidad si el resultado parece inventado. Es más lento que los otros modelos de nitidez y una descarga grande."
+                "novgorod": "Usa este modelo cuando el desenfoque venga de la trepidación de la cámara o de sujetos en movimiento rápido, por ejemplo deportes, tomas a pulso con poca luz o cualquier foto donde algo se movió durante la exposición. Prioriza la máxima calidad de restauración sobre la velocidad; ideal cuando el resultado es lo que más importa."
             }
         },
         "upscale": {
@@ -332,6 +331,15 @@
                 "kyoto": "Usa este modelo con fotos del mundo real (personas, paisajes, productos). Destaca restaurando detalles mientras lidia con ruido, desenfoque y artefactos de compresión. Ideal para usos prácticos, cuando las imágenes son imperfectas y quieres resultados robustos y agradables rápido.",
                 "saitama": "Usa este modelo para dibujos animados, dibujos, arte lineal e ilustraciones digitales. Preserva las líneas limpias, los colores planos y el sombreado estilizado sin introducir texturas fotográficas. Ideal cuando los bordes nítidos y la coherencia de estilo importan más que el realismo.",
                 "osaka": "Usa este modelo cuando quieras la mejor calidad de escalado posible. Reconstruye el detalle en lugar de limitarse a afilarlo, y es el que más lejos llega en fotos suaves o muy comprimidas. Eso sí, es lento y necesita una GPU potente para funcionar bien."
+            },
+            "suspended": "La restauración está ampliando esta foto"
+        },
+        "restore": {
+            "name": "Restauración",
+            "size": "Tamaño",
+            "generative": "Generativo: redibuja los detalles y puede cambiar caras, texturas y letras.",
+            "models": {
+                "kazan": "Usa este modelo cuando el desenfoque es demasiado fuerte para Enfoque — p. ej., una cara desenfocada o una foto de una cámara antigua que nunca fue del todo nítida. Redibuja detalles plausibles en lugar de recuperarlos, así que puede cambiar caras, texturas y texto pequeño; baja la intensidad si el resultado parece inventado. Es lento y una descarga grande."
             }
         },
         "add": "Añadir mejora",
@@ -357,7 +365,8 @@
             "button": "Seleccionar rostros ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}"
     },
     "preview": {
         "empty": {
@@ -378,6 +387,7 @@
             "colorBalance": "Balance color",
             "upscale": "Escalar",
             "sharpen": "Enfocar",
+            "restore": "Restaurar",
             "enhancing": "Mejorando"
         }
     },

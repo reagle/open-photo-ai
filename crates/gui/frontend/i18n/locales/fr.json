@@ -298,8 +298,8 @@
         "faceRecovery": {
             "name": "Restauration des visages",
             "models": {
-                "athens": "Utilisez ce modèle lorsque la fidélité à l'identité prime. Il préserve la structure du visage tout en restaurant les détails, même sur des visages fortement dégradés. Idéal lorsque vous voulez restaurer sans transformer la personne.",
-                "santorini": "Utilisez ce modèle lorsque vous voulez une amélioration agressive et rapide et que vous tolérez une dérive d'identité. Il produit des visages nets et flatteurs sur des dégradations modérées, mais il peut inventer des traits et modifier l'identité sur des images de très mauvaise qualité."
+                "athens": "Utilisez ce modèle lorsque la fidélité à l'identité prime. Il préserve la structure du visage tout en restaurant les détails, même sur des visages fortement dégradés. Idéal lorsque vous voulez restaurer sans transformer la personne. Avec Restauration, c'est généralement inutile.",
+                "santorini": "Utilisez ce modèle lorsque vous voulez une amélioration agressive et rapide et que vous tolérez une dérive d'identité. Il produit des visages nets et flatteurs sur des dégradations modérées, mais il peut inventer des traits et modifier l'identité sur des images de très mauvaise qualité. Avec Restauration, c'est généralement inutile."
             }
         },
         "colorization": {
@@ -329,8 +329,7 @@
             "models": {
                 "moscow": "Utilisez ce modèle lorsque le flou vient d'une mise au point ratée plutôt que d'un mouvement, par exemple des portraits avec un arrière-plan ou un premier plan flou, une macro devenue molle, ou toute scène où l'objectif a fait le point sur le mauvais plan.",
                 "petersburg": "Utilisez ce modèle lorsque vous avez besoin d'un traitement du flou de mouvement rapide et léger et que l'efficacité compte plus que le dernier gramme de qualité. Il convient bien aux séquences d'action et au bougé à main levée, et c'est un choix solide sur du matériel limité.",
-                "novgorod": "Utilisez ce modèle lorsque le flou provient d'un bougé de l'appareil ou de sujets rapides : sport, prises de vue à main levée en basse lumière, ou toute photo où quelque chose a bougé pendant l'exposition. Il privilégie la qualité de restauration maximale à la vitesse ; parfait quand le résultat prime.",
-                "kazan": "Utilisez ce modèle lorsque le flou est trop fort pour les autres — p. ex. un visage hors de mise au point, ou une photo d'un vieil appareil qui n'a jamais été vraiment nette. Il redessine des détails plausibles au lieu de les récupérer, il peut donc modifier les visages, les textures et les petits textes ; baissez l'intensité si le résultat semble inventé. Il est plus lent que les autres modèles de netteté et représente un gros téléchargement."
+                "novgorod": "Utilisez ce modèle lorsque le flou provient d'un bougé de l'appareil ou de sujets rapides : sport, prises de vue à main levée en basse lumière, ou toute photo où quelque chose a bougé pendant l'exposition. Il privilégie la qualité de restauration maximale à la vitesse ; parfait quand le résultat prime."
             }
         },
         "upscale": {
@@ -340,6 +339,15 @@
                 "kyoto": "Utilisez ce modèle pour les photos du monde réel (personnes, paysages, produits). Il excelle à restaurer les détails tout en gérant le bruit, le flou et les artefacts de compression. Idéal pour les usages concrets où les images sont imparfaites et où vous voulez rapidement des résultats robustes et agréables à l'œil.",
                 "saitama": "Utilisez ce modèle pour les dessins animés, les dessins, le line art et les illustrations numériques. Il préserve les traits nets, les aplats de couleur et les ombrages stylisés sans introduire de textures photographiques. Idéal quand les contours francs et la cohérence stylistique comptent plus que le réalisme.",
                 "osaka": "Utilisez ce modèle lorsque vous voulez la meilleure qualité d'agrandissement possible. Il reconstruit le détail au lieu de simplement l'accentuer, et c'est lui qui va le plus loin sur les photos floues ou fortement compressées. Il est toutefois lent et exige un GPU puissant pour bien fonctionner."
+            },
+            "suspended": "La restauration agrandit cette photo"
+        },
+        "restore": {
+            "name": "Restauration",
+            "size": "Taille",
+            "generative": "Génératif : redessine les détails et peut modifier les visages, les textures et les lettres.",
+            "models": {
+                "kazan": "Utilisez ce modèle lorsque le flou est trop fort pour Netteté — p. ex. un visage hors de mise au point, ou une photo d'un vieil appareil qui n'a jamais été vraiment nette. Il redessine des détails plausibles au lieu de les récupérer, il peut donc modifier les visages, les textures et les petits textes ; baissez l'intensité si le résultat semble inventé. Il est lent et représente un gros téléchargement."
             }
         },
         "add": "Ajouter",
@@ -367,7 +375,8 @@
             "button": "Sélectionner les visages ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}} %, {{quality}}"
     },
     "preview": {
         "empty": {
@@ -388,6 +397,7 @@
             "colorBalance": "Couleurs",
             "upscale": "Agrandissement",
             "sharpen": "Netteté",
+            "restore": "Restauration",
             "enhancing": "Amélioration"
         }
     },

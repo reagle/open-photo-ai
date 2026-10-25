@@ -282,8 +282,8 @@
         "faceRecovery": {
             "name": "Pemulihan Wajah",
             "models": {
-                "athens": "Gunakan model ini saat kesetiaan pada identitas paling penting. Model ini mempertahankan struktur wajah sambil memulihkan detail, bahkan pada wajah yang rusak berat. Terbaik ketika Anda ingin memulihkan tanpa mengubah orangnya.",
-                "santorini": "Gunakan model ini saat Anda menginginkan peningkatan agresif dan cepat serta dapat menoleransi perubahan identitas. Model ini menghasilkan wajah yang tajam dan enak dipandang pada kerusakan sedang, tetapi dapat mengarang fitur dan mengubah identitas pada masukan berkualitas sangat rendah."
+                "athens": "Gunakan model ini saat kesetiaan pada identitas paling penting. Model ini mempertahankan struktur wajah sambil memulihkan detail, bahkan pada wajah yang rusak berat. Terbaik ketika Anda ingin memulihkan tanpa mengubah orangnya. Dengan Restorasi, ini biasanya tidak diperlukan.",
+                "santorini": "Gunakan model ini saat Anda menginginkan peningkatan agresif dan cepat serta dapat menoleransi perubahan identitas. Model ini menghasilkan wajah yang tajam dan enak dipandang pada kerusakan sedang, tetapi dapat mengarang fitur dan mengubah identitas pada masukan berkualitas sangat rendah. Dengan Restorasi, ini biasanya tidak diperlukan."
             }
         },
         "colorization": {
@@ -313,8 +313,7 @@
             "models": {
                 "moscow": "Gunakan model ini saat keburaman berasal dari kamera yang tidak fokus, bukan dari gerakan, misalnya potret dengan latar belakang atau latar depan yang buram, foto makro yang menjadi lembut, atau pemandangan apa pun ketika lensa gagal fokus pada bidang yang tepat.",
                 "petersburg": "Gunakan model ini saat Anda membutuhkan penghilangan blur gerakan yang cepat dan ringan, serta efisiensi lebih penting daripada mengejar kualitas terakhir. Cocok untuk rekaman aksi dan guncangan kamera saat dipegang, dan merupakan pilihan solid pada perangkat keras terbatas.",
-                "novgorod": "Gunakan model ini saat keburaman disebabkan oleh guncangan kamera atau subjek yang bergerak cepat, misalnya olahraga, foto genggam dalam cahaya redup, atau foto apa pun yang objeknya bergerak saat pencahayaan. Model ini mengutamakan kualitas pemulihan maksimal dibanding kecepatan; bagus ketika hasil adalah yang utama.",
-                "kazan": "Gunakan model ini saat keburaman terlalu kuat untuk model lain — mis. wajah yang tidak fokus, atau foto dari kamera lama yang memang tidak pernah benar-benar tajam. Model ini menggambar ulang detail yang masuk akal alih-alih memulihkannya, sehingga dapat mengubah wajah, tekstur, dan teks kecil; turunkan kekuatannya jika hasilnya tampak dibuat-buat. Model ini lebih lambat daripada model penajam lain dan unduhannya besar."
+                "novgorod": "Gunakan model ini saat keburaman disebabkan oleh guncangan kamera atau subjek yang bergerak cepat, misalnya olahraga, foto genggam dalam cahaya redup, atau foto apa pun yang objeknya bergerak saat pencahayaan. Model ini mengutamakan kualitas pemulihan maksimal dibanding kecepatan; bagus ketika hasil adalah yang utama."
             }
         },
         "upscale": {
@@ -324,6 +323,15 @@
                 "kyoto": "Gunakan model ini untuk foto dunia nyata (orang, lanskap, produk). Model ini unggul dalam memulihkan detail sekaligus menangani noise, blur, dan artefak kompresi. Ideal untuk penggunaan praktis dengan gambar yang tidak sempurna, ketika Anda menginginkan hasil yang enak dipandang dan andal secara cepat.",
                 "saitama": "Gunakan model ini untuk kartun, gambar tangan, line art, dan ilustrasi digital. Model ini mempertahankan garis yang bersih, warna datar, dan bayangan bergaya tanpa menambahkan tekstur seperti foto. Terbaik ketika tepi yang tajam dan konsistensi gaya lebih penting daripada realisme.",
                 "osaka": "Gunakan model ini saat Anda menginginkan kualitas perbesaran terbaik yang tersedia. Model ini membangun ulang detail alih-alih sekadar menajamkannya, dan hasilnya paling jauh pada foto yang lembut atau sangat terkompresi. Namun, model ini lambat dan membutuhkan GPU yang bertenaga agar berjalan dengan baik."
+            },
+            "suspended": "Restorasi sedang memperbesar foto ini"
+        },
+        "restore": {
+            "name": "Restorasi",
+            "size": "Ukuran",
+            "generative": "Generatif: menggambar ulang detail, dan dapat mengubah wajah, tekstur, dan tulisan.",
+            "models": {
+                "kazan": "Gunakan model ini saat keburaman terlalu kuat untuk Penajaman — mis. wajah yang tidak fokus, atau foto dari kamera lama yang memang tidak pernah benar-benar tajam. Model ini menggambar ulang detail yang masuk akal alih-alih memulihkannya, sehingga dapat mengubah wajah, tekstur, dan teks kecil; turunkan kekuatannya jika hasilnya tampak dibuat-buat. Model ini lambat dan unduhannya besar."
             }
         },
         "add": "Tambah peningkatan",
@@ -347,7 +355,8 @@
             "button": "Pilih wajah ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}"
     },
     "preview": {
         "empty": {
@@ -368,6 +377,7 @@
             "colorBalance": "Warna",
             "upscale": "Perbesaran",
             "sharpen": "Penajaman",
+            "restore": "Restorasi",
             "enhancing": "Meningkatkan"
         }
     },

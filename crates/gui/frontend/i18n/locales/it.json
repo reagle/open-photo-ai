@@ -298,8 +298,8 @@
         "faceRecovery": {
             "name": "Recupero volti",
             "models": {
-                "athens": "Usa questo modello quando la fedeltà all'identità è la cosa più importante. Ti permette di preservare la struttura del volto mentre ripristina i dettagli, anche su volti molto degradati. Ideale quando vuoi un restauro senza cambiare la persona.",
-                "santorini": "Usa questo modello quando vuoi un miglioramento rapido e deciso e puoi tollerare qualche variazione dell'identità. Produce volti nitidi e piacevoli su degradazioni moderate, ma su immagini di qualità molto bassa può inventare tratti e alterare l'identità."
+                "athens": "Usa questo modello quando la fedeltà all'identità è la cosa più importante. Ti permette di preservare la struttura del volto mentre ripristina i dettagli, anche su volti molto degradati. Ideale quando vuoi un restauro senza cambiare la persona. Con Restauro di solito non serve.",
+                "santorini": "Usa questo modello quando vuoi un miglioramento rapido e deciso e puoi tollerare qualche variazione dell'identità. Produce volti nitidi e piacevoli su degradazioni moderate, ma su immagini di qualità molto bassa può inventare tratti e alterare l'identità. Con Restauro di solito non serve."
             }
         },
         "colorization": {
@@ -329,8 +329,7 @@
             "models": {
                 "moscow": "Usa questo modello quando la sfocatura deriva da una fotocamera fuori fuoco e non dal movimento, ad esempio ritratti con sfondo o primo piano sfocati, macrofotografie venute morbide o qualsiasi scena in cui l'obiettivo non ha messo a fuoco il piano giusto.",
                 "petersburg": "Usa questo modello quando ti serve una rimozione del mosso rapida e leggera e l'efficienza conta più dell'ultimo briciolo di qualità. È adatto a riprese d'azione e al tremolio della fotocamera a mano libera, ed è una scelta solida su hardware limitato.",
-                "novgorod": "Usa questo modello quando la sfocatura è causata dal tremolio della fotocamera o da soggetti in rapido movimento, ad esempio sport, scatti a mano libera con poca luce o qualsiasi foto in cui qualcosa si è mosso durante l'esposizione. Privilegia la massima qualità di ripristino rispetto alla velocità; ideale quando il risultato conta più di tutto.",
-                "kazan": "Usa questo modello quando la sfocatura è troppo forte per gli altri — ad es. un volto fuori fuoco, o una foto di una vecchia fotocamera che non è mai stata davvero nitida. Ridisegna dettagli plausibili invece di recuperarli, quindi può alterare volti, texture e testo piccolo; riduci l'intensità se il risultato sembra inventato. È più lento degli altri modelli di nitidezza e richiede un download pesante."
+                "novgorod": "Usa questo modello quando la sfocatura è causata dal tremolio della fotocamera o da soggetti in rapido movimento, ad esempio sport, scatti a mano libera con poca luce o qualsiasi foto in cui qualcosa si è mosso durante l'esposizione. Privilegia la massima qualità di ripristino rispetto alla velocità; ideale quando il risultato conta più di tutto."
             }
         },
         "upscale": {
@@ -340,6 +339,15 @@
                 "kyoto": "Usa questo modello per foto reali (persone, paesaggi, prodotti). Eccelle nel ripristinare i dettagli gestendo rumore, sfocatura e artefatti di compressione. Ideale per usi pratici in cui le immagini sono imperfette e vuoi risultati piacevoli e solidi in tempi rapidi.",
                 "saitama": "Usa questo modello per cartoni animati, disegni, line art e illustrazioni digitali. Preserva linee pulite, colori piatti e ombreggiature stilizzate senza introdurre texture fotografiche. Ideale quando bordi netti e coerenza stilistica contano più del realismo.",
                 "osaka": "Usalo quando vuoi l'ingrandimento della migliore qualità possibile. Ricostruisce i dettagli invece di limitarsi ad aumentare la nitidezza, ottenendo il massimo su foto morbide o molto compresse. È però lento e richiede una GPU potente per funzionare bene."
+            },
+            "suspended": "Il restauro sta ingrandendo questa foto"
+        },
+        "restore": {
+            "name": "Restauro",
+            "size": "Dimensione",
+            "generative": "Generativo: ridisegna i dettagli e può alterare volti, texture e scritte.",
+            "models": {
+                "kazan": "Usa questo modello quando la sfocatura è troppo forte per Nitidezza — ad es. un volto fuori fuoco, o una foto di una vecchia fotocamera che non è mai stata davvero nitida. Ridisegna dettagli plausibili invece di recuperarli, quindi può alterare volti, texture e testo piccolo; riduci l'intensità se il risultato sembra inventato. È lento e richiede un download pesante."
             }
         },
         "add": "Aggiungi miglioramento",
@@ -367,7 +375,8 @@
             "button": "Seleziona volti ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}"
     },
     "preview": {
         "empty": {
@@ -388,6 +397,7 @@
             "colorBalance": "Bilanc. colore",
             "upscale": "Ingrandimento",
             "sharpen": "Nitidezza",
+            "restore": "Restauro",
             "enhancing": "Miglioramento"
         }
     },
