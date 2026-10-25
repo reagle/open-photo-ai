@@ -516,6 +516,17 @@ describe("the progress", () => {
         routeProgress({ run: name, phase: "enhancing", operation: "Kyoto", family: "upscale", chainFraction: 0.4 });
         expect(row(HOLIDAY)).toEqual({ stage: "enhancing", fraction: 0.4, family: "upscale" });
 
+        routeProgress({
+            run: name,
+            phase: "enhancing",
+            operation: "Kazan",
+            family: "sharpen",
+            stage: "preparing",
+            provider: "CoreML",
+            chainFraction: 0.5,
+        });
+        expect(row(HOLIDAY)).toEqual({ stage: "enhancing", fraction: 0.5, family: "sharpen", preparing: true });
+
         routeProgress({ run: name, phase: "writing" });
         expect(row(HOLIDAY)).toEqual({ stage: "writing" });
 

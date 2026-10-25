@@ -266,6 +266,7 @@
             "pipelineOrder": "in pijplijnvolgorde",
             "queued": "In wachtrij",
             "analysing": "Analyseren",
+            "preparing": "Laden",
             "enhancing": "Verbeteren",
             "writing": "Schrijven",
             "done": "Klaar",
@@ -462,7 +463,10 @@
             "sharpen": "Verscherpen",
             "restore": "Restaureren",
             "grain": "Korrel",
-            "enhancing": "Verbeteren"
+            "enhancing": "Verbeteren",
+            "optimizing": "Model {{model}} optimaliseren",
+            "loading": "Model {{model}} laden",
+            "firstUse": "Alleen de eerste keer, kan enkele minuten duren"
         }
     },
     "menu": {

@@ -264,6 +264,7 @@
             "pipelineOrder": "dalam urutan pipeline",
             "queued": "Dalam antrean",
             "analysing": "Menganalisis",
+            "preparing": "Memuat",
             "enhancing": "Menyempurnakan",
             "writing": "Menulis",
             "done": "Selesai",
@@ -452,7 +453,10 @@
             "sharpen": "Mempertajam",
             "restore": "Merestorasi",
             "grain": "Butiran",
-            "enhancing": "Meningkatkan"
+            "enhancing": "Meningkatkan",
+            "optimizing": "Mengoptimalkan model {{model}}",
+            "loading": "Memuat model {{model}}",
+            "firstUse": "Hanya pada penggunaan pertama, bisa memakan beberapa menit"
         }
     },
     "menu": {

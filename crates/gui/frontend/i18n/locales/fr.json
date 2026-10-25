@@ -268,6 +268,7 @@
             "pipelineOrder": "dans l'ordre de traitement",
             "queued": "En attente",
             "analysing": "Analyse",
+            "preparing": "Chargement",
             "enhancing": "Amélioration",
             "writing": "Écriture",
             "done": "Terminé",
@@ -472,7 +473,10 @@
             "sharpen": "Accentuation",
             "restore": "Restauration",
             "grain": "Grain",
-            "enhancing": "Amélioration"
+            "enhancing": "Amélioration",
+            "optimizing": "Optimisation du modèle {{model}}",
+            "loading": "Chargement du modèle {{model}}",
+            "firstUse": "Première utilisation seulement, peut prendre quelques minutes"
         }
     },
     "menu": {

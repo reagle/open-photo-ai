@@ -10,6 +10,7 @@ import { DRAWER_HEIGHT, PAN_KEY_STEP, ZOOM_MIN, ZOOM_WHEEL_STEP } from "@/lib/co
 import { cn } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useDrawerStore } from "@/stores/drawer";
+import { useFileEnhancements } from "@/stores/enhancements";
 import { usePeekStore } from "@/stores/peek";
 import { usePreviewStore } from "@/stores/preview";
 import {
@@ -578,6 +579,11 @@ export const PreviewImage = () => {
      */
     const showingOriginal = usePeekStore((state) => state.showingOriginal);
     const enhanced = showingOriginal ? undefined : result;
+    /*
+     * The chain this file runs, for the bar to name the model a slow session is being opened for - *Optimizing Kazan
+     * model* - since a report names its family and not its model.
+     */
+    const operations = useFileEnhancements(file?.path);
 
     /*
      * One URL for both panes and for all three modes, so switching modes re-points an `<img>` rather
@@ -699,7 +705,7 @@ export const PreviewImage = () => {
                 chipBottom={chipBottom}
             />
 
-            {running && <ProgressBar fraction={fraction} {...(report && { report })} />}
+            {running && <ProgressBar fraction={fraction} {...(report && { report })} operations={operations} />}
 
             {previewMode === "split" && (
                 /*

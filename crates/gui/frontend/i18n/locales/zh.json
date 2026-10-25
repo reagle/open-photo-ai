@@ -264,6 +264,7 @@
             "pipelineOrder": "按处理顺序",
             "queued": "排队中",
             "analysing": "分析中",
+            "preparing": "加载中",
             "enhancing": "增强中",
             "writing": "写入中",
             "done": "完成",
@@ -452,7 +453,10 @@
             "sharpen": "锐化中",
             "restore": "修复中",
             "grain": "颗粒",
-            "enhancing": "增强中"
+            "enhancing": "增强中",
+            "optimizing": "正在优化 {{model}} 模型",
+            "loading": "正在加载 {{model}} 模型",
+            "firstUse": "仅首次使用，可能需要几分钟"
         }
     },
     "menu": {
