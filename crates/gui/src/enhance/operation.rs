@@ -532,7 +532,6 @@ mod tests {
             (Family::Sharpen, "moscow") => Sharpen::moscow(precision, strength),
             (Family::Sharpen, "petersburg") => Sharpen::stpetersburg(precision, strength),
             (Family::Sharpen, "novgorod") => Sharpen::novgorod(precision, strength),
-            (Family::Sharpen, "kazan") => Sharpen::kazan(precision, strength),
             (Family::Colorization, "delhi") => Colorization::delhi(precision),
             (Family::Colorization, "mumbai") => Colorization::mumbai(precision),
             (Family::Colorization, "jaipur") => Colorization::jaipur(precision),

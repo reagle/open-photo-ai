@@ -12,11 +12,12 @@ use super::artifact::Family;
 use super::bias::Bias;
 use super::fidelity::Fidelity;
 use super::precision::{FloatPrecision, Precision};
+use super::restore::Restore;
 use super::scale::Scale;
 use super::simple::SimpleVariant;
 use super::strength::Strength;
 use super::upscale;
-use super::{color_balance, colorization, denoise, detection, face_recovery, light_adjustment, sharpen};
+use super::{color_balance, colorization, denoise, detection, face_recovery, light_adjustment, restore, sharpen};
 
 /// One model a user can choose, and what building it takes.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -159,6 +160,23 @@ pub(crate) const SCALE_PARAMETER: [ParameterEntry; 1] = [ParameterEntry {
     kind: ParameterKind::Range { min: Scale::MIN, max: Scale::MAX, default: SCALE_DEFAULT },
 }];
 
+// Restore's bounds are its own `MAX_SCALE` and `MAX_STRENGTH`, narrower than the types' — see `Restore` for why — and
+// are what `Restore::new` clamps to, so a control built from these cannot offer a value the family would change.
+/// What a restore run takes: the size it restores at, and how much of the model's output it applies.
+///
+/// The size starts at 1x, restoring the photograph as it is: enlarging is a choice with a cost that grows with the
+/// square of the size, and a front end makes it. The strength starts at the model's own output.
+pub(crate) const RESTORE_PARAMETERS: [ParameterEntry; 2] = [
+    ParameterEntry {
+        name: Scale::NAME,
+        kind: ParameterKind::Range { min: Scale::MIN, max: Restore::MAX_SCALE, default: Scale::MIN },
+    },
+    ParameterEntry {
+        name: Strength::NAME,
+        kind: ParameterKind::Range { min: Strength::MIN, max: Restore::MAX_STRENGTH, default: Restore::MAX_STRENGTH },
+    },
+];
+
 /// What Santorini takes: the faces, and nothing a control can set.
 pub(crate) const FACES_PARAMETER: [ParameterEntry; 1] =
     [ParameterEntry { name: FACES_PARAMETER_NAME, kind: ParameterKind::Faces }];
@@ -200,6 +218,9 @@ static CATALOGUE: LazyLock<Vec<FamilyEntry>> = LazyLock::new(|| {
         // no control for, which is already how colorization is read.
         simple_family(Family::Detection, &detection::ALL),
         simple_family(Family::FaceRecovery, &face_recovery::ALL),
+        // Appended rather than placed beside upscale, as detection and face recovery were: this order is pinned and is
+        // not a presentation order, so inserting would churn it for nothing.
+        restore_family(),
     ]
 });
 
@@ -250,6 +271,27 @@ fn upscale_family() -> FamilyEntry {
                 label: model.label(),
                 precisions: model.precisions(),
                 parameters: model.parameters(),
+            })
+            .collect(),
+    }
+}
+
+/// The restore family's entry.
+///
+/// Its own function rather than [`simple_family`], because its models are not all published at both float precisions:
+/// each row carries its own list, as each upscale model answers for its own.
+fn restore_family() -> FamilyEntry {
+    FamilyEntry {
+        family: Family::Restore,
+        order: Family::Restore.applied_at(),
+        variants: restore::ALL
+            .iter()
+            .map(|model| VariantEntry {
+                family: Family::Restore,
+                codename: model.row.codename,
+                label: model.row.label,
+                precisions: model.precisions,
+                parameters: model.row.parameters,
             })
             .collect(),
     }
@@ -385,6 +427,15 @@ mod tests {
         /// A published parameter paired with the constructor that enforces it: name, bounds, and the acceptance test.
         type Enforced = (&'static str, f64, f64, fn(f64) -> bool);
 
+        // Restore narrows two of them below what their types accept — see `Restore` — and its constructor clamps
+        // rather than refuses, so its maxima are checked against the family's own constants and by what a run past
+        // them is brought down to.
+        let restore_max = |name: &str| match name {
+            Scale::NAME => Restore::MAX_SCALE,
+            Strength::NAME => Restore::MAX_STRENGTH,
+            other => panic!("restore publishes a parameter its bounds do not name: {other}"),
+        };
+
         let accepts: [Enforced; 4] = [
             (Scale::NAME, Scale::MIN, Scale::MAX, |value| Scale::new(value).is_ok()),
             (Strength::NAME, Strength::MIN, Strength::MAX, |value| Strength::new(value).is_ok()),
@@ -403,6 +454,8 @@ mod tests {
                 accepts.iter().find(|(name, ..)| *name == parameter.name).unwrap_or_else(|| {
                     panic!("{family:?}'s {codename} publishes a parameter nothing enforces: {}", parameter.name)
                 });
+            let narrowed = family == Family::Restore;
+            let max = if narrowed { &restore_max(parameter.name) } else { max };
 
             assert_eq!(
                 (published_min, published_max),
@@ -425,6 +478,23 @@ mod tests {
                 "{family:?}'s {codename} accepts a {} below the range it publishes",
                 parameter.name
             );
+            if narrowed {
+                let entry = VariantEntry::published(family, codename).expect("published");
+                let precision = entry.precisions[0];
+                let at = |value| {
+                    let mut values = ParameterValues::new();
+                    values.set(parameter.name, value).expect("a published name");
+                    entry.build(precision, &values).expect("a published row builds")
+                };
+
+                assert_eq!(
+                    at(published_max + 1.0),
+                    at(published_max),
+                    "{family:?}'s {codename} runs a {} above the range it publishes",
+                    parameter.name
+                );
+                continue;
+            }
             assert!(
                 !accepts(published_max + 0.001),
                 "{family:?}'s {codename} accepts a {} above the range it publishes",
@@ -518,11 +588,12 @@ mod tests {
         assert_eq!(parameters(Family::LightAdjustment), vec![("bias", -1.0, 1.0)]);
         assert_eq!(parameters(Family::ColorBalance), vec![("bias", -1.0, 1.0)]);
         assert_eq!(parameters(Family::Upscale), vec![("scale", 1.0, 8.0)]);
+        assert_eq!(parameters(Family::Restore), vec![("scale", 1.0, 4.0), ("strength", 0.0, 1.0)]);
     }
 
     #[test]
     fn the_catalogue_lists_every_family_the_library_offers() {
-        // All eight, with the six published before detection and face recovery in the order they were already
+        // All nine, with the six published before detection, face recovery and restore in the order they were already
         // published in. That order is pinned by this test and by nothing else — it is not a presentation order, and
         // the reference's own frontend order differs from it — so the two new entries are appended rather than
         // inserted in `Family` declaration order, which would churn a list for no gain.
@@ -539,6 +610,7 @@ mod tests {
                 Family::Upscale,
                 Family::Detection,
                 Family::FaceRecovery,
+                Family::Restore,
             ]
         );
 
@@ -565,7 +637,7 @@ mod tests {
         );
         assert_eq!(
             variants(Family::Sharpen),
-            vec![("moscow", "Moscow"), ("petersburg", "Petersburg"), ("novgorod", "Novgorod"), ("kazan", "Kazan")]
+            vec![("moscow", "Moscow"), ("petersburg", "Petersburg"), ("novgorod", "Novgorod")]
         );
         assert_eq!(variants(Family::LightAdjustment), vec![("paris", "Paris"), ("lyon", "Lyon")]);
         assert_eq!(variants(Family::ColorBalance), vec![("rio", "Rio"), ("saopaulo", "São Paulo")]);
@@ -573,6 +645,7 @@ mod tests {
             variants(Family::Colorization),
             vec![("delhi", "Delhi"), ("mumbai", "Mumbai"), ("jaipur", "Jaipur")]
         );
+        assert_eq!(variants(Family::Restore), vec![("kazan", "Kazan")]);
     }
 
     #[test]
@@ -669,7 +742,7 @@ mod tests {
         // Pinned as literals: these are what a new enhancement starts at in every front end.
         let defaults: Vec<(&str, f64)> = [Family::Denoise, Family::Sharpen, Family::LightAdjustment, Family::Upscale]
             .into_iter()
-            .chain([Family::FaceRecovery])
+            .chain([Family::FaceRecovery, Family::Restore])
             .flat_map(|family| family_entry(family).variants[0].parameters.iter())
             .filter_map(|parameter| match parameter.kind {
                 ParameterKind::Range { default, .. } => Some((parameter.name, default)),
@@ -679,7 +752,15 @@ mod tests {
 
         assert_eq!(
             defaults,
-            [("strength", 1.0), ("strength", 1.0), ("bias", 0.5), ("scale", 1.0), ("fidelity", 1.0)]
+            [
+                ("strength", 1.0),
+                ("strength", 1.0),
+                ("bias", 0.5),
+                ("scale", 1.0),
+                ("fidelity", 1.0),
+                ("scale", 1.0),
+                ("strength", 1.0)
+            ]
         );
     }
 
@@ -717,7 +798,7 @@ mod tests {
 
     #[test]
     fn every_listed_variant_is_one_that_can_actually_be_built() {
-        // Reading the catalogue and constructing what it offers has to reach every published pairing of all eight
+        // Reading the catalogue and constructing what it offers has to reach every published pairing of all nine
         // families, which is what makes "a front end needs nothing of its own" true rather than merely intended.
         //
         // A traversal rather than a count of how many rows were reached. The count it replaces was a literal that

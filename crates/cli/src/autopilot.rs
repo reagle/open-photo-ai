@@ -320,12 +320,18 @@ mod tests {
         check::<UpscaleModel>();
     }
 
+    /// Every family an analysis can suggest, in the library's apply order: all of them but restore, which a generative
+    /// redraw is never chosen automatically.
+    fn suggestible() -> Vec<Family> {
+        Family::APPLY_ORDER.into_iter().filter(|family| *family != Family::Restore).collect()
+    }
+
     #[test]
     fn no_variable_leaves_every_family_at_its_default() {
         let models = read(&[]).expect("reads");
 
         assert_eq!(models, AutopilotModels::default());
-        assert_eq!(models.families(), Family::APPLY_ORDER);
+        assert_eq!(models.families(), suggestible());
         assert_eq!(models.model_for(), Some(DenoiseModel::Stockholm));
         assert_eq!(models.model_for(), Some(FaceModel::Athens));
         assert_eq!(models.model_for(), Some(ColorizationModel::Delhi));
@@ -355,7 +361,7 @@ mod tests {
         assert_eq!(models.model_for(), Some(BalanceModel::SaoPaulo));
         assert_eq!(models.model_for(), Some(SharpenModel::Petersburg));
         assert_eq!(models.model_for(), Some(UpscaleModel::Osaka));
-        assert_eq!(models.families(), Family::APPLY_ORDER);
+        assert_eq!(models.families(), suggestible());
     }
 
     #[test]
@@ -404,7 +410,7 @@ mod tests {
             ("OPAI_AP_COLORIZATION", "delhi, mumbai, jaipur, off"),
             ("OPAI_AP_LIGHT", "paris, lyon, off"),
             ("OPAI_AP_COLOR", "rio, saopaulo, off"),
-            ("OPAI_AP_SHARPEN", "moscow, petersburg, novgorod, kazan, off"),
+            ("OPAI_AP_SHARPEN", "moscow, petersburg, novgorod, off"),
         ] {
             let error = read(&[(variable, "tokyo")]).expect_err(variable);
             let message = error.to_string();

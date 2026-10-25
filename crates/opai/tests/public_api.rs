@@ -28,6 +28,8 @@ use opai::{
 // a published parameter reports, and the value a progress report names a run by — each reached only through the
 // crate root, as a front end reaches it.
 use opai::{Analysis, Fidelity, ParameterKind, Subject};
+// The generative family, reached the way the other eight are.
+use opai::{Restore, RestoreParams, RestoreVariant};
 // What this slice added: the catalogue's inverse - the refusal a lookup or a build answers with, and the per-run
 // values a build is handed - reached only through the crate root, as a front end reaches them.
 use opai::{BuildError, ParameterValues};
@@ -447,10 +449,42 @@ fn the_two_face_families_are_reachable_from_the_crate_root() {
     );
 }
 
-/// The catalogue as a front end offering all eight families reads it: every chooser and every control configured
+/// The generative family, reached the way a front end that offers it reaches it: a model, a size and a strength, each
+/// read back off the typed value, and the family's narrower bounds published beside the constructor that holds them.
+#[test]
+fn the_restore_family_is_reachable_from_the_crate_root() {
+    let twice = Scale::new(2.0).expect("in range");
+    let half = Strength::new(0.5).expect("in range");
+
+    let carried: Operation = Restore::kazan(FloatPrecision::Fp16, twice, half);
+    assert_eq!(carried.family(), Family::Restore);
+    assert_eq!(carried.display_name(), "Kazan (FP16)");
+    assert_eq!(carried.cache_tag(), "rs-kazan-fp16-s2-t0.5");
+    assert_eq!(
+        carried.required_artifacts().iter().map(ArtifactId::as_str).collect::<Vec<_>>(),
+        vec!["rs_kazan_fp16"]
+    );
+
+    let Operation::Restore(restore) = carried else {
+        panic!("Restore::kazan built another family");
+    };
+    let restore: Restore = restore;
+    let params: RestoreParams = restore.params();
+    assert_eq!((params.scale, params.strength), (twice, half));
+    assert_eq!(restore.variant(), RestoreVariant::Kazan(FloatPrecision::Fp16));
+
+    // Past the family's own bounds, brought inside them rather than refused, so a value that exists is one offered.
+    let wide = Restore::new(RestoreVariant::Kazan(FloatPrecision::Fp32), Scale::clamped(8.0), Strength::clamped(3.0));
+    assert_eq!((wide.scale().get(), wide.strength().get()), (Restore::MAX_SCALE, Restore::MAX_STRENGTH));
+
+    // And last in every chain, after everything faithful.
+    assert_eq!(Family::APPLY_ORDER.last(), Some(&Family::Restore));
+}
+
+/// The catalogue as a front end offering all nine families reads it: every chooser and every control configured
 /// from this alone.
 #[test]
-fn the_catalogue_publishes_all_eight_families_to_the_crate_root() {
+fn the_catalogue_publishes_all_nine_families_to_the_crate_root() {
     let families: &'static [FamilyEntry] = catalogue();
 
     assert_eq!(
@@ -464,6 +498,7 @@ fn the_catalogue_publishes_all_eight_families_to_the_crate_root() {
             Family::Upscale,
             Family::Detection,
             Family::FaceRecovery,
+            Family::Restore,
         ]
     );
 
@@ -503,6 +538,11 @@ fn the_catalogue_publishes_all_eight_families_to_the_crate_root() {
     };
 
     assert_eq!(range(Family::Sharpen, "moscow", "strength"), (0.0, 3.0));
+
+    // Restore publishes two ranges, each narrower than its type's: a size up to 4x and a strength up to the model's
+    // own output.
+    assert_eq!(range(Family::Restore, "kazan", "scale"), (1.0, Restore::MAX_SCALE));
+    assert_eq!(range(Family::Restore, "kazan", "strength"), (0.0, Restore::MAX_STRENGTH));
     assert_eq!(range(Family::ColorBalance, "rio", "bias"), (-1.0, 1.0));
 
     // Listed, with its variants, and with nothing to configure — so a front end draws no control rather than having
@@ -757,6 +797,11 @@ fn every_familys_codename_inverse_is_reachable_from_the_crate_root() {
     assert_eq!(
         UpscaleVariant::from_codename("osaka", Precision::Int8),
         Some(UpscaleVariant::Osaka(OsakaPrecision::Int8))
+    );
+
+    assert_eq!(
+        RestoreVariant::from_codename("kazan", Precision::Fp16),
+        Some(RestoreVariant::Kazan(FloatPrecision::Fp16))
     );
 
     // Osaka has no FP32 build and the float-only variants have no INT8 one, so neither pairing names a variant.
