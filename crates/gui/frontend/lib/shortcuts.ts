@@ -35,6 +35,7 @@ export const SHORTCUT_ACTIONS = [
     "openOptions5",
     "openOptions6",
     "openOptions7",
+    "openOptions8",
     "cropRotate",
     "showShortcuts",
 ] as const;
@@ -91,6 +92,7 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, readonly string[]> = {
     openOptions5: ["5"],
     openOptions6: ["6"],
     openOptions7: ["7"],
+    openOptions8: ["8"],
     cropRotate: ["c"],
     // A symbol, so Shift is ignored: it matches on every layout that types a `?`. `Mod /` is Topaz's key
     // for its shortcuts panel - a default here like `?`, not a fixed application key, so the one action

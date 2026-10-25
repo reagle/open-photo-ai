@@ -7,7 +7,7 @@ type Family = Operation["family"];
  * Which enhancement's options panel is open, if any - one at a time, as the popovers already behave.
  *
  * A store rather than state in each `EnhancementRow` because the window's key listener opens one by its
- * place in the list (`1` to `7` by default), and a listener has no component in reach. Keyed by family,
+ * place in the list (`1` to `8` by default), and a listener has no component in reach. Keyed by family,
  * which the one-entry-per-family rule makes unique within a stack. Not persisted.
  */
 export const useOptionsPanelStore = create<{

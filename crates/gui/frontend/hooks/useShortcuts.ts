@@ -57,6 +57,7 @@ const PRESS: Record<Exclude<ShortcutAction, "showOriginal">, () => unknown> = {
     openOptions5: () => openOptionsAt(5),
     openOptions6: () => openOptionsAt(6),
     openOptions7: () => openOptionsAt(7),
+    openOptions8: () => openOptionsAt(8),
     cropRotate: openCropRotate,
     showShortcuts: () => useShortcutsListStore.getState().setOpen(true),
 };
@@ -80,6 +81,7 @@ const ONCE_PER_PRESS: ReadonlySet<ShortcutAction> = new Set([
     "openOptions5",
     "openOptions6",
     "openOptions7",
+    "openOptions8",
     "cropRotate",
 ]);
 

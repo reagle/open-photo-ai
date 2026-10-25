@@ -5,7 +5,7 @@ import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/compon
 import { Separator } from "@/components/ui/separator";
 import { framedDimensions } from "@/ipc/crop";
 import type { ImageRecord } from "@/ipc/images";
-import { upscaleFactor } from "@/lib/enhancements";
+import { enlargement } from "@/lib/enhancements";
 import { cn, formatDimensions } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useFileEnhancements } from "@/stores/enhancements";
@@ -36,7 +36,7 @@ export const NavbarDimensions = ({ file }: { file: ImageRecord }) => {
      * number derived from it lives in `lib/enhancements.ts` beside the other derivations of that shape
      * rather than inline here.
      */
-    const scale = upscaleFactor(useFileEnhancements(file.path));
+    const scale = enlargement(useFileEnhancements(file.path));
     const crop = useImageCrop(file.identity);
     const { width, height } = framedDimensions(file, crop);
 

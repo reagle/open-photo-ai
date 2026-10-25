@@ -88,12 +88,12 @@ describe("adding an enhancement", () => {
 
         open();
 
-        // All seven: every family the wire can carry is in `ENHANCEMENTS`, which the typecheck holds.
+        // All eight: every family the wire can carry is in `ENHANCEMENTS`, which the typecheck holds.
         expect(await upscale()).toBeInTheDocument();
 
         // Denoise first, then face recovery, colorization, light adjustment, colour balance and sharpen in
-        // that order and all before upscale, and the menu says so: it draws `ENHANCEMENTS` itself, which is
-        // what keeps the menu and the chain in one order.
+        // that order and all before upscale, then restore last, and the menu says so: it draws `ENHANCEMENTS`
+        // itself, which is what keeps the menu and the chain in one order.
         const offered = screen.getAllByRole("menuitem");
         expect(offered.map((item) => item.textContent)).toEqual([
             "Denoise",
@@ -103,6 +103,7 @@ describe("adding an enhancement", () => {
             "Color Balance",
             "Sharpen",
             "Upscale",
+            "Restore",
         ]);
     });
 
@@ -262,6 +263,7 @@ describe("adding an enhancement", () => {
             "Color Balance",
             "Sharpen",
             "Upscale",
+            "Restore",
         ]);
         expect(await upscale()).not.toHaveAttribute("data-disabled");
 

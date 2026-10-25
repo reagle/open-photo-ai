@@ -2,7 +2,14 @@ import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import { familyEntry, useCatalogue } from "@/hooks/useCatalogue";
 import type { FamilyEntry } from "@/ipc/catalogue";
-import { ENHANCEMENTS, type Enhancement, familiesWhere, modelChoice, modelLabel } from "@/lib/enhancements";
+import {
+    ENHANCEMENTS,
+    type Enhancement,
+    familiesWhere,
+    isSuggestible,
+    modelChoice,
+    modelLabel,
+} from "@/lib/enhancements";
 import { cn } from "@/lib/utils";
 import { useSettingsDraft } from "./draft";
 import { SettingsCard, SettingsSelect, SettingsSelectItem, SettingsSelectSeparator, SettingsSwitch } from "./rows.tsx";
@@ -20,7 +27,10 @@ const EnhancementRow = ({ entry, enhancement }: { entry: FamilyEntry | undefined
     // No model vocabulary of its own: the names, the labels and which precisions each is published at
     // all come from `modelChoice`, over the catalogue, and the label is `modelLabel`'s.
     const { options, selected } = modelChoice(entry, values.models[family]);
-    const allowed = !values.autopilotExcluded.includes(family);
+    // An enhancement Autopilot never suggests draws its switch off and unavailable, rather than no switch: the
+    // column then reads the same for every row, and an off switch is the truthful answer.
+    const suggestible = isSuggestible(family);
+    const allowed = suggestible && !values.autopilotExcluded.includes(family);
 
     return (
         <div data-slot="enhancement-row" className={cn(COLUMNS, "h-12.5")}>
@@ -62,6 +72,7 @@ const EnhancementRow = ({ entry, enhancement }: { entry: FamilyEntry | undefined
                  */}
                 <SettingsSwitch
                     checked={allowed}
+                    disabled={!suggestible}
                     aria-label={t("settings.enhancements.autopilotLabel", { name })}
                     onCheckedChange={(on) =>
                         update({

@@ -129,9 +129,10 @@ describe("an analysis", () => {
 
         void analyse(HOLIDAY, undefined);
 
+        // And never restore, which no analysis suggests.
         expect(asking[0]?.families).toEqual(
             ENHANCEMENTS.map(({ family }) => family).filter(
-                (family) => family !== "colorization" && family !== "denoise",
+                (family) => family !== "colorization" && family !== "denoise" && family !== "restore",
             ),
         );
     });

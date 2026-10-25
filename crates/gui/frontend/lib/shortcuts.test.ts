@@ -186,7 +186,7 @@ describe("the editor's defaults", () => {
             expect(actionFor(key("Delete"), DEFAULT_SHORTCUTS, mac)).toBe("removeEnhancement");
             expect(actionFor(key("Backspace"), DEFAULT_SHORTCUTS, mac)).toBe("removeEnhancement");
 
-            for (const place of [1, 2, 3, 4, 5, 6, 7]) {
+            for (const place of [1, 2, 3, 4, 5, 6, 7, 8]) {
                 expect(actionFor(key(String(place)), DEFAULT_SHORTCUTS, mac)).toBe(`openOptions${place}`);
             }
         }

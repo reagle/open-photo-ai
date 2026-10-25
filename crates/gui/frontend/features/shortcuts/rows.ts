@@ -68,6 +68,7 @@ export const LIST_SECTIONS: readonly ListSection[] = [
                     "openOptions5",
                     "openOptions6",
                     "openOptions7",
+                    "openOptions8",
                 ],
             },
         ],
@@ -83,7 +84,7 @@ const keyOf = (binding: string) => binding.slice(binding.lastIndexOf("+", bindin
  * Every key cap is one whole combination, as a menu, Lightroom's and Photoshop's shortcut sheets and
  * Zed's keymap write them: panning is `⌘ ←` `⌘ →` `⌘ ↑` `⌘ ↓`, not one cap a reader could take for
  * `⌘ ←` and three bare arrows. The one exception is a run of three or more consecutive digits with the
- * same modifiers, one binding each, which is written as a range: `1–7`. A row the user has rebound
+ * same modifiers, one binding each, which is written as a range: `1–8`. A row the user has rebound
  * unevenly lists every binding, as a single action's row does.
  */
 export const rowKeys = (lists: readonly (readonly string[])[], mac: boolean, spaceName: string): string[] => {

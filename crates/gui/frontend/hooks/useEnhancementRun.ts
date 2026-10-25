@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { type CropInfo, sameCrop } from "@/ipc/crop";
 import { cancelEnhance, enhance, onEnhanceProgress, type RunProgress } from "@/ipc/enhance";
 import type { Face } from "@/ipc/faces";
 import type { ImageRecord } from "@/ipc/images";
+import { runnable } from "@/lib/enhancements";
 import { withChoice } from "@/lib/faces";
 import { report } from "@/lib/report";
 import { useFileEnhancements } from "@/stores/enhancements";
@@ -115,7 +116,12 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
     const { t } = useTranslation();
 
     const source = file?.identity;
-    const operations = useFileEnhancements(file?.path);
+    const stack = useFileEnhancements(file?.path);
+    /*
+     * What runs: the stack, less an upscale an enlarging restore has taken out of the chain. Memoized on the
+     * stack, because the run effect keys on this array - a fresh one per render would restart the run.
+     */
+    const operations = useMemo(() => runnable(stack), [stack]);
     /*
      * The processor in force, which is all this store ever holds.
      *
