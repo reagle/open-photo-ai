@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { Family } from "@/ipc/catalogue";
 import { cancelExport } from "@/ipc/export";
 import { report } from "@/lib/report";
 import { useAutopilotStore } from "@/stores/autopilot";
@@ -11,8 +12,11 @@ export type Row =
     | { stage: "queued" }
     /** Being analysed before it is enhanced: by Autopilot, or to find the faces a face recovery needs. */
     | { stage: "analysing" }
-    /** Its enhancements are running; `fraction` is how far through the chain, from 0 to 1. */
-    | { stage: "enhancing"; fraction: number }
+    /**
+     * Its enhancements are running; `fraction` is how far through the chain, from 0 to 1, and `family` the
+     * enhancement the chain is on, once a report has said - what the pill names in place of *Enhancing*.
+     */
+    | { stage: "enhancing"; fraction: number; family?: Family }
     | { stage: "writing" }
     /** Written: `path` is what was actually written, the numbered name where one was, and `bytes` how much. */
     | { stage: "done"; path: string; bytes: number }

@@ -453,14 +453,14 @@
         },
         "progress": {
             "downloading": "Herunterladen {{percent}}%",
-            "denoise": "Entrauschen",
-            "faceRecovery": "Gesichter",
-            "colorization": "Kolorierung",
-            "lightAdjustment": "Lichtanpassung",
-            "colorBalance": "Farbbalance",
-            "upscale": "Hochskalieren",
-            "sharpen": "Schärfen",
-            "restore": "Restaurieren",
+            "denoise": "Wird entrauscht",
+            "faceRecovery": "Gesichter restaurieren",
+            "colorization": "Wird koloriert",
+            "lightAdjustment": "Licht anpassen",
+            "colorBalance": "Farben ausgleichen",
+            "upscale": "Wird hochskaliert",
+            "sharpen": "Wird geschärft",
+            "restore": "Wird restauriert",
             "grain": "Körnung",
             "enhancing": "Wird verbessert"
         }
