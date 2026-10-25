@@ -178,7 +178,6 @@ pub enum SharpenModel {
     Moscow,
     Petersburg,
     Novgorod,
-    Kazan,
 }
 
 /// The colorization models, as the command line names them.
@@ -798,7 +797,7 @@ mod tests {
     fn an_unknown_new_model_is_a_usage_error_listing_the_accepted_ones() {
         let cases: [(&str, &[&str]); 5] = [
             ("--dn tokyo", &["stockholm", "gothenburg", "malmo"]),
-            ("--sh tokyo", &["moscow", "petersburg", "novgorod", "kazan"]),
+            ("--sh tokyo", &["moscow", "petersburg", "novgorod"]),
             ("--cl tokyo", &["delhi", "mumbai", "jaipur"]),
             ("--la tokyo", &["paris", "lyon"]),
             ("--cb sao-paulo", &["rio", "saopaulo"]),

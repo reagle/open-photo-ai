@@ -320,6 +320,7 @@ pub(crate) const fn family_label(family: Family) -> &'static str {
         Family::ColorBalance => "Color Balance",
         Family::Sharpen => "Sharpen",
         Family::Upscale => "Upscale",
+        Family::Restore => "Restore",
     }
 }
 
@@ -791,7 +792,8 @@ mod tests {
                 "Light Adjust",
                 "Color Balance",
                 "Sharpen",
-                "Upscale"
+                "Upscale",
+                "Restore"
             ]
         );
     }

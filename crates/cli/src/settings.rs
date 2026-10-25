@@ -52,7 +52,7 @@ pub struct Sourced<T> {
 
 /// The quality each family runs at, in the library's apply order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Qualities([Sourced<Quality>; 7]);
+pub struct Qualities([Sourced<Quality>; Family::APPLY_ORDER.len()]);
 
 impl Default for Qualities {
     fn default() -> Self {
@@ -63,7 +63,7 @@ impl Default for Qualities {
 impl Qualities {
     /// `quality` for every family, from `source`.
     pub const fn all(quality: Quality, source: Source) -> Self {
-        Self([Sourced { value: quality, source }; 7])
+        Self([Sourced { value: quality, source }; Family::APPLY_ORDER.len()])
     }
 
     /// Each family at `-q` where it was given, or else at the tier of the model `gui` saved for it, or else `hd`.

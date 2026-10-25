@@ -32,6 +32,7 @@ use super::face_recovery::{FaceRecovery, FaceRecoveryVariant};
 use super::fidelity::Fidelity;
 use super::light_adjustment::{LightAdjustment, LightAdjustmentVariant};
 use super::precision::Precision;
+use super::restore::{Restore, RestoreVariant};
 use super::scale::Scale;
 use super::sharpen::{Sharpen, SharpenVariant};
 use super::strength::Strength;
@@ -86,9 +87,9 @@ pub enum BuildError {
 /// build to refuse.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParameterValues {
-    /// What an upscale enlarges by.
+    /// What an upscale enlarges by, and the size a restore runs at.
     scale: Scale,
-    /// What denoise and sharpen are applied at.
+    /// What denoise, sharpen and restore are applied at.
     strength: Strength,
     /// Which way light adjustment and colour balance lean.
     bias: Bias,
@@ -238,8 +239,8 @@ impl VariantEntry {
     /// row is what *knows*: the precisions it is published at and the parameters it takes are fields of it, so the
     /// check and the construction read the same data and there is nothing for a second table to disagree with.
     ///
-    /// A [`Subject`] rather than an [`Operation`](super::Operation), because the eight families are carried in two
-    /// values — the seven whose result is an image and the one whose result is not — and a caller walking the
+    /// A [`Subject`] rather than an [`Operation`](super::Operation), because the nine families are carried in two
+    /// values — the eight whose result is an image and the one whose result is not — and a caller walking the
     /// catalogue crosses both. A caller that knows it asked an enhancement family matches
     /// [`Subject::Enhancement`] and has the operation [`Opai::process`](crate::Opai::process) takes.
     ///
@@ -282,7 +283,6 @@ impl VariantEntry {
                 SharpenVariant::Moscow(precision) => Sharpen::moscow(precision, values.strength),
                 SharpenVariant::Petersburg(precision) => Sharpen::stpetersburg(precision, values.strength),
                 SharpenVariant::Novgorod(precision) => Sharpen::novgorod(precision, values.strength),
-                SharpenVariant::Kazan(precision) => Sharpen::kazan(precision, values.strength),
             },
             Family::LightAdjustment => {
                 match LightAdjustmentVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
@@ -320,6 +320,12 @@ impl VariantEntry {
                 UpscaleVariant::Kyoto(precision) => Upscale::kyoto(precision, values.scale),
                 UpscaleVariant::Saitama(precision) => Upscale::saitama(precision, values.scale),
                 UpscaleVariant::Osaka(precision) => Upscale::osaka(precision, values.scale),
+            },
+            // The one family reading two of the values: the size it restores at, under the name upscale's factor is
+            // published with, and the strength. Each is brought inside the family's own narrower bounds by the
+            // constructor.
+            Family::Restore => match RestoreVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
+                RestoreVariant::Kazan(precision) => Restore::kazan(precision, values.scale, values.strength),
             },
         };
 

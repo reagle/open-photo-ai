@@ -90,9 +90,10 @@ fn bit(family: Family) -> u16 {
 mod tests {
     use super::*;
 
-    /// Every family some signal can suggest.
+    /// Every family some signal can suggest: not detection, which is never applied, and not restore, which an
+    /// analysis never suggests — a generative redraw is a user's choice, never an automatic one.
     fn suggestible() -> impl Iterator<Item = Family> {
-        Family::ALL.into_iter().filter(|family| *family != Family::Detection)
+        Family::ALL.into_iter().filter(|family| !matches!(family, Family::Detection | Family::Restore))
     }
 
     #[test]
@@ -138,7 +139,7 @@ mod tests {
             );
             assert_eq!(scope.needs_blocks(), matches!(family, Family::Denoise | Family::Sharpen), "{family:?}");
             assert_eq!(scope.needs_face(), family == Family::FaceRecovery, "{family:?}");
-            assert_eq!(scope.needs_anything(), family != Family::Detection, "{family:?}");
+            assert_eq!(scope.needs_anything(), suggestible().any(|candidate| candidate == family), "{family:?}");
         }
     }
 
