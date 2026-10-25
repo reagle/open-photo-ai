@@ -280,8 +280,6 @@ mod tests {
             ("--up tokyo -q sd", Upscale::tokyo(FloatPrecision::Fp16, four)),
             ("--up saitama -q hd", Upscale::saitama(FloatPrecision::Fp32, four)),
             ("--up saitama -q sd", Upscale::saitama(FloatPrecision::Fp16, four)),
-            ("--up osaka -q hd", Upscale::osaka(OsakaPrecision::Fp16, four)),
-            ("--up osaka -q sd", Upscale::osaka(OsakaPrecision::Int8, four)),
             (
                 "--fr athens -q hd",
                 FaceRecovery::athens(FloatPrecision::Fp32, Faces::empty(), Fidelity::MAXIMUM),
@@ -310,6 +308,8 @@ mod tests {
             ("--sh novgorod -q sd", Sharpen::novgorod(FloatPrecision::Fp16, one)),
             ("--rs kazan -q hd", Restore::kazan(FloatPrecision::Fp32, scale(1.0), one)),
             ("--rs kazan -q sd", Restore::kazan(FloatPrecision::Fp16, scale(1.0), one)),
+            ("--rs osaka -q hd", Restore::osaka(OsakaPrecision::Fp16, scale(1.0), one)),
+            ("--rs osaka -q sd", Restore::osaka(OsakaPrecision::Int8, scale(1.0), one)),
             ("--cl delhi -q hd", Colorization::delhi(FloatPrecision::Fp32)),
             ("--cl delhi -q sd", Colorization::delhi(FloatPrecision::Fp16)),
             ("--cl mumbai -q hd", Colorization::mumbai(FloatPrecision::Fp32)),
@@ -516,11 +516,11 @@ mod tests {
     #[test]
     fn a_model_chosen_through_the_environment_runs_at_the_quality_asked_for() {
         let models =
-            AutopilotModels::read(|name| (name == "OPAI_AP_UPSCALE").then(|| "osaka".into()), None).expect("reads");
+            AutopilotModels::read(|name| (name == "OPAI_AP_UPSCALE").then(|| "kyoto".into()), None).expect("reads");
 
         let plan = autopilot(&[Suggestion::Upscale { scale: scale(4.0) }], &models, Quality::Sd, 1000, 800);
 
-        assert_eq!(plan.operations, vec![Upscale::osaka(OsakaPrecision::Int8, scale(4.0))]);
+        assert_eq!(plan.operations, vec![Upscale::kyoto(FloatPrecision::Fp16, scale(4.0))]);
     }
 
     #[test]
@@ -581,14 +581,14 @@ mod tests {
 
     #[test]
     fn the_description_follows_the_chain_one_for_one_in_its_order() {
-        let plan = plan("opai photo.jpg --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
+        let plan = plan("opai photo.jpg --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
         let families: Vec<_> = plan.applied.iter().map(|applied| applied.family).collect();
 
         assert_eq!(families, Family::APPLY_ORDER);
         assert_eq!(
             describe(&plan.applied),
             "Denoise Stockholm strength 100, Face Recovery Athens, Colorize Delhi, Light Adjust Paris bias 50, \
-             Color Balance Rio bias 50, Sharpen Moscow strength 100, Upscale Tokyo 4x"
+             Color Balance Rio bias 50, Sharpen Moscow strength 100, Upscale Tokyo 4x, Restore Kazan strength 100"
         );
     }
 
@@ -608,7 +608,9 @@ mod tests {
     #[test]
     fn a_factor_is_written_without_a_whole_numbers_fraction() {
         assert_eq!(words("opai photo.jpg --up kyoto --scale 1.5 -o out.png"), "Upscale Kyoto 1.5x");
-        assert_eq!(words("opai photo.jpg --up osaka --scale 8 -o out.png"), "Upscale Osaka 8x");
+        assert_eq!(words("opai photo.jpg --up saitama --scale 8 -o out.png"), "Upscale Saitama 8x");
+        assert_eq!(words("opai photo.jpg --rs --rs-scale 2 -o out.png"), "Restore Kazan 2x, strength 100");
+        assert_eq!(words("opai photo.jpg --rs osaka --rs-str 40 -o out.png"), "Restore Osaka strength 40");
     }
 
     #[test]

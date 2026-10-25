@@ -158,6 +158,18 @@ describe("what a restart reads back", () => {
         expect(useSettingsStore.getState().models).toEqual({ upscale: "atlantis_fp64" });
     });
 
+    it("carries a default Osaka upscaler to restore, where Osaka went", async () => {
+        await stored({ ...SOUND, models: { upscale: "osaka_int8", denoise: "malmo_fp16" } });
+
+        expect(useSettingsStore.getState().models).toEqual({ restore: "osaka_int8", denoise: "malmo_fp16" });
+    });
+
+    it("leaves a restore default the user chose alone, and still takes Osaka off upscale", async () => {
+        await stored({ ...SOUND, models: { upscale: "osaka_fp16", restore: "kazan_fp32" } });
+
+        expect(useSettingsStore.getState().models).toEqual({ restore: "kazan_fp32" });
+    });
+
     it("leaves a first launch's detected language alone", async () => {
         // `persist` runs `merge` whether or not storage held anything, so this is the boot where a
         // repair applied unconditionally would overwrite what the environment asked for - and then

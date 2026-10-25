@@ -208,11 +208,13 @@ fn read_one<M: FamilyModel>(
     }
 
     text.and_then(|text| M::from_str(text, true).ok())
+        .filter(visible)
         .map(|model| (Some(model), source))
         .ok_or_else(|| {
             let accepted: Vec<String> = M::value_variants()
                 .iter()
                 .filter_map(ValueEnum::to_possible_value)
+                .filter(|value| !value.is_hide_set())
                 .map(|value| value.get_name().to_owned())
                 .chain([OFF.to_owned()])
                 .collect();
@@ -229,6 +231,12 @@ fn read_one<M: FamilyModel>(
         })
 }
 
+/// A hidden value is a retired model — Osaka, which moved to restore — and is refused like one never published, from
+/// a list that does not name it, or, from what the GUI saved, passed over for the bare flag's default.
+fn visible<M: FamilyModel>(model: &M) -> bool {
+    model.to_possible_value().is_some_and(|value| !value.is_hide_set())
+}
+
 /// What `gui` saved for the family `M`: off where Autopilot may not suggest it, its model where one resolves to a model
 /// this command names, and otherwise the bare flag's default.
 fn from_gui<M: FamilyModel>(gui: Option<&SharedSettings>) -> (Option<M>, Source) {
@@ -241,6 +249,7 @@ fn from_gui<M: FamilyModel>(gui: Option<&SharedSettings>) -> (Option<M>, Source)
     // The command line names every published model by its codename, which `every_published_model_is_named` holds.
     gui.model(M::FAMILY)
         .and_then(|choice| M::from_str(choice.codename, true).ok())
+        .filter(visible)
         .map_or((Some(M::DEFAULT), Source::Default), |model| (Some(model), Source::Gui))
 }
 
@@ -263,12 +272,12 @@ mod tests {
         AutopilotModels::read(|name| map.get(name).cloned(), gui)
     }
 
-    /// What the GUI saves for a user who switched colour balance and colorization off and chose Osaka and Malmö.
+    /// What the GUI saves for a user who switched colour balance and colorization off and chose Saitama and Malmö.
     fn saved() -> SharedSettings {
         SharedSettings::from_gui(
             "auto",
             ["color_balance", "colorization"],
-            [("upscale", "osaka_int8"), ("denoise", "malmo_fp16")],
+            [("upscale", "saitama_fp16"), ("denoise", "malmo_fp16")],
         )
     }
 
@@ -279,7 +288,7 @@ mod tests {
         assert_eq!(models.color_balance, None);
         assert_eq!(models.colorization, None);
         assert_eq!(models.source::<BalanceModel>(), Source::Gui);
-        assert_eq!(models.model_for(), Some(UpscaleModel::Osaka));
+        assert_eq!(models.model_for(), Some(UpscaleModel::Saitama));
         assert_eq!(models.model_for(), Some(DenoiseModel::Malmo));
         assert_eq!(models.source::<UpscaleModel>(), Source::Gui);
         assert_eq!(models.model_for(), Some(SharpenModel::Moscow));
@@ -365,7 +374,7 @@ mod tests {
             ("OPAI_AP_LIGHT", "Lyon"),
             ("OPAI_AP_COLOR", "SaoPaulo"),
             ("OPAI_AP_SHARPEN", "petersburg"),
-            ("OPAI_AP_UPSCALE", "Osaka"),
+            ("OPAI_AP_UPSCALE", "Saitama"),
         ])
         .expect("reads");
 
@@ -375,7 +384,7 @@ mod tests {
         assert_eq!(models.model_for(), Some(LightModel::Lyon));
         assert_eq!(models.model_for(), Some(BalanceModel::SaoPaulo));
         assert_eq!(models.model_for(), Some(SharpenModel::Petersburg));
-        assert_eq!(models.model_for(), Some(UpscaleModel::Osaka));
+        assert_eq!(models.model_for(), Some(UpscaleModel::Saitama));
         assert_eq!(models.families(), suggestible());
     }
 
@@ -414,7 +423,17 @@ mod tests {
         assert_eq!(error.exit_code(), 2);
         let message = error.to_string();
         assert!(message.contains("OPAI_AP_UPSCALE") && message.contains("'paris'"), "{message}");
-        assert!(message.contains("[possible values: kyoto, osaka, tokyo, saitama, off]"), "{message}");
+        assert!(message.contains("[possible values: kyoto, tokyo, saitama, off]"), "{message}");
+    }
+
+    #[test]
+    fn osaka_is_refused_as_an_upscaler_now_that_it_restores() {
+        // Autopilot never restores, so there is nothing for this variable to move to: it is refused, from a list that
+        // does not offer it.
+        let error = read(&[("OPAI_AP_UPSCALE", "osaka")]).expect_err("Osaka is not an upscaler");
+
+        assert_eq!(error.kind(), ErrorKind::InvalidValue);
+        assert!(error.to_string().contains("[possible values: kyoto, tokyo, saitama, off]"), "{error}");
     }
 
     #[test]

@@ -112,7 +112,7 @@ impl From<FloatPrecision> for Precision {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::upscale::osaka::precision::OsakaPrecision;
+    use crate::models::restore::osaka::precision::OsakaPrecision;
 
     #[test]
     fn each_precision_renders_the_string_its_filenames_use() {

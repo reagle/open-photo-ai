@@ -28,13 +28,13 @@ async fn the_requested_scale_survives_the_plan_rather_than_being_left_at_what_th
 }
 
 #[test]
-fn the_diffusion_upscaler_plans_through_the_seam_that_used_to_refuse_it() {
+fn the_diffusion_restorer_plans_through_the_seam_that_used_to_refuse_it() {
     // `plan_one` once matched on the contract itself, refusing one arm of it and handing the other to a second
     // planner. It now asks the operation for its pipeline and knows neither. What is checked is that the answer
     // is still the diffusion one — three graphs opened together as stages of one pass, rather than a pass
     // sequence — seen through the only surface left: what the run would open.
     for precision in [OsakaPrecision::Fp16, OsakaPrecision::Int8] {
-        let osaka = upscale(UpscaleVariant::Osaka(precision));
+        let osaka = osaka(precision, 4.0);
 
         let planned = plan::<Fake>(std::slice::from_ref(&osaka))
             .unwrap_or_else(|error| panic!("Osaka is still refused at {precision:?}: {error}"));
@@ -63,7 +63,7 @@ async fn an_osaka_run_acquires_exactly_three_sessions_under_the_settings_measure
     // artifacts in the variant's own order, each opened under the profile measured for **it**. A loop that paired
     // by position against one shared profile would be visible here rather than only on a GPU.
     let backend = Fake::new();
-    let osaka = upscale(UpscaleVariant::Osaka(OsakaPrecision::Fp16));
+    let osaka = osaka(OsakaPrecision::Fp16, 4.0);
 
     run_with(&backend, source(64, 64), std::slice::from_ref(&osaka)).await.expect("an Osaka run");
 
@@ -93,47 +93,47 @@ async fn an_osaka_run_acquires_exactly_three_sessions_under_the_settings_measure
 }
 
 #[tokio::test]
-async fn a_chain_mixing_osaka_with_a_convolutional_upscale_runs_both() {
-    // The two contracts in one chain, through the one run loop. Osaka first so that the convolutional pass runs
-    // over what the diffusion pipeline produced rather than over the source, which is what a chain *is*.
+async fn a_chain_mixing_osaka_with_a_convolutional_upscale_runs_both_and_restores_last() {
+    // The two contracts in one chain, through the one run loop, in the apply order `Opai::process` puts every chain
+    // into: a restore follows every faithful family, so at 1x it restores what the convolutional pass produced
+    // rather than the source — which is what a restore after an upscale is.
     let backend = Fake::new();
-    let osaka = Operation::Upscale(Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Fp16), Scale::new(1.0).unwrap()));
-    let chain = [osaka, kyoto(2.0)];
+    let chain = [kyoto(2.0), osaka(OsakaPrecision::Fp16, 1.0)];
 
     let produced = run_with(&backend, source(64, 64), &chain).await.expect("a mixed chain");
 
     assert_eq!(
         backend.log().ran,
         vec![
+            // One tile: 64x64 is smaller than the convolutional geometry's 256.
+            "up_kyoto_2x_fp16",
             "up_osaka_vae_encoder_fp16",
             "up_osaka_fp16",
             "up_osaka_vae_decoder_fp16",
-            // One tile: 64x64 is smaller than the convolutional geometry's 256.
-            "up_kyoto_2x_fp16",
         ],
-        "the two contracts did not both run, in order"
+        "the two contracts did not both run, in the apply order"
     );
 
-    // Osaka at 1x restores in place and Kyoto doubles what it was handed.
+    // Kyoto doubles, and Osaka at 1x restores what it was handed in place.
     assert_eq!((produced.width(), produced.height()), (128, 128));
 }
 
 #[test]
 fn a_chain_mixing_the_two_contracts_plans_each_one_as_its_own() {
-    // The two live side by side within one family, so a chain naming both is planned rather than refused — and
-    // each arrives as the shape its own contract has.
-    let chain = [upscale(UpscaleVariant::Osaka(OsakaPrecision::Fp16)), kyoto(8.0)];
+    // A chain naming both is planned rather than refused — and each arrives as the shape its own contract has. In
+    // the apply order: the upscale, then the restore.
+    let chain = [kyoto(8.0), osaka(OsakaPrecision::Fp16, 1.0)];
     let planned = plan::<Fake>(&chain).expect("a chain mixing the two contracts was refused");
 
     assert_eq!(
         session_artifacts(&planned[0]),
-        vec!["up_osaka_vae_encoder_fp16", "up_osaka_fp16", "up_osaka_vae_decoder_fp16"],
-        "Osaka did not plan as a graph set"
+        vec!["up_kyoto_4x_fp16", "up_kyoto_2x_fp16"],
+        "Kyoto did not plan as its own pass sequence"
     );
     assert_eq!(
         session_artifacts(&planned[1]),
-        vec!["up_kyoto_4x_fp16", "up_kyoto_2x_fp16"],
-        "Kyoto did not plan as its own pass sequence"
+        vec!["up_osaka_vae_encoder_fp16", "up_osaka_fp16", "up_osaka_vae_decoder_fp16"],
+        "Osaka did not plan as a graph set"
     );
 }
 
@@ -145,7 +145,7 @@ fn osakas_three_graphs_each_plan_with_the_settings_measured_for_that_graph() {
     // that had split the artifact from its profile, or paired them by position, would be visible here rather than
     // only on a GPU.
     for precision in [OsakaPrecision::Fp16, OsakaPrecision::Int8] {
-        let osaka = upscale(UpscaleVariant::Osaka(precision));
+        let osaka = osaka(precision, 4.0);
 
         let planned = plan::<Fake>(std::slice::from_ref(&osaka)).unwrap_or_else(|error| panic!("Osaka: {error}"));
 
@@ -185,7 +185,7 @@ fn a_planned_graph_set_acquires_one_session_per_graph_under_that_graphs_settings
     // The acquisition loop's own contract, which is what `Planned::sessions` exists to make unmistakable: three
     // artifacts in the variant's order, each paired with the profile measured for it rather than with one shared
     // profile the loop looked up beside them.
-    let osaka = upscale(UpscaleVariant::Osaka(OsakaPrecision::Fp16));
+    let osaka = osaka(OsakaPrecision::Fp16, 4.0);
     let planned = plan::<Fake>(std::slice::from_ref(&osaka)).expect("Osaka plans");
 
     assert_eq!(

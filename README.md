@@ -98,8 +98,8 @@ opai photo.jpg --up -o photo-large.png
 # Restore faces using the default model, then upscale 2x with Kyoto, and save as WebP
 opai portrait.jpg --fr --up kyoto --scale 2 -o portrait.webp
 
-# Upscale with Osaka using its SD quality
-opai scan.png --up osaka -q sd -o scan.avif
+# Restore with Osaka using its SD quality, at twice the size
+opai scan.png --rs osaka --rs-scale 2 -q sd -o scan.avif
 
 # Denoise twice as strongly with Gothenburg, then adjust light with Paris
 opai night.jpg --dn gothenburg --dn-str 200 --la --la-bias -20 -o night-clean.jpg
@@ -124,7 +124,7 @@ On Windows x64 and Linux, the app can use CUDA and TensorRT for the best perform
 - A recent NVIDIA driver with support to CUDA 13 (version 580 or newer).
 - At least 6 GB of VRAM; 8 GB or more is recommended.
 
-### Osaka upscaler
+### Osaka restorer
 
 **Osaka** is a much heavier model than the others and has its own requirements: at least 32 GB of RAM and a GPU with 16 GB of VRAM on Windows and Linux, or 16 GB of unified memory on macOS. It also takes about 7 GB of extra disk space.
 
@@ -182,9 +182,15 @@ All enhancements available here come from open-source AI models that were adapte
 - **Tokyo**: use when you want a natural upscale without exaggeration. It focuses on preserving the original look and fine structures instead of "inventing" new details, making it ideal when realism and faithfulness matter more than sharpness.
 - **Kyoto**: use for real-world photos (people, landscapes, products). It excels at restoring details while handling noise, blur, and compression artifacts. Ideal for practical applications where images are imperfect, and you want visually pleasing, robust results fast.
 - **Saitama**: use for cartoon, drawings, line art, and digital illustrations. It preserves clean lines, flat colors, and stylized shading without introducing photo-like textures. Best when sharp edges and stylistic consistency matter more than realism.
-- **Osaka**: use when you want the best possible quality upscale available. It rebuilds detail rather than just sharpening it, going furthest on photos that are soft or heavily compressed. It's slow, though, and needs a powerful GPU to run well.
+*Verdict*: start with **Tokyo** if you have a powerful GPU, then try **Kyoto** if it's taking too long. If both leave the image looking soft, try **Restore** instead.
 
-*Verdict*: start with **Tokyo** if you have a powerful GPU, then try **Kyoto** if it's taking too long. Reach for **Osaka** only when the others leave the image looking soft, and you can afford the wait.
+### Restore
+
+Generative restoration, which runs last, after every other enhancement. These models **redraw** plausible detail rather than recovering what was there, so they can change faces, textures and lettering; lower the strength if the result looks invented. Restore can also enlarge (2x or 4x): it then takes the place of Upscale.
+
+- **Osaka**: use when you want the furthest-reaching restoration available. It rebuilds detail rather than just sharpening it, going furthest on photos that are soft or heavily compressed. It's slow, though, and needs a powerful GPU to run well.
+
+*Verdict*: reach for **Osaka** only when the faithful enhancements leave the image looking soft, and you can afford the wait.
 
 ## 💣 Troubleshooting
 

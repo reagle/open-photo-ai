@@ -318,7 +318,7 @@ mod tests {
         SharedSettings::from_gui(
             "coreml",
             ["colorization", "color_balance"],
-            [("upscale", "osaka_int8"), ("denoise", "stockholm_fp16"), ("color_balance", "saopaulo_fp32")],
+            [("restore", "osaka_int8"), ("denoise", "stockholm_fp16"), ("color_balance", "saopaulo_fp32")],
         )
     }
 
@@ -331,10 +331,10 @@ mod tests {
         assert!(settings.excludes(Family::ColorBalance) && !settings.excludes(Family::Upscale));
 
         let families: Vec<Family> = settings.models.iter().map(|choice| choice.family).collect();
-        assert_eq!(families, [Family::Denoise, Family::ColorBalance, Family::Upscale], "apply order");
+        assert_eq!(families, [Family::Denoise, Family::ColorBalance, Family::Restore], "apply order");
 
-        let upscale = settings.model(Family::Upscale).expect("chosen");
-        assert_eq!((upscale.codename, upscale.precision, upscale.position), ("osaka", Precision::Int8, 1));
+        let restore = settings.model(Family::Restore).expect("chosen");
+        assert_eq!((restore.codename, restore.precision, restore.position), ("osaka", Precision::Int8, 1));
         let balance = settings.model(Family::ColorBalance).expect("chosen");
         assert_eq!((balance.codename, balance.precision, balance.position), ("saopaulo", Precision::Fp32, 0));
     }
@@ -370,7 +370,7 @@ mod tests {
         let text = std::fs::read_to_string(&path).expect("readable");
         assert!(text.contains(r#""version": 1"#), "{text}");
         assert!(text.contains(r#""processor": "CoreML""#), "{text}");
-        assert!(text.contains(r#""upscale": {"#) && text.contains(r#""model": "osaka""#), "{text}");
+        assert!(text.contains(r#""restore": {"#) && text.contains(r#""model": "osaka""#), "{text}");
 
         assert_eq!(read_at(&path), Loaded::Read(settings));
     }

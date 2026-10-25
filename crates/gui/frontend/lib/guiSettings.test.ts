@@ -36,7 +36,7 @@ describe("mirrorGuiSettings", () => {
             JSON.stringify({
                 state: {
                     processor: "coreml",
-                    models: { upscale: "osaka_int8" },
+                    models: { upscale: "saitama_fp16" },
                     autopilotExcluded: ["colorization", "color_balance"],
                 },
                 version: 0,
@@ -49,7 +49,7 @@ describe("mirrorGuiSettings", () => {
         expect(sent()).toEqual([
             {
                 processor: "coreml",
-                models: { upscale: "osaka_int8" },
+                models: { upscale: "saitama_fp16" },
                 autopilotExcluded: ["colorization", "color_balance"],
             },
         ]);

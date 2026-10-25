@@ -18,7 +18,7 @@ use opai::{
     ArtifactId, Bias, ColorBalance, ColorBalanceParams, ColorBalanceVariant, Colorization, ColorizationVariant,
     Confidence, Denoise, DenoiseParams, DenoiseVariant, Dependency, Detection, DetectionOutput, DetectionVariant,
     EncodeOptions, ExecutionProvider, Face, FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant, Faces, Family,
-    FamilyEntry, FloatPrecision, GraphRole, GraphSet, ImageError, ImageFormat, ImageInfo, ImageIoError, InitError,
+    FamilyEntry, FloatPrecision, GraphRole, ImageError, ImageFormat, ImageInfo, ImageIoError, InitError,
     LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant, OnProgress, Opai, Operation, OsakaPrecision,
     ParameterEntry, Pass, Phase, Picture, Point, Precision, Progress, RangeError, RawFormat, RawImageInfo, Rect,
     Resolution, Scale, Sharpen, SharpenParams, SharpenVariant, Strength, SupportedProviders, UnknownRole, Upscale,
@@ -125,30 +125,29 @@ fn the_model_vocabulary_is_reachable_from_the_crate_root() {
     let required: Vec<ArtifactId> = operation.required_artifacts();
     assert_eq!(required.iter().map(ArtifactId::as_str).collect::<Vec<_>>(), vec!["up_kyoto_4x_fp32"]);
 
-    match operation.resolve() {
-        Resolution::Passes(passes) => {
-            let first: &Pass = passes.first().expect("a pass sequence is never empty");
-            assert_eq!(first.scale, 4);
-        }
-        Resolution::Graphs(_) => panic!("a convolutional variant resolved to graphs"),
-    }
+    let Resolution::Passes(passes) = operation.resolve();
+    let first: &Pass = passes.first().expect("a pass sequence is never empty");
+    assert_eq!(first.scale, 4);
+}
 
-    let osaka = Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Int8), scale);
-    match osaka.resolve() {
-        Resolution::Graphs(graphs) => {
-            let graphs: GraphSet = graphs;
-            assert_eq!(
-                graphs.graph(GraphRole::Transformer).expect("Osaka declares a transformer").as_str(),
-                "up_osaka_int8"
-            );
-        }
-        Resolution::Passes(_) => panic!("a diffusion variant resolved to passes"),
-    }
+/// Osaka's graphs, reached through the restore family it moved to: addressed by role, and refused by role for a model
+/// that is one graph.
+#[test]
+fn osakas_graphs_are_reachable_from_the_crate_root() {
+    let scale = Scale::new(2.0).expect("in range");
+    let strength = Strength::new(1.0).expect("in range");
 
-    // A convolutional variant declares no graphs at all, which is the reachable way to see the error type.
-    let unknown: UnknownRole = operation.graph(GraphRole::Encoder).expect_err("Kyoto declares no graphs");
+    let Operation::Restore(osaka) = Restore::osaka(OsakaPrecision::Int8, scale, strength) else {
+        panic!("Restore::osaka built another family");
+    };
+    let transformer: ArtifactId = osaka.graph(GraphRole::Transformer).expect("Osaka declares a transformer");
+    assert_eq!(transformer.as_str(), "up_osaka_int8");
+
+    // A single-graph model declares no roles at all, which is the reachable way to see the error type.
+    let kazan = Restore::new(RestoreVariant::Kazan(FloatPrecision::Fp16), scale, strength);
+    let unknown: UnknownRole = kazan.graph(GraphRole::Encoder).expect_err("Kazan declares no graphs");
     assert_eq!(unknown.role, GraphRole::Encoder);
-    assert_eq!(unknown.variant, "kyoto");
+    assert_eq!(unknown.variant, "kazan");
 }
 
 /// The catalogue, reached the way a front end populating a chooser reaches it.
@@ -158,7 +157,7 @@ fn the_catalogue_is_reachable_from_the_crate_root() {
     let upscale = families.iter().find(|entry| entry.family == Family::Upscale).expect("upscale is published");
 
     let variants: &Vec<VariantEntry> = &upscale.variants;
-    assert_eq!(variants.len(), 4);
+    assert_eq!(variants.len(), 3);
 
     // Read off the variant rather than the family, which is where a front end reads it: it draws controls for a
     // selected variant, never for a family.
@@ -440,7 +439,7 @@ fn the_two_face_families_are_reachable_from_the_crate_root() {
         _ => panic!("the incomplete declaration was matched as something else"),
     }
 
-    let osaka = Upscale::osaka(OsakaPrecision::Fp16, Scale::new(4.0).expect("in range"));
+    let osaka = Restore::osaka(OsakaPrecision::Fp16, Scale::new(4.0).expect("in range"), Strength::clamped(1.0));
     let unsupported = InferenceError::Unsupported { operation: osaka.display_name(), reason: incomplete };
     assert_eq!(
         unsupported.to_string(),
@@ -614,7 +613,7 @@ fn the_operation_seam_is_reachable_from_the_crate_root() {
         carried.clone(),
         FaceRecovery::athens(FloatPrecision::Fp16, Faces::empty(), Fidelity::new(1.0).unwrap()),
         FaceRecovery::santorini(FloatPrecision::Fp32, Faces::empty()),
-        Upscale::osaka(OsakaPrecision::Int8, Scale::new(2.5).unwrap()),
+        Restore::osaka(OsakaPrecision::Int8, Scale::new(2.5).unwrap(), Strength::new(1.0).unwrap()),
     ];
 
     // What whoever downloads a queue's models asks, of every entry alike — one file for three of these and three for
@@ -640,8 +639,8 @@ fn the_operation_seam_is_reachable_from_the_crate_root() {
 
     // Matched on to reach what only one family answers, which is how a question this type does not forward is asked.
     match &queue[3] {
-        Operation::Upscale(operation) => assert_eq!(operation.params().scale, Scale::new(2.5).unwrap()),
-        other => panic!("the queue's fourth entry is an upscale, not {other:?}"),
+        Operation::Restore(operation) => assert_eq!(operation.params().scale, Scale::new(2.5).unwrap()),
+        other => panic!("the queue's fourth entry is a restore, not {other:?}"),
     }
 
     // The other carrier, for the other path. Both report the same five questions, which is what lets a consumer that
@@ -728,7 +727,7 @@ fn a_published_catalogue_row_can_be_turned_back_into_an_operation_from_the_crate
 
     // The two ways a request can be wrong, and there is no third: what a caller supplies beyond the codename and
     // the precision is values that were bounded when they were built.
-    let osaka: &VariantEntry = VariantEntry::published(Family::Upscale, "osaka").expect("upscale publishes Osaka");
+    let osaka: &VariantEntry = VariantEntry::published(Family::Restore, "osaka").expect("restore publishes Osaka");
     let refused: BuildError = osaka
         .build(Precision::Fp32, &values_for(osaka))
         .expect_err("no FP32 build of the diffusion transformer was ever published");
@@ -795,8 +794,8 @@ fn every_familys_codename_inverse_is_reachable_from_the_crate_root() {
         Some(FaceRecoveryVariant::Santorini(FloatPrecision::Fp32))
     );
     assert_eq!(
-        UpscaleVariant::from_codename("osaka", Precision::Int8),
-        Some(UpscaleVariant::Osaka(OsakaPrecision::Int8))
+        RestoreVariant::from_codename("osaka", Precision::Int8),
+        Some(RestoreVariant::Osaka(OsakaPrecision::Int8))
     );
 
     assert_eq!(
@@ -804,8 +803,10 @@ fn every_familys_codename_inverse_is_reachable_from_the_crate_root() {
         Some(RestoreVariant::Kazan(FloatPrecision::Fp16))
     );
 
-    // Osaka has no FP32 build and the float-only variants have no INT8 one, so neither pairing names a variant.
-    assert_eq!(UpscaleVariant::from_codename("osaka", Precision::Fp32), None);
+    // Osaka has no FP32 build and the float-only variants have no INT8 one, so neither pairing names a variant; and
+    // Osaka is a restore model, so upscale names nothing by it at any precision.
+    assert_eq!(RestoreVariant::from_codename("osaka", Precision::Fp32), None);
+    assert_eq!(UpscaleVariant::from_codename("osaka", Precision::Int8), None);
     assert_eq!(DenoiseVariant::from_codename("stockholm", Precision::Int8), None);
     // A codename published by another family names nothing here, which is the pairing the eight types exist to stop.
     assert_eq!(DenoiseVariant::from_codename("moscow", Precision::Fp32), None);
