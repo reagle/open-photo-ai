@@ -201,13 +201,28 @@ const repairQuality = (value: unknown): QualityChoices => {
     );
 };
 
-/** A stored model record, kept only where it names something - the shape, not the models themselves. */
+/**
+ * A stored model record, kept only where it names something - the shape, not the models themselves - and with a
+ * default that names a model which moved family carried to the family it moved to.
+ *
+ * **One move so far: Osaka, from upscale to restore.** A user who chose it as their default upscaler chose it for
+ * what it does, which is now a restore; leaving the choice under upscale would silently fall back to Tokyo there and
+ * lose it, while the restore row started at Kazan. Carried only where the user has not chosen a restore default of
+ * their own, and taken off upscale either way.
+ */
 const repairModels = (value: unknown): ModelChoices => {
     if (value === null || typeof value !== "object") return {};
 
-    return Object.fromEntries(
+    const models = Object.fromEntries(
         Object.entries(value as Record<string, unknown>).filter(([, selection]) => typeof selection === "string"),
     ) as ModelChoices;
+
+    if (models.upscale?.startsWith("osaka_")) {
+        models.restore ??= models.upscale;
+        delete models.upscale;
+    }
+
+    return models;
 };
 
 /**

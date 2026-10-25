@@ -329,8 +329,7 @@
             "models": {
                 "tokyo": "Use this model when you want a natural upscale without exaggeration. It focuses on preserving the original look and fine structures instead of \"inventing\" new details, making it ideal when realism and faithfulness matter more than sharpness.",
                 "kyoto": "Use this model for real-world photos (people, landscapes, products). It excels at restoring details while handling noise, blur, and compression artifacts. Ideal for practical applications where images are imperfect, and you want visually pleasing, robust results fast.",
-                "saitama": "Use this model for cartoon, drawings, line art, and digital illustrations. It preserves clean lines, flat colors, and stylized shading without introducing photo-like textures. Best when sharp edges and stylistic consistency matter more than realism.",
-                "osaka": "Use when you want the best possible quality upscale available. It rebuilds detail rather than just sharpening it, going furthest on photos that are soft or heavily compressed. It's slow, though, and needs a powerful GPU to run well."
+                "saitama": "Use this model for cartoon, drawings, line art, and digital illustrations. It preserves clean lines, flat colors, and stylized shading without introducing photo-like textures. Best when sharp edges and stylistic consistency matter more than realism."
             },
             "suspended": "Restore is enlarging this photograph"
         },
@@ -339,7 +338,8 @@
             "size": "Size",
             "generative": "Generative: redraws detail, and may change faces, textures and lettering.",
             "models": {
-                "kazan": "Use this model when the blur is too strong for Sharpen — e.g. an out-of-focus face, or a photo from an old camera that was never quite sharp. It redraws plausible detail rather than recovering it, so it can change faces, textures and small text; lower the strength if the result looks invented. It is slow and a large download."
+                "kazan": "Use this model when the blur is too strong for Sharpen — e.g. an out-of-focus face, or a photo from an old camera that was never quite sharp. It redraws plausible detail rather than recovering it, so it can change faces, textures and small text; lower the strength if the result looks invented. It is slow and a large download.",
+                "osaka": "Use this model when you want the most thorough restoration available. It rebuilds detail rather than just sharpening it, going furthest on photos that are soft or heavily compressed. It's slow, though, and needs a powerful GPU to run well."
             }
         },
         "add": "Add enhancement",

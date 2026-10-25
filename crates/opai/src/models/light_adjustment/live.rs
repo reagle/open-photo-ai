@@ -1,6 +1,6 @@
 //! The live checks: the real Paris and Lyon weights, the real ONNX Runtime, a real photograph, end to end.
 //!
-//! `#[ignore]`d, as the chain's own live checks and [`osaka::live`](crate::models::upscale::osaka::live) are. Run them
+//! `#[ignore]`d, as the chain's own live checks and [`osaka::live`](crate::models::restore::osaka::live) are. Run them
 //! by hand:
 //!
 //! ```text

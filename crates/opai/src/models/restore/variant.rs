@@ -6,8 +6,8 @@ use super::super::catalogue::RESTORE_PARAMETERS;
 use super::super::precision::{FloatPrecision, Precision};
 use super::super::simple::SimpleVariant;
 
-use super::kazan;
-use imaging::TileGeometry;
+use super::osaka::precision::OsakaPrecision;
+use super::{kazan, osaka};
 
 use crate::providers::profile::EpProfile;
 
@@ -31,18 +31,29 @@ pub(crate) const KAZAN: RestoreRow = RestoreRow {
     precisions: &FloatPrecision::PRECISIONS,
 };
 
+/// Osaka: SeedVR2, a one-step diffusion transformer between the two halves of a VAE.
+pub(crate) const OSAKA: RestoreRow = RestoreRow {
+    row: SimpleVariant { codename: "osaka", label: "Osaka", parameters: &RESTORE_PARAMETERS },
+    precisions: &OsakaPrecision::PRECISIONS,
+};
+
 /// Every restore row, in the order a chooser should offer them. Read by the catalogue.
-pub(crate) const ALL: [RestoreRow; 1] = [KAZAN];
+///
+/// Kazan first: it is a fraction of Osaka's size and memory, and restores a soft photograph further than Osaka's
+/// one-step SeedVR2 does at 1x. Osaka is the one to reach for where Kazan's redraw is not enough.
+pub(crate) const ALL: [RestoreRow; 2] = [KAZAN, OSAKA];
 
 /// Which restore model an operation runs, and at which precision.
 ///
-/// The precision travels **inside** the variant, in the domain that model is published in, so `rs_kazan_int8` is not
-/// a request this refuses — it does not compile.
+/// The precision travels **inside** the variant, in the domain that model is published in, so `rs_kazan_int8` and
+/// `up_osaka_fp32` are not requests this refuses — they do not compile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "codename", content = "precision", rename_all = "lowercase")]
 pub enum RestoreVariant {
     /// Kazan: one 512x512 graph per tile, run through the shared filter.
     Kazan(FloatPrecision),
+    /// Osaka: three graphs run as one pass over 960x960 regions, by its own driver.
+    Osaka(OsakaPrecision),
 }
 
 impl RestoreVariant {
@@ -50,20 +61,16 @@ impl RestoreVariant {
     pub fn precision(self) -> Precision {
         match self {
             Self::Kazan(precision) => precision.into(),
+            Self::Osaka(precision) => precision.into(),
         }
     }
 
-    /// The execution-provider tuning declared for this variant: Kazan's is [`kazan::profile`].
+    /// The execution-provider tuning declared for this variant: Kazan's is [`kazan::profile`] and Osaka's the one
+    /// its row declares, which its graphs each start from.
     pub(crate) fn profile(self) -> EpProfile {
         match self {
             Self::Kazan(precision) => kazan::profile(precision.into()),
-        }
-    }
-
-    /// The tile this variant's graph accepts and how far tiles overlap: [`kazan::GEOMETRY`].
-    pub(crate) const fn geometry(self) -> TileGeometry {
-        match self {
-            Self::Kazan(_) => kazan::GEOMETRY,
+            Self::Osaka(precision) => osaka::profile(precision.into()),
         }
     }
 
@@ -75,6 +82,7 @@ impl RestoreVariant {
         // Matched on the row's own constant rather than a literal, so a renamed row cannot leave this behind.
         match codename {
             codename if codename == KAZAN.row.codename => FloatPrecision::narrow(precision).map(Self::Kazan),
+            codename if codename == OSAKA.row.codename => OsakaPrecision::narrow(precision).map(Self::Osaka),
             _ => None,
         }
     }
@@ -84,6 +92,7 @@ impl RestoreVariant {
         // An exhaustive match rather than a lookup, so a variant added later cannot compile without one.
         match self {
             Self::Kazan(_) => KAZAN,
+            Self::Osaka(_) => OSAKA,
         }
     }
 
@@ -101,6 +110,7 @@ impl RestoreVariant {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::providers::profile::{CoreMlComputeUnits, CoreMlSpecialization, ExecutionMode};
 
     /// Every variant and precision pairing this family publishes, derived from the rows' own precision lists.
     pub(crate) fn every_variant() -> Vec<RestoreVariant> {
@@ -118,6 +128,7 @@ pub(crate) mod tests {
     #[test]
     fn every_variant_reports_its_label_codename_and_precision() {
         assert_eq!(RestoreVariant::Kazan(FloatPrecision::Fp32).label(), "Kazan");
+        assert_eq!(RestoreVariant::Osaka(OsakaPrecision::Int8).label(), "Osaka");
 
         for variant in every_variant() {
             assert_eq!(variant.codename(), variant.label().to_lowercase(), "{variant:?}");
@@ -148,6 +159,7 @@ pub(crate) mod tests {
         assert_eq!(RestoreVariant::from_codename("", Precision::Fp32), None);
         assert_eq!(RestoreVariant::from_codename("KAZAN", Precision::Fp32), None);
         assert_eq!(RestoreVariant::from_codename("kazan", Precision::Int8), None, "Kazan has no INT8 build");
+        assert_eq!(RestoreVariant::from_codename("osaka", Precision::Fp32), None, "Osaka has no FP32 build");
     }
 
     #[test]
@@ -160,7 +172,53 @@ pub(crate) mod tests {
                 RestoreVariant::Kazan(FloatPrecision::Fp32) => {
                     assert_eq!(variant.profile(), EpProfile::default(), "{variant:?} declared a setting at FP32");
                 }
+                // Measured at both of the precisions it is published at; see `osaka::profile`.
+                RestoreVariant::Osaka(precision) => {
+                    assert_eq!(variant.profile(), super::super::osaka::profile(precision.into()), "{variant:?}");
+                    assert_ne!(variant.profile(), EpProfile::default(), "{variant:?} lost its measured profile");
+                }
             }
         }
+    }
+
+    #[test]
+    fn osaka_declares_every_measured_setting_at_both_precisions() {
+        // Field by field and then whole, so "carries its arm's profile" cannot pass by both sides being the default —
+        // and at both precisions, because nothing in this profile is a property of the export's types.
+        for precision in OsakaPrecision::ALL {
+            let osaka = RestoreVariant::Osaka(precision).profile();
+
+            assert_eq!(osaka.execution_mode, ExecutionMode::Sequential, "at {precision:?}");
+            assert!(osaka.disable_mem_pattern, "at {precision:?}: the memory planner was left on");
+            // Both names, spelled out rather than compared against `BROKEN_OPTIMIZERS`, so that dropping one of them
+            // fails here instead of agreeing with itself. The order is the declaration's; the runtime reads them as a
+            // set, but the value written is a list.
+            assert_eq!(
+                osaka.disabled_optimizers,
+                ["ReshapeFusion", "SimplifiedLayerNormFusion"],
+                "at {precision:?}: the transformers the reference names for this graph were not both declared"
+            );
+            assert_eq!(osaka.coreml_compute_units, CoreMlComputeUnits::CpuAndGpu, "at {precision:?}");
+            assert!(osaka.cuda_prefer_nhwc, "at {precision:?}: the VAE halves' layout was not declared");
+            assert_eq!(
+                osaka.trt_options.get("trt_builder_optimization_level").map(String::as_str),
+                Some("3"),
+                "at {precision:?}"
+            );
+
+            // And nothing else. TensorRT's FP16 and INT8 modes are the two absences that are decisions rather than
+            // omissions — see `osaka::profile` — so a profile that named either would fail here.
+            assert!(!osaka.trt_options.contains_key("trt_fp16_enable"), "at {precision:?}: FP16 mode was declared");
+            assert!(!osaka.trt_options.contains_key("trt_int8_enable"), "at {precision:?}: INT8 mode was declared");
+            assert_eq!(osaka.trt_options.len(), 1, "at {precision:?}: an unmeasured TensorRT option was declared");
+            assert_eq!(osaka.coreml_specialization, CoreMlSpecialization::default(), "at {precision:?}");
+        }
+
+        // The two arms are the same declaration rather than two that happen to agree today, which is what the
+        // precision-independence above actually claims.
+        assert_eq!(
+            RestoreVariant::Osaka(OsakaPrecision::Fp16).profile(),
+            RestoreVariant::Osaka(OsakaPrecision::Int8).profile()
+        );
     }
 }

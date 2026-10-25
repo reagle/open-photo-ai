@@ -321,8 +321,7 @@
             "models": {
                 "tokyo": "Gunakan model ini saat Anda menginginkan perbesaran yang alami tanpa berlebihan. Model ini berfokus mempertahankan tampilan asli dan struktur halus alih-alih \"mengarang\" detail baru, sehingga ideal ketika realisme dan kesetiaan pada gambar asli lebih penting daripada ketajaman.",
                 "kyoto": "Gunakan model ini untuk foto dunia nyata (orang, lanskap, produk). Model ini unggul dalam memulihkan detail sekaligus menangani noise, blur, dan artefak kompresi. Ideal untuk penggunaan praktis dengan gambar yang tidak sempurna, ketika Anda menginginkan hasil yang enak dipandang dan andal secara cepat.",
-                "saitama": "Gunakan model ini untuk kartun, gambar tangan, line art, dan ilustrasi digital. Model ini mempertahankan garis yang bersih, warna datar, dan bayangan bergaya tanpa menambahkan tekstur seperti foto. Terbaik ketika tepi yang tajam dan konsistensi gaya lebih penting daripada realisme.",
-                "osaka": "Gunakan model ini saat Anda menginginkan kualitas perbesaran terbaik yang tersedia. Model ini membangun ulang detail alih-alih sekadar menajamkannya, dan hasilnya paling jauh pada foto yang lembut atau sangat terkompresi. Namun, model ini lambat dan membutuhkan GPU yang bertenaga agar berjalan dengan baik."
+                "saitama": "Gunakan model ini untuk kartun, gambar tangan, line art, dan ilustrasi digital. Model ini mempertahankan garis yang bersih, warna datar, dan bayangan bergaya tanpa menambahkan tekstur seperti foto. Terbaik ketika tepi yang tajam dan konsistensi gaya lebih penting daripada realisme."
             },
             "suspended": "Restorasi sedang memperbesar foto ini"
         },
@@ -331,7 +330,8 @@
             "size": "Ukuran",
             "generative": "Generatif: menggambar ulang detail, dan dapat mengubah wajah, tekstur, dan tulisan.",
             "models": {
-                "kazan": "Gunakan model ini saat keburaman terlalu kuat untuk Penajaman — mis. wajah yang tidak fokus, atau foto dari kamera lama yang memang tidak pernah benar-benar tajam. Model ini menggambar ulang detail yang masuk akal alih-alih memulihkannya, sehingga dapat mengubah wajah, tekstur, dan teks kecil; turunkan kekuatannya jika hasilnya tampak dibuat-buat. Model ini lambat dan unduhannya besar."
+                "kazan": "Gunakan model ini saat keburaman terlalu kuat untuk Penajaman — mis. wajah yang tidak fokus, atau foto dari kamera lama yang memang tidak pernah benar-benar tajam. Model ini menggambar ulang detail yang masuk akal alih-alih memulihkannya, sehingga dapat mengubah wajah, tekstur, dan teks kecil; turunkan kekuatannya jika hasilnya tampak dibuat-buat. Model ini lambat dan unduhannya besar.",
+                "osaka": "Gunakan model ini saat Anda menginginkan restorasi paling menyeluruh yang tersedia. Model ini membangun ulang detail alih-alih sekadar menajamkannya, dan hasilnya paling jauh pada foto yang lembut atau sangat terkompresi. Namun, model ini lambat dan membutuhkan GPU yang bertenaga agar berjalan dengan baik."
             }
         },
         "add": "Tambah peningkatan",

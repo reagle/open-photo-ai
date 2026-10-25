@@ -319,13 +319,13 @@ impl VariantEntry {
                 UpscaleVariant::Tokyo(precision) => Upscale::tokyo(precision, values.scale),
                 UpscaleVariant::Kyoto(precision) => Upscale::kyoto(precision, values.scale),
                 UpscaleVariant::Saitama(precision) => Upscale::saitama(precision, values.scale),
-                UpscaleVariant::Osaka(precision) => Upscale::osaka(precision, values.scale),
             },
             // The one family reading two of the values: the size it restores at, under the name upscale's factor is
             // published with, and the strength. Each is brought inside the family's own narrower bounds by the
             // constructor.
             Family::Restore => match RestoreVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
                 RestoreVariant::Kazan(precision) => Restore::kazan(precision, values.scale, values.strength),
+                RestoreVariant::Osaka(precision) => Restore::osaka(precision, values.scale, values.strength),
             },
         };
 
@@ -366,6 +366,13 @@ mod tests {
     fn a_codename_no_family_publishes_is_refused_by_name() {
         let refused = VariantEntry::published(Family::Upscale, "berlin").expect_err("Berlin is not a model");
 
+        // Nor is Osaka an upscaler any more: it is published by restore, and asking upscale for it is refused the
+        // same way, naming the family that was asked.
+        assert_eq!(
+            VariantEntry::published(Family::Upscale, "osaka").expect_err("Osaka restores"),
+            BuildError::UnknownModel { family: Family::Upscale, codename: "osaka".to_string() }
+        );
+
         assert_eq!(refused, BuildError::UnknownModel { family: Family::Upscale, codename: "berlin".to_string() });
         assert_eq!(refused.to_string(), "Upscale publishes no model called `berlin`");
     }
@@ -383,7 +390,7 @@ mod tests {
 
     #[test]
     fn every_upscale_variant_builds_at_every_precision_it_publishes() {
-        // Driven from the catalogue rather than from a list of the four models, which is the property this seam
+        // Driven from the catalogue rather than from a list of the three models, which is the property this seam
         // exists for: a fifth upscale model is covered here by being published.
         for variant in &family_entry(Family::Upscale).variants {
             for &precision in variant.precisions {
@@ -473,7 +480,7 @@ mod tests {
     fn osaka_refuses_fp32_through_its_own_published_precisions() {
         // D3: the "no FP32 build" special case is gone. What refuses this is the same `precisions.contains` every
         // other variant is checked by, reading the list the row publishes — so the fact lives in one place.
-        let osaka = upscale("osaka");
+        let osaka = VariantEntry::published(Family::Restore, "osaka").expect("restore publishes Osaka");
 
         assert!(!osaka.precisions.contains(&Precision::Fp32), "the row stopped stating the fact this rests on");
         assert_eq!(

@@ -54,6 +54,9 @@ describe("a restore's options", () => {
 
         expect(screen.getByRole("radio", { name: "Kazan SD" })).toBeChecked();
         expect(screen.getByRole("radio", { name: "Kazan HD" })).toBeInTheDocument();
+        // Osaka, which moved here from upscale, at its own pair: fp16 is HD and int8 is SD.
+        expect(screen.getByRole("radio", { name: "Osaka HD" })).toBeInTheDocument();
+        expect(screen.getByRole("radio", { name: "Osaka SD" })).toBeInTheDocument();
 
         const sizes = within(screen.getByRole("radiogroup", { name: "Size" }));
         expect(sizes.getAllByRole("radio").map((size) => size.textContent)).toEqual(["1x", "2x", "4x"]);
@@ -70,6 +73,16 @@ describe("a restore's options", () => {
         expect(document.querySelector("[data-slot='restore-generative']")).toHaveTextContent(
             "Generative: redraws detail, and may change faces, textures and lettering.",
         );
+    });
+
+    it("write a chosen model at its own precision, keeping the size and the strength", async () => {
+        await open([restore(2, 0.5)]);
+
+        fireEvent.click(screen.getByRole("radio", { name: "Osaka SD" }));
+
+        // Osaka's SD build is int8, not fp16: the tier is a statement about quality rather than about a number of
+        // bits, and the two disagree for that model.
+        await waitFor(() => expect(stack()).toEqual([{ ...restore(2, 0.5), codename: "osaka", precision: "int8" }]));
     });
 
     it("write a chosen size, and change nothing by being opened", async () => {

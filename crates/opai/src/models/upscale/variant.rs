@@ -12,8 +12,6 @@ use super::super::scale::Scale;
 use super::MODELS;
 use super::conv::PassShape;
 use super::kyoto::KYOTO;
-use super::osaka::OSAKA;
-use super::osaka::precision::OsakaPrecision;
 use super::resolve::Resolution;
 use super::saitama::SAITAMA;
 use super::tokyo::TOKYO;
@@ -26,13 +24,12 @@ use crate::providers::profile::EpProfile;
 // lifetime shorter than the process.
 //
 // Once per contract rather than once per model: every difference between Tokyo, Kyoto and Saitama is data in their
-// rows, and every difference between those three and Osaka is the contract — so a unit struct per model would be four
-// near-identical bodies delegating to one family-tier function, which is the copying `crate::models`' tier rule warns
-// against.
+// rows — so a unit struct per model would be three near-identical bodies delegating to one family-tier function, which
+// is the copying `crate::models`' tier rule warns against. The diffusion contract that was the second implementor,
+// Osaka's, moved to the restore family with Osaka.
 /// What the family asks of a model, and the only thing [`UpscaleVariant::model`] hands back.
 ///
-/// Implemented **once per contract**: [`ConvVariant`](super::conv::ConvVariant) in [`conv`](super::conv) and [`DiffusionVariant`](super::osaka::graph::DiffusionVariant) in
-/// [`graph`](super::osaka::graph).
+/// Implemented **once per contract**: [`ConvVariant`](super::conv::ConvVariant) in [`conv`](super::conv).
 pub(crate) trait UpscaleModel: Send + Sync {
     /// The developer-facing identifier every artifact name for this model is composed from.
     fn codename(&self) -> &'static str;
@@ -56,9 +53,8 @@ pub(crate) trait UpscaleModel: Send + Sync {
 
     /// The tensor shape this model's passes run at, or `None` where this model runs no pass sequence.
     ///
-    /// `None` for the diffusion contract, which runs graphs at a geometry its own module declares. The arm of
-    /// [`Upscale::pipeline`](super::Upscale::pipeline) that builds a pass sequence relies on it being `Some` for every
-    /// model that resolves to passes.
+    /// [`Upscale::pipeline`](super::Upscale::pipeline) relies on it being `Some` for every model that resolves to
+    /// passes, which is every model this family holds today.
     fn pass_shape(&self) -> Option<PassShape>;
 
     /// The variant naming this row at `precision`, or `None` where this row publishes nothing at it.
@@ -67,17 +63,19 @@ pub(crate) trait UpscaleModel: Send + Sync {
     /// same fact [`precisions`](Self::precisions) reports: answering both from the row is what keeps them agreeing.
     fn variant(&self, precision: Precision) -> Option<UpscaleVariant>;
 
-    /// What a request for `scale` at `precision` resolves to — the native passes covering it, or the graphs loaded
-    /// together for one pass.
+    /// What a request for `scale` at `precision` resolves to: the native passes covering it.
     fn resolve(&self, precision: Precision, scale: Scale) -> Resolution;
 }
 
 // The precision inside the variant rather than beside it as one shared enum plus a per-variant check.
 /// Which upscale model an operation runs, and at which precision.
 ///
-/// The precision travels **inside** the variant, in the domain that variant is actually published in. Osaka paired
-/// with FP32 is then not a runtime error — it does not compile, and the artifact `up_osaka_fp32` has no path that
+/// The precision travels **inside** the variant, in the domain that variant is actually published in. Tokyo paired
+/// with INT8 is then not a runtime error — it does not compile, and the artifact `up_tokyo_4x_int8` has no path that
 /// could name it.
+///
+/// **Osaka is not here.** It redraws detail rather than estimating it, so it is a
+/// [`RestoreVariant`](crate::RestoreVariant), and a front end that offered it as an upscale offers it as a restore.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "codename", content = "precision", rename_all = "lowercase")]
 pub enum UpscaleVariant {
@@ -87,8 +85,6 @@ pub enum UpscaleVariant {
     Kyoto(FloatPrecision),
     /// Saitama: convolutional, native 4x weights only.
     Saitama(FloatPrecision),
-    /// Osaka: the diffusion upscaler, three graphs run as one pass.
-    Osaka(OsakaPrecision),
 }
 
 impl UpscaleVariant {
@@ -96,7 +92,6 @@ impl UpscaleVariant {
     pub fn precision(self) -> Precision {
         match self {
             Self::Tokyo(precision) | Self::Kyoto(precision) | Self::Saitama(precision) => precision.into(),
-            Self::Osaka(precision) => precision.into(),
         }
     }
 
@@ -109,7 +104,6 @@ impl UpscaleVariant {
             Self::Tokyo(_) => &TOKYO,
             Self::Kyoto(_) => &KYOTO,
             Self::Saitama(_) => &SAITAMA,
-            Self::Osaka(_) => &OSAKA,
         }
     }
 
@@ -136,8 +130,8 @@ impl UpscaleVariant {
     /// hands the codename and the precision it was given straight back and gets the typed variant, restating none of
     /// this vocabulary in code of its own.
     ///
-    /// A published model at a precision it is not published in names nothing: `osaka` at FP32 rather than
-    /// `up_osaka_fp32`, and the three convolutional variants at INT8.
+    /// A published model at a precision it is not published in names nothing: the three convolutional variants at
+    /// INT8.
     pub fn from_codename(codename: &str, precision: Precision) -> Option<Self> {
         // Over `MODELS` — the same list `crate::catalogue` builds the forward direction from — so the two directions
         // cannot disagree about which models exist. A second, hand-written list of the arms, left out of date, would
@@ -147,18 +141,11 @@ impl UpscaleVariant {
             .find(|model| model.codename() == codename)
             .and_then(|model| model.variant(precision))
     }
-
-    /// Whether one set of weights serves every scale, which is what decides whether the display name carries the
-    /// scale.
-    pub(crate) const fn is_diffusion(self) -> bool {
-        matches!(self, Self::Osaka(_))
-    }
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::providers::profile::{CoreMlComputeUnits, CoreMlSpecialization, ExecutionMode};
 
     /// Every operation the tests here and in the sibling modules build, one per variant and contract.
     pub(crate) fn every_variant() -> Vec<UpscaleVariant> {
@@ -176,26 +163,9 @@ pub(crate) mod tests {
         assert_eq!(UpscaleVariant::Tokyo(FloatPrecision::Fp32).label(), "Tokyo");
         assert_eq!(UpscaleVariant::Kyoto(FloatPrecision::Fp32).label(), "Kyoto");
         assert_eq!(UpscaleVariant::Saitama(FloatPrecision::Fp32).label(), "Saitama");
-        assert_eq!(UpscaleVariant::Osaka(OsakaPrecision::Fp16).label(), "Osaka");
 
         for variant in every_variant() {
             assert_eq!(variant.codename(), variant.label().to_lowercase(), "{variant:?}");
-        }
-    }
-
-    #[test]
-    fn every_variant_is_backed_by_exactly_one_contracts_row() {
-        for variant in every_variant() {
-            // Restated over the seam the two rows were reached through: `model()` is exhaustive with no wildcard, so
-            // every variant reaches exactly one row. Asked of what the row actually *resolves to* rather than of a
-            // second declared flag — the resolution is the contract, so this cannot agree with the enum by being a
-            // restatement of it.
-            let resolved = variant.model().resolve(variant.precision(), Scale::new(2.0).unwrap());
-            assert_eq!(
-                matches!(resolved, Resolution::Graphs(_)),
-                !matches!(variant, UpscaleVariant::Tokyo(_) | UpscaleVariant::Kyoto(_) | UpscaleVariant::Saitama(_)),
-                "{variant:?} is backed by both contracts or by neither"
-            );
         }
     }
 
@@ -204,15 +174,6 @@ pub(crate) mod tests {
         assert_eq!(UpscaleVariant::Kyoto(FloatPrecision::Fp32).precision(), Precision::Fp32);
         assert_eq!(UpscaleVariant::Tokyo(FloatPrecision::Fp16).precision(), Precision::Fp16);
         assert_eq!(UpscaleVariant::Saitama(FloatPrecision::Fp32).precision(), Precision::Fp32);
-        assert_eq!(UpscaleVariant::Osaka(OsakaPrecision::Fp16).precision(), Precision::Fp16);
-        assert_eq!(UpscaleVariant::Osaka(OsakaPrecision::Int8).precision(), Precision::Int8);
-    }
-
-    #[test]
-    fn only_osaka_uses_the_diffusion_contract() {
-        for variant in every_variant() {
-            assert_eq!(variant.is_diffusion(), matches!(variant, UpscaleVariant::Osaka(_)), "{variant:?}");
-        }
     }
 
     #[test]
@@ -230,13 +191,11 @@ pub(crate) mod tests {
 
     #[test]
     fn a_pairing_this_family_does_not_publish_names_nothing() {
-        // The pairing the whole precision split exists for: Osaka has no FP32 build, so the catalogue never offers
-        // one and reading one back must name nothing rather than resolving to `up_osaka_fp32`.
-        assert_eq!(
-            UpscaleVariant::from_codename(OSAKA.codename, Precision::Fp32),
-            None,
-            "a catalogue row named the Osaka build that was never published"
-        );
+        // Osaka moved to restore, so its codename names nothing here at any precision — and a front end still
+        // holding it as an upscale is refused rather than handed some other model.
+        for precision in [Precision::Fp16, Precision::Int8] {
+            assert_eq!(UpscaleVariant::from_codename("osaka", precision), None, "Osaka is not an upscaler");
+        }
 
         for row in [TOKYO, KYOTO, SAITAMA] {
             assert_eq!(
@@ -261,56 +220,13 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn osaka_declares_every_measured_setting_at_both_precisions() {
-        // Field by field and then whole, so "carries its arm's profile" cannot pass by both sides being the default —
-        // and at both precisions, because nothing in this profile is a property of the export's types.
-        for precision in OsakaPrecision::ALL {
-            let osaka = UpscaleVariant::Osaka(precision).profile();
-
-            assert_eq!(osaka.execution_mode, ExecutionMode::Sequential, "at {precision:?}");
-            assert!(osaka.disable_mem_pattern, "at {precision:?}: the memory planner was left on");
-            // Both names, spelled out rather than compared against `BROKEN_OPTIMIZERS`, so that dropping one of them
-            // fails here instead of agreeing with itself. The order is the declaration's; the runtime reads them as a
-            // set, but the value written is a list.
-            assert_eq!(
-                osaka.disabled_optimizers,
-                ["ReshapeFusion", "SimplifiedLayerNormFusion"],
-                "at {precision:?}: the transformers the reference names for this graph were not both declared"
-            );
-            assert_eq!(osaka.coreml_compute_units, CoreMlComputeUnits::CpuAndGpu, "at {precision:?}");
-            assert!(osaka.cuda_prefer_nhwc, "at {precision:?}: the VAE halves' layout was not declared");
-            assert_eq!(
-                osaka.trt_options.get("trt_builder_optimization_level").map(String::as_str),
-                Some("3"),
-                "at {precision:?}"
-            );
-
-            // And nothing else. TensorRT's FP16 and INT8 modes are the two absences that are decisions rather than
-            // omissions — see `osaka::profile` — so a profile that named either would fail here.
-            assert!(!osaka.trt_options.contains_key("trt_fp16_enable"), "at {precision:?}: FP16 mode was declared");
-            assert!(!osaka.trt_options.contains_key("trt_int8_enable"), "at {precision:?}: INT8 mode was declared");
-            assert_eq!(osaka.trt_options.len(), 1, "at {precision:?}: an unmeasured TensorRT option was declared");
-            assert_eq!(osaka.coreml_specialization, CoreMlSpecialization::default(), "at {precision:?}");
-        }
-
-        // The two arms are the same declaration rather than two that happen to agree today, which is what the
-        // precision-independence above actually claims.
-        assert_eq!(
-            UpscaleVariant::Osaka(OsakaPrecision::Fp16).profile(),
-            UpscaleVariant::Osaka(OsakaPrecision::Int8).profile()
-        );
-    }
-
-    #[test]
-    fn no_variant_beyond_the_four_measured_arms_declares_anything() {
+    fn no_variant_beyond_the_measured_arms_declares_anything() {
         // Driven over every variant this family publishes, so a profile nothing measured cannot arrive by accident.
         let measured = [
             UpscaleVariant::Tokyo(FloatPrecision::Fp16),
             UpscaleVariant::Tokyo(FloatPrecision::Fp32),
             UpscaleVariant::Kyoto(FloatPrecision::Fp16),
             UpscaleVariant::Saitama(FloatPrecision::Fp16),
-            UpscaleVariant::Osaka(OsakaPrecision::Fp16),
-            UpscaleVariant::Osaka(OsakaPrecision::Int8),
         ];
 
         for variant in every_variant() {

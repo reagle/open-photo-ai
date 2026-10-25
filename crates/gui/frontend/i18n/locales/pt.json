@@ -329,8 +329,7 @@
             "models": {
                 "tokyo": "Use este modelo quando você quer uma ampliação natural, sem exageros. Ele foca em preservar a aparência original e as estruturas finas em vez de \"inventar\" novos detalhes, sendo ideal quando realismo e fidelidade importam mais do que nitidez.",
                 "kyoto": "Use este modelo em fotos do mundo real (pessoas, paisagens, produtos). Ele é excelente em restaurar detalhes enquanto lida com ruído, desfoque e artefatos de compressão. Ideal para uso prático, quando as imagens são imperfeitas e você quer resultados agradáveis e robustos rapidamente.",
-                "saitama": "Use este modelo para desenhos, arte de linha, quadrinhos e ilustrações digitais. Ele preserva linhas limpas, cores chapadas e sombreamento estilizado sem introduzir texturas fotográficas. Melhor quando bordas nítidas e consistência de estilo importam mais do que realismo.",
-                "osaka": "Use este modelo quando você quer a melhor qualidade de ampliação possível. Ele reconstrói o detalhe em vez de apenas realçá-lo, e é o que vai mais longe em fotos suaves ou muito comprimidas. No entanto, é lento e precisa de uma GPU potente para rodar bem."
+                "saitama": "Use este modelo para desenhos, arte de linha, quadrinhos e ilustrações digitais. Ele preserva linhas limpas, cores chapadas e sombreamento estilizado sem introduzir texturas fotográficas. Melhor quando bordas nítidas e consistência de estilo importam mais do que realismo."
             },
             "suspended": "A restauração está ampliando esta foto"
         },
@@ -339,7 +338,8 @@
             "size": "Tamanho",
             "generative": "Generativo: redesenha os detalhes e pode alterar rostos, texturas e letras.",
             "models": {
-                "kazan": "Use este modelo quando o desfoque é forte demais para Nitidez — p. ex., um rosto fora de foco ou uma foto de uma câmera antiga que nunca foi bem nítida. Ele redesenha detalhes plausíveis em vez de recuperá-los, então pode alterar rostos, texturas e textos pequenos; reduza a intensidade se o resultado parecer inventado. É lento e um download grande."
+                "kazan": "Use este modelo quando o desfoque é forte demais para Nitidez — p. ex., um rosto fora de foco ou uma foto de uma câmera antiga que nunca foi bem nítida. Ele redesenha detalhes plausíveis em vez de recuperá-los, então pode alterar rostos, texturas e textos pequenos; reduza a intensidade se o resultado parecer inventado. É lento e um download grande.",
+                "osaka": "Use este modelo quando você quer a restauração mais completa possível. Ele reconstrói o detalhe em vez de apenas realçá-lo, e é o que vai mais longe em fotos suaves ou muito comprimidas. No entanto, é lento e precisa de uma GPU potente para rodar bem."
             }
         },
         "add": "Adicionar melhoria",

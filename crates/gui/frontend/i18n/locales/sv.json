@@ -329,8 +329,7 @@
             "models": {
                 "tokyo": "Använd den här modellen när du vill ha en naturlig uppskalning utan överdrifter. Den fokuserar på att bevara originalets utseende och fina strukturer i stället för att \"hitta på\" nya detaljer, vilket gör den idealisk när realism och trohet betyder mer än skärpa.",
                 "kyoto": "Använd den här modellen för verkliga foton (människor, landskap, produkter). Den är utmärkt på att återskapa detaljer samtidigt som den hanterar brus, oskärpa och komprimeringsartefakter. Idealisk för praktisk användning där bilderna är ofullkomliga och du snabbt vill ha tilltalande, robusta resultat.",
-                "saitama": "Använd den här modellen för tecknat, teckningar, streckkonst och digitala illustrationer. Den bevarar rena linjer, platta färger och stiliserad skuggning utan att introducera fotoliknande texturer. Bäst när skarpa kanter och stilistisk konsekvens betyder mer än realism.",
-                "osaka": "Använd den här modellen när du vill ha bästa möjliga uppskalningskvalitet. Den bygger upp detaljer på nytt i stället för att bara skärpa dem, och går längst på mjuka eller hårt komprimerade foton. Den är dock långsam och kräver ett kraftfullt grafikkort för att fungera bra."
+                "saitama": "Använd den här modellen för tecknat, teckningar, streckkonst och digitala illustrationer. Den bevarar rena linjer, platta färger och stiliserad skuggning utan att introducera fotoliknande texturer. Bäst när skarpa kanter och stilistisk konsekvens betyder mer än realism."
             },
             "suspended": "Restaureringen förstorar det här fotot"
         },
@@ -339,7 +338,8 @@
             "size": "Storlek",
             "generative": "Generativ: ritar om detaljer och kan ändra ansikten, texturer och text.",
             "models": {
-                "kazan": "Använd den här modellen när oskärpan är för kraftig för Skärpa — t.ex. ett ansikte ur fokus, eller ett foto från en gammal kamera som aldrig var riktigt skarpt. Den ritar om trovärdiga detaljer i stället för att återställa dem, så den kan ändra ansikten, texturer och liten text; sänk styrkan om resultatet ser påhittat ut. Den är långsam och en stor nedladdning."
+                "kazan": "Använd den här modellen när oskärpan är för kraftig för Skärpa — t.ex. ett ansikte ur fokus, eller ett foto från en gammal kamera som aldrig var riktigt skarpt. Den ritar om trovärdiga detaljer i stället för att återställa dem, så den kan ändra ansikten, texturer och liten text; sänk styrkan om resultatet ser påhittat ut. Den är långsam och en stor nedladdning.",
+                "osaka": "Använd den här modellen när du vill ha den mest grundliga restaureringen som finns. Den bygger upp detaljer på nytt i stället för att bara skärpa dem, och går längst på mjuka eller hårt komprimerade foton. Den är dock långsam och kräver ett kraftfullt grafikkort för att fungera bra."
             }
         },
         "add": "Lägg till förbättring",

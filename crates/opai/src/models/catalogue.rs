@@ -255,10 +255,10 @@ fn simple_family(family: Family, rows: &[SimpleVariant]) -> FamilyEntry {
 
 /// The upscale family's entry.
 ///
-/// The one family whose variants do not all publish the same precisions, and therefore the one where a list beside
-/// the models would be a second place for that fact to live. It asks each model instead — for its parameters as well
-/// as its precisions — which is what makes this file name no model at all, so deleting one is its directory and its
-/// two arms rather than an edit here.
+/// It asks each model for its precisions and its parameters rather than keeping a list beside them, which is what
+/// makes this file name no model at all, so deleting one is its directory and its two arms rather than an edit here.
+/// The precisions were the reason: Osaka's were its own while it was an upscaler, and the restore family's rows carry
+/// theirs the same way.
 fn upscale_family() -> FamilyEntry {
     FamilyEntry {
         family: Family::Upscale,
@@ -309,9 +309,9 @@ mod tests {
 
     /// The families published as one graph per variant per precision, all sharing one shape. Derived from
     /// [`Family::ALL`] rather than transcribed, so a family added later is covered here without being remembered:
-    /// upscale is the one left out, because Osaka's precisions are its own.
+    /// restore is the one left out, because Osaka's precisions are its own.
     fn single_graph_families() -> Vec<Family> {
-        Family::ALL.into_iter().filter(|family| *family != Family::Upscale).collect()
+        Family::ALL.into_iter().filter(|family| *family != Family::Restore).collect()
     }
 
     fn family_entry(family: Family) -> &'static FamilyEntry {
@@ -398,7 +398,7 @@ mod tests {
     fn the_catalogue_lists_the_upscale_variants_and_their_labels() {
         let listed: Vec<(&str, &str)> = upscale().variants.iter().map(|entry| (entry.codename, entry.label)).collect();
 
-        assert_eq!(listed, vec![("tokyo", "Tokyo"), ("kyoto", "Kyoto"), ("saitama", "Saitama"), ("osaka", "Osaka")]);
+        assert_eq!(listed, vec![("tokyo", "Tokyo"), ("kyoto", "Kyoto"), ("saitama", "Saitama")]);
     }
 
     #[test]
@@ -407,14 +407,26 @@ mod tests {
             assert_eq!(variant(codename).precisions, vec![Precision::Fp32, Precision::Fp16], "{codename}");
         }
 
-        assert_eq!(variant("osaka").precisions, vec![Precision::Fp16, Precision::Int8]);
+        let restore = |codename| {
+            family_entry(Family::Restore)
+                .variants
+                .iter()
+                .find(|entry| entry.codename == codename)
+                .expect("restore publishes the variant")
+                .precisions
+        };
+        assert_eq!(restore("kazan"), vec![Precision::Fp32, Precision::Fp16]);
+        assert_eq!(restore("osaka"), vec![Precision::Fp16, Precision::Int8]);
     }
 
     #[test]
-    fn the_catalogue_never_offers_osaka_at_fp32() {
+    fn the_catalogue_never_offers_osaka_at_fp32_or_as_an_upscaler() {
+        let osaka = VariantEntry::published(Family::Restore, "osaka").expect("restore publishes Osaka");
+
+        assert!(!osaka.precisions.contains(&Precision::Fp32), "a chooser could offer an unpublished model");
         assert!(
-            !variant("osaka").precisions.contains(&Precision::Fp32),
-            "a chooser could offer an unpublished model"
+            upscale().variants.iter().all(|entry| entry.codename != "osaka"),
+            "Osaka is offered as an upscaler as well as a restorer"
         );
     }
 
@@ -645,7 +657,7 @@ mod tests {
             variants(Family::Colorization),
             vec![("delhi", "Delhi"), ("mumbai", "Mumbai"), ("jaipur", "Jaipur")]
         );
-        assert_eq!(variants(Family::Restore), vec![("kazan", "Kazan")]);
+        assert_eq!(variants(Family::Restore), vec![("kazan", "Kazan"), ("osaka", "Osaka")]);
     }
 
     #[test]

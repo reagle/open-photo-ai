@@ -198,7 +198,7 @@ impl Operation {
     ///
     /// Whatever the operation's own family seam refuses, as [`InferenceError::Unsupported`] naming the operation.
     /// Every family has a pipeline, and today no published variant is refused. The one refusal a seam can still make
-    /// is [`UnsupportedReason::IncompleteGraphSet`](crate::error::UnsupportedReason::IncompleteGraphSet), upscale's
+    /// is [`UnsupportedReason::IncompleteGraphSet`](crate::error::UnsupportedReason::IncompleteGraphSet), restore's
     /// guard against a diffusion variant declared without one of its graphs.
     pub(crate) fn pipeline<B: Backend>(&self) -> Result<Shared<B>, InferenceError> {
         // Not written through `forward!`, unlike the questions above, because the seams do not agree on a return
@@ -461,12 +461,13 @@ pub(crate) mod tests {
     use crate::models::light_adjustment::LightAdjustmentVariant;
     use crate::models::precision::FloatPrecision;
     use crate::models::restore::RestoreVariant;
+    use crate::models::restore::osaka::graph::PUBLISHED_UNDER;
+    use crate::models::restore::osaka::precision::OsakaPrecision;
     use crate::models::scale::Scale;
     use crate::models::sharpen::SharpenVariant;
     use crate::models::strength::Strength;
     use crate::models::test_support::{every_analysis, every_operation};
     use crate::models::upscale::UpscaleVariant;
-    use crate::models::upscale::osaka::precision::OsakaPrecision;
     use crate::pipeline::test_support::NoBackend;
     use crate::providers::profile::PROVIDER_OPTION_LIMIT;
 
@@ -630,11 +631,11 @@ pub(crate) mod tests {
                 Family::Sharpen,
             ),
             (
-                Operation::Upscale(Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Int8), scale)),
+                Operation::Upscale(Upscale::new(UpscaleVariant::Kyoto(FloatPrecision::Fp16), scale)),
                 Family::Upscale,
             ),
             (
-                Operation::Restore(Restore::new(RestoreVariant::Kazan(FloatPrecision::Fp16), scale, strength)),
+                Operation::Restore(Restore::new(RestoreVariant::Osaka(OsakaPrecision::Int8), scale, strength)),
                 Family::Restore,
             ),
         ]
@@ -678,8 +679,8 @@ pub(crate) mod tests {
         let colour = ColorBalance::new(ColorBalanceVariant::SaoPaulo(FloatPrecision::Fp16), bias);
         let colorization = Colorization::new(ColorizationVariant::Delhi(FloatPrecision::Fp32));
         let sharpen = Sharpen::new(SharpenVariant::Moscow(FloatPrecision::Fp32), strength);
-        let upscale = Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Int8), scale);
-        let restore = Restore::new(RestoreVariant::Kazan(FloatPrecision::Fp16), scale, strength);
+        let upscale = Upscale::new(UpscaleVariant::Kyoto(FloatPrecision::Fp16), scale);
+        let restore = Restore::new(RestoreVariant::Osaka(OsakaPrecision::Int8), scale, strength);
 
         macro_rules! forwards {
             ($operation:expr, $arm:expr) => {{
@@ -707,12 +708,26 @@ pub(crate) mod tests {
         forwards!(restore, Operation::Restore(restore));
     }
 
+    /// The prefix `operation`'s artifacts are named with: its family's, except Osaka's, which keep the `up_` they were
+    /// published under — see `osaka::graph::PUBLISHED_UNDER`.
+    fn artifact_prefix(operation: &Operation) -> &'static str {
+        match operation {
+            Operation::Restore(restore) if matches!(restore.variant(), RestoreVariant::Osaka(_)) => {
+                PUBLISHED_UNDER.prefix()
+            }
+            _ => operation.family().prefix(),
+        }
+    }
+
     #[test]
     fn what_a_carried_operation_reports_is_named_for_the_family_it_reports() {
         // The cross-family property the forwarding makes checkable at all: the artifacts and the cache tag of an
         // operation are spelled with its own family's prefix, so no arm can be wired to the wrong family's value.
+        // The one exception is a published name older than the family that runs it, and is stated rather than
+        // skipped.
         for (operation, _) in one_of_each() {
             let prefix = operation.family().prefix();
+            let published = artifact_prefix(&operation);
 
             assert!(
                 operation.cache_tag().starts_with(&format!("{prefix}-")),
@@ -722,7 +737,7 @@ pub(crate) mod tests {
 
             for artifact in operation.required_artifacts() {
                 assert!(
-                    artifact.as_str().starts_with(&format!("{prefix}_")),
+                    artifact.as_str().starts_with(&format!("{published}_")),
                     "{operation:?} required {artifact}, which is named for another family"
                 );
             }
@@ -751,9 +766,12 @@ pub(crate) mod tests {
 
         // Osaka, whose precision contract is its own: the row publishes INT8, and the constructor takes the type
         // that can express it.
-        let variant = UpscaleVariant::from_codename("osaka", Precision::Int8).expect("Osaka is published at INT8");
+        let variant = RestoreVariant::from_codename("osaka", Precision::Int8).expect("Osaka is published at INT8");
         let scale = Scale::new(2.5).expect("in range");
-        assert_eq!(Upscale::osaka(OsakaPrecision::Int8, scale), Operation::Upscale(Upscale::new(variant, scale)));
+        assert_eq!(
+            Restore::osaka(OsakaPrecision::Int8, scale, strength),
+            Operation::Restore(Restore::new(variant, scale, strength))
+        );
     }
 
     #[test]
@@ -849,7 +867,9 @@ pub(crate) mod tests {
         // The guarantee the typed families give, still holding after a trip through a process boundary: the tag
         // chooses the arm, and the arm's own variant refuses what it is not published in.
         for json in [
-            r#"{"family":"upscale","variant":{"codename":"osaka","precision":"fp32"},"scale":2.5}"#,
+            r#"{"family":"restore","variant":{"codename":"osaka","precision":"fp32"},"scale":2.5,"strength":1.0}"#,
+            // Osaka is a restore model, and an upscale naming it names nothing: the arm's own variant refuses it.
+            r#"{"family":"upscale","variant":{"codename":"osaka","precision":"fp16"},"scale":2.5}"#,
             r#"{"family":"denoise","variant":{"codename":"stockholm","precision":"int8"},"strength":0.5}"#,
             r#"{"family":"denoise","variant":{"codename":"stockholm","precision":"fp32"},"strength":4.0}"#,
             r#"{"family":"denoise","variant":{"codename":"moscow","precision":"fp32"},"strength":0.5}"#,
@@ -941,8 +961,6 @@ pub(crate) mod tests {
             UpscaleVariant::Tokyo(FloatPrecision::Fp32),
             UpscaleVariant::Kyoto(FloatPrecision::Fp16),
             UpscaleVariant::Saitama(FloatPrecision::Fp16),
-            UpscaleVariant::Osaka(OsakaPrecision::Fp16),
-            UpscaleVariant::Osaka(OsakaPrecision::Int8),
         ];
 
         // New York is measured at **both** precisions, unlike every upscale arm below — which is the whole of what
@@ -1016,9 +1034,11 @@ pub(crate) mod tests {
                         precision == FloatPrecision::Fp16
                     }
                 },
-                // Kazan at FP16, declared off the Neural Engine for the reason Moscow is; see `kazan`.
+                // Kazan at FP16, declared off the Neural Engine for the reason Moscow is; see `kazan`. Osaka at both of
+                // its precisions, from the reference's own measurements; see `osaka::profile`.
                 Operation::Restore(restore) => match restore.variant() {
                     RestoreVariant::Kazan(precision) => precision == FloatPrecision::Fp16,
+                    RestoreVariant::Osaka(_) => true,
                 },
                 // All three at FP16 only, ported from the reference. Delhi's is the reference's declaration beside
                 // Mumbai's rather than a measurement of its own graph; see `delhi`.
@@ -1055,8 +1075,8 @@ pub(crate) mod tests {
         assert_eq!(gentle.model_tag(), "dn_stockholm_fp32");
         assert_eq!(strong.model_tag(), gentle.model_tag());
 
-        // One set of Osaka weights serves every scale, so the scale is a parameter and stays out.
-        let osaka = |value| Upscale::osaka(OsakaPrecision::Fp16, scale(value)).model_tag();
+        // One set of Osaka weights serves every size, so the size is a parameter and stays out.
+        let osaka = |value| Restore::osaka(OsakaPrecision::Fp16, scale(value), strength(1.0)).model_tag();
         assert_eq!(osaka(2.0), osaka(3.5));
         assert!(!osaka(2.0).contains('x'), "{}", osaka(2.0));
 
@@ -1071,7 +1091,7 @@ pub(crate) mod tests {
     fn every_operation_has_a_model_tag() {
         for operation in every_operation() {
             let tag = operation.model_tag();
-            assert!(tag.starts_with(operation.family().prefix()), "{operation:?} is tagged {tag:?}");
+            assert!(tag.starts_with(artifact_prefix(&operation)), "{operation:?} is tagged {tag:?}");
         }
     }
 }

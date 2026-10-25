@@ -181,8 +181,6 @@ mod tests {
             ("--up tokyo -q sd", Upscale::tokyo(FloatPrecision::Fp16, four)),
             ("--up saitama -q hd", Upscale::saitama(FloatPrecision::Fp32, four)),
             ("--up saitama -q sd", Upscale::saitama(FloatPrecision::Fp16, four)),
-            ("--up osaka -q hd", Upscale::osaka(OsakaPrecision::Fp16, four)),
-            ("--up osaka -q sd", Upscale::osaka(OsakaPrecision::Int8, four)),
             (
                 "--fr athens -q hd",
                 FaceRecovery::athens(FloatPrecision::Fp32, Faces::empty(), Fidelity::MAXIMUM),
@@ -211,6 +209,8 @@ mod tests {
             ("--sh novgorod -q sd", Sharpen::novgorod(FloatPrecision::Fp16, one)),
             ("--rs kazan -q hd", Restore::kazan(FloatPrecision::Fp32, scale(1.0), one)),
             ("--rs kazan -q sd", Restore::kazan(FloatPrecision::Fp16, scale(1.0), one)),
+            ("--rs osaka -q hd", Restore::osaka(OsakaPrecision::Fp16, scale(1.0), one)),
+            ("--rs osaka -q sd", Restore::osaka(OsakaPrecision::Int8, scale(1.0), one)),
             ("--cl delhi -q hd", Colorization::delhi(FloatPrecision::Fp32)),
             ("--cl delhi -q sd", Colorization::delhi(FloatPrecision::Fp16)),
             ("--cl mumbai -q hd", Colorization::mumbai(FloatPrecision::Fp32)),
@@ -391,11 +391,11 @@ mod tests {
 
     #[test]
     fn a_model_chosen_through_the_environment_runs_at_the_quality_asked_for() {
-        let models = AutopilotModels::read(|name| (name == "OPAI_AP_UPSCALE").then(|| "osaka".into())).expect("reads");
+        let models = AutopilotModels::read(|name| (name == "OPAI_AP_UPSCALE").then(|| "kyoto".into())).expect("reads");
 
         let plan = autopilot(&[Suggestion::Upscale { scale: scale(4.0) }], &models, Quality::Sd, 1000, 800);
 
-        assert_eq!(plan.operations, vec![Upscale::osaka(OsakaPrecision::Int8, scale(4.0))]);
+        assert_eq!(plan.operations, vec![Upscale::kyoto(FloatPrecision::Fp16, scale(4.0))]);
     }
 
     #[test]

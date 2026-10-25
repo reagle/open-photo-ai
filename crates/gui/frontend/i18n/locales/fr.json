@@ -337,8 +337,7 @@
             "models": {
                 "tokyo": "Utilisez ce modèle lorsque vous voulez un agrandissement naturel, sans exagération. Il cherche à préserver l'aspect d'origine et les structures fines plutôt qu'à « inventer » de nouveaux détails, ce qui le rend idéal quand le réalisme et la fidélité comptent plus que la netteté.",
                 "kyoto": "Utilisez ce modèle pour les photos du monde réel (personnes, paysages, produits). Il excelle à restaurer les détails tout en gérant le bruit, le flou et les artefacts de compression. Idéal pour les usages concrets où les images sont imparfaites et où vous voulez rapidement des résultats robustes et agréables à l'œil.",
-                "saitama": "Utilisez ce modèle pour les dessins animés, les dessins, le line art et les illustrations numériques. Il préserve les traits nets, les aplats de couleur et les ombrages stylisés sans introduire de textures photographiques. Idéal quand les contours francs et la cohérence stylistique comptent plus que le réalisme.",
-                "osaka": "Utilisez ce modèle lorsque vous voulez la meilleure qualité d'agrandissement possible. Il reconstruit le détail au lieu de simplement l'accentuer, et c'est lui qui va le plus loin sur les photos floues ou fortement compressées. Il est toutefois lent et exige un GPU puissant pour bien fonctionner."
+                "saitama": "Utilisez ce modèle pour les dessins animés, les dessins, le line art et les illustrations numériques. Il préserve les traits nets, les aplats de couleur et les ombrages stylisés sans introduire de textures photographiques. Idéal quand les contours francs et la cohérence stylistique comptent plus que le réalisme."
             },
             "suspended": "La restauration agrandit cette photo"
         },
@@ -347,7 +346,8 @@
             "size": "Taille",
             "generative": "Génératif : redessine les détails et peut modifier les visages, les textures et les lettres.",
             "models": {
-                "kazan": "Utilisez ce modèle lorsque le flou est trop fort pour Netteté — p. ex. un visage hors de mise au point, ou une photo d'un vieil appareil qui n'a jamais été vraiment nette. Il redessine des détails plausibles au lieu de les récupérer, il peut donc modifier les visages, les textures et les petits textes ; baissez l'intensité si le résultat semble inventé. Il est lent et représente un gros téléchargement."
+                "kazan": "Utilisez ce modèle lorsque le flou est trop fort pour Netteté — p. ex. un visage hors de mise au point, ou une photo d'un vieil appareil qui n'a jamais été vraiment nette. Il redessine des détails plausibles au lieu de les récupérer, il peut donc modifier les visages, les textures et les petits textes ; baissez l'intensité si le résultat semble inventé. Il est lent et représente un gros téléchargement.",
+                "osaka": "Utilisez ce modèle lorsque vous voulez la restauration la plus poussée possible. Il reconstruit le détail au lieu de simplement l'accentuer, et c'est lui qui va le plus loin sur les photos floues ou fortement compressées. Il est toutefois lent et exige un GPU puissant pour bien fonctionner."
             }
         },
         "add": "Ajouter",

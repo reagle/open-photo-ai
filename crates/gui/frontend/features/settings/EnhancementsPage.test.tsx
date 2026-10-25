@@ -127,11 +127,17 @@ describe("the enhancements table", () => {
     it("rules off a model that publishes a different number of precisions", async () => {
         await mount();
 
-        fireEvent.keyDown(screen.getByRole("combobox", { name: "Upscale" }), { key: "Enter" });
+        fireEvent.keyDown(screen.getByRole("combobox", { name: "Restore" }), { key: "Enter" });
 
-        // Four models - Osaka's pair is fp16/int8 rather than the float convention - so three rules,
+        // Two models - Osaka's pair is fp16/int8 rather than Kazan's float convention - so one rule,
         // which is what driving the break off the codename rather than a count buys.
-        expect(screen.getByRole("listbox").querySelectorAll("[data-slot='select-separator']")).toHaveLength(3);
+        expect(screen.getByRole("listbox").querySelectorAll("[data-slot='select-separator']")).toHaveLength(1);
+        expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+            "Kazan HD",
+            "Kazan SD",
+            "Osaka HD",
+            "Osaka SD",
+        ]);
     });
 
     it("reads a family never chosen for as the catalogue's first model", async () => {

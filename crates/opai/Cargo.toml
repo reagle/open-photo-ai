@@ -139,7 +139,7 @@ file-rotate = "0.8.0"
 # It does NOT reproduce the Go application's stream, and no crate does: `math/rand/v2.NewChaCha8` is Go's own
 # ChaCha8Rand construction, with a reseeding schedule of its own, rather than the plain ChaCha8 stream this produces.
 # Every property the seed exists for is about determinism *within* one implementation and is preserved in full; see
-# `models/upscale/osaka/noise.rs`.
+# `models/restore/osaka/noise.rs`.
 #
 # 0.10 rather than the 0.9 already in the graph, which arrives transitively through `image`'s AVIF encoder
 # (`rav1e` -> `rand`). Reusing that one would compile nothing new — the convention `tokio-util` and `tracing` below are

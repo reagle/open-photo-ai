@@ -52,7 +52,7 @@
 // Where a file belongs: three tiers, and the test for which one a file is at is who else could use it.
 //
 // - **One model** — `models/<family>/<model>/`, as `upscale/tokyo/`, `upscale/kyoto/`, `upscale/saitama/` and
-//   `upscale/osaka/` are. Its row, the execution-provider profile measured for it and the prose behind it, its
+//   `restore/osaka/` are. Its row, the execution-provider profile measured for it and the prose behind it, its
 //   pipeline, the vocabulary only its own contract needs, and its tests. Deleting a model is deleting its directory
 //   plus the arms that name it, and nothing else.
 // - **One family** — a file directly under `models/<family>/`, shared by two or more of that family's models and by
@@ -84,13 +84,15 @@
 // rewrite: none of them names a variant, and each takes the sizes and the inputs its caller's geometry would differ
 // in as parameters. The list is here so that whoever adds the second caller knows what to move before writing it.
 //
-// - `upscale/osaka/colorfix.rs` — the wavelet colour fix for one-step diffusion drift.
-// - `upscale/osaka/graph.rs` — role-addressed multi-graph resolution, which is a contract-level idea.
-// - `upscale/osaka/latent.rs` — VAE stride, patchify and the one-step scheduler.
-// - `upscale/osaka/noise.rs` — deterministic seeded per-region noise.
-// - `upscale/osaka/region.rs` — the three-graph region loop.
+// - `restore/osaka/colorfix.rs` — the wavelet colour fix for one-step diffusion drift.
+// - `restore/osaka/graph.rs` — role-addressed multi-graph resolution, which is a contract-level idea.
+// - `restore/osaka/latent.rs` — VAE stride, patchify and the one-step scheduler.
+// - `restore/osaka/noise.rs` — deterministic seeded per-region noise.
+// - `restore/osaka/region.rs` — the three-graph region loop.
 //
-// The second diffusion model in any family promotes Osaka's five, and does not reimplement them.
+// The second diffusion model in any family promotes Osaka's five, and does not reimplement them. Kazan, the restore
+// family's other generative model, is not one: its whole diffusion step is inside one exported graph per tile, and it
+// runs through the shared filter like any convolutional model.
 //
 // A family exposes its models through exactly two seams, and neither ever reaches the chain driver: one match from
 // the variant enum to that family's model, one arm per model; and one match from the resolved contract to a
@@ -144,14 +146,14 @@ pub use fidelity::Fidelity;
 pub use light_adjustment::{LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant};
 pub use operation::{Analysis, DataOperation, Operation};
 pub use precision::{FloatPrecision, Precision};
+pub(crate) use restore::osaka::graph::ResolvedGraph;
+pub use restore::osaka::graph::{GraphRole, UnknownRole};
+pub use restore::osaka::precision::OsakaPrecision;
 pub use restore::{Restore, RestoreParams, RestoreVariant};
 pub use scale::{RangeError, Scale};
 pub use sharpen::{Sharpen, SharpenParams, SharpenVariant};
 pub use strength::Strength;
 pub use subject::Subject;
-pub(crate) use upscale::osaka::graph::ResolvedGraph;
-pub use upscale::osaka::graph::{GraphRole, GraphSet, UnknownRole};
-pub use upscale::osaka::precision::OsakaPrecision;
 pub use upscale::resolve::{Pass, Resolution};
 pub use upscale::{Upscale, UpscaleParams, UpscaleVariant};
 

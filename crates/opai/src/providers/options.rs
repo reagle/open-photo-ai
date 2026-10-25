@@ -412,7 +412,9 @@ pub(crate) fn plan(
 
 #[cfg(test)]
 mod tests {
-    use crate::models::{FloatPrecision, OsakaPrecision, Scale, Upscale, UpscaleVariant};
+    use crate::models::{
+        FloatPrecision, OsakaPrecision, Restore, RestoreVariant, Scale, Strength, Upscale, UpscaleVariant,
+    };
 
     use super::super::profile::CoreMlSpecialization;
     use super::super::tests::{machine_supporting, no_accelerator};
@@ -836,7 +838,7 @@ mod tests {
         let kyoto = Upscale::new(UpscaleVariant::Kyoto(FloatPrecision::Fp16), scale);
 
         for precision in OsakaPrecision::ALL {
-            let osaka = Upscale::new(UpscaleVariant::Osaka(precision), scale);
+            let osaka = Restore::new(RestoreVariant::Osaka(precision), scale, Strength::clamped(1.0));
             let options = tensorrt_options(&paths(), &osaka.profile(), None);
 
             assert_eq!(
@@ -845,7 +847,7 @@ mod tests {
                 "Osaka at {precision:?} was given the level every other model carries, which is 87 seconds of engine build for no runtime difference"
             );
             // The two absences that are decisions rather than omissions: both modes stay at the pinned `0` rather
-            // than being set by this profile. See `models::upscale::osaka::profile`'s own section for why each is refused.
+            // than being set by this profile. See `models::restore::osaka::profile`'s own section for why each is refused.
             assert_eq!(option(&options, "trt_fp16_enable"), "0", "at {precision:?}");
             assert_eq!(option(&options, "trt_int8_enable"), "0", "at {precision:?}");
             // And the override names one key: everything else is still the pinned default.
@@ -865,7 +867,7 @@ mod tests {
         // The session half, and the one that is correctness rather than tuning: without the second of these disabled
         // the transformer does not load at all, so a provider path that dropped them would fail every Osaka run.
         let scale = Scale::new(4.0).expect("4.0 is in range");
-        let osaka = Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Fp16), scale);
+        let osaka = Restore::new(RestoreVariant::Osaka(OsakaPrecision::Fp16), scale, Strength::clamped(1.0));
 
         let machines = [
             (ExecutionProvider::Auto, mac()),
@@ -895,7 +897,7 @@ mod tests {
         let scale = Scale::new(4.0).expect("4.0 is in range");
 
         for precision in OsakaPrecision::ALL {
-            let osaka = Upscale::new(UpscaleVariant::Osaka(precision), scale);
+            let osaka = Restore::new(RestoreVariant::Osaka(precision), scale, Strength::clamped(1.0));
 
             assert_eq!(
                 option(&coreml_options(&paths(), &osaka.profile()), "MLComputeUnits"),

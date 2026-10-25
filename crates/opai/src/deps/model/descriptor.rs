@@ -130,7 +130,7 @@ pub(crate) fn model_dir(id: &ArtifactId) -> String {
 mod tests {
     use super::*;
     use crate::deps::model::manifest::{Published, tests::published};
-    use crate::models::test_support::{artifact, artifacts};
+    use crate::models::test_support::{artifact, artifacts, osaka_artifacts};
     use crate::models::{FloatPrecision, OsakaPrecision, UpscaleVariant};
 
     /// An application directory to resolve `derived` against.
@@ -202,7 +202,7 @@ mod tests {
     fn a_model_published_as_a_graph_and_a_weights_blob_resolves_to_both() {
         // Osaka's weights do not fit in the 2 GB protobuf limit, so they sit beside the graph. A descriptor charging
         // only for the graph would transfer half a model and call it installed.
-        let id = artifacts(UpscaleVariant::Osaka(OsakaPrecision::Fp16), 4.0)
+        let id = osaka_artifacts(OsakaPrecision::Fp16)
             .into_iter()
             .find(|id| id.as_str() == "up_osaka_fp16")
             .expect("the Osaka pipeline names its base model");
@@ -269,7 +269,7 @@ mod tests {
             .unwrap()
             .sha256
             .clone();
-        let id = artifacts(UpscaleVariant::Osaka(OsakaPrecision::Fp16), 4.0)
+        let id = osaka_artifacts(OsakaPrecision::Fp16)
             .into_iter()
             .find(|id| id.as_str() == "up_osaka_fp16")
             .unwrap();

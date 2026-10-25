@@ -95,6 +95,9 @@ pub struct Args {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum UpscaleModel {
     Kyoto,
+    // Retired: Osaka is a restore model now. Kept as a hidden value so `--up osaka` from an older script is refused by
+    // `parse_from` with the flag that replaces it, rather than with a list that no longer names it; nothing builds it.
+    #[value(hide = true)]
     Osaka,
     Tokyo,
     Saitama,
@@ -127,6 +130,7 @@ pub enum SharpenModel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum RestoreModel {
     Kazan,
+    Osaka,
 }
 
 /// The colorization models, as the command line names them.
@@ -425,6 +429,16 @@ where
         ));
     }
 
+    // Osaka moved from upscale to restore. A script still asking for it as an upscale is told where it went, rather
+    // than being upscaled by some other model or shown a list that no longer names it.
+    if args.selection.upscale == Some(UpscaleModel::Osaka) {
+        return Err(Args::command().error(
+            clap::error::ErrorKind::InvalidValue,
+            "Osaka is a restore model now: use --restore osaka (--rs osaka) instead of --upscale osaka, with \
+             --rs-scale 2 or 4 to enlarge",
+        ));
+    }
+
     // Not a clap `conflicts_with`: the conflict is with one value of --rs-scale, not the flag, and what the user needs
     // to hear is why. Two enlargements in one chain would restore an upscale's output at up to sixteen times the
     // photograph's pixels; a front end offers one or the other, and the GUI disables its upscale the same way.
@@ -577,15 +591,15 @@ mod tests {
 
     #[test]
     fn a_named_model_is_taken_whatever_its_case() {
-        let args = parse("opai photo.jpg --up OSAKA --fr Santorini -q SD -o out.png").expect("parses");
+        let args = parse("opai photo.jpg --up KYOTO --fr Santorini --rs OSAKA -q SD -o out.png").expect("parses");
 
-        assert_eq!(args.selection.upscale, Some(UpscaleModel::Osaka));
+        assert_eq!(args.selection.upscale, Some(UpscaleModel::Kyoto));
         assert_eq!(args.selection.face_recovery, Some(FaceModel::Santorini));
+        assert_eq!(args.selection.restore, Some(RestoreModel::Osaka));
         assert_eq!(args.quality, Quality::Sd);
 
         for (name, model) in [
             ("kyoto", UpscaleModel::Kyoto),
-            ("osaka", UpscaleModel::Osaka),
             ("tokyo", UpscaleModel::Tokyo),
             ("saitama", UpscaleModel::Saitama),
         ] {
@@ -601,12 +615,27 @@ mod tests {
         assert_eq!(error.kind(), ErrorKind::InvalidValue);
         assert_eq!(error.exit_code(), 2);
         let message = error.to_string();
-        for model in ["kyoto", "osaka", "tokyo", "saitama"] {
+        for model in ["kyoto", "tokyo", "saitama"] {
             assert!(message.contains(model), "{model} is not listed in: {message}");
         }
+        assert!(!message.contains("osaka"), "Osaka is still offered as an upscaler: {message}");
 
         let error = parse("opai photo.jpg --fr tokyo -o out.png").expect_err("tokyo is not a face model");
         assert_eq!(error.kind(), ErrorKind::InvalidValue);
+    }
+
+    #[test]
+    fn osaka_as_an_upscale_is_refused_naming_the_flag_that_replaced_it() {
+        for line in ["--up osaka", "--upscale OSAKA --scale 2", "--up=osaka"] {
+            let error = parse(&format!("opai photo.jpg {line} -o out.png")).expect_err(line);
+
+            assert_eq!(error.kind(), ErrorKind::InvalidValue, "{line}: {error}");
+            assert_eq!(error.exit_code(), 2);
+            assert!(error.to_string().contains("use --restore osaka (--rs osaka)"), "{line}: {error}");
+        }
+
+        let args = parse("opai photo.jpg --rs osaka --rs-scale 2 -o out.png").expect("Osaka restores");
+        assert_eq!(args.selection.restore, Some(RestoreModel::Osaka));
     }
 
     #[test]

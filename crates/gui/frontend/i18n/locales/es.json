@@ -329,8 +329,7 @@
             "models": {
                 "tokyo": "Usa este modelo cuando quieras un escalado natural, sin exageraciones. Se centra en preservar el aspecto original y las estructuras finas en lugar de \"inventar\" nuevos detalles, siendo ideal cuando el realismo y la fidelidad importan más que la nitidez.",
                 "kyoto": "Usa este modelo con fotos del mundo real (personas, paisajes, productos). Destaca restaurando detalles mientras lidia con ruido, desenfoque y artefactos de compresión. Ideal para usos prácticos, cuando las imágenes son imperfectas y quieres resultados robustos y agradables rápido.",
-                "saitama": "Usa este modelo para dibujos animados, dibujos, arte lineal e ilustraciones digitales. Preserva las líneas limpias, los colores planos y el sombreado estilizado sin introducir texturas fotográficas. Ideal cuando los bordes nítidos y la coherencia de estilo importan más que el realismo.",
-                "osaka": "Usa este modelo cuando quieras la mejor calidad de escalado posible. Reconstruye el detalle en lugar de limitarse a afilarlo, y es el que más lejos llega en fotos suaves o muy comprimidas. Eso sí, es lento y necesita una GPU potente para funcionar bien."
+                "saitama": "Usa este modelo para dibujos animados, dibujos, arte lineal e ilustraciones digitales. Preserva las líneas limpias, los colores planos y el sombreado estilizado sin introducir texturas fotográficas. Ideal cuando los bordes nítidos y la coherencia de estilo importan más que el realismo."
             },
             "suspended": "La restauración está ampliando esta foto"
         },
@@ -339,7 +338,8 @@
             "size": "Tamaño",
             "generative": "Generativo: redibuja los detalles y puede cambiar caras, texturas y letras.",
             "models": {
-                "kazan": "Usa este modelo cuando el desenfoque es demasiado fuerte para Enfoque — p. ej., una cara desenfocada o una foto de una cámara antigua que nunca fue del todo nítida. Redibuja detalles plausibles en lugar de recuperarlos, así que puede cambiar caras, texturas y texto pequeño; baja la intensidad si el resultado parece inventado. Es lento y una descarga grande."
+                "kazan": "Usa este modelo cuando el desenfoque es demasiado fuerte para Enfoque — p. ej., una cara desenfocada o una foto de una cámara antigua que nunca fue del todo nítida. Redibuja detalles plausibles en lugar de recuperarlos, así que puede cambiar caras, texturas y texto pequeño; baja la intensidad si el resultado parece inventado. Es lento y una descarga grande.",
+                "osaka": "Usa este modelo cuando quieras la restauración más completa posible. Reconstruye el detalle en lugar de limitarse a afilarlo, y es el que más lejos llega en fotos suaves o muy comprimidas. Eso sí, es lento y necesita una GPU potente para funcionar bien."
             }
         },
         "add": "Añadir mejora",

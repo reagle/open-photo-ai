@@ -337,8 +337,7 @@
             "models": {
                 "tokyo": "Usa questo modello quando vuoi un ingrandimento naturale senza esagerazioni. Si concentra sul preservare l'aspetto originale e le strutture fini invece di \"inventare\" nuovi dettagli, il che lo rende ideale quando realismo e fedeltà contano più della nitidezza.",
                 "kyoto": "Usa questo modello per foto reali (persone, paesaggi, prodotti). Eccelle nel ripristinare i dettagli gestendo rumore, sfocatura e artefatti di compressione. Ideale per usi pratici in cui le immagini sono imperfette e vuoi risultati piacevoli e solidi in tempi rapidi.",
-                "saitama": "Usa questo modello per cartoni animati, disegni, line art e illustrazioni digitali. Preserva linee pulite, colori piatti e ombreggiature stilizzate senza introdurre texture fotografiche. Ideale quando bordi netti e coerenza stilistica contano più del realismo.",
-                "osaka": "Usalo quando vuoi l'ingrandimento della migliore qualità possibile. Ricostruisce i dettagli invece di limitarsi ad aumentare la nitidezza, ottenendo il massimo su foto morbide o molto compresse. È però lento e richiede una GPU potente per funzionare bene."
+                "saitama": "Usa questo modello per cartoni animati, disegni, line art e illustrazioni digitali. Preserva linee pulite, colori piatti e ombreggiature stilizzate senza introdurre texture fotografiche. Ideale quando bordi netti e coerenza stilistica contano più del realismo."
             },
             "suspended": "Il restauro sta ingrandendo questa foto"
         },
@@ -347,7 +346,8 @@
             "size": "Dimensione",
             "generative": "Generativo: ridisegna i dettagli e può alterare volti, texture e scritte.",
             "models": {
-                "kazan": "Usa questo modello quando la sfocatura è troppo forte per Nitidezza — ad es. un volto fuori fuoco, o una foto di una vecchia fotocamera che non è mai stata davvero nitida. Ridisegna dettagli plausibili invece di recuperarli, quindi può alterare volti, texture e testo piccolo; riduci l'intensità se il risultato sembra inventato. È lento e richiede un download pesante."
+                "kazan": "Usa questo modello quando la sfocatura è troppo forte per Nitidezza — ad es. un volto fuori fuoco, o una foto di una vecchia fotocamera che non è mai stata davvero nitida. Ridisegna dettagli plausibili invece di recuperarli, quindi può alterare volti, texture e testo piccolo; riduci l'intensità se il risultato sembra inventato. È lento e richiede un download pesante.",
+                "osaka": "Usalo quando vuoi il restauro più approfondito possibile. Ricostruisce i dettagli invece di limitarsi ad aumentare la nitidezza, ottenendo il massimo su foto morbide o molto compresse. È però lento e richiede una GPU potente per funzionare bene."
             }
         },
         "add": "Aggiungi miglioramento",

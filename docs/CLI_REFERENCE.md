@@ -45,8 +45,8 @@ opai photo.jpg --up -o photo-large.png
 # Restore faces with the default model (Athens), then upscale 2x with Kyoto, and save as WebP
 opai portrait.jpg --fr --up kyoto --scale 2 -o portrait.webp
 
-# Upscale with Osaka at SD quality
-opai scan.png --up osaka -q sd -o scan.avif
+# Restore with Osaka at SD quality, enlarging to twice the size
+opai scan.png --rs osaka --rs-scale 2 -q sd -o scan.avif
 
 # Denoise at twice the normal strength with Gothenburg, then adjust light with Paris
 opai night.jpg --dn gothenburg --dn-str 200 --la --la-bias -20 -o night-clean.jpg
@@ -86,7 +86,7 @@ The inputs must come **before** the enhancement flags. Enhancement flags can tak
 
 ```
 error: invalid value 'photo.jpg' for '--upscale [<MODEL>]'
-  [possible values: kyoto, osaka, tokyo, saitama]
+  [possible values: kyoto, tokyo, saitama]
 ```
 
 ### `-o, --output <OUTPUT>` (required)
@@ -124,7 +124,7 @@ Analyses each image and applies the enhancements it calls for, instead of the on
 
 Picks which build of each model to run. It applies to **every** enhancement in the command.
 
-| Quality      | Most models | Osaka (upscale) | Trade-off                                     |
+| Quality      | Most models | Osaka (restore) | Trade-off                                     |
 |--------------|-------------|-----------------|-----------------------------------------------|
 | `hd` (default) | FP32      | FP16            | Highest quality. Slower, uses more memory.    |
 | `sd`         | FP16        | INT8            | Lighter and usually faster. Slightly lower quality. |
@@ -193,7 +193,7 @@ opai photo.jpg --up kyoto -o out.png   # upscale with Kyoto
 ```
 
 - Every flag has a long name and a short alias; they do the same thing (`--upscale` = `--up`).
-- Model names are case-insensitive (`--up OSAKA` = `--up osaka`).
+- Model names are case-insensitive (`--up KYOTO` = `--up kyoto`).
 - Use plain ASCII for model names: `malmo` (not `malmö`), `petersburg` (not `st-petersburg`), `saopaulo` (not `sao-paulo` or `são-paulo`).
 - You can combine any number of enhancements in one command, but each one only once.
 
@@ -209,8 +209,8 @@ Default models are in **bold**.
 | Light Adjustment | `--light-adjustment` | `--la` | **paris**, lyon                                | `--la-bias` (-100 to 100)  |
 | Color Balance    | `--color-balance`    | `--cb` | **rio**, saopaulo                              | `--cb-bias` (-100 to 100)  |
 | Sharpen          | `--sharpen`          | `--sh` | **moscow**, petersburg, novgorod               | `--sh-str` (1 to 300)      |
-| Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, osaka, saitama               | `--scale` (1.0 to 8.0)     |
-| Restore          | `--restore`          | `--rs` | **kazan**                                      | `--rs-scale` (1, 2 or 4), `--rs-str` (1 to 100) |
+| Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, saitama                      | `--scale` (1.0 to 8.0)     |
+| Restore          | `--restore`          | `--rs` | **kazan**, osaka                               | `--rs-scale` (1, 2 or 4), `--rs-str` (1 to 100) |
 
 The sections below explain each enhancement briefly. For more detail on when to pick each model, see the [Enhancements section of the README](../README.md#-enhancements).
 
@@ -328,7 +328,8 @@ Increases the image's resolution.
 | `tokyo` (default) | A natural upscale that stays faithful to the original and doesn't invent detail.           |
 | `kyoto`    | Real-world photos with noise, blur or compression. Fast, robust results.                          |
 | `saitama`  | Cartoons, drawings, line art and digital illustrations.                                           |
-| `osaka`    | The best quality available. Slow; needs a powerful GPU. Its builds are FP16 (`hd`) and INT8 (`sd`). |
+
+Osaka was an upscale model and is now a [Restore](#restore---restore-model---rs-model) model: `--up osaka` fails with `error: Osaka is a restore model now: use --restore osaka (--rs osaka) …`. Use `--rs osaka --rs-scale 2` (or `4`) for what `--up osaka --scale 2` did.
 
 Option: `--scale <FACTOR>`, the upscale factor, from `1.0` to `8.0`. Decimals are allowed (e.g. `2.5`).
 
@@ -350,6 +351,7 @@ Restores detail generatively: the model **redraws** plausible detail where the p
 | Model      | Use it for                                                                                        |
 |------------|---------------------------------------------------------------------------------------------------|
 | `kazan` (default) | Soft, blurred or low-detail photos. PiSA-SR on Stable Diffusion 2.1; slow and a large download. Its builds are FP32 (`hd`) and FP16 (`sd`). |
+| `osaka`    | The furthest-reaching restoration, on photos that are soft or heavily compressed. SeedVR2; slow, and needs a powerful GPU and a lot of memory (see the README). Its builds are FP16 (`hd`) and INT8 (`sd`). |
 
 Options:
 
@@ -388,24 +390,24 @@ Each enhancement runs with its default model unless an environment variable name
 | Light Adjustment | `OPAI_AP_LIGHT`         | Paris         | `paris`, `lyon`, `off`                |
 | Color Balance    | `OPAI_AP_COLOR`         | Rio           | `rio`, `saopaulo`, `off`              |
 | Sharpen          | `OPAI_AP_SHARPEN`       | Moscow        | `moscow`, `petersburg`, `novgorod`, `off` |
-| Upscale          | `OPAI_AP_UPSCALE`       | Tokyo         | `kyoto`, `osaka`, `tokyo`, `saitama`, `off` |
+| Upscale          | `OPAI_AP_UPSCALE`       | Tokyo         | `kyoto`, `tokyo`, `saitama`, `off` |
 
 ```bash
-# Upscale with Osaka whenever autopilot upscales
-OPAI_AP_UPSCALE=osaka opai photos --ap -o out
+# Upscale with Kyoto whenever autopilot upscales
+OPAI_AP_UPSCALE=kyoto opai photos --ap -o out
 
 # Never sharpen or restore faces, and use Malmo for denoise
 OPAI_AP_SHARPEN=off OPAI_AP_FACE=off OPAI_AP_DENOISE=malmo opai photos --ap -o out
 ```
 
-- Model names are spelled as the enhancement flags take them, in any case (`Osaka` = `osaka`).
+- Model names are spelled as the enhancement flags take them, in any case (`Kyoto` = `kyoto`).
 - **`off`** (any case) leaves that enhancement out entirely: it's never applied, and the analysis doesn't even look for it, so `OPAI_AP_FACE=off` skips face recovery.
 - An **empty** value is the same as not setting the variable.
 - An **invalid** value fails with exit code `2` before anything is downloaded, naming the variable and listing what it accepts:
 
   ```
   error: invalid value 'paris' for the environment variable OPAI_AP_UPSCALE
-    [possible values: kyoto, osaka, tokyo, saitama, off]
+    [possible values: kyoto, tokyo, saitama, off]
   ```
 - The variables are read **only with `--ap`**. Without it they're ignored and not checked: `OPAI_AP_UPSCALE=paris opai photo.jpg --up -o out.png` upscales with Tokyo. The GUI never reads them; its Autopilot uses the models chosen in its settings.
 
@@ -628,6 +630,7 @@ What's in it that the terminal doesn't show:
 | `error: invalid value '9' for '--scale <FACTOR>': the scale must be from 1.0 to 8.0` | `--scale` out of range or not a number. |
 | `error: --upscale (--up) cannot be used with --rs-scale 2: …`                  | An enlarging restore replaces the upscale. Leave out `--up`, or use `--rs-scale 1` to restore after the upscale. |
 | `error: invalid value '3' for '--rs-scale <FACTOR>': the restore size must be one of 1, 2, 4` | `--rs-scale` takes only 1, 2 or 4. |
+| `error: Osaka is a restore model now: use --restore osaka (--rs osaka) …`       | Osaka moved from Upscale to Restore. Use `--rs osaka`, with `--rs-scale 2` or `4` to enlarge. |
 | `error: invalid value '0.5' for '--la-bias <BIAS>': the bias must be a whole number from -100 to 100` | Strength/bias must be a whole number within range. |
 | `error: the following required arguments were not provided: --denoise [<MODEL>]` | A strength/bias/scale option was used without its enhancement flag (e.g. `--dn-str` without `--dn`, or `--scale` without `--up`). |
 | `error: invalid value 'raw' for '--format <FORMAT>': "raw" is not a format; use preserve, …` | Unknown `--format`. Pick one from the list shown. |

@@ -329,8 +329,7 @@
             "models": {
                 "tokyo": "Gebruik dit model wanneer je een natuurlijke opschaling zonder overdrijving wilt. Het richt zich op het behouden van de oorspronkelijke look en fijne structuren in plaats van nieuwe details te \"verzinnen\", ideaal wanneer realisme en trouw aan het origineel belangrijker zijn dan scherpte.",
                 "kyoto": "Gebruik dit model voor echte foto's (mensen, landschappen, producten). Het herstelt details uitstekend en gaat tegelijk om met ruis, onscherpte en compressieartefacten. Ideaal voor praktijksituaties waarin afbeeldingen niet perfect zijn en je snel aantrekkelijke, robuuste resultaten wilt.",
-                "saitama": "Gebruik dit model voor cartoons, tekeningen, lijntekeningen en digitale illustraties. Het behoudt schone lijnen, vlakke kleuren en gestileerde schaduwen zonder fotoachtige texturen toe te voegen. Het beste wanneer scherpe randen en stilistische consistentie belangrijker zijn dan realisme.",
-                "osaka": "Gebruik dit model wanneer je de best mogelijke opschaalkwaliteit wilt. Het bouwt detail opnieuw op in plaats van het alleen te verscherpen en gaat het verst bij zachte of sterk gecomprimeerde foto's. Het is wel traag en heeft een krachtige GPU nodig om goed te draaien."
+                "saitama": "Gebruik dit model voor cartoons, tekeningen, lijntekeningen en digitale illustraties. Het behoudt schone lijnen, vlakke kleuren en gestileerde schaduwen zonder fotoachtige texturen toe te voegen. Het beste wanneer scherpe randen en stilistische consistentie belangrijker zijn dan realisme."
             },
             "suspended": "Restauratie vergroot deze foto"
         },
@@ -339,7 +338,8 @@
             "size": "Grootte",
             "generative": "Generatief: tekent details opnieuw en kan gezichten, texturen en letters veranderen.",
             "models": {
-                "kazan": "Gebruik dit model wanneer de onscherpte te sterk is voor Verscherpen — bijv. een onscherp gezicht, of een foto van een oude camera die nooit echt scherp was. Het tekent aannemelijke details opnieuw in plaats van ze te herstellen, dus het kan gezichten, texturen en kleine tekst veranderen; verlaag de sterkte als het resultaat verzonnen lijkt. Het is traag en een grote download."
+                "kazan": "Gebruik dit model wanneer de onscherpte te sterk is voor Verscherpen — bijv. een onscherp gezicht, of een foto van een oude camera die nooit echt scherp was. Het tekent aannemelijke details opnieuw in plaats van ze te herstellen, dus het kan gezichten, texturen en kleine tekst veranderen; verlaag de sterkte als het resultaat verzonnen lijkt. Het is traag en een grote download.",
+                "osaka": "Gebruik dit model wanneer je de grondigste restauratie wilt die er is. Het bouwt detail opnieuw op in plaats van het alleen te verscherpen en gaat het verst bij zachte of sterk gecomprimeerde foto's. Het is wel traag en heeft een krachtige GPU nodig om goed te draaien."
             }
         },
         "add": "Toevoegen",

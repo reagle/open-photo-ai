@@ -12,11 +12,20 @@
 //! are trained and driven; see [`resample`]. The strength blends the restoration with the image it was conditioned on,
 //! so it is the fidelity control.
 //!
+//! **Two models, two contracts.** [Kazan](kazan) (PiSA-SR) is one exported graph per 512x512 tile, run through the
+//! shared [`filter`](crate::models::filter) over a photograph [resampled](resample) first. [Osaka](osaka) (SeedVR2) is
+//! three graphs run as one pass over 960x960 regions by a driver of its own, which resamples inside its own loop
+//! because the resampled image is also what its colour fix corrects towards. Osaka was an upscale model until this
+//! family existed; its artifacts keep the `up_` they were published under.
+//!
 //! **Where it runs.** Last, after every faithful family; see [`Family::APPLY_ORDER`].
 
 pub(crate) mod kazan;
+pub(crate) mod osaka;
 pub(crate) mod resample;
 pub(crate) mod variant;
+
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -32,6 +41,9 @@ use crate::models::filter;
 use crate::pipeline::Backend;
 use crate::pipeline::Shared;
 use crate::providers::profile::EpProfile;
+use osaka::Diffusion;
+use osaka::graph::{GraphRole, GraphSet, UnknownRole};
+use osaka::precision::OsakaPrecision;
 
 pub(crate) use variant::ALL;
 pub use variant::RestoreVariant;
@@ -114,6 +126,28 @@ impl Restore {
         Operation::Restore(Self::new(RestoreVariant::Kazan(precision), scale, strength))
     }
 
+    /// Osaka at `precision`, restoring at `scale` and applying `strength` of its output.
+    ///
+    /// The one restore constructor whose precision argument is not a [`FloatPrecision`]: Osaka is published at FP16
+    /// and INT8 and at no other precision, so it takes an [`OsakaPrecision`], and Osaka at FP32 is a request that
+    /// cannot be written at all:
+    ///
+    /// ```compile_fail,E0599
+    /// # use opai::{OsakaPrecision, Restore, Scale, Strength};
+    /// let osaka = Restore::osaka(OsakaPrecision::Fp32, Scale::new(2.0).unwrap(), Strength::new(1.0).unwrap());
+    /// ```
+    ///
+    /// And a [`FloatPrecision`] is refused for being the wrong type rather than the wrong value — FP16 is a precision
+    /// Osaka *is* published at, and this still does not compile:
+    ///
+    /// ```compile_fail,E0308
+    /// # use opai::{FloatPrecision, Restore, Scale, Strength};
+    /// let osaka = Restore::osaka(FloatPrecision::Fp16, Scale::new(2.0).unwrap(), Strength::new(1.0).unwrap());
+    /// ```
+    pub fn osaka(precision: OsakaPrecision, scale: Scale, strength: Strength) -> Operation {
+        Operation::Restore(Self::new(RestoreVariant::Osaka(precision), scale, strength))
+    }
+
     /// Which model this runs, and at which precision.
     pub const fn variant(self) -> RestoreVariant {
         self.variant
@@ -155,14 +189,30 @@ impl Restore {
     ///
     /// # Errors
     ///
-    /// None today: Kazan's pipeline cannot be refused. A `Result` because the family's contracts are not all one —
-    /// a multi-graph restorer is refused where its graph set is incomplete, as upscale's diffusion arm is.
+    /// [`InferenceError::Unsupported`] where Osaka's graph set does not declare all three roles its driver addresses —
+    /// unreachable while its row declares them, and a refusal rather than a panic so a row that lost one is a failed
+    /// run. Kazan's pipeline cannot be refused.
     pub(crate) fn pipeline<B: Backend>(self) -> Result<Shared<B>, InferenceError> {
-        // Built from what `params` publishes rather than from the fields, so a pipeline cannot be constructed from
-        // something the library did not say a run needs.
+        // One arm per contract, as upscale's seam is written: the shared filter over a resampled photograph, and the
+        // diffusion driver that resamples inside its own region loop. Built from what `params` publishes rather than
+        // from the fields, so a pipeline cannot be constructed from something the library did not say a run needs.
         let params = self.params();
 
         match self.variant {
+            // The scale travels per run, the strength is applied against the image the model was conditioned on, and
+            // each graph carries its own profile — see `Diffusion`.
+            RestoreVariant::Osaka(precision) => {
+                let graphs =
+                    osaka::graph::resolve(&osaka::OSAKA, precision.into()).resolved_graphs().cloned().collect();
+
+                Ok(Arc::new(Diffusion::new(
+                    self.display_name(),
+                    graphs,
+                    self.required_artifacts(),
+                    params.scale,
+                    params.strength,
+                )?))
+            }
             // The shared filter at Kazan's own tile, with no guard: a generative tile has no "diverged" a threshold
             // could tell from a redrawn one. Wrapped in the resample, so the filter's strength blends towards the
             // image the model was handed.
@@ -170,27 +220,61 @@ impl Restore {
                 params.scale,
                 filter::pipeline::<B>(
                     self.display_name(),
-                    self.artifact(),
+                    single_artifact(Family::Restore, self.variant.codename(), self.precision()),
                     self.profile(),
                     kazan::RANGE,
                     params.strength,
                     None,
-                    self.variant.geometry(),
+                    kazan::GEOMETRY,
                 ),
             )),
         }
     }
 
-    /// The artifact serving this operation's model: `rs_kazan_fp16`.
-    pub fn artifact(self) -> ArtifactId {
-        single_artifact(Family::Restore, self.variant.codename(), self.precision())
-    }
-
-    /// The artifacts that must be on disk before this operation can run.
+    /// The artifacts that must be on disk before this operation can run, in the order they are first needed:
+    /// `rs_kazan_fp16`, or Osaka's three graphs.
+    ///
+    /// **Osaka's keep the `up_` they were published under**, which is the one place this family's artifacts are not
+    /// named for it; see `osaka::graph::PUBLISHED_UNDER`.
     pub fn required_artifacts(self) -> Vec<ArtifactId> {
         // A `Vec` to match `Upscale::required_artifacts`, so that whoever downloads what an operation needs asks every
         // family the same question.
-        vec![self.artifact()]
+        match self.graphs() {
+            Some(set) => {
+                let mut required: Vec<ArtifactId> = Vec::new();
+                // Deduplicated as upscale's are, though Osaka's three are distinct: a set naming one file twice
+                // still needs it once.
+                for artifact in set.artifacts() {
+                    if !required.contains(artifact) {
+                        required.push(artifact.clone());
+                    }
+                }
+                required
+            }
+            None => vec![single_artifact(Family::Restore, self.variant.codename(), self.precision())],
+        }
+    }
+
+    /// The graphs a multi-graph variant loads together for one pass, or `None` for one that is a single graph.
+    fn graphs(self) -> Option<GraphSet> {
+        match self.variant {
+            RestoreVariant::Osaka(precision) => Some(osaka::graph::resolve(&osaka::OSAKA, precision.into())),
+            RestoreVariant::Kazan(_) => None,
+        }
+    }
+
+    /// The graph filling `role`, for an operation whose model is run as several: Osaka's encoder, transformer or
+    /// decoder.
+    ///
+    /// # Errors
+    ///
+    /// [`UnknownRole`] where this operation's model declares no graph for `role` — which includes Kazan, a single
+    /// graph that fills none of them.
+    pub fn graph(self, role: GraphRole) -> Result<ArtifactId, UnknownRole> {
+        match self.graphs() {
+            Some(set) => set.graph(role).cloned(),
+            None => Err(UnknownRole { role, variant: self.variant.codename() }),
+        }
     }
 
     /// The key the run cache stores this operation's result under: `rs-kazan-fp16-s2-t1`.
@@ -255,24 +339,67 @@ mod tests {
     }
 
     #[test]
-    fn every_variant_names_the_artifact_it_is_installed_as() {
-        let expected = [
-            (RestoreVariant::Kazan(FloatPrecision::Fp32), "rs_kazan_fp32"),
-            (RestoreVariant::Kazan(FloatPrecision::Fp16), "rs_kazan_fp16"),
+    fn every_variant_names_the_artifacts_it_is_installed_as() {
+        // Osaka's keep the `up_` they were published under, and its two VAE halves stay at FP16 under an INT8 run:
+        // no INT8 build of either was published.
+        let expected: [(RestoreVariant, &[&str]); 4] = [
+            (RestoreVariant::Kazan(FloatPrecision::Fp32), &["rs_kazan_fp32"]),
+            (RestoreVariant::Kazan(FloatPrecision::Fp16), &["rs_kazan_fp16"]),
+            (
+                RestoreVariant::Osaka(OsakaPrecision::Fp16),
+                &["up_osaka_vae_encoder_fp16", "up_osaka_fp16", "up_osaka_vae_decoder_fp16"],
+            ),
+            (
+                RestoreVariant::Osaka(OsakaPrecision::Int8),
+                &["up_osaka_vae_encoder_fp16", "up_osaka_int8", "up_osaka_vae_decoder_fp16"],
+            ),
         ];
 
-        for (variant, name) in expected {
+        for (variant, names) in expected {
             let operation = Restore::new(variant, scale(2.0), strength(1.0));
+            let required = operation.required_artifacts();
 
-            assert_eq!(operation.artifact().as_str(), name);
-            assert_eq!(operation.required_artifacts(), vec![operation.artifact()]);
+            assert_eq!(required.iter().map(ArtifactId::as_str).collect::<Vec<_>>(), names, "{variant:?}");
         }
+    }
+
+    #[test]
+    fn osakas_graphs_are_addressed_by_role_and_kazan_fills_none() {
+        let osaka = Restore::new(RestoreVariant::Osaka(OsakaPrecision::Int8), scale(1.0), strength(1.0));
+
+        assert_eq!(osaka.graph(GraphRole::Transformer).map(|graph| graph.to_string()), Ok("up_osaka_int8".into()));
+        assert_eq!(
+            osaka.graph(GraphRole::Encoder).map(|graph| graph.to_string()),
+            Ok("up_osaka_vae_encoder_fp16".into())
+        );
+
+        let kazan = Restore::new(RestoreVariant::Kazan(FloatPrecision::Fp16), scale(1.0), strength(1.0));
+        let refused = kazan.graph(GraphRole::Decoder).expect_err("Kazan is one graph");
+        assert_eq!((refused.role, refused.variant), (GraphRole::Decoder, "kazan"));
+    }
+
+    #[test]
+    fn osakas_transformer_is_opened_under_its_own_layout_and_its_vae_halves_under_the_models() {
+        // The project's one per-graph override, and the case a seam pairing artifacts and settings by position would
+        // get wrong silently. See `osaka::profile`.
+        let osaka = Restore::new(RestoreVariant::Osaka(OsakaPrecision::Fp16), scale(2.0), strength(1.0));
+        let pipeline = osaka.pipeline::<NoBackend>().expect("Osaka reaches a pipeline");
+        let sessions = pipeline.sessions();
+
+        assert_eq!(sessions.len(), 3, "a diffusion operation opens all three graphs together");
+        assert!(sessions[0].1.cuda_prefer_nhwc, "the encoder carried the transformer's layout");
+        assert!(!sessions[1].1.cuda_prefer_nhwc, "the transformer carried the VAE halves' layout");
+        assert!(sessions[2].1.cuda_prefer_nhwc, "the decoder carried the transformer's layout");
     }
 
     #[test]
     fn the_cache_tag_is_the_written_one_rather_than_whatever_serialization_produces() {
         assert_eq!(kazan(FloatPrecision::Fp16, 1.0, 1.0).cache_tag(), "rs-kazan-fp16-s1-t1");
         assert_eq!(kazan(FloatPrecision::Fp32, 2.0, 0.5).cache_tag(), "rs-kazan-fp32-s2-t0.5");
+        assert_eq!(
+            Restore::new(RestoreVariant::Osaka(OsakaPrecision::Int8), scale(4.0), strength(1.0)).cache_tag(),
+            "rs-osaka-int8-s4-t1"
+        );
     }
 
     #[test]
@@ -311,6 +438,9 @@ mod tests {
             assert_eq!(operation.display_name(), "Kazan (FP16)");
             assert_eq!(operation.to_string(), operation.display_name());
         }
+
+        let osaka = Restore::new(RestoreVariant::Osaka(OsakaPrecision::Int8), scale(4.0), strength(0.5));
+        assert_eq!(osaka.display_name(), "Osaka (INT8)");
     }
 
     #[test]
@@ -348,6 +478,7 @@ mod tests {
             r#"{"variant":{"codename":"kazan","precision":"fp16"},"scale":6.0,"strength":0.5}"#,
             r#"{"variant":{"codename":"kazan","precision":"fp16"},"scale":2.0,"strength":2.0}"#,
             r#"{"variant":{"codename":"moscow","precision":"fp16"},"scale":2.0,"strength":0.5}"#,
+            r#"{"variant":{"codename":"osaka","precision":"fp32"},"scale":2.0,"strength":0.5}"#,
         ] {
             assert!(serde_json::from_str::<Restore>(json).is_err(), "deserialization accepted {json}");
         }
@@ -361,8 +492,14 @@ mod tests {
                 let pipeline = operation.pipeline::<NoBackend>().expect("every published variant reaches a pipeline");
 
                 assert_eq!(pipeline.required(), operation.required_artifacts().as_slice());
-                assert_eq!(pipeline.sessions().len(), 1, "{operation:?}");
-                assert_eq!(*pipeline.sessions()[0].1, operation.profile(), "{operation:?} lost its profile");
+                assert_eq!(pipeline.sessions().len(), operation.required_artifacts().len(), "{operation:?}");
+                assert!(pipeline.stages() > 0, "{operation:?} reached a pipeline that runs no model at all");
+
+                // A single-graph model opens its one graph under the variant's profile; Osaka's graphs each carry
+                // their own, pinned above.
+                if matches!(variant, RestoreVariant::Kazan(_)) {
+                    assert_eq!(*pipeline.sessions()[0].1, operation.profile(), "{operation:?} lost its profile");
+                }
             }
         }
     }

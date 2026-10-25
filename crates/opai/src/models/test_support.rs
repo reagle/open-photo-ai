@@ -216,6 +216,15 @@ pub(crate) fn artifacts(variant: upscale::UpscaleVariant, scale: f64) -> Vec<sup
     Upscale::new(variant, Scale::new(scale).expect("the test supplied a scale in range")).required_artifacts()
 }
 
+/// The artifacts one Osaka operation requires at `precision`: its three graphs, whatever the size.
+///
+/// Beside [`artifacts`] because Osaka is a restore model now, and its graphs are the multi-artifact case the session
+/// cache, the install and the descriptor are tested against.
+pub(crate) fn osaka_artifacts(precision: super::OsakaPrecision) -> Vec<super::ArtifactId> {
+    Restore::new(restore::RestoreVariant::Osaka(precision), Scale::clamped(2.0), Strength::clamped(1.0))
+        .required_artifacts()
+}
+
 /// The one artifact `variant` needs at `scale`.
 ///
 /// Asserts rather than silently taking the first, because an operation resolving to two artifacts is not the thing a

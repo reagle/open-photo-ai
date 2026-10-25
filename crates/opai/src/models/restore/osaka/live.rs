@@ -12,7 +12,7 @@
 //! same reason, as the chain's own live checks and [`crate::sessions`]'s. Run them by hand:
 //!
 //! ```text
-//! cargo test -p opai models::upscale::osaka::live -- --ignored --nocapture --test-threads=1
+//! cargo test -p opai models::restore::osaka::live -- --ignored --nocapture --test-threads=1
 //! ```
 //!
 //! The whole module is about ten minutes on an M2 Max, almost all of it the five CPU regions.
@@ -134,7 +134,7 @@ use super::noise::{NOISE_SEED, gaussian};
 use super::region::{RegionGraphs, RegionScratch, restore_region};
 use crate::ProcessOptions;
 use crate::live_support::{self, kept_dir, live_application_at};
-use crate::models::{GraphRole, Operation, OsakaPrecision, Resolution, Scale, Upscale, UpscaleVariant};
+use crate::models::{GraphRole, OsakaPrecision, Restore, Scale, Strength};
 use crate::pipeline::Backend;
 use crate::pipeline::session::GraphShape;
 use crate::providers::ExecutionProvider;
@@ -184,9 +184,7 @@ fn region() -> Tile {
 /// Through `resolve()` rather than by naming three artifacts, which is what makes this exercise the per-graph profile
 /// contract rather than merely the weights.
 async fn sessions(opai: &Opai, provider: ExecutionProvider) -> [SessionHandle<ort::session::Session>; 3] {
-    let operation =
-        Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Fp16), Scale::new(1.0).expect("1.0 is in range"));
-    let Resolution::Graphs(set) = operation.resolve() else { panic!("Osaka resolved to passes") };
+    let set = super::graph::resolve(&super::OSAKA, OsakaPrecision::Fp16.into());
 
     let mut handles = Vec::with_capacity(3);
     for role in [GraphRole::Encoder, GraphRole::Transformer, GraphRole::Decoder] {
@@ -486,9 +484,7 @@ async fn the_scheduler_step_and_the_channel_order_both_score_better_than_getting
 async fn the_disabled_optimizer_setting_is_a_semicolon_separated_list() {
     let opai = application().await;
 
-    let operation =
-        Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Fp16), Scale::new(1.0).expect("1.0 is in range"));
-    let Resolution::Graphs(set) = operation.resolve() else { panic!("Osaka resolved to passes") };
+    let set = super::graph::resolve(&super::OSAKA, OsakaPrecision::Fp16.into());
     let graph = set.resolved(GraphRole::Transformer).expect("Osaka declares a transformer");
 
     // `true` where the graph must open, which is exactly where the value reached the runtime as a list whose entries
@@ -580,7 +576,7 @@ async fn osaka_upscales_a_multi_region_image_through_the_public_api() {
     let (width, height) = source.dimensions();
     let requested = Scale::new(2.0).expect("2.0 is in range");
 
-    let operation = Operation::Upscale(Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Fp16), requested));
+    let operation = Restore::osaka(OsakaPrecision::Fp16, requested, Strength::clamped(1.0));
 
     let reported: std::sync::Arc<std::sync::Mutex<Vec<f64>>> = std::sync::Arc::default();
     let sink = std::sync::Arc::clone(&reported);
