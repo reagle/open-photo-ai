@@ -20,6 +20,8 @@
 //! catalogue's vocabulary — a name and a number, as it read them — can hand them back without a match of its own over
 //! the four bounded types.
 
+use std::sync::Arc;
+
 use super::artifact::Family;
 use super::bias::Bias;
 use super::catalogue::{VariantEntry, catalogue};
@@ -34,6 +36,7 @@ use super::grain::{Grain, GrainAmount, GrainMode, GrainVariant};
 use super::light_adjustment::{LightAdjustment, LightAdjustmentVariant};
 use super::operation::Operation;
 use super::precision::Precision;
+use super::remove::{Remove, RemoveVariant};
 use super::restore::{Restore, RestoreVariant};
 use super::scale::Scale;
 use super::sharpen::{Sharpen, SharpenVariant};
@@ -41,6 +44,8 @@ use super::strength::Strength;
 use super::upscale::{Upscale, UpscaleVariant};
 
 use super::subject::Subject;
+
+use crate::mask::Mask;
 
 /// Why a request naming a model could not be turned into a run.
 ///
@@ -103,11 +108,13 @@ pub struct ParameterValues {
     grain_mode: GrainMode,
     /// The faces a face-recovery run restores, as a detection run found them.
     faces: Faces,
+    /// What a removal takes out.
+    mask: Arc<Mask>,
 }
 
 impl ParameterValues {
     /// Every parameter at its neutral value: no enlargement, no strength, no lean, Athens' own default fidelity, no
-    /// grain (matching the source) and no faces.
+    /// grain (matching the source), no faces and nothing to remove.
     ///
     /// Neutral rather than arbitrary, so that a caller which forgot to set the parameter its variant takes gets the
     /// run that does the least rather than one it did not ask for. [`Fidelity`] is the exception and is
@@ -123,6 +130,7 @@ impl ParameterValues {
             amount: GrainAmount::OFF,
             grain_mode: GrainMode::Match,
             faces: Faces::empty(),
+            mask: Arc::new(Mask::default()),
         }
     }
 
@@ -172,6 +180,17 @@ impl ParameterValues {
     #[must_use]
     pub fn with_faces(mut self, faces: Faces) -> Self {
         self.faces = faces;
+        self
+    }
+
+    /// What a removal takes out: the part of the framed photograph `mask` marks at 0.5 and above.
+    ///
+    /// The one way a removal's region is handed over, as the faces are a face recovery's: it is painted or read from a
+    /// file, never set by name through [`set`](Self::set). Left unset, a removal carries an empty mask and removes
+    /// nothing.
+    #[must_use]
+    pub fn with_mask(mut self, mask: Arc<Mask>) -> Self {
+        self.mask = mask;
         self
     }
 
@@ -345,6 +364,10 @@ impl VariantEntry {
                     }
                 }
             }
+            // Built over the mask the values carry, empty unless one was handed over: a removal of nothing.
+            Family::Remove => match RemoveVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
+                RemoveVariant::Lima(_) => Remove::lima(Arc::clone(&values.mask)),
+            },
             Family::Upscale => match UpscaleVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
                 UpscaleVariant::Tokyo(precision) => Upscale::tokyo(precision, values.scale),
                 UpscaleVariant::Kyoto(precision) => Upscale::kyoto(precision, values.scale),

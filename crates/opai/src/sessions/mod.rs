@@ -303,6 +303,11 @@ impl<S: Send + 'static> Sessions<S> {
         interest: &Interest,
     ) -> Result<SessionHandle<S>, SessionError> {
         let auto = requested == ExecutionProvider::Auto;
+
+        // A model measured faster on the CPU than on any accelerator is opened there when nobody named a provider: see
+        // `models::cpu_on_auto`. The ladder is then the CPU's alone, which is never declined.
+        let requested = if auto && crate::models::cpu_on_auto(artifact) { ExecutionProvider::Cpu } else { requested };
+
         let rungs: Vec<_> = rust_sak::ai::ladder(&[requested], self.supported)
             .into_iter()
             .filter(|rung| !(auto && self.cache.is_declined(artifact, provider_of(rung))))

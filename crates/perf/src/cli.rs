@@ -245,7 +245,7 @@ mod tests {
             .find(|parameter| parameter.name == name)
             .and_then(|parameter| match parameter.kind {
                 ParameterKind::Range { min, max, .. } => Some((min, max)),
-                ParameterKind::Faces => None,
+                ParameterKind::Faces | ParameterKind::Mask => None,
             })
     }
 

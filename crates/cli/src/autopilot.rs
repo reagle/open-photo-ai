@@ -349,12 +349,12 @@ mod tests {
         check::<UpscaleModel>();
     }
 
-    /// Every family an analysis can suggest, in the library's apply order: all of them but restore and grain, which are
-    /// never chosen automatically.
+    /// Every family an analysis can suggest, in the library's apply order: all of them but remove, whose region is the
+    /// user's to paint, and restore and grain, which are never chosen automatically.
     fn suggestible() -> Vec<Family> {
         Family::APPLY_ORDER
             .into_iter()
-            .filter(|family| !matches!(family, Family::Restore | Family::Grain))
+            .filter(|family| !matches!(family, Family::Remove | Family::Restore | Family::Grain))
             .collect()
     }
 
