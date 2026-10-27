@@ -28,7 +28,7 @@ use crate::pipeline::{Backend, Shared};
 use crate::providers::profile::EpProfile;
 
 use lens::Blur;
-pub use lens::{Lens, LensOrigin};
+pub use lens::{Lens, LensOrigin, OwnLens};
 pub(crate) use variant::ALL;
 pub use variant::LensBlurVariant;
 
