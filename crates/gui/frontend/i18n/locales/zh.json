@@ -346,10 +346,12 @@
             "models": {
                 "lisbon": "使用此模型可像更大光圈的镜头那样虚化照片，同时保持你所选的点清晰。它会估算照片中每个部分的距离（MoGe-2 ViT-B，324 MB）。首次使用时会为你的处理器编译模型，在 Mac 上大约需要一分钟。"
             },
-            "fNumber": "光圈",
-            "equivalent": "全画幅等效",
+            "blurAmount": "模糊量",
+            "readout": "≈ f/{{real}}（全画幅 f/{{equivalent}}）",
+            "readoutEquivalent": "≈ f/{{equivalent}} 全画幅等效",
             "asTaken": "原始",
             "assumed": "此照片没有镜头信息；假定为 f/{{f}}",
+            "cannotBlurMore": "此照片拍摄于 f/{{f}}（全画幅等效），已达到效果的最大光圈，无法再增加模糊。",
             "setFocus": "设置对焦",
             "focusHint": "点击照片中应当清晰的位置。按 Esc 取消。"
         },
@@ -375,7 +377,7 @@
         },
         "infoFaces": "{{name}}，{{faces}}，{{quality}}",
         "infoScale": "{{name}}，{{scale}}x，{{quality}}",
-        "infoLensBlur": "{{name}}，f/{{f}}"
+        "infoLensBlur": "{{name}}，模糊 {{amount}}"
     },
     "preview": {
         "empty": {

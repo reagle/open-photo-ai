@@ -354,10 +354,12 @@
             "models": {
                 "lisbon": "Verwenden Sie dieses Modell, um ein Foto so unscharf zu machen, wie es ein weiter geöffnetes Objektiv täte, während der von Ihnen gewählte Punkt scharf bleibt. Es schätzt dafür die Entfernung aller Bildteile (MoGe-2 ViT-B, 324 MB). Bei der ersten Verwendung wird das Modell für Ihren Prozessor kompiliert, was auf einem Mac etwa eine Minute dauert."
             },
-            "fNumber": "Blende",
-            "equivalent": "Kleinbildäquivalent",
+            "blurAmount": "Unschärfe",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} Kleinbild)",
+            "readoutEquivalent": "≈ f/{{equivalent}} Kleinbildäquivalent",
             "asTaken": "Wie aufgenommen",
             "assumed": "Dieses Foto enthält keine Objektivinformationen; f/{{f}} angenommen",
+            "cannotBlurMore": "Dieses Foto wurde mit f/{{f}} (Kleinbildäquivalent) aufgenommen, so offen wie der Effekt reicht; es lässt sich nicht weiter verwischen.",
             "setFocus": "Fokus setzen",
             "focusHint": "Klicken Sie auf die Stelle des Fotos, die scharf sein soll. Esc zum Abbrechen."
         },
@@ -385,7 +387,7 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
-        "infoLensBlur": "{{name}}, f/{{f}}"
+        "infoLensBlur": "{{name}}, Unschärfe {{amount}}"
     },
     "preview": {
         "empty": {

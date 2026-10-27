@@ -354,10 +354,12 @@
             "models": {
                 "lisbon": "Use este modelo para desfocar uma foto como faria uma abertura de lente maior, mantendo nítido o ponto que você escolher. Ele estima a distância de cada parte da foto (MoGe-2 ViT-B, 324 MB). No primeiro uso, o modelo é compilado para o seu processador, o que leva cerca de um minuto em um Mac."
             },
-            "fNumber": "Abertura",
-            "equivalent": "equivalente em formato completo",
+            "blurAmount": "Desfoque",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} formato completo)",
+            "readoutEquivalent": "≈ f/{{equivalent}} equivalente em formato completo",
             "asTaken": "Original",
             "assumed": "Esta foto não tem informações da lente; f/{{f}} assumido",
+            "cannotBlurMore": "Esta foto foi tirada a f/{{f}} (equivalente em formato completo), tão aberto quanto o efeito alcança; não pode ficar mais desfocada.",
             "setFocus": "Definir foco",
             "focusHint": "Clique na foto onde deve ficar nítido. Esc para cancelar."
         },
@@ -385,7 +387,7 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
-        "infoLensBlur": "{{name}}, f/{{f}}"
+        "infoLensBlur": "{{name}}, desfoque {{amount}}"
     },
     "preview": {
         "empty": {

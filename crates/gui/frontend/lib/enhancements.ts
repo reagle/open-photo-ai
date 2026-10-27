@@ -15,8 +15,8 @@ import type { Family, FamilyEntry, ParameterEntry, Precision, VariantEntry } fro
 import { type CropInfo, framedDimensions } from "@/ipc/crop";
 import type { Operation } from "@/ipc/enhance";
 import type { ImageRecord } from "@/ipc/images";
-import { lensInfo } from "@/ipc/lens";
-import { ASSUMED_F_NUMBER, stopsUpTo } from "@/lib/fstops";
+import { type LensInfo, lensInfo } from "@/ipc/lens";
+import { ASSUMED_LENS, DEFAULT_AMOUNT, fNumberForAmount } from "@/lib/blurAmount";
 import { report } from "@/lib/report";
 
 /**
@@ -516,26 +516,36 @@ export const FOCUS_X = "focus_x";
 export const FOCUS_Y = "focus_y";
 
 /**
- * The f-number a freshly added lens blur starts at, for the photograph `file` as it is framed by `crop`: the right end
- * of its slider, "As taken", which adds no blur - so adding a lens blur changes nothing until the slider is moved.
+ * The lens of the photograph `file` as it is framed by `crop`, from its EXIF alone and asked of the backend through
+ * {@link lensInfo}, which answers at once: the equivalent f-number is `opai`'s to work out, so the window and a run
+ * agree on it.
  *
- * **The photograph's own, rounded up to a stop** and asked of the backend through {@link lensInfo}, which reads the
- * EXIF alone and answers at once: the equivalent f-number is `opai`'s to work out, so the window and a run agree on it.
  * One the backend cannot answer, or a file with no identity to ask about, is the f/8 the library assumes for a
- * photograph it knows nothing of - which is also the stop the panel draws its slider to in that case.
+ * photograph it knows nothing of.
  */
-export const startingFNumber = async (file: ImageRecord | undefined, crop: CropInfo | undefined): Promise<number> => {
-    const assumed = stopsUpTo(ASSUMED_F_NUMBER).at(-1) ?? ASSUMED_F_NUMBER;
-    if (file?.identity === undefined) return assumed;
+export const ownLens = async (file: ImageRecord | undefined, crop: CropInfo | undefined): Promise<LensInfo> => {
+    if (file?.identity === undefined) return ASSUMED_LENS;
 
     try {
-        const { ownFNumber } = await lensInfo(file.identity, crop);
-
-        return stopsUpTo(ownFNumber).at(-1) ?? assumed;
+        return await lensInfo(file.identity, crop);
     } catch (error) {
-        report("asking for the f-number a new lens blur starts at failed", error);
-        return assumed;
+        report("asking for the lens a lens blur is set against failed", error);
+        return ASSUMED_LENS;
     }
+};
+
+/**
+ * The f-number a freshly added lens blur starts at, for the photograph `file` as it is framed by `crop`: a blur amount
+ * of {@link DEFAULT_AMOUNT} on the photograph's own lens. For a photograph that cannot be blurred more - already at
+ * f/1.4 equivalent or wider - that is its own f-number, which adds nothing.
+ *
+ * **The f-number stays what the operation carries**, as the library takes it and the cache keys it, and the amount is
+ * the window's way of choosing it: see `lib/blurAmount.ts`.
+ */
+export const startingFNumber = async (file: ImageRecord | undefined, crop: CropInfo | undefined): Promise<number> => {
+    const { ownFNumber } = await ownLens(file, crop);
+
+    return fNumberForAmount(DEFAULT_AMOUNT, ownFNumber);
 };
 
 /**

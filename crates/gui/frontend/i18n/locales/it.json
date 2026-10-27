@@ -362,10 +362,12 @@
             "models": {
                 "lisbon": "Usa questo modello per sfocare una fotografia come farebbe un'apertura di obiettivo più ampia, mantenendo nitido il punto che scegli. Stima la distanza di ogni elemento della fotografia (MoGe-2 ViT-B, 324 MB). Al primo utilizzo il modello viene compilato per il processore, operazione che su Mac richiede circa un minuto."
             },
-            "fNumber": "Apertura",
-            "equivalent": "equivalente a pieno formato",
+            "blurAmount": "Sfocatura",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} pieno formato)",
+            "readoutEquivalent": "≈ f/{{equivalent}} equivalente a pieno formato",
             "asTaken": "Originale",
             "assumed": "Questa fotografia non ha informazioni sull'obiettivo; f/{{f}} ipotizzato",
+            "cannotBlurMore": "Questa fotografia è stata scattata a f/{{f}} (equivalente a pieno formato), tanto aperto quanto arriva l'effetto; non può essere sfocata di più.",
             "setFocus": "Imposta fuoco",
             "focusHint": "Fai clic sulla fotografia nel punto che deve risultare nitido. Esc per annullare."
         },
@@ -395,7 +397,7 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
-        "infoLensBlur": "{{name}}, f/{{f}}"
+        "infoLensBlur": "{{name}}, sfocatura {{amount}}"
     },
     "preview": {
         "empty": {

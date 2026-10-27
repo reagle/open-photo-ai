@@ -362,10 +362,12 @@
             "models": {
                 "lisbon": "Utilisez ce modèle pour flouter une photo comme le ferait une plus grande ouverture d'objectif, en gardant net le point que vous choisissez. Il estime la distance de chaque élément de la photo (MoGe-2 ViT-B, 324 Mo). La première utilisation compile le modèle pour votre processeur, ce qui prend environ une minute sur Mac."
             },
-            "fNumber": "Ouverture",
-            "equivalent": "équivalent plein format",
+            "blurAmount": "Flou",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} plein format)",
+            "readoutEquivalent": "≈ f/{{equivalent}} équivalent plein format",
             "asTaken": "D'origine",
             "assumed": "Cette photo ne contient aucune information d'objectif, f/{{f}} supposé",
+            "cannotBlurMore": "Cette photo a été prise à f/{{f}} (équivalent plein format), aussi ouvert que va l'effet ; elle ne peut pas être floutée davantage.",
             "setFocus": "Définir la mise au point",
             "focusHint": "Cliquez sur la zone de la photo qui doit être nette. Esc pour annuler."
         },
@@ -395,7 +397,7 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
-        "infoLensBlur": "{{name}}, f/{{f}}"
+        "infoLensBlur": "{{name}}, flou {{amount}}"
     },
     "preview": {
         "empty": {

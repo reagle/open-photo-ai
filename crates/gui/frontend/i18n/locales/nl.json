@@ -354,10 +354,12 @@
             "models": {
                 "lisbon": "Gebruik dit model om een foto te vervagen zoals een grotere lensopening zou doen, met het punt dat je kiest scherp. Het schat hoe ver alles op de foto weg is (MoGe-2 ViT-B, 324 MB). Bij het eerste gebruik wordt het model gecompileerd voor je processor, wat op een Mac ongeveer een minuut duurt."
             },
-            "fNumber": "Diafragma",
-            "equivalent": "kleinbeeldequivalent",
+            "blurAmount": "Vervaging",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} kleinbeeld)",
+            "readoutEquivalent": "≈ f/{{equivalent}} kleinbeeldequivalent",
             "asTaken": "Zoals genomen",
             "assumed": "Deze foto bevat geen lensinformatie; f/{{f}} aangenomen",
+            "cannotBlurMore": "Deze foto is genomen op f/{{f}} (kleinbeeldequivalent), zo open als het effect gaat; ze kan niet verder worden vervaagd.",
             "setFocus": "Scherpstelling instellen",
             "focusHint": "Klik op de foto waar het scherp moet zijn. Esc om te annuleren."
         },
@@ -385,7 +387,7 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
-        "infoLensBlur": "{{name}}, f/{{f}}"
+        "infoLensBlur": "{{name}}, vervaging {{amount}}"
     },
     "preview": {
         "empty": {

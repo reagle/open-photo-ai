@@ -1,6 +1,7 @@
 import type { CropInfo } from "@/ipc/crop";
 import type { ImageRecord } from "@/ipc/images";
-import { F_NUMBER, FOCUS_X, FOCUS_Y, startingFNumber, withParameter } from "@/lib/enhancements";
+import { amountOfFNumber, fNumberForAmount } from "@/lib/blurAmount";
+import { F_NUMBER, FOCUS_X, FOCUS_Y, ownLens, withParameter } from "@/lib/enhancements";
 import { clampTo } from "@/lib/utils";
 import { useEnhancementStore } from "@/stores/enhancements";
 
@@ -92,24 +93,35 @@ export const mapFocus = (
     return { x: thousandths(clampTo(moved.x, 0, 1)), y: thousandths(clampTo(moved.y, 0, 1)) };
 };
 
+/** How near two own f-numbers are the same: the library rounds one to a hundredth. */
+const SAME_OWN = 0.005;
+
 /**
- * The f-number a lens blur set to `stored` is moved to when the photograph's framing changes from one whose slider ends
- * at `oldEnd` to one whose slider ends at `newEnd`, both the "As taken" stops.
+ * The f-number a lens blur set to `stored` is moved to when the photograph's framing changes from one whose own
+ * equivalent f-number is `oldOwn` to one whose is `newOwn`: the same blur amount, against the new own aperture.
  *
- * **The f-number is an absolute equivalent value, not a place on the slider**, so a crop leaves the slider's right end
- * somewhere else and a value left alone would come to mean something else. A lens blur at "As taken" - at or above the
- * old end - stays at "As taken": the new end. Anything below keeps the stop the user chose, held inside the new range,
- * so a crop undone does not leave a value past the end.
+ * **The f-number is an absolute equivalent value, not a place on the slider**, and a crop is a smaller sensor behind the
+ * same lens, so its own f-number is wider-numbered; a value left alone would come to mean something else (a blur set
+ * to f/2.8 of a whole frame is far too strong over a crop whose own is f/12). What the user chose is the amount, so the
+ * amount is kept and the f-number is worked out again: a lens blur at "As taken" stays at "As taken" and a blur at 70
+ * stays at 70, held inside the new range, so a crop undone does not leave a value past the end.
+ *
+ * The amount is the whole number the slider shows, which is all it ever writes, so a framing changed back and forth
+ * does not walk the f-number about by the thousandths it is quantised to.
  */
-export const fNumberAfterCrop = (stored: number, oldEnd: number, newEnd: number): number =>
-    stored >= oldEnd ? newEnd : Math.min(stored, newEnd);
+export const fNumberAfterCrop = (stored: number, oldOwn: number, newOwn: number): number =>
+    // A framing that leaves the own f-number where it was (a flip, a turn) leaves the value alone, whatever it is.
+    Math.abs(newOwn - oldOwn) < SAME_OWN
+        ? stored
+        : fNumberForAmount(Math.round(amountOfFNumber(stored, oldOwn)), newOwn);
 
 /**
  * Carries a lens blur across a change of framing, for the photograph `file` whose framing was `from` and is now `to`.
  *
  * Both of the lens blur's values are the photograph's rather than the user's alone - its f-number is an absolute
- * equivalent value ({@link fNumberAfterCrop}) and its focus a fraction of a frame ({@link mapFocus}) - so cropping a
- * photograph that has one would otherwise silently blur it, or move its focus onto another subject. A file with no lens
+ * equivalent value, kept as the same amount ({@link fNumberAfterCrop}), and its focus a fraction of a frame
+ * ({@link mapFocus}) - so cropping a photograph that has one would otherwise silently blur it, or move its focus onto
+ * another subject. A file with no lens
  * blur, or no identity to ask the lens of, is left alone.
  *
  * Asked after the framing is written, so a run starts over the new framing with the old values for the moment the lens
@@ -131,7 +143,7 @@ export const reframeLensBlur = async (
             ?.find((o) => o.family === "lens_blur");
     if (!present()) return;
 
-    const [oldEnd, newEnd] = await Promise.all([startingFNumber(file, from), startingFNumber(file, to)]);
+    const [oldLens, newLens] = await Promise.all([ownLens(file, from), ownLens(file, to)]);
 
     const lensBlur = present();
     if (!lensBlur) return;
@@ -140,7 +152,7 @@ export const reframeLensBlur = async (
     const stored = lensBlur.parameters[F_NUMBER];
 
     if (stored !== undefined) {
-        const fNumber = fNumberAfterCrop(stored, oldEnd, newEnd);
+        const fNumber = fNumberAfterCrop(stored, oldLens.ownFNumber, newLens.ownFNumber);
         if (fNumber !== stored) next = withParameter(next, F_NUMBER, fNumber);
     }
 

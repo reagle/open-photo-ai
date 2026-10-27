@@ -352,41 +352,49 @@ describe("the f-number a new lens blur arrives at", () => {
         flipVertical: false,
     };
 
-    it("is the stop at or above the photograph's own, where adding it changes nothing", async () => {
-        askedLens.mockReset().mockResolvedValue({ ownFNumber: 6, focal35mm: 36, origin: "exif" });
+    it("is a blur amount of 50 on the photograph's own lens", async () => {
+        askedLens.mockReset().mockResolvedValue({ ownFNumber: 6, focal35mm: 36, cropFactor: 1.5, origin: "exif" });
 
-        // f/6 is between the f/5.6 and the f/6.3 stops: a right end of f/5.6 would already blur.
-        await expect(startingFNumber(HOLIDAY, undefined)).resolves.toBe(6.3);
+        // Halfway in blur (one over the f-number) between f/6 and f/1.4, not in stops.
+        await expect(startingFNumber(HOLIDAY, undefined)).resolves.toBe(2.27);
         expect(askedLens).toHaveBeenCalledExactlyOnceWith(HOLIDAY.identity, undefined);
     });
 
     it("is asked about the photograph as it is framed", async () => {
-        askedLens.mockReset().mockResolvedValue({ ownFNumber: 12, focal35mm: 72, origin: "exif" });
+        askedLens.mockReset().mockResolvedValue({ ownFNumber: 12, focal35mm: 72, cropFactor: 3, origin: "exif" });
 
-        await expect(startingFNumber(HOLIDAY, framing)).resolves.toBe(13);
+        await expect(startingFNumber(HOLIDAY, framing)).resolves.toBe(2.507);
         expect(askedLens).toHaveBeenCalledExactlyOnceWith(HOLIDAY.identity, framing);
     });
 
-    it("is the assumed f/8 for a photograph with no lens information", async () => {
-        askedLens.mockReset().mockResolvedValue({ ownFNumber: 8, focal35mm: null, origin: "assumed" });
+    it("is the photograph's own f-number where it is already as wide as a blur goes, which adds nothing", async () => {
+        askedLens.mockReset().mockResolvedValue({ ownFNumber: 1.2, focal35mm: 28, cropFactor: 1, origin: "exif" });
 
-        await expect(startingFNumber(HOLIDAY, undefined)).resolves.toBe(8);
+        await expect(startingFNumber(HOLIDAY, undefined)).resolves.toBe(1.2);
     });
 
-    it("is the assumed f/8 for a file it has no identity to ask about, without asking", async () => {
+    it("is the amount against the assumed f/8 for a photograph with no lens information", async () => {
+        askedLens
+            .mockReset()
+            .mockResolvedValue({ ownFNumber: 8, focal35mm: null, cropFactor: null, origin: "assumed" });
+
+        await expect(startingFNumber(HOLIDAY, undefined)).resolves.toBe(2.383);
+    });
+
+    it("is the amount against the assumed f/8 for a file it has no identity to ask about, without asking", async () => {
         askedLens.mockReset();
         const unread: ImageRecord = { path: HOLIDAY.path, extension: "png" };
 
-        await expect(startingFNumber(unread, undefined)).resolves.toBe(8);
-        await expect(startingFNumber(undefined, undefined)).resolves.toBe(8);
+        await expect(startingFNumber(unread, undefined)).resolves.toBe(2.383);
+        await expect(startingFNumber(undefined, undefined)).resolves.toBe(2.383);
         expect(askedLens).not.toHaveBeenCalled();
     });
 
-    it("is the assumed f/8 where the bridge fails to answer", async () => {
+    it("is the amount against the assumed f/8 where the bridge fails to answer", async () => {
         vi.spyOn(console, "error").mockImplementation(() => {});
         askedLens.mockReset().mockRejectedValue(new Error("the bridge went away"));
 
-        await expect(startingFNumber(HOLIDAY, undefined)).resolves.toBe(8);
+        await expect(startingFNumber(HOLIDAY, undefined)).resolves.toBe(2.383);
     });
 });
 
@@ -402,14 +410,14 @@ describe("the operation a new enhancement carries", () => {
         });
     });
 
-    it("gives a new lens blur Lisbon, the photograph's own aperture and the middle of the frame as its focus", () => {
+    it("gives a new lens blur Lisbon, the f-number it is asked for and the middle of the frame as its focus", () => {
         const lensBlur = CATALOGUE.find((published) => published.family === "lens_blur");
 
-        expect(newOperation("lens_blur", lensBlur, undefined, 1, 6.3)).toEqual({
+        expect(newOperation("lens_blur", lensBlur, undefined, 1, 2.27)).toEqual({
             family: "lens_blur",
             codename: "lisbon",
             precision: "fp16",
-            parameters: { [F_NUMBER]: 6.3, focus_x: 0.5, focus_y: 0.5 },
+            parameters: { [F_NUMBER]: 2.27, focus_x: 0.5, focus_y: 0.5 },
         });
         // The catalogue's own default where no aperture was asked for: Lisbon's published f/2.8.
         expect(newOperation("lens_blur", lensBlur, undefined)?.parameters).toEqual({
