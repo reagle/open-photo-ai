@@ -118,7 +118,7 @@ pub(crate) fn rewritten(
     cancelled: &dyn Fn() -> bool,
 ) -> Option<DynamicImage> {
     let (width, height) = (map.width(), map.height());
-    let render = |linear: &[f32]| defocus(linear, width, height, radius, keep_sharp, Defocus::DEFAULT, cancelled);
+    let render = |linear: &[f32]| defocus(linear, width, height, radius, keep_sharp, None, Defocus::DEFAULT, cancelled);
 
     match map {
         DynamicImage::ImageLuma8(stored) => {
@@ -432,7 +432,7 @@ mod tests {
         let radius = Plane::from_vec(width, height, (0..32 * 24).map(|i| -((i % 32) as f32) / 4.0).collect())
             .expect("one a pixel");
 
-        let blurred = defocus(&sdr, width, height, &radius, None, Defocus::DEFAULT, &|| false).expect("runs");
+        let blurred = defocus(&sdr, width, height, &radius, None, None, Defocus::DEFAULT, &|| false).expect("runs");
         let handed = rewritten(&map, sdr.clone(), Some(&blurred), &hawk(), &radius, None, &|| false).expect("runs");
         let here = rewritten(&map, sdr, None, &hawk(), &radius, None, &|| false).expect("runs");
 

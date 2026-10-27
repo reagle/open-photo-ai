@@ -1,8 +1,10 @@
 //! Values filled in where a weight says they are unknown, from the known values around them, by a push-pull pyramid.
 //!
-//! The caller here is Remove's gain-map rewrite (`models::remove`): the gain an Ultra HDR JPEG records under a removed
-//! object, filled from the gain around it, so the removed object's highlights are not lifted over its fill. (On the
-//! lens-blur line the same fill gives the background behind a matted subject.)
+//! Two callers. The lens blur's matte (`models::lens_blur`): the background behind a matted subject, its colour and its
+//! depth, as if the subject were not there, so that the render blurs the background without the subject in it and the
+//! subject is composited over the result. And Remove's gain-map rewrite (`models::remove`): the gain an Ultra HDR JPEG
+//! records under a removed object, filled from the gain around it, so the removed object's highlights are not lifted
+//! over its fill.
 
 // Push-pull (Gortler, Grzeszczuk, Szeliski and Cohen, "The Lumigraph", 1996): down a pyramid of weighted means, each
 // level the 2x2 box reduction of the weighted values and of the weights, then back up, each level's pixel taking its
@@ -11,7 +13,8 @@
 // no seams and no diffusion to converge.
 //
 // The reductions are `boxes`', whose blocks along the right and bottom edges are as wide as what is left, so a hole at
-// the frame's edge fills like any other; the enlargement is the align-centres bilinear read at exactly two. The pyramid goes down to one pixel: a hole is filled from the nearest
+// the frame's edge fills like any other; the enlargement is the align-centres bilinear read at exactly two, as the
+// defocus render enlarges its reduced layers. The pyramid goes down to one pixel: a hole is filled from the nearest
 // level that has a weight above 0 under it, and a block's weight is the mean of its pixels' weights, so no level has
 // every weight at 1 while a hole is left in the finest.
 //
@@ -172,8 +175,8 @@ fn pulled<const C: usize, const N: usize>(
     coarse_height: usize,
     own: impl Fn(usize, usize) -> ([f32; C], f32) + Sync,
 ) -> Vec<f32> {
-    // Over twice the coarse extent and only the first `width` entries read: an odd side's last coarse pixel stands for
-    // one pixel, not two.
+    // Over twice the coarse extent and only the first `width` entries read, as `guided::upsampled` does and for its
+    // reason: an odd side's last coarse pixel stands for one pixel, not two.
     let across = Axis::new(coarse_width as u32, 2 * coarse_width as u32);
     let down = Axis::new(coarse_height as u32, 2 * coarse_height as u32);
 

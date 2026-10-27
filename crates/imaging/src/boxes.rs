@@ -1,9 +1,9 @@
 //! Box filters over interleaved planes: the mean over a square window around every pixel, and the mean of every
 //! block of a reduction.
 //!
-//! Two callers: the lens blur's guided upsampling ([`guided`](crate::guided)) solves its linear models over box
-//! windows at a reduced resolution, and the push-pull fill ([`fill`](crate::fill)) builds its pyramid from reductions
-//! by two.
+//! Three callers, all of the lens blur: the guided upsampling ([`guided`](crate::guided)) solves its linear models
+//! over box windows at a reduced resolution, blur fusion ([`fusion`](crate::fusion)) estimates a matted subject's
+//! colour from box means, and the push-pull fill ([`fill`](crate::fill)) builds its pyramid from reductions by two.
 
 // Box means by running sums, so the cost per pixel does not grow with the window. The window is clipped at the edges
 // of the plane and divided by the number of pixels it actually holds, the original paper's convention, rather than
