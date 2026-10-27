@@ -281,6 +281,7 @@ Default models are in **bold**.
 | Sharpen          | `--sharpen`          | `--sh` | **moscow**, petersburg, novgorod               | `--sh-str` (1 to 300)      |
 | Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, saitama                      | `--scale` (1.0 to 8.0)     |
 | Restore          | `--restore`          | `--rs` | **kazan**, osaka                               | `--rs-scale` (1, 2 or 4), `--rs-str` (1 to 100) |
+| Lens Blur        | `--lens-blur`        | `--lb` | **lisbon**                                     | `--lb-f` (0.95 to 32), `--lb-focus` (X,Y) |
 | Grain            | `--grain`            | `--gr` | **sensor**                                     | `--gr-amount` (0 to 100), `--gr-add` |
 
 `--mask <FILE>` limits whichever enhancements are asked for (or chosen by `--ap`) to part of the photograph. See [Masks](#masks).
@@ -439,9 +440,38 @@ opai soft.jpg --rs -o soft-restored.png
 opai soft.jpg --rs --rs-scale 2 --rs-str 70 -o soft-2x.png
 ```
 
+### Lens Blur: `--lens-blur [MODEL]`, `--lb [MODEL]`
+
+Gives the photo the shallow depth of field of a wider lens aperture: the point you focus on stays sharp, and everything nearer or farther is blurred as much as a real lens would blur it, with bright points spreading into discs. The model estimates how far from the camera every pixel is, and the blur follows that depth. Lens Blur runs after any upscale or restore, with only [Grain](#grain---grain-model---gr-model) after it.
+
+| Model      | Use it for                                                                                        |
+|------------|---------------------------------------------------------------------------------------------------|
+| `lisbon` (default) | Any photo. Lisbon is a depth model (MoGe-2 ViT-B), two graphs of 324 MB, one per orientation; on a Mac its first use compiles the graph for about a minute. It is published at FP16 only, so `-q hd` and `-q sd` both run it. |
+
+Options:
+
+- `--lb-f <F>`, the f-number to simulate, from `0.95` (the Noctilux 50 mm, the fastest full-frame prime made) to `32`, written bare (`1.4`) or with its prefix (`f/1.4`); default `2.8`. Smaller is a wider aperture and more blur.
+- `--lb-focus <X,Y>`, the point to keep sharp, as two fractions of the photo's width and height from `0` to `1`: `0,0` is the top-left corner, `0.5,0.5` the centre (the default), `0.6,0.3` is 60% across and 30% down. To find one, hover over the subject in an image viewer that shows the cursor's pixel position and divide by the photo's width and height.
+
+**The f-number is the 35 mm full-frame equivalent**: the lens's own f-number times the camera's crop factor, so `--lb-f 1.4` gives the same look on a phone photo as on a camera's. A photo already has the blur of the aperture it was taken at, so only the difference is added: at or above the photo's own equivalent f-number (a phone photo is typically around f/6 to f/10 equivalent), the photo is **left unchanged**.
+
+How much blur, in one paragraph: a thin lens of the photo's 35 mm-equivalent focal length, focused at the depth found at the focus point, turns every other point into a disc whose size grows with its distance in front of or behind that depth (in `1/distance`), and shrinks as the f-number grows; the disc is measured against the full-frame diagonal, so it is the same fraction of the photo at any resolution. The blur the photo already has is subtracted in quadrature. The depth is sharpened along the photo's own edges so hair and leaves keep their outline.
+
+**The lens is read from the photo's EXIF**: the focal length, its 35 mm equivalent, the f-number and the sensor's focal-plane resolution. Where the focal length is missing, the depth model's own estimate of the field of view is used; where the f-number or the crop factor is missing, the photo is assumed to have been taken at **f/8 equivalent**. Which lens was used is recorded in the [log file](#log-file). EXIF is read from JPEG, TIFF, PNG, WebP, HEIF and the TIFF-based RAW formats (NEF, ARW, DNG, ORF, PEF and others); CR3 and RAF are not TIFF-based, so their lens is estimated or assumed.
+
+The depth is estimated once per photo (and per crop) and kept in the [run cache](#run-cache), so a second run with another `--lb-f` or `--lb-focus`, or with other enhancements before it, does not estimate it again. Where the EXIF alone shows that `--lb-f` is at or above the photo's own equivalent f-number, the photo is left unchanged without estimating the depth at all.
+
+```bash
+# Blur the background behind a subject 60% across and 30% down, at f/1.4
+opai portrait.jpg --lb --lb-f f/1.4 --lb-focus 0.6,0.3 -o portrait-f1.4.jpg
+
+# Denoise, upscale 2x, then blur at f/2.8 focused on the centre
+opai photo.jpg --dn --up --scale 2 --lb -o photo-blurred.png
+```
+
 ### Grain: `--grain [MODEL]`, `--gr [MODEL]`
 
-Adds grain, **last**, after every other enhancement. A denoise, a restore or a sharpen can leave a photo smoother than any camera records ("plastic" skin and skies); by default the grain puts back the photo's **own** sensor noise, measured per brightness on the original, only where the enhancements smoothed it away, so a clean photo gets none and a grainy one gets its own back. If the command also denoises (`--dn`), the noise the denoise **left** is matched instead, so the grain never undoes the denoise. Grain runs no model and needs no download. On an upscaled photo it's drawn at the new pixels, finer than an enlarged copy of the original's grain.
+Adds grain, **last**, after every other enhancement, the lens blur included: a real photo's blurred background still has its sensor's noise. A denoise, a restore or a sharpen can leave a photo smoother than any camera records ("plastic" skin and skies); by default the grain puts back the photo's **own** sensor noise, measured per brightness on the original, only where the enhancements smoothed it away, so a clean photo gets none and a grainy one gets its own back. If the command also denoises (`--dn`), the noise the denoise **left** is matched instead, so the grain never undoes the denoise. Grain runs no model and needs no download. On an upscaled photo it's drawn at the new pixels, finer than an enlarged copy of the original's grain.
 
 | Model      | Use it for                                                       |
 |------------|------------------------------------------------------------------|
@@ -508,7 +538,7 @@ opai street.jpg --rm passer-by.png --fr --sh -o street-clean.jpg
 opai photos --ap -o enhanced
 ```
 
-- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--rs`, `--gr`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--rs-scale`, `--rs-str`, `--gr-amount`, `--gr-add`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `--mask`, `--remove`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
+- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--rs`, `--lb`, `--gr`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--rs-scale`, `--rs-str`, `--lb-f`, `--lb-focus`, `--gr-amount`, `--gr-add`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `--mask`, `--remove`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
 - **Each enhancement uses its default strength or bias**: strength `100` for denoise and sharpen, bias `50` for light adjustment and color balance. An upscale runs at the factor the image's size calls for (see [Upscale](#upscale---upscale-model---up-model)); an image above 4 MP is not upscaled.
 - **An image that needs nothing is still written**, unchanged, in the format asked for. Its row ends with `Enhancements applied to` as any other.
 - **If face detection can't run** (for example, its model can't be downloaded), the image still gets the other enhancements, without face recovery, and the [log file](#log-file) records a warning.
@@ -596,7 +626,7 @@ opai photos --ap --no-gui-settings -o out      # the built-in defaults, as if th
 The enhancements always run in this order, no matter what order you type the flags in:
 
 ```
-Remove → Denoise → Face Recovery → Colorization → Light Adjustment → Color Balance → Sharpen → Upscale → Restore → Grain
+Remove → Denoise → Face Recovery → Colorization → Light Adjustment → Color Balance → Sharpen → Upscale → Restore → Lens Blur → Grain
 ```
 
 So these two commands do exactly the same thing:
@@ -606,7 +636,7 @@ opai photo.jpg --up --dn -o out.png
 opai photo.jpg --dn --up -o out.png
 ```
 
-The order is designed so that every step works on the cleanest image possible. For example, noise is removed before faces are restored, and the image is upscaled after the faithful corrections so they work at the original resolution. Restore comes last of all: it redraws detail, so it is handed the best image the faithful models can make, and nothing after it corrects what it drew.
+The order is designed so that every step works on the cleanest image possible. For example, noise is removed before faces are restored, and the image is upscaled after the faithful corrections so they work at the original resolution. Restore comes after all of them: it redraws detail, so it is handed the best image the faithful models can make, and no faithful model after it corrects what it drew. Lens Blur comes after them: it is a creative choice rather than a correction, so every other step works on the sharp photo, and nothing after it sharpens, denoises or restores the blur. Grain comes last of all, so it can put back the noise any step before it smoothed away, the blurred background's included.
 
 ## Supported formats
 
@@ -741,7 +771,7 @@ And once the run ends, the view stays as it was last drawn, with the summary und
   - `🧨 [ 42%] Failed to enhance <path>` once it has failed;
   - `🧨 [ 42%] Stopped enhancing <path>` when you [stopped the run](#stopping-a-run) while it was being worked on.
 
-  `<enhancement>` is the enhancement's name as the GUI shows it: `Denoise`, `Face Recovery`, `Colorize`, `Light Adjust`, `Color Balance`, `Sharpen`, `Upscale` or `Restore`.
+  `<enhancement>` is the enhancement's name as the GUI shows it: `Denoise`, `Face Recovery`, `Colorize`, `Light Adjust`, `Color Balance`, `Sharpen`, `Upscale`, `Restore` or `Lens Blur` (which is also what the depth estimate it starts with is called).
 - **With `--verbose`**, a written image's row ends with `: <applied>`, what it received, in the order it ran: each enhancement's name, its model as the GUI names it (`Malmö`, `São Paulo`), and its parameter, `strength <n>` for denoise and sharpen, `bias <n>` for light adjustment and color balance, `<factor>x` for an upscale (`2x`, `1.5x`), `strength <n>` for a restore, after `<factor>x, ` where `--rs-scale` was given, none for face recovery and colorization. It ends with ` (cached)` when the [run cache](#run-cache) served every step, or ` (<k> of <n> cached)` when it served some. An image that needed nothing reads `no enhancement needed`. The text is drawn in the terminal's default color, and in the live view a row wider than the terminal is cut at its edge; the plain lines and the [log file](#log-file) carry it whole. Failed and stopped rows carry none. For example, `opai photo.jpg --dn --la --up --scale 2 -o out.png --verbose` ends with `🖼️ [100%] Enhancements applied to       photo.jpg: Denoise Stockholm strength 100, Light Adjust Paris bias 50, Upscale Tokyo 2x`.
 - **The summary** starts with a success line when at least one image was written. For exactly one image it names the file written, so a numbered name is visible: `✨ Image enhanced successfully; file saved at out_1.png`. For more, it names the output directory: `✨ 7 images enhanced successfully; files saved under out`, or, without `-o`, ends `files saved beside their sources`. Then a `🧨` line gives the reason for each image that failed, in the order they ran, since a failure can have scrolled out of the list. Last comes the run's closing `🧨` line, if it didn't succeed (see [Exit codes](#exit-codes)).
 
@@ -827,8 +857,10 @@ What's in it that the terminal doesn't show:
 | `error: --upscale (--up) cannot be used with --rs-scale 2: …`                  | An enlarging restore replaces the upscale. Leave out `--up`, or use `--rs-scale 1` to restore after the upscale. |
 | `error: invalid value '3' for '--rs-scale <FACTOR>': the restore size must be one of 1, 2, 4` | `--rs-scale` takes only 1, 2 or 4. |
 | `error: Osaka is a restore model now: use --restore osaka (--rs osaka) …`       | Osaka moved from Upscale to Restore. Use `--rs osaka`, with `--rs-scale 2` or `4` to enlarge. |
+| `error: invalid value '0.9' for '--lb-f <F>': the f-number must be from 0.95 to 32` | `--lb-f` out of range or not a number. |
+| `error: invalid value '1.2,0.5' for '--lb-focus <X,Y>': the focus point must be two fractions from 0 to 1; focus_x must be between 0 and 1 inclusive, but 1.2 was supplied` | Each of the two numbers must be from 0 to 1, separated by a comma, with no space after it unless quoted; the message names `focus_x` (across) or `focus_y` (down), whichever was refused, and a negative one is refused the same way. |
 | `error: invalid value '0.5' for '--la-bias <BIAS>': the bias must be a whole number from -100 to 100` | Strength/bias must be a whole number within range. |
-| `error: the following required arguments were not provided: --denoise [<MODEL>]` | A strength/bias/scale option was used without its enhancement flag (e.g. `--dn-str` without `--dn`, or `--scale` without `--up`). |
+| `error: the following required arguments were not provided: --denoise [<MODEL>]` | A strength/bias/scale option was used without its enhancement flag (e.g. `--dn-str` without `--dn`, `--scale` without `--up`, or `--lb-f` without `--lb`). |
 | `error: invalid value 'raw' for '--format <FORMAT>': "raw" is not a format; use preserve, …` | Unknown `--format`. Pick one from the list shown. |
 | `error: invalid value 'cuda' for '--processor <PROCESSOR>'` followed by `[possible values: …]` | That processor doesn't exist for your operating system (`coreml` exists only on macOS; `cuda` and `tensorrt` never on macOS). Pick one from the list shown. |
 | `🧨 cannot read missing.jpg: No such file or directory …`                      | A named input doesn't exist or can't be read. If it's a wildcard, it matched nothing. |

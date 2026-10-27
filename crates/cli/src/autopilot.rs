@@ -14,8 +14,8 @@ use opai::Family;
 use opai::settings::SharedSettings;
 
 use crate::args::{
-    Args, BalanceModel, ColorizationModel, DenoiseModel, FaceModel, GrainModel, LightModel, RestoreModel, SharpenModel,
-    UpscaleModel,
+    Args, BalanceModel, ColorizationModel, DenoiseModel, FaceModel, GrainModel, LensBlurModel, LightModel,
+    RestoreModel, SharpenModel, UpscaleModel,
 };
 use crate::settings::Source;
 
@@ -77,6 +77,12 @@ family_model!(UpscaleModel, Family::Upscale, "OPAI_AP_UPSCALE", UpscaleModel::To
 // it and there is no `OPAI_AP_RESTORE`.
 impl CatalogueModel for RestoreModel {
     const FAMILY: Family = Family::Restore;
+}
+
+// A command-line family only. An analysis never suggests a lens blur, a creative choice rather than a correction, so
+// autopilot has no model to choose for it and there is no `OPAI_AP_LENS_BLUR`.
+impl CatalogueModel for LensBlurModel {
+    const FAMILY: Family = Family::LensBlur;
 }
 
 // A command-line family only, for the same reason: grain is a user's choice about a photograph, never an analysis's.
