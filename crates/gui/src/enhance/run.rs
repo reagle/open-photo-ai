@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use opai::{
-    ChainFaces, Enhanced, ExecutionProvider, FaceSelection, InferenceError, Mask, Opai, OutputDepth, Picture,
-    ProcessOptions,
+    ChainFaces, ChainMatte, Enhanced, ExecutionProvider, FaceSelection, InferenceError, Mask, Opai, OutputDepth,
+    Picture, ProcessOptions,
 };
 use serde::{Deserialize, Serialize};
 
@@ -76,6 +76,11 @@ pub(crate) enum Enhancement {
         /// then restored none and the rest of the chain ran — see [`opai::ProcessOptions::faces`].
         #[serde(skip_serializing_if = "Option::is_none")]
         faces_error: Option<String>,
+        /// Why a lens blur's subject could not be matted, where its matting model is installed and failed: `opai`'s
+        /// own sentence, untranslated. That blur then rendered from its depth alone and the rest of the chain ran. A
+        /// matting model that is not installed is not one: it is expected until its graph is published.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        matte_error: Option<String>,
     },
     /// The run was stopped, by the window or by a later run displacing it. No image at all.
     Stopped,
@@ -310,7 +315,8 @@ pub(crate) async fn prepare_chain(
 /// and asking second, so the whole of it is one stop and one progress stream, the detection inside the first
 /// operation's slot of the bar.
 /// The faces found come back beside the result for the window to count and offer, and a detection that failed comes
-/// back as the reason, with the chain run anyway over no faces.
+/// back as the reason, with the chain run anyway over no faces. A lens blur's matte that failed comes back the same
+/// way, the blur rendered from its depth alone.
 ///
 /// A refused request must not displace the run the user is watching (1, 2 before 3). The slot is written
 /// before decoding (3 before 4) so a displaced run stops immediately rather than after a slow decode, and so
@@ -377,7 +383,7 @@ pub(crate) async fn enhance_with<E: Enhancer>(
     }
 
     match outcome {
-        Ok(Enhanced { picture, faces, .. }) => {
+        Ok(Enhanced { picture, faces, matte, .. }) => {
             let (width, height) = picture.dimensions();
             let identity = picture.identity().to_string();
 
@@ -396,7 +402,12 @@ pub(crate) async fn enhance_with<E: Enhancer>(
                 ChainFaces::Failed(error) => (None, Some(error.to_string())),
             };
 
-            Ok(Enhancement::Enhanced { identity, width, height, faces, faces_error })
+            let matte_error = match matte {
+                ChainMatte::Failed(error) => Some(error.to_string()),
+                ChainMatte::NotAsked | ChainMatte::Matted | ChainMatte::Skipped | ChainMatte::Unavailable(_) => None,
+            };
+
+            Ok(Enhancement::Enhanced { identity, width, height, faces, faces_error, matte_error })
         }
         // Not a failure — a user who changed their mind and a run displaced on their behalf both arrive here.
         Err(InferenceError::Cancelled) => {
@@ -1060,7 +1071,14 @@ mod tests {
             assert_eq!(CommandError::ended(&error).cell(), cell, "{error:?}");
         }
 
-        let answer = Enhancement::Enhanced { identity: s(), width: 1, height: 1, faces: None, faces_error: None };
+        let answer = Enhancement::Enhanced {
+            identity: s(),
+            width: 1,
+            height: 1,
+            faces: None,
+            faces_error: None,
+            matte_error: None,
+        };
         assert_eq!(Answer::ended(&answer).cell(), "finished");
         assert_eq!(Answer::ended(&Enhancement::Stopped).cell(), "stopped");
     }
@@ -1074,6 +1092,7 @@ mod tests {
             height: 400,
             faces: None,
             faces_error: None,
+            matte_error: None,
         };
 
         assert_eq!(
@@ -1149,6 +1168,49 @@ mod tests {
             .expect("the chain runs");
 
         assert!(matches!(answer, Enhancement::Enhanced { faces: None, faces_error: None, .. }), "{answer:?}");
+    }
+
+    /// An enhancer whose lens blur's matte came to `matte`.
+    struct Matting {
+        matte: fn() -> ChainMatte,
+    }
+
+    impl Enhancer for Matting {
+        async fn process(
+            &self,
+            source: &Picture,
+            _operations: &[opai::Operation],
+            _options: ProcessOptions,
+        ) -> Result<Enhanced, InferenceError> {
+            Ok(Enhanced { matte: (self.matte)(), ..enhanced(source, 8, 6, "cafebabecafebabe") })
+        }
+    }
+
+    /// A matting model that would not run, as `opai` reports one.
+    fn porto_failed() -> InferenceError {
+        InferenceError::Unsupported {
+            operation: "Porto (FP32)".to_string(),
+            reason: opai::UnsupportedReason::Uninjected { missing: "a trimap" },
+        }
+    }
+
+    #[test]
+    fn a_matte_that_failed_is_answered_and_one_not_installed_is_not() {
+        let outcomes: [(fn() -> ChainMatte, bool); 3] = [
+            (|| ChainMatte::Failed(porto_failed()), true),
+            (|| ChainMatte::Unavailable(porto_failed()), false),
+            (|| ChainMatte::Matted, false),
+        ];
+
+        for (matte, said) in outcomes {
+            let (_dir, opened, runs, identity) = fixture();
+            let answer = run_now(&Matting { matte }, &opened, &runs, request("run-1", &identity, vec![kyoto()]))
+                .expect("the chain runs");
+
+            // `opai`'s own sentence, as a failed detection's is answered.
+            let Enhancement::Enhanced { matte_error, .. } = answer else { panic!("stopped: {answer:?}") };
+            assert_eq!(matte_error, said.then(|| porto_failed().to_string()));
+        }
     }
 
     #[test]

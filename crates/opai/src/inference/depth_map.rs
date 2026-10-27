@@ -13,10 +13,18 @@
 //!      Ok(map)    --> lens := Lens::resolve(exif, map's focal estimate, framing)
 //!                     each lens blur := with_depth(map), with_lens(lens)
 //!      Err(error) --> the run fails with it (a stop included)
+//!   each lens blur matting its edges whose blur reaches 3 px, with a subject in focus:
+//!      trimap from the depth around its focus, on the chain's input
+//!      Matting (cached execute) of the chain's input over that trimap
+//!         Ok(matte)            --> lens blur := with_matte(matte); Matted
+//!         a stop               --> the run stops
+//!         not installed        --> the lens blur renders from the depth alone, and so do the rest; Unavailable
+//!         Err(error)           --> the lens blur renders from the depth alone; Failed(error)
 //! ```
 //!
 //! The depth is estimated on the chain's **input** — the framed source, before any enhancement — so changing the
-//! focus, the aperture or any earlier enhancement never estimates it again: the cached run serves it.
+//! focus, the aperture or any earlier enhancement never estimates it again: the cached run serves it. The matte is too,
+//! keyed by its trimap, which the focus moves and the aperture does not.
 //!
 //! **The framing** is how much smaller the input is than its file across the diagonal: a crop made before the chain
 //! (the GUI's, which `opai` never sees) is a picture smaller than the file it names, and the file's EXIF describes the
@@ -26,10 +34,15 @@ use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::error::InferenceError;
-use crate::image::{LensExif, read_frame_diagonal, read_lens};
+use imaging::plane::Plane;
+
+use crate::error::{InferenceError, InitError};
+use crate::image::{LensExif, Picture, read_frame_diagonal, read_lens};
 use crate::inference::execute::ExecuteOptions;
-use crate::models::{Depth, DepthMap, Lens, Operation, OwnLens};
+use crate::models::lens_blur::lens::Blur;
+use crate::models::lens_blur::render::Refined;
+use crate::models::lens_blur::trimap::{Band, matted_focus, trimap, worth_matting};
+use crate::models::{Depth, DepthMap, Lens, LensBlur, Matte, Matting, Operation, OwnLens};
 use crate::task::spawn_blocking;
 
 /// `operations` with every lens blur handed `map` and `lens`; every other operation unchanged.
@@ -160,6 +173,158 @@ where
     );
 
     Ok(fill_chain_depth(operations, &Arc::new(map), lens))
+}
+
+/// What matting the subjects of a chain's lens blurs came to, for a front end to show beside the result.
+///
+/// Of every lens blur in the chain, the outcome that most needs saying: a failure before a model that is not installed,
+/// that before a matte, and a matte before one skipped.
+#[derive(Debug, Clone)]
+pub enum ChainMatte {
+    /// The chain carries no lens blur that mattes its subject's edges, so nothing was matted.
+    NotAsked,
+    /// A lens blur's subject was matted, or its matte served from the store, and composited over the blur.
+    Matted,
+    /// No lens blur's subject was worth matting — a blur under 3 px everywhere, or nothing in focus to speak of — so
+    /// each renders from its depth alone, as it would have anyway.
+    Skipped,
+    /// The matting model is not installed here: its graph is not published with the others yet. Every lens blur renders
+    /// from its depth alone. Expected wherever it was never installed, and nothing to warn a user of.
+    Unavailable(InferenceError),
+    /// The matting failed, and that lens blur renders from its depth alone. The rest of the chain is unaffected.
+    Failed(InferenceError),
+}
+
+impl ChainMatte {
+    /// How much this outcome needs saying, beside another lens blur's: the larger is the chain's.
+    const fn weight(&self) -> u8 {
+        match self {
+            Self::NotAsked => 0,
+            Self::Skipped => 1,
+            Self::Matted => 2,
+            Self::Unavailable(_) => 3,
+            Self::Failed(_) => 4,
+        }
+    }
+
+    /// The chain's outcome once a lens blur's came to `other`.
+    fn and(self, other: Self) -> Self {
+        if other.weight() > self.weight() { other } else { self }
+    }
+}
+
+/// How many lens blurs in `operations` matte their subject's edges, and so may each ask for a matte once the depth is
+/// known.
+pub(crate) fn mattes_asked(operations: &[Operation]) -> usize {
+    operations
+        .iter()
+        .filter(|operation| matches!(operation, Operation::LensBlur(blur) if blur.matting().is_some()))
+        .count()
+}
+
+/// `operations` with every lens blur that mattes its subject handed the matte of `source`, the chain's input, over the
+/// trimap its depth and focus give, from `matte`, and what that came to: called once for each such blur whose blur
+/// reaches 3 px somewhere and whose focus has a subject, with the options `options` gives for the next of the mattes
+/// still to come (its argument, at least 1), so each reports where the last left off.
+///
+/// Called after [`find_chain_depth`], whose depth and lens it reads. A blur that adds nothing, mattes nothing, or was
+/// handed no depth is left as it is.
+///
+/// # Errors
+///
+/// A stop, from `matte` or between its calls. Any other failure of `matte` — the graph not installed, a run that
+/// failed — is not one: it is reported in the [`ChainMatte`], and the blur renders from its depth alone, as it did
+/// before matting existed. A graph that is not installed is not asked for again by the chain's later lens blurs.
+pub(crate) async fn find_chain_matte<O, M, F>(
+    operations: Vec<Operation>,
+    source: &Picture,
+    options: O,
+    matte: M,
+) -> Result<(Vec<Operation>, ChainMatte), InferenceError>
+where
+    O: Fn(usize) -> Option<ExecuteOptions>,
+    M: Fn(Matting, Option<ExecuteOptions>) -> F,
+    F: Future<Output = Result<Matte, InferenceError>>,
+{
+    let mut remaining = mattes_asked(&operations);
+    let mut outcome = ChainMatte::NotAsked;
+    let mut matted = Vec::with_capacity(operations.len());
+
+    for operation in operations {
+        let Operation::LensBlur(blur) = operation else {
+            matted.push(operation);
+            continue;
+        };
+        let Some(matting) = blur.matting() else {
+            matted.push(Operation::LensBlur(blur));
+            continue;
+        };
+        let next = options(remaining);
+        remaining -= 1;
+
+        if matches!(outcome, ChainMatte::Unavailable(_)) {
+            matted.push(Operation::LensBlur(blur));
+            continue;
+        }
+
+        // The trimap off the runtime, as every pass over a photograph's pixels is: the depth guided to its size, then
+        // the band, at a quarter of it.
+        let (asked, pixels) = (blur.clone(), source.shared_pixels());
+        let Some((trimap, refined)) =
+            spawn_blocking::<_, InferenceError, _>(move || trimap_of(&asked, &pixels)).await?
+        else {
+            outcome = outcome.and(ChainMatte::Skipped);
+            matted.push(Operation::LensBlur(blur));
+            continue;
+        };
+
+        // Recorded by `execute`, where it happened; this only notes what the chain does about it.
+        match matte(matting.with_trimap(Arc::new(trimap)), next).await {
+            Ok(found) => {
+                outcome = outcome.and(ChainMatte::Matted);
+                matted.push(Operation::LensBlur(blur.with_matte(Arc::new(found), Some(Arc::new(refined)))));
+            }
+            Err(error) if error.stop_reason().is_some() => return Err(error),
+            Err(error) if not_installed(&error) => {
+                tracing::debug!(%error, "the matting model is not installed; every lens blur renders from the depth");
+                outcome = outcome.and(ChainMatte::Unavailable(error));
+                matted.push(Operation::LensBlur(blur));
+            }
+            Err(error) => {
+                tracing::debug!(%error, "the lens blur's subject could not be matted; it renders from the depth");
+                outcome = outcome.and(ChainMatte::Failed(error));
+                matted.push(Operation::LensBlur(blur));
+            }
+        }
+    }
+
+    Ok((matted, outcome))
+}
+
+/// Whether `error` says the model is not installed and no source publishes it: the matting graph, not yet published
+/// with the others, everywhere it was never put by hand.
+fn not_installed(error: &InferenceError) -> bool {
+    matches!(error, InferenceError::Install(init) if matches!(**init, InitError::UnpublishedModel { .. }))
+}
+
+/// The trimap of `blur`'s subject on `source` and the depth refined to `source` it was drawn on, or `None` where it is
+/// not worth matting: no depth, a blur that adds nothing or under 3 px anywhere, or no subject in focus.
+fn trimap_of(blur: &LensBlur, source: &image::DynamicImage) -> Option<(Plane, Refined)> {
+    let (depth, lens) = (blur.depth()?, blur.lens()?);
+    let diagonal = (source.width() as f32).hypot(source.height() as f32);
+    let (x, y) = blur.focus();
+    let focus_m = matted_focus(depth.focus_metres(x.get(), y.get()));
+    let found = Blur::new(&lens, blur.f_number().as_f32(), focus_m, diagonal)?;
+    let band = Band::around(focus_m);
+
+    if !worth_matting(depth, &found, band) {
+        tracing::debug!(focus_m, "the lens blur's subject is not matted: the blur is too small or nothing is in focus");
+        return None;
+    }
+
+    let refined = Refined::of(depth, source);
+
+    Some((trimap(&refined, band), refined))
 }
 
 /// `operations` with every lens blur handed `lens` and no depth: the blurs a chain knows add nothing.

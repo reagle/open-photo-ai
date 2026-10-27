@@ -10,9 +10,9 @@
 
 use super::{
     Analysis, Bias, ColorBalance, Colorization, Denoise, Depth, Detection, FNumber, FOCUS_X, FOCUS_Y, FaceRecovery,
-    Faces, Fidelity, Fraction, Grain, GrainAmount, GrainMode, LightAdjustment, Operation, ParameterValues, Restore,
-    Scale, Sharpen, Strength, Upscale, catalogue, color_balance, colorization, denoise, depth, detection, face, grain,
-    lens_blur, light_adjustment, remove, restore, sharpen, upscale,
+    Faces, Fidelity, Fraction, Grain, GrainAmount, GrainMode, LightAdjustment, Matting, Operation, ParameterValues,
+    Restore, Scale, Sharpen, Strength, Upscale, catalogue, color_balance, colorization, denoise, depth, detection,
+    face, grain, lens_blur, light_adjustment, matting, remove, restore, sharpen, upscale,
 };
 
 /// The values a front end would hand back for the controls one published row told it to draw.
@@ -207,8 +207,9 @@ pub(crate) fn every_operation() -> Vec<Operation> {
 
 /// Every operation whose result is not an image, carried as [`Analysis`].
 ///
-/// [`every_operation`]'s counterpart on the other run path, and the other half of "all ten families" for the
-/// checks that need it. Two families and no per-run parameter, so the spread is their published precisions.
+/// [`every_operation`]'s counterpart on the other run path, and the other half of "all twelve families" for the
+/// checks that need it. Three families and no per-run parameter, so the spread is their published precisions; a
+/// matting's trimap is injected rather than chosen, so it is spread without one.
 pub(crate) fn every_analysis() -> Vec<Analysis> {
     detection::variant::tests::every_variant()
         .into_iter()
@@ -217,6 +218,11 @@ pub(crate) fn every_analysis() -> Vec<Analysis> {
             depth::variant::tests::every_variant()
                 .into_iter()
                 .map(|variant| Analysis::Depth(Depth::new(variant))),
+        )
+        .chain(
+            matting::variant::tests::every_variant()
+                .into_iter()
+                .map(|variant| Analysis::Matting(Matting::new(variant))),
         )
         .collect()
 }

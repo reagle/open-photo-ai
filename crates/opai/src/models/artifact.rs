@@ -18,6 +18,9 @@ pub enum Family {
     Detection,
     /// Depth estimation: how far from the camera each pixel of a photograph is, in metres.
     Depth,
+    /// Matting: how much of each pixel of a photograph a subject covers, from a trimap of where it surely is and is
+    /// not.
+    Matting,
     /// Removing what a mask marks, filled from the photograph around it.
     Remove,
     /// Noise removal.
@@ -48,9 +51,10 @@ impl Family {
     /// The one list, so a family added later is covered by everything that iterates families rather than by whichever
     /// of them its author remembered to extend. Not the order the catalogue publishes — that one is a presentation
     /// decision and is pinned where it is made.
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::Detection,
         Self::Depth,
+        Self::Matting,
         Self::Remove,
         Self::Denoise,
         Self::FaceRecovery,
@@ -68,8 +72,8 @@ impl Family {
     ///
     /// **The one order of a chain**, which [`Opai::process`](crate::Opai::process) puts every chain into before it
     /// runs and the catalogue publishes, so a front end draws a stack in the order it will actually run rather than
-    /// in an order of its own. Detection and depth are not in it: neither result is an image, so neither is ever in a
-    /// chain.
+    /// in an order of its own. Detection, depth and matting are not in it: none of their results is an image, so none
+    /// is ever in a chain.
     ///
     /// Why this order, family by family:
     ///
@@ -101,17 +105,19 @@ impl Family {
     ///   smooth the grain again, and it is drawn at the result's own pixels.
     ///
     /// The same order the application has always presented its enhancements in; it is [`Family::ALL`] without
-    /// detection and depth, and derived from it so the two cannot drift apart.
+    /// detection, depth and matting, and derived from it so the two cannot drift apart.
     pub const APPLY_ORDER: [Self; 11] = {
         assert!(
-            matches!(Self::ALL[0], Self::Detection) && matches!(Self::ALL[1], Self::Depth),
-            "`ALL` must begin with the two families that are never applied"
+            matches!(Self::ALL[0], Self::Detection)
+                && matches!(Self::ALL[1], Self::Depth)
+                && matches!(Self::ALL[2], Self::Matting),
+            "`ALL` must begin with the three families that are never applied"
         );
         *Self::ALL.last_chunk::<11>().unwrap()
     };
 
-    /// Where this family's operation sits in a chain — its index in [`Family::APPLY_ORDER`] — or `None` for detection
-    /// and depth, which are never in one.
+    /// Where this family's operation sits in a chain — its index in [`Family::APPLY_ORDER`] — or `None` for detection,
+    /// depth and matting, which are never in one.
     pub fn applied_at(self) -> Option<usize> {
         Self::APPLY_ORDER.iter().position(|family| *family == self)
     }
@@ -131,6 +137,7 @@ impl Family {
         match self {
             Self::Detection => "dt",
             Self::Depth => "dp",
+            Self::Matting => "mt",
             Self::Remove => "rm",
             Self::Denoise => "dn",
             Self::FaceRecovery => "fr",
@@ -157,6 +164,7 @@ impl Family {
         match self {
             Self::Detection => "Detection",
             Self::Depth => "Depth",
+            Self::Matting => "Matting",
             Self::Remove => "Remove",
             Self::Denoise => "Denoise",
             Self::FaceRecovery => "Face Recovery",
@@ -232,6 +240,7 @@ mod tests {
         // Transcribed from the names already published; a change to any of these renames every artifact of a family.
         assert_eq!(Family::Detection.prefix(), "dt");
         assert_eq!(Family::Depth.prefix(), "dp");
+        assert_eq!(Family::Matting.prefix(), "mt");
         assert_eq!(Family::Remove.prefix(), "rm");
         assert_eq!(Family::Denoise.prefix(), "dn");
         assert_eq!(Family::FaceRecovery.prefix(), "fr");
@@ -252,6 +261,7 @@ mod tests {
         assert!(Family::FaceRecovery.applied_at() < Family::Upscale.applied_at());
         assert_eq!(Family::Detection.applied_at(), None);
         assert_eq!(Family::Depth.applied_at(), None);
+        assert_eq!(Family::Matting.applied_at(), None);
     }
 
     #[test]

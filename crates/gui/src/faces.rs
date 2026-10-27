@@ -380,7 +380,7 @@ mod tests {
             analysis: &Analysis,
             options: ExecuteOptions,
         ) -> Result<Executed<Faces>, InferenceError> {
-            let subject = Arc::new(opai::Subject::Analysis(*analysis));
+            let subject = Arc::new(opai::Subject::Analysis(analysis.clone()));
 
             if let Some(on_progress) = &options.on_progress {
                 for step in 0..=10 {

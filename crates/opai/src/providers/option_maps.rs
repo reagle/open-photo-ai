@@ -53,6 +53,13 @@ fn every_session() -> Vec<(ArtifactId, Tuning)> {
                     push(artifact, tuning);
                 }
             }
+            // A matting pipeline cannot be built without the trimap its run injects, so its graphs are asked for
+            // directly, each opened under the one tuning the analysis declares.
+            Analysis::Matting(_) => {
+                for artifact in analysis.required_artifacts() {
+                    push(&artifact, &analysis.profile());
+                }
+            }
             // Lisbon opens one graph per orientation, chosen by the photograph's dimensions: ask for both.
             Analysis::Depth(depth) => {
                 for dimensions in [(640, 480), (480, 640)] {
