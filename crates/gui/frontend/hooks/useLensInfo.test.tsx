@@ -9,8 +9,8 @@ vi.mock("@/lib/report", () => ({ report: vi.fn() }));
 
 const asked = lensInfo as unknown as ReturnType<typeof vi.fn>;
 
-const BONSAI: LensInfo = { ownFNumber: 6, focal35mm: 36, origin: "exif" };
-const NORA: LensInfo = { ownFNumber: 5.91, focal35mm: 24, origin: "exif" };
+const BONSAI: LensInfo = { ownFNumber: 6, focal35mm: 36, cropFactor: 1.5, origin: "exif" };
+const NORA: LensInfo = { ownFNumber: 5.91, focal35mm: 24, cropFactor: 1.5, origin: "exif" };
 
 const framing: CropInfo = {
     left: 0,
