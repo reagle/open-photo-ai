@@ -79,6 +79,11 @@ export type RunProgress = {
      * a compile of minutes with nothing to measure, and `chainFraction` does not move until it is done.
      */
     provider?: PreparingProvider;
+    /**
+     * How long opening the session is expected to take, in milliseconds, while `stage` is `preparing`: what the last
+     * slow open of this model on `provider` took, as the library remembers it. Absent the first time.
+     */
+    expectedMs?: number;
 };
 
 /**
