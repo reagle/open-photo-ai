@@ -4,6 +4,10 @@
 //! Two callers from two families, which is why it is here rather than in either: São Paulo reads its weight map back
 //! over the photograph (`models::color_balance::saopaulo::process`), and colorization reads its predicted chroma back
 //! onto the photograph's own lightness (`models::colorization::compose`).
+//!
+//! The tables are not only for squares: [`plane`](crate::plane), [`guided`](crate::guided) and
+//! [`defocus`](crate::defocus) resample planes of any size through [`Axis`], reading the taps' fields directly because
+//! their planes are not square or not one channel.
 
 // Hand-rolled rather than `image`'s `Triangle`, because they are not the same filter. `Triangle` is a support-based
 // resampler with its own normalisation and its own edge handling, which is a different answer at every pixel — and it

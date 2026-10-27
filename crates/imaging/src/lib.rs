@@ -15,8 +15,13 @@
 //! pass across cores ([`rows`]), a photograph's grain measured per brightness and synthesised back ([`grain`]), and the
 //! tiling driver [`run_tiled`].
 //!
-//! And the pixels of a mask: a single-channel plane of any size ([`plane`]), soft brush strokes painted into one
-//! ([`stroke`]), and the per-pixel form of the control blend ([`mix::masked`]) that limits a finished result to it.
+//! And the model-free half of the lens blur: a single-channel plane of any size ([`plane`]), sRGB to linear light and
+//! back ([`linear`]), edge-aware upsampling and the edge grow ([`guided`]), and the layered depth-of-field render
+//! ([`defocus`]). A depth model's map arrives through the first three; the render takes a blur radius per pixel and
+//! knows nothing of lenses or depth.
+//!
+//! And the pixels of a mask: soft brush strokes painted into a [`plane`] ([`stroke`]), and the per-pixel form of the
+//! control blend ([`mix::masked`]) that limits a finished result to it.
 //!
 //! **This crate knows nothing of `opai`**: no model, session, execution provider or orchestration. It depends on
 //! `image` and `thiserror` alone, so that independence is a compile error to break rather than a convention to keep.
@@ -49,9 +54,12 @@ pub mod bilinear;
 pub mod blend;
 pub(crate) mod boxes;
 pub mod canvas;
+pub mod defocus;
 pub mod fill;
 pub mod grain;
 pub mod grid;
+pub mod guided;
+pub mod linear;
 pub mod mix;
 pub mod pad;
 pub mod plane;
