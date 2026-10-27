@@ -15,6 +15,9 @@
 //! pass across cores ([`rows`]), a photograph's grain measured per brightness and synthesised back ([`grain`]), and the
 //! tiling driver [`run_tiled`].
 //!
+//! And the pixels of a mask: a single-channel plane of any size ([`plane`]), soft brush strokes painted into one
+//! ([`stroke`]), and the per-pixel form of the control blend ([`mix::masked`]) that limits a finished result to it.
+//!
 //! **This crate knows nothing of `opai`**: no model, session, execution provider or orchestration. It depends on
 //! `image` and `thiserror` alone, so that independence is a compile error to break rather than a convention to keep.
 //! Its items are `pub` because that is how `opai` reaches them; it is not published.
@@ -52,6 +55,7 @@ pub mod pad;
 pub mod plane;
 pub mod present;
 pub mod rows;
+pub mod stroke;
 pub mod tensor;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
