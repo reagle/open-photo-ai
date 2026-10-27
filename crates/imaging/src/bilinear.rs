@@ -25,12 +25,12 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Tap {
     /// The lower source index, clamped into the source.
-    lo: usize,
+    pub(crate) lo: usize,
     /// The upper source index, clamped to the last source index — which is what makes the last destination pixel
     /// read one sample rather than run off the end.
-    hi: usize,
+    pub(crate) hi: usize,
     /// How far between `lo` and `hi` the destination position falls, in `[0, 1]`.
-    frac: f32,
+    pub(crate) frac: f32,
 }
 
 /// One axis's bilinear table: a [`Tap`] per destination position, resolved once for the whole photograph.

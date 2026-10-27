@@ -47,6 +47,7 @@ pub mod canvas;
 pub mod grid;
 pub mod mix;
 pub mod pad;
+pub mod plane;
 pub mod present;
 pub mod rows;
 pub mod tensor;
