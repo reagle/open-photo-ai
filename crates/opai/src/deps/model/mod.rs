@@ -20,6 +20,8 @@
 // listing cannot be read, and reaches that from an ordinary timeout. Refusing costs only a first install on a machine
 // that cannot reach the listing — and the files are on the same host, so it could not download them either.
 
+// Fork-only, not for upstream: see the module.
+pub(crate) mod fork;
 pub(crate) mod paths;
 
 use std::path::{Path, PathBuf};
@@ -133,6 +135,14 @@ pub(crate) async fn install(
     trust: ModelTrust,
     installing: &Installing,
 ) -> Result<PathBuf, InitError> {
+    // Fork-only, not for upstream: a model this fork exports is published nowhere; see `fork`.
+    if fork::exported(id) {
+        let listed = fork::listed(app_dir, id);
+        if fork::placed(app_dir, id, &listed) {
+            return fork::install(&folder.folder, app_dir, name, id, &listed).await;
+        }
+    }
+
     let dir = config::sub_dir(app_dir, name, &model_dir(id))?;
     let files = Files {
         name: id.as_str().to_owned().into(),
