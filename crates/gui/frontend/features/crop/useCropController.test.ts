@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CropInfo } from "@/ipc/crop";
 import { CROP_DIALOG_BOUND } from "@/lib/constants";
 import { track } from "@/lib/faro";
+import { reframeLensBlur } from "@/lib/reframe";
 import { useCropStore } from "@/stores/crop";
 import { useMaskStore } from "@/stores/mask";
 import { FITTED, useTransformStore } from "@/stores/transform";
@@ -19,6 +20,9 @@ vi.mock("@/lib/faro", () => ({
     // Untraced, as before Faro starts: the request goes out exactly as `invoke` alone would send it.
     traced: (_name: string, send: () => Promise<unknown>) => send(),
 }));
+
+// What it does to a lens blur is `lib/reframe.test.ts`'s subject; here it is only asked, and with what.
+vi.mock("@/lib/reframe", () => ({ reframeLensBlur: vi.fn() }));
 
 // Raised for a crop that clears a mask, with the Undo that gives both back.
 vi.mock("sonner", () => ({
@@ -593,6 +597,37 @@ describe("useCropController", () => {
             act(() => hook.result.current.onApply());
 
             expect(useCropStore.getState().crops.has(HOLIDAY.identity ?? "")).toBe(false);
+        });
+
+        it("hands a lens blur the framing it is changed from and to, and only for a change", async () => {
+            openFiles(HOLIDAY);
+            const first = await openOn(decode, { width: 3000, height: 2000 });
+
+            // Opened and applied with nothing changed: nothing to carry a lens blur across.
+            act(() => first.hook.result.current.onApply());
+            expect(reframeLensBlur).not.toHaveBeenCalled();
+
+            act(() => first.hook.result.current.onRotationChange(12));
+            act(() => first.hook.result.current.onApply());
+
+            const recorded = useCropStore.getState().crops.get(HOLIDAY.identity ?? "");
+            expect(reframeLensBlur).toHaveBeenCalledTimes(1);
+            expect(reframeLensBlur).toHaveBeenCalledWith(
+                expect.objectContaining({ path: HOLIDAY.path }),
+                undefined,
+                recorded,
+            );
+
+            // Back to unframed: carried from the framing it was, to none.
+            const second = await openOn(decode, { width: 3000, height: 2000 });
+            await act(async () => second.hook.result.current.onReset());
+            act(() => second.hook.result.current.onApply());
+
+            expect(reframeLensBlur).toHaveBeenLastCalledWith(
+                expect.objectContaining({ path: HOLIDAY.path }),
+                recorded,
+                undefined,
+            );
         });
 
         it("records a counter-clockwise turn as the angle the user set, and re-opens on it", async () => {

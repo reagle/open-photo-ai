@@ -473,6 +473,18 @@
                 "osaka": "Usalo quando vuoi il restauro più approfondito possibile. Ricostruisce i dettagli invece di limitarsi ad aumentare la nitidezza, ottenendo il massimo su foto morbide o molto compresse. È però lento e richiede una GPU potente per funzionare bene."
             }
         },
+        "lensBlur": {
+            "name": "Sfocatura da obiettivo",
+            "models": {
+                "lisbon": "Usa questo modello per sfocare una fotografia come farebbe un'apertura di obiettivo più ampia, mantenendo nitido il punto che scegli. Stima la distanza di ogni elemento della fotografia (MoGe-2 ViT-B, 324 MB). Al primo utilizzo il modello viene compilato per il processore, operazione che su Mac richiede circa un minuto."
+            },
+            "fNumber": "Apertura",
+            "equivalent": "equivalente a pieno formato",
+            "asTaken": "Originale",
+            "assumed": "Questa fotografia non ha informazioni sull'obiettivo; f/{{f}} ipotizzato",
+            "setFocus": "Imposta fuoco",
+            "focusHint": "Fai clic sulla fotografia nel punto che deve risultare nitido. Esc per annullare."
+        },
         "grain": {
             "name": "Grana",
             "amount": "Quantità",
@@ -512,6 +524,7 @@
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
+        "infoLensBlur": "{{name}}, f/{{f}}",
         "infoGrain": "{{name}}, {{intensity}}%, {{mode}}"
     },
     "preview": {
@@ -535,6 +548,7 @@
             "upscale": "Ingrandimento",
             "sharpen": "Aumento nitidezza",
             "restore": "Restauro",
+            "lensBlur": "Sfocatura",
             "grain": "Grana",
             "enhancing": "Miglioramento",
             "compiling": "Compilazione del modello {{model}}",

@@ -11,11 +11,12 @@ const CATALOGUE_COMMAND = "catalogue";
 // vocabulary, and a filter written here would be this application having an opinion about it.
 /**
  * One enhancement family, as Rust's `Family` serializes it. Every family the library names is
- * published, `detection` and `colorization` included.
+ * published, `detection`, `depth` and `colorization` included.
  */
 export type Family =
     | "remove"
     | "detection"
+    | "depth"
     | "denoise"
     | "face_recovery"
     | "light_adjustment"
@@ -24,6 +25,7 @@ export type Family =
     | "sharpen"
     | "upscale"
     | "restore"
+    | "lens_blur"
     | "grain";
 
 /** The numeric precision one model artifact is published at, as Rust's `Precision` spells it. */

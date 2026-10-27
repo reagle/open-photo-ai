@@ -77,8 +77,8 @@ export const analyse = async (
     if (identity === undefined) return { failed: undefined };
 
     const { autopilotExcluded, processor } = useSettingsStore.getState();
-    // Every enhancement offered that an analysis can suggest, less the ones switched off. An empty set is still
-    // sent: it answers nothing, which is what the user asked for, and it is not a failure.
+    // Every enhancement offered that an analysis can suggest, less the ones switched off. An empty set is still sent:
+    // it answers nothing, which is what the user asked for, and it is not a failure.
     const families = familiesWhere((family) => isSuggestible(family) && !autopilotExcluded.includes(family));
 
     const { run, done } = suggest(identity, processor, families, crop);

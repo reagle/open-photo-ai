@@ -17,12 +17,13 @@ const SUGGESTED_SCALE_COMMAND = "suggested_scale";
  * a precision: which model runs is the user's standing preference, which this side holds. Only an upscale
  * carries a value, the scale the photograph's size calls for.
  *
- * Never `detection`, which is not an enhancement anybody applies, and never `restore` or `grain`, which an analysis
- * does not suggest: a generative redraw and grain are the user's choice.
+ * Never `detection` or `depth`, which are not enhancements anybody applies, and never `restore`, `lens_blur` or
+ * `grain`, which an analysis does not suggest: a generative redraw, where a photograph's focus should fall, or grain,
+ * is the user's choice.
  */
 export type Suggestion =
     | { family: "upscale"; scale: number }
-    | { family: Exclude<Family, "detection" | "upscale" | "restore" | "grain"> };
+    | { family: Exclude<Family, "detection" | "depth" | "upscale" | "restore" | "lens_blur" | "grain"> };
 
 /**
  * Why the `suggest` command rejected.

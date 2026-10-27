@@ -457,6 +457,18 @@
                 "osaka": "利用できる中で最も徹底した修復をしたいときに使用します。細部を単に鮮鋭化するのではなく再構築するため、甘い写真や圧縮の強い写真で最も大きな効果を発揮します。ただし低速で、十分な性能を出すには高性能な GPU が必要です。"
             }
         },
+        "lensBlur": {
+            "name": "レンズぼかし",
+            "models": {
+                "lisbon": "より開放絞りのレンズで撮ったように写真をぼかしたいときに使用します。選んだ点はシャープなままです。写真内の各部分までの距離を推定します（MoGe-2 ViT-B、324 MB）。初回使用時にお使いのプロセッサ向けにモデルをコンパイルします。Mac では約1分かかります。"
+            },
+            "fNumber": "絞り",
+            "equivalent": "35mm判換算",
+            "asTaken": "撮影時のまま",
+            "assumed": "レンズ情報がないため f/{{f}} と仮定",
+            "setFocus": "ピントを合わせる",
+            "focusHint": "シャープに写したい部分をクリックしてください。Esc でキャンセルします。"
+        },
         "grain": {
             "name": "粒子",
             "amount": "量",
@@ -492,6 +504,7 @@
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
+        "infoLensBlur": "{{name}}、f/{{f}}",
         "infoGrain": "{{name}}, {{intensity}}%, {{mode}}"
     },
     "preview": {
@@ -515,6 +528,7 @@
             "upscale": "アップスケール中",
             "sharpen": "シャープ化中",
             "restore": "修復中",
+            "lensBlur": "ぼかし中",
             "grain": "粒子",
             "enhancing": "補正中",
             "compiling": "{{model}} モデルをコンパイル中",

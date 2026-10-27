@@ -56,7 +56,7 @@ const EnhancementRow = ({ entry, enhancement }: { entry: FamilyEntry | undefined
 
             <span className="flex justify-end">
                 {/*
-                 * Named for its family: a column of seven switches that all announce as "Autopilot" is
+                 * Named for its family: a column of switches that all announce as "Autopilot" is
                  * seven controls nobody can tell apart.
                  *
                  * Written as the list of families switched *off* - see `SettingsData.autopilotExcluded`
