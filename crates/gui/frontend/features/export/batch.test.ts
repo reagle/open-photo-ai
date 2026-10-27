@@ -9,12 +9,14 @@ import type { Operation } from "@/ipc/enhance";
 import { cancelExport, type Exported, type ExportRequest, exportImage, exportNames } from "@/ipc/export";
 import { detectFaces, type Face } from "@/ipc/faces";
 import type { ImageRecord } from "@/ipc/images";
+import type { Mask } from "@/ipc/mask";
 import { track } from "@/lib/faro";
 import { useAutopilotStore } from "@/stores/autopilot";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { type Row, useExportBatchStore } from "@/stores/exportBatch";
 import { type ExportSettingsData, exportSettingsDefaults } from "@/stores/exportSettings";
 import { useFacesStore } from "@/stores/faces";
+import { useMaskStore } from "@/stores/mask";
 import type { QualityChoices } from "@/stores/settings";
 import {
     APPLY_ORDER,
@@ -88,6 +90,7 @@ type Exporting = {
     operations: Operation[];
     request: ExportRequest;
     crop?: CropInfo;
+    mask?: Mask;
     answer: (answer: Exported) => Promise<void>;
     fail: (error: unknown) => Promise<void>;
 };
@@ -146,7 +149,14 @@ beforeEach(() => {
 
     let exports = 0;
     exported.mockImplementation(
-        (source: string, operations: Operation[], _processor: string, request: ExportRequest, crop?: CropInfo) => {
+        (
+            source: string,
+            operations: Operation[],
+            _processor: string,
+            request: ExportRequest,
+            crop?: CropInfo,
+            mask?: Mask,
+        ) => {
             const { promise, resolve, reject } = deferred<Exported>();
             const name = `export-${++exports}`;
 
@@ -156,6 +166,7 @@ beforeEach(() => {
                 operations,
                 request,
                 ...(crop && { crop }),
+                ...(mask && { mask }),
                 answer: async (answer) => {
                     resolve(answer);
                     await settle();
@@ -190,6 +201,7 @@ beforeEach(() => {
     localStorage.clear();
     resetSettingsStore();
     resetCropStore();
+    useMaskStore.setState(useMaskStore.getInitialState(), true);
     useEnhancementStore.setState({ autopilot: false, enhancements: new Map() });
     useFacesStore.setState(useFacesStore.getInitialState(), true);
     useAutopilotStore.setState(useAutopilotStore.getInitialState(), true);
@@ -255,6 +267,41 @@ describe("the order", () => {
         await settle();
 
         expect(exporting[0]?.crop).toBe(FRAMING);
+    });
+
+    it("sends each photograph's own mask, and none for one that was never painted", async () => {
+        act(() => {
+            const { beginStroke, endStroke } = useMaskStore.getState();
+
+            beginStroke(HOLIDAY.path, 0.3, 0.3, false);
+            endStroke(0.6, 0.3);
+            useMaskStore.getState().invert(HOLIDAY.path);
+        });
+
+        void run([HOLIDAY, SUNSET]);
+        await settle();
+        await exporting[0]?.answer({ outcome: "exported", path: "/exports/holiday.jpg", bytes: 10 });
+
+        expect(exporting[0]?.mask).toEqual({
+            strokes: [{ erase: false, radius: 0.025, softness: 0.5, points: [0.3, 0.3, 0.6, 0.3] }],
+            inverted: true,
+        });
+        expect(exporting[1]?.mask).toBeUndefined();
+    });
+
+    it("sends no mask for one painted and then undone back to nothing", async () => {
+        act(() => {
+            const { beginStroke, endStroke, undo } = useMaskStore.getState();
+
+            beginStroke(HOLIDAY.path, 0.3, 0.3, false);
+            endStroke(0.6, 0.3);
+            undo(HOLIDAY.path);
+        });
+
+        void run([HOLIDAY]);
+        await settle();
+
+        expect(exporting[0]?.mask).toBeUndefined();
     });
 
     it("says why a file failed, naming the file and folder of a write", async () => {

@@ -17,6 +17,7 @@ pub(super) fn request(run: &str, source: &str, operations: Vec<Requested>) -> Re
         operations,
         processor: Processor(opai::ExecutionProvider::CoreMl),
         crop: None,
+        mask: None,
     }
 }
 

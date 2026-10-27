@@ -9,6 +9,8 @@ import { RotateControls } from "@/features/crop/RotateControls";
 import { useCropController } from "@/features/crop/useCropController";
 import { DOTTED_SURFACE } from "@/lib/canvas";
 import { cn } from "@/lib/utils";
+import { useCurrentFile } from "@/stores/files";
+import { useHasMask } from "@/stores/mask";
 
 /**
  * Screen 18: the Crop/Rotate surface.
@@ -26,6 +28,9 @@ import { cn } from "@/lib/utils";
 export const CropRotate = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
     const { t } = useTranslation();
     const controller = useCropController(open, onClose);
+    // Said before the user applies a framing, because applying one takes the mask away: its strokes are fractions of
+    // the framing they were painted on.
+    const masked = useHasMask(useCurrentFile()?.path);
 
     // Escape and the close box both go through Radix's `onOpenChange`, so there is one way out rather
     // than two that could come to differ. None of them writes anything: there is no draft to unwind.
@@ -116,6 +121,16 @@ export const CropRotate = ({ open, onClose }: { open: boolean; onClose: () => vo
                         <p className="mt-6 text-center text-[13px] leading-relaxed text-muted-foreground text-pretty">
                             {t("crop.zoomHint")}
                         </p>
+
+                        {masked && (
+                            <p
+                                role="note"
+                                className="mt-2 text-center text-[13px] leading-relaxed text-warning text-pretty"
+                                data-slot="crop-mask-notice"
+                            >
+                                {t("mask.crop.notice")}
+                            </p>
+                        )}
 
                         <div className="flex-1" />
 

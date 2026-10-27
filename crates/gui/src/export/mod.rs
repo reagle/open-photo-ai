@@ -13,7 +13,7 @@
 
 // The commands stay here, because `tauri::generate_handler!` in `src/lib.rs` names them through this module.
 
-use opai::Opai;
+use opai::{Mask, Opai};
 use tauri::State;
 
 use crate::command::{Traceparent, command_span, traced, traced_sync};
@@ -50,7 +50,8 @@ pub(crate) type Exports = Stops<Export>;
 /// independently and either may arrive first. Reports arrive under it on `export:progress`.
 ///
 /// `operations` may be empty, which writes the framed photograph as it is. `crop` is how the user has framed it, or
-/// absent to export the whole photograph.
+/// absent to export the whole photograph. `mask` is what the user painted over that framing, which the export applies
+/// as the preview does — see [`enhance`](crate::enhance::enhance) — or absent to enhance all of it.
 ///
 /// `naming` is the export settings' prefix, suffix, folder and format choice. The destination is composed from it and
 /// the source's own path by `opai::export`, the rule [`export_names`] shows the rows. `quality` applies to the formats
@@ -76,6 +77,7 @@ pub(crate) async fn export(
     operations: Vec<Requested>,
     processor: Processor,
     crop: Option<Crop>,
+    mask: Option<Mask>,
     naming: ExportNaming,
     quality: Option<f64>,
     overwrite: bool,
@@ -91,7 +93,7 @@ pub(crate) async fn export(
         let opai = setup.peek(Opai::clone).await.ok_or(EnhanceError::NotReady)?;
         let reporting = progress::reporting(&app, &run);
 
-        let request = Request { run, source, operations, processor, crop, naming, quality, overwrite };
+        let request = Request { run, source, operations, processor, crop, mask, naming, quality, overwrite };
 
         // Recorded here rather than in `export_with`, so the seam's tests stay free of this record.
         let answer = export_with(&opai, &opened, &exports, Some(reporting), request).await;
