@@ -7,6 +7,7 @@ mod identity;
 mod log;
 mod mask;
 mod plan;
+mod remove;
 mod report;
 mod run;
 mod spans;
@@ -442,8 +443,9 @@ async fn run_chain(
 ) -> Result<(Arc<DynamicImage>, ProviderReport), InferenceError> {
     let planned = plan::<Fake>(operations)?;
 
-    run(backend, source, &planned, provider, depth, on_progress, cancel, cache)
+    run(backend, source, &planned, Steps { provider, depth, keep: 0 }, on_progress, cancel, cache)
         .await
+        .map(|ran| (ran.pixels, ran.providers))
         .map_err(|failure| failure.error)
 }
 

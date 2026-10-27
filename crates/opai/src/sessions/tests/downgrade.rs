@@ -260,6 +260,34 @@ async fn an_explicit_request_is_not_widened_into_the_ladder_nor_remembered() {
 }
 
 #[tokio::test]
+async fn a_model_that_prefers_the_cpu_opens_there_under_auto_and_where_it_is_named_otherwise() {
+    let server = TestServer::start(vec![]).await;
+    let (_root, app_dir) = app();
+    let bench = Arc::new(Bench::default());
+    let id = kyoto();
+    let sessions = sessions(&bench, &server, listing_for(&[&id]), &app_dir, nvidia_with_webgpu());
+    let cpu_on_auto = EpProfile { cpu_on_auto: true, ..EpProfile::default() };
+
+    let auto = sessions
+        .session(&id, &cpu_on_auto, ExecutionProvider::Auto, &Interest::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        auto.provider(),
+        ExecutionProvider::Cpu,
+        "Auto attempted an accelerator for a CPU-preferring model"
+    );
+    assert_eq!(bench.built_on(), vec![ExecutionProvider::Cpu]);
+
+    // A provider asked for by name is the user's choice, and is honoured.
+    let named = sessions
+        .session(&id, &cpu_on_auto, ExecutionProvider::Cuda, &Interest::default())
+        .await
+        .unwrap();
+    assert_eq!(named.provider(), ExecutionProvider::Cuda);
+}
+
+#[tokio::test]
 async fn an_auto_rung_and_an_explicit_request_for_its_provider_are_two_sessions() {
     // `Auto`'s CUDA rung keeps WebGPU attached behind it, and an explicit CUDA request does not.
     let server = TestServer::start(vec![]).await;

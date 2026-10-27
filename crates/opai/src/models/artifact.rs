@@ -16,6 +16,8 @@ use super::precision::Precision;
 pub enum Family {
     /// Face detection, which the families that work on faces depend on to find them.
     Detection,
+    /// Removing what a mask marks, filled from the photograph around it.
+    Remove,
     /// Noise removal.
     Denoise,
     /// Face recovery.
@@ -38,8 +40,9 @@ impl Family {
     /// The one list, so a family added later is covered by everything that iterates families rather than by whichever
     /// of them its author remembered to extend. Not the order the catalogue publishes — that one is a presentation
     /// decision and is pinned where it is made.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Detection,
+        Self::Remove,
         Self::Denoise,
         Self::FaceRecovery,
         Self::Colorization,
@@ -49,7 +52,7 @@ impl Family {
         Self::Upscale,
     ];
 
-    /// The seven families whose result is an image, in the order a chain applies them.
+    /// The eight families whose result is an image, in the order a chain applies them.
     ///
     /// **The one order of a chain**, which [`Opai::process`](crate::Opai::process) puts every chain into before it
     /// runs and the catalogue publishes, so a front end draws a stack in the order it will actually run rather than
@@ -57,7 +60,11 @@ impl Family {
     ///
     /// Why this order, family by family:
     ///
-    /// - **Denoise first**: grain is a property of the capture, and every model after it would otherwise read the
+    /// - **Remove before everything**, on the photograph's own pixels: the inpainter was trained on photographs as
+    ///   cameras make them, and every enhancement after it then treats the fill like the rest of the photograph — a
+    ///   fill pasted after a sharpen would be softer than its surroundings, and a face recovery after it never restores
+    ///   a face that is no longer there.
+    /// - **Denoise next**: grain is a property of the capture, and every model after it would otherwise read the
     ///   grain as detail — sharpen would amplify it, and face recovery would restore it into a face.
     /// - **Face recovery before anything that moves or resizes a pixel**, and in particular before upscale: the faces
     ///   it carries are in the coordinates of the photograph as it was detected on, which is the chain's input, and a
@@ -69,7 +76,7 @@ impl Family {
     ///
     /// The same order the application has always presented its enhancements in; it is [`Family::ALL`] without
     /// detection, and derived from it so the two cannot drift apart.
-    pub const APPLY_ORDER: [Self; 7] = {
+    pub const APPLY_ORDER: [Self; 8] = {
         assert!(
             matches!(Self::ALL[0], Self::Detection),
             "`ALL` must begin with the family that is never applied"
@@ -97,6 +104,7 @@ impl Family {
     pub const fn prefix(self) -> &'static str {
         match self {
             Self::Detection => "dt",
+            Self::Remove => "rm",
             Self::Denoise => "dn",
             Self::FaceRecovery => "fr",
             Self::LightAdjustment => "la",
@@ -118,6 +126,7 @@ impl Family {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Detection => "Detection",
+            Self::Remove => "Remove",
             Self::Denoise => "Denoise",
             Self::FaceRecovery => "Face Recovery",
             Self::LightAdjustment => "Light Adjustment",
@@ -188,6 +197,7 @@ mod tests {
     fn each_family_renders_its_documented_prefix() {
         // Transcribed from the names already published; a change to any of these renames every artifact of a family.
         assert_eq!(Family::Detection.prefix(), "dt");
+        assert_eq!(Family::Remove.prefix(), "rm");
         assert_eq!(Family::Denoise.prefix(), "dn");
         assert_eq!(Family::FaceRecovery.prefix(), "fr");
         assert_eq!(Family::LightAdjustment.prefix(), "la");
@@ -204,6 +214,13 @@ mod tests {
         assert!(Family::FaceRecovery.applied_at() < Family::Upscale.applied_at());
         assert_eq!(Family::Detection.applied_at(), None);
         assert_eq!(Family::Upscale.applied_at(), Some(Family::APPLY_ORDER.len() - 1));
+    }
+
+    #[test]
+    fn remove_is_applied_first_on_the_photographs_own_pixels() {
+        assert_eq!(Family::Remove.applied_at(), Some(0));
+        assert!(Family::Remove.applied_at() < Family::Denoise.applied_at());
+        assert!(Family::Remove.applied_at() < Family::FaceRecovery.applied_at());
     }
 
     #[test]

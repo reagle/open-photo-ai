@@ -464,6 +464,7 @@ fn the_catalogue_publishes_all_eight_families_to_the_crate_root() {
             Family::Upscale,
             Family::Detection,
             Family::FaceRecovery,
+            Family::Remove,
         ]
     );
 
@@ -498,7 +499,7 @@ fn the_catalogue_publishes_all_eight_families_to_the_crate_root() {
 
         match parameter.kind {
             ParameterKind::Range { min, max, .. } => (min, max),
-            ParameterKind::Faces => panic!("{name} is not a range"),
+            ParameterKind::Faces | ParameterKind::Mask => panic!("{name} is not a range"),
         }
     };
 
@@ -542,6 +543,24 @@ fn the_catalogue_publishes_all_eight_families_to_the_crate_root() {
             .iter()
             .any(|parameter| parameter.name == "fidelity"),
         "Santorini published a fidelity it has nowhere to put"
+    );
+
+    // Remove runs first and takes a painted region rather than a control: a front end reads that it needs a brush.
+    let remove = entry(Family::Remove);
+    assert_eq!(remove.order, Some(0));
+    assert_eq!(remove.variants.iter().map(|variant| variant.codename).collect::<Vec<_>>(), vec!["lima"]);
+    assert_eq!(remove.variants[0].precisions, vec![Precision::Fp32]);
+    assert_eq!(
+        remove.variants[0]
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.name, parameter.kind))
+            .collect::<Vec<_>>(),
+        vec![("mask", ParameterKind::Mask)]
+    );
+    assert_eq!(
+        serde_json::to_value(remove.variants[0].parameters).unwrap(),
+        serde_json::json!([{ "name": "mask", "kind": "mask" }])
     );
 }
 
@@ -643,6 +662,10 @@ fn a_published_catalogue_row_can_be_turned_back_into_an_operation_from_the_crate
         for parameter in variant.parameters {
             values = match parameter.kind {
                 ParameterKind::Faces => values.with_faces(Faces::new([face_at(12.34, 56.78, 90.12, 34.56)])),
+                ParameterKind::Mask => values.with_mask(std::sync::Arc::new(opai::Mask {
+                    strokes: vec![opai::Stroke::new(false, 0.05, 0.0, vec![0.5, 0.5])],
+                    ..opai::Mask::default()
+                })),
                 ParameterKind::Range { min, max, .. } => {
                     let midpoint = f64::midpoint(min, max);
 

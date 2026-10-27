@@ -5,18 +5,19 @@
 //! later takes as a parameter — so they describe *what* to run and own no native resource, which is what lets one
 //! outlive and stay independent of any session built from it.
 //!
-//! All eight families are named here: [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`],
-//! [`Colorization`], [`Detection`] and [`FaceRecovery`]. Each is its own type, so no codename can be paired with the
-//! family it does not belong to.
+//! All nine families are named here: [`Remove`], [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`],
+//! [`ColorBalance`], [`Colorization`], [`Detection`] and [`FaceRecovery`]. Each is its own type, so no codename can be
+//! paired with the family it does not belong to.
 //!
-//! [`Operation`] is where that match lives. It carries an operation of any of the seven image families, one arm per
+//! [`Operation`] is where that match lives. It carries an operation of any of the eight image families, one arm per
 //! family holding that family's own type, and forwards the five questions they all answer; a detection run is
 //! carried by [`Analysis`] instead.
 //!
 //! Two of them break the mould the other six share. [`Detection`] is the one family whose result is not an image: a
 //! run produces a [`DetectionOutput`], the set of [`Face`]s found. [`FaceRecovery`] is the one whose per-run input is
 //! not a scalar: it carries the [`Faces`] it is to restore, supplied by a detection run rather than adjusted through
-//! a control, which is why it is `Clone` rather than `Copy`.
+//! a control, which is why it is `Clone` rather than `Copy`. [`Remove`] carries a painted region the same way, a
+//! [`Mask`](crate::Mask) a front end's brush or a mask file supplies.
 //!
 //! # An operation is the request it describes
 //!
@@ -120,6 +121,7 @@ pub(crate) mod light_adjustment;
 pub(crate) mod operation;
 pub(crate) mod precision;
 mod quantized;
+pub(crate) mod remove;
 pub(crate) mod scale;
 pub(crate) mod sharpen;
 pub(crate) mod simple;
@@ -143,6 +145,7 @@ pub use fidelity::Fidelity;
 pub use light_adjustment::{LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant};
 pub use operation::{Analysis, DataOperation, Operation};
 pub use precision::{FloatPrecision, Precision};
+pub use remove::{Remove, RemoveVariant};
 pub use scale::{RangeError, Scale};
 pub use sharpen::{Sharpen, SharpenParams, SharpenVariant};
 pub use strength::Strength;

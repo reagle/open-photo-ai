@@ -12,7 +12,7 @@
 use super::{
     Analysis, Bias, ColorBalance, Colorization, Denoise, Detection, FaceRecovery, Faces, Fidelity, LightAdjustment,
     Operation, ParameterValues, Scale, Sharpen, Strength, Upscale, catalogue, color_balance, colorization, denoise,
-    detection, face, light_adjustment, sharpen, upscale,
+    detection, face, light_adjustment, remove, sharpen, upscale,
 };
 
 /// The values a front end would hand back for the controls one published row told it to draw.
@@ -32,6 +32,7 @@ pub(crate) fn published_values(variant: &catalogue::VariantEntry) -> ParameterVa
     for parameter in variant.parameters {
         values = match parameter.kind {
             ParameterKind::Faces => values.with_faces(Faces::new([face::tests::face_at(12.34, 56.78, 90.12, 34.56)])),
+            ParameterKind::Mask => values.with_mask(crate::models::remove::tests::dot(0.5, 0.5)),
             ParameterKind::Range { min, max, .. } => {
                 let midpoint = f64::midpoint(min, max);
 
@@ -140,6 +141,17 @@ pub(crate) fn every_operation() -> Vec<Operation> {
     for value in scales {
         for variant in upscale::variant::tests::every_variant() {
             operations.push(Operation::Upscale(Upscale::new(variant, scale(value))));
+        }
+    }
+
+    // Spread over regions, empty included, since the mask's signature is the tag's only variable segment.
+    for mask in [
+        std::sync::Arc::new(crate::Mask::default()),
+        remove::tests::dot(0.2, 0.3),
+        remove::tests::dot(0.8, 0.3),
+    ] {
+        for variant in remove::variant::tests::every_variant() {
+            operations.push(Operation::Remove(remove::Remove::new(variant, std::sync::Arc::clone(&mask))));
         }
     }
 

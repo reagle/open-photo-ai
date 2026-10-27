@@ -92,7 +92,7 @@ mod tests {
 
     /// Every family some signal can suggest.
     fn suggestible() -> impl Iterator<Item = Family> {
-        Family::ALL.into_iter().filter(|family| *family != Family::Detection)
+        Family::ALL.into_iter().filter(|family| !matches!(family, Family::Detection | Family::Remove))
     }
 
     #[test]
@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn an_empty_set_or_one_of_detection_alone_includes_nothing_suggestible_and_needs_no_read() {
-        for families in [&[][..], &[Family::Detection][..]] {
+        for families in [&[][..], &[Family::Detection][..], &[Family::Remove][..]] {
             let scope = Scope::of(Some(families));
 
             assert!(scope.narrowed(), "{families:?}");
@@ -138,7 +138,7 @@ mod tests {
             );
             assert_eq!(scope.needs_blocks(), matches!(family, Family::Denoise | Family::Sharpen), "{family:?}");
             assert_eq!(scope.needs_face(), family == Family::FaceRecovery, "{family:?}");
-            assert_eq!(scope.needs_anything(), family != Family::Detection, "{family:?}");
+            assert_eq!(scope.needs_anything(), !matches!(family, Family::Detection | Family::Remove), "{family:?}");
         }
     }
 

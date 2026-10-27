@@ -43,7 +43,8 @@ use crate::cache::RunCache;
 use crate::error::InferenceError;
 use crate::image::Picture;
 use crate::mask::Mask;
-use crate::models::{Detection, Faces, Operation};
+use crate::models::remove::RemovedAt;
+use crate::models::{Detection, Faces, Family, Operation, Remove};
 use crate::pipeline::{Backend, Shared};
 use crate::providers::ExecutionProvider;
 use crate::sessions::SessionHandle;
@@ -123,12 +124,16 @@ where
 {
     let mut options = options.unwrap_or_default();
 
+    // Before anything else is asked of the chain: a removal of nothing is no removal, so nothing is installed for it,
+    // no faces are looked for on its account, and the result is named as the chain without it.
+    let operations = without_empty_removals(operations);
+
     // Before the plan, so the faces each recovery carries are part of every cache key the run derives. A stop here
     // ends the call before the run's opening record, as a stop before `process` would.
     let (operations, faces) = match std::mem::take(&mut options.faces) {
-        FaceSelection::AsGiven => (std::borrow::Cow::Borrowed(operations), ChainFaces::NotAsked),
+        FaceSelection::AsGiven => (operations, ChainFaces::NotAsked),
         FaceSelection::Detect(select) => {
-            let handover = options.on_progress.as_ref().map(|on_progress| Handover::new(on_progress, operations));
+            let handover = options.on_progress.as_ref().map(|on_progress| Handover::new(on_progress, &operations));
             let detection = ExecuteOptions {
                 provider: options.provider,
                 on_progress: handover.as_ref().map(Handover::detection),
@@ -149,10 +154,21 @@ where
         }
     };
 
+    // Faces found on the source include any a removal in the chain is about to take out; a face recovery would paste a
+    // face over the fill. They are dropped from every recovery's selection before the plan, so the keys say so.
+    let (width, height) = source.dimensions();
+    let operations = sparing_removed_faces(operations, width, height);
+
     // Before everything else — the plan, the identity, every cache key and every report — so all of them describe the
     // chain that actually runs. A chain already in order is borrowed as it is, so its cache keys are the ones it has
     // always had.
     let operations = &*in_apply_order(&operations);
+
+    // The removals lead the chain (`Family::APPLY_ORDER`), and a limiting mask is blended with the photograph *after*
+    // them, so it limits the enhancements and never brings back what was removed. A mask over a chain of removals
+    // alone, or over an empty one, has nothing to limit: the result is named and made as with no mask.
+    let removals = operations.iter().take_while(|operation| operation.family() == Family::Remove).count();
+    let mask = options.mask.take().filter(|mask| !mask.is_empty() && operations.len() > removals);
 
     // Resolved **here**, once, and handed to the run, to the identity composition and to every cache key the run
     // derives. Resolving it twice — once for what runs and once for what the result is named — is two answers to one
@@ -213,8 +229,7 @@ where
         backend,
         source.shared_pixels(),
         &planned,
-        options.provider,
-        depth,
+        Steps { provider: options.provider, depth, keep: if mask.is_some() { removals } else { 0 } },
         options.on_progress,
         &options.cancel,
         cache.as_ref(),
@@ -223,15 +238,18 @@ where
     .await;
 
     // After the chain and before the closing record, so the record's time and outcome are the whole run's, a stop
-    // during the blend included. A mask over an empty chain has nothing to limit: the result is the photograph.
-    let mask = options.mask.filter(|mask| !mask.is_empty() && !operations.is_empty());
+    // during the blend included.
     let outcome = match (outcome, &mask) {
-        (Ok((pixels, providers)), Some(mask)) => masked(source, pixels, mask, depth, &options.cancel)
-            .instrument(span.clone())
-            .await
-            .map(|pixels| (pixels, providers))
-            .map_err(RunFailure::from),
-        (outcome, _) => outcome,
+        (Ok(Ran { pixels, providers, kept }), Some(mask)) => {
+            let photograph = kept.unwrap_or_else(|| source.shared_pixels());
+
+            masked(photograph, pixels, mask, depth, &options.cancel)
+                .instrument(span.clone())
+                .await
+                .map(|pixels| (pixels, providers))
+                .map_err(RunFailure::from)
+        }
+        (outcome, _) => outcome.map(|ran| (ran.pixels, ran.providers)),
     };
 
     // Recorded before the `?`, so that a run which failed says so rather than leaving a reader to infer it from a
@@ -291,13 +309,14 @@ where
     Ok(Enhanced { picture, providers, faces })
 }
 
-/// `pixels`, the chain's result over `source`, limited to `mask`: blended with the photograph through the mask's weight
-/// at the source's size, the photograph enlarged with Lanczos3 first where the chain changed the size.
+/// `pixels`, the chain's result, limited to `mask`: blended with `photograph` — the chain's input after its removals —
+/// through the mask's weight at the photograph's size, the photograph enlarged with Lanczos3 first where the chain
+/// changed the size.
 ///
 /// Not a step: it reports no progress and is never stored, since redoing it costs less than reading it back. A stop
 /// is honoured before it begins; it is quick enough not to need one inside.
 async fn masked(
-    source: &Picture,
+    photograph: Arc<DynamicImage>,
     pixels: Arc<DynamicImage>,
     mask: &Arc<Mask>,
     depth: ChannelDepth,
@@ -307,7 +326,7 @@ async fn masked(
         return Err(InferenceError::Cancelled);
     }
 
-    let (photograph, applying) = (source.shared_pixels(), Arc::clone(mask));
+    let applying = Arc::clone(mask);
     let started = std::time::Instant::now();
 
     // Off the runtime, as every full-resolution pass is: a rasterisation and a blend at 24 megapixels, and under an
@@ -399,6 +418,56 @@ fn enlarge(photograph: &DynamicImage, width: u32, height: u32, depth: ChannelDep
     }
 }
 
+/// `operations` without any removal that removes nothing: borrowed where there is none, which is every chain but one
+/// a front end added a removal to before anything was painted.
+fn without_empty_removals(operations: &[Operation]) -> std::borrow::Cow<'_, [Operation]> {
+    let empty = |operation: &Operation| matches!(operation, Operation::Remove(removal) if removal.removes_nothing());
+
+    if !operations.iter().any(empty) {
+        return std::borrow::Cow::Borrowed(operations);
+    }
+
+    std::borrow::Cow::Owned(operations.iter().filter(|operation| !empty(operation)).cloned().collect())
+}
+
+/// `operations` with every face recovery's faces cut to those no removal in the chain takes out, over a `width` x
+/// `height` source: a face whose box centre is marked is not restored. Unchanged — borrowed or owned as it came — where
+/// the chain removes nothing or restores no face.
+fn sparing_removed_faces(
+    operations: std::borrow::Cow<'_, [Operation]>,
+    width: u32,
+    height: u32,
+) -> std::borrow::Cow<'_, [Operation]> {
+    let removals: Vec<&Remove> = operations
+        .iter()
+        .filter_map(|operation| match operation {
+            Operation::Remove(removal) => Some(removal),
+            _ => None,
+        })
+        .collect();
+    let restoring = operations
+        .iter()
+        .any(|operation| matches!(operation, Operation::FaceRecovery(recovery) if !recovery.faces().is_empty()));
+
+    if removals.is_empty() || !restoring || width == 0 || height == 0 {
+        return operations;
+    }
+
+    let marked = RemovedAt::new(&removals, width, height);
+    let spared = operations
+        .iter()
+        .map(|operation| match operation {
+            Operation::FaceRecovery(recovery) => {
+                let kept = recovery.faces().iter().copied().filter(|face| !marked.at_centre_of(face));
+                Operation::FaceRecovery(recovery.with_faces(Faces::new(kept)))
+            }
+            other => other.clone(),
+        })
+        .collect();
+
+    std::borrow::Cow::Owned(spared)
+}
+
 /// The operations of a run as one field value, comma-separated: two steps of one chain read as `<tag>,<tag>`.
 ///
 /// Their [`cache_tag`](Operation::cache_tag)s rather than their display names.
@@ -421,6 +490,28 @@ impl From<InferenceError> for RunFailure {
     fn from(error: InferenceError) -> Self {
         Self { error, step: None }
     }
+}
+
+/// How a chain's steps are run: on what, at what depth, and which intermediate to hand back beside the result.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Steps {
+    /// The provider every step asks for.
+    pub(crate) provider: ExecutionProvider,
+    /// The resolved depth every step produces.
+    pub(crate) depth: ChannelDepth,
+    /// How many leading steps' result to hand back as [`Ran::kept`] — the photograph after its removals, which a
+    /// limiting mask is blended with — or 0 for none.
+    pub(crate) keep: usize,
+}
+
+/// What a chain run produced: the result, what it ran on, and the intermediate [`Steps::keep`] asked for.
+pub(crate) struct Ran {
+    /// The chain's result.
+    pub(crate) pixels: Arc<DynamicImage>,
+    /// What every step ran on.
+    pub(crate) providers: ProviderReport,
+    /// The picture after the first [`Steps::keep`] steps, or `None` where none was asked for.
+    pub(crate) kept: Option<Arc<DynamicImage>>,
 }
 
 /// Runs `source` through the `planned` chain in order, each operation over the result of the one before it, at
@@ -448,24 +539,24 @@ impl From<InferenceError> for RunFailure {
 /// not the operations that had already succeeded, and not the half-written buffer of the tile a cancellation landed
 /// in. **Nothing the cache does appears here**: every one of its failures is a recompute, so it has no way to fail a
 /// run.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each is one independent decision about the run; bundling them would build a struct whose only reader is               the next line"
-)]
+///
+/// Where [`Steps::keep`] names a leading run of steps, the picture after them is handed back too, decoded from the
+/// store where they were served from it: what a limiting mask is blended with.
 pub(crate) async fn run<B: Backend>(
     backend: &B,
     source: Arc<DynamicImage>,
     planned: &[Planned<B>],
-    provider: ExecutionProvider,
-    depth: ChannelDepth,
+    steps: Steps,
     on_progress: Option<OnInference>,
     cancel: &CancellationToken,
     cache: Option<&RunCache>,
-) -> Result<(Arc<DynamicImage>, ProviderReport), RunFailure> {
+) -> Result<Ran, RunFailure> {
+    let Steps { provider, depth, keep } = steps;
+
     if planned.is_empty() {
         // No session, so nothing to report having run on — which is a different answer from "it ran on what was
         // asked for", and is exactly the distinction `ProviderReport::actual` exists to keep.
-        return Ok((source, ProviderReport::new(provider, [])));
+        return Ok(Ran { pixels: source, providers: ProviderReport::new(provider, []), kept: None });
     }
 
     let progress = ChainProgress::new(on_progress, planned.len());
@@ -478,6 +569,7 @@ pub(crate) async fn run<B: Backend>(
     // twice takes two handles on one entry, which is correct — the count goes up twice and down twice.
     let mut held: Vec<SessionHandle<B::Session>> = Vec::new();
     let mut current = source;
+    let mut kept = None;
 
     // The bytes of the newest cached prefix walked past, not yet decoded, and the index the run of hits carrying them
     // began at. A hit supersedes the one before it — each stored entry is the whole picture at that point in the
@@ -541,6 +633,29 @@ pub(crate) async fn run<B: Backend>(
                 // at an earlier point, and nothing between here and the next miss reads them.
                 pending = Some(bytes);
                 index += 1;
+
+                if index != keep {
+                    continue;
+                }
+
+                // The one hit whose pixels are wanted although nothing runs over them yet: the picture a limiting
+                // mask is blended with. A prefix that will not decode rewinds as a miss's does, over the same span.
+                match materialize(pending.take().expect("stored just above")).await? {
+                    Some(image) => {
+                        current = Arc::new(image);
+                        kept = Some(Arc::clone(&current));
+                    }
+                    None => {
+                        tracing::warn!(
+                            from = skipped_from,
+                            to = index,
+                            "a stored result would not decode; rerunning the operations it stood for"
+                        );
+
+                        distrust_before = index;
+                        index = skipped_from;
+                    }
+                }
                 continue;
             }
         }
@@ -682,6 +797,10 @@ pub(crate) async fn run<B: Backend>(
 
         current = produced;
         index += 1;
+
+        if index == keep {
+            kept = Some(Arc::clone(&current));
+        }
     }
 
     // Folded out of the handles the run was already holding, rather than accumulated by a line added to the
@@ -692,7 +811,7 @@ pub(crate) async fn run<B: Backend>(
     // not only the first one whose provider differed from what was asked for.
     let report = ProviderReport::new(provider, held.iter().map(SessionHandle::provider));
 
-    Ok((current, report))
+    Ok(Ran { pixels: current, providers: report, kept })
 }
 
 /// The provider a step's sessions ran on, as its duration is tagged: one provider, or `mixed` where its graphs were

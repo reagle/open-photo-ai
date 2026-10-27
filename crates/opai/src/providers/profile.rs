@@ -129,6 +129,18 @@ pub(crate) struct EpProfile {
     ///
     /// An unrecognised name is ignored rather than reported.
     pub(crate) webgpu_force_cpu_nodes: &'static [&'static str],
+
+    // A preference about *which* provider rather than how to configure one, and still per model: it follows the graph's
+    // op mix, as the compute units do. A graph whose operators an accelerator's provider takes only in part is cut into
+    // partitions, and every boundary is a copy off the device and back; past some number of them the accelerator loses
+    // to the CPU outright, or wins on time and loses on memory. Lima is the case that put it here: Core ML takes about half
+    // of Big-LaMa's nodes in 585 partitions (its FFT convolutions stay on the CPU), and peaks 4.4 GB higher than the CPU
+    // for its speed once warm. See `remove::lima`.
+    /// Whether this model opens on the CPU when [`Auto`](crate::ExecutionProvider::Auto) is asked for.
+    ///
+    /// Only `Auto` is redirected: a provider asked for by name is the user's choice and is honoured, falling back as any
+    /// other model's does.
+    pub(crate) cpu_on_auto: bool,
 }
 
 // Established by measurement rather than taken from a binding's documentation, because getting it wrong is invisible:

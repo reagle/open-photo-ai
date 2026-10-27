@@ -317,7 +317,8 @@ mod tests {
         let plan = plan("opai photo.jpg --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
         let families: Vec<_> = plan.operations.iter().map(Operation::family).collect();
 
-        assert_eq!(families, Family::APPLY_ORDER);
+        // Every family the enhancement flags name; a removal is added from `--remove`'s mask, by the run.
+        assert_eq!(families, Family::APPLY_ORDER[1..]);
     }
 
     /// The chain autopilot plans for `suggested` with `models` at `quality` over a `width` x `height` photograph.

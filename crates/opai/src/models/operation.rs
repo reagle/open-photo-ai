@@ -28,6 +28,7 @@ use super::face::Faces;
 use super::face_recovery::FaceRecovery;
 use super::light_adjustment::LightAdjustment;
 use super::precision::Precision;
+use super::remove::Remove;
 use super::sharpen::Sharpen;
 use super::upscale::Upscale;
 
@@ -73,6 +74,8 @@ pub enum Operation {
     //
     // The serialized representation is a compatibility surface once anything persists one, and is pinned by the tests
     // below rather than left to whatever the derive happens to produce.
+    /// A removal of what a mask marks, which a chain runs first.
+    Remove(Remove),
     /// A denoise run.
     Denoise(Denoise),
     /// A face recovery run, over faces a detection run found.
@@ -99,6 +102,7 @@ pub enum Operation {
 macro_rules! forward {
     ($operation:ident, $question:ident) => {
         match $operation {
+            Self::Remove(operation) => operation.$question(),
             Self::Denoise(operation) => operation.$question(),
             Self::FaceRecovery(operation) => operation.$question(),
             Self::LightAdjustment(operation) => operation.$question(),
@@ -116,6 +120,7 @@ impl Operation {
         // A match over the arms rather than a field, so the family cannot disagree with the value it is carried
         // beside, and a ninth arm cannot compile without answering.
         match self {
+            Self::Remove(_) => Family::Remove,
             Self::Denoise(_) => Family::Denoise,
             Self::FaceRecovery(_) => Family::FaceRecovery,
             Self::LightAdjustment(_) => Family::LightAdjustment,
@@ -224,6 +229,9 @@ impl Operation {
             // Wrapped for light adjustment's reason: all three variants run through one pipeline, the two contracts
             // told apart as data on the variant, so there is nothing for this seam to refuse.
             Self::Colorization(colorization) => Ok(colorization.pipeline::<B>()),
+            // One variant and one contract, and a mask that marks nothing is answered with the photograph rather than
+            // refused, so there is nothing for this seam to refuse.
+            Self::Remove(removal) => Ok(removal.pipeline::<B>()),
         }
     }
 }
@@ -586,9 +594,9 @@ pub(crate) mod tests {
         Fidelity::new(Fidelity::MAX).expect("the maximum is in range")
     }
 
-    /// One operation of each of the seven families this carrier holds, paired with the family it belongs to.
+    /// One operation of each of the eight families this carrier holds, paired with the family it belongs to.
     ///
-    /// Seven rather than eight: detection is carried in [`Analysis`], and the tests that need all eight say so by
+    /// Eight rather than nine: detection is carried in [`Analysis`], and the tests that need all eight say so by
     /// reaching across both carriers — see `every_family_can_be_carried_by_the_carrier_for_its_own_path`.
     fn one_of_each() -> Vec<(Operation, Family)> {
         let strength = Strength::new(0.5).expect("the test supplied a strength in range");
@@ -624,6 +632,7 @@ pub(crate) mod tests {
                 Operation::Upscale(Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Int8), scale)),
                 Family::Upscale,
             ),
+            (super::super::remove::Remove::lima(super::super::remove::tests::dot(0.5, 0.5)), Family::Remove),
         ]
     }
 
@@ -873,7 +882,7 @@ pub(crate) mod tests {
             }
         }
 
-        assert_eq!(families.len(), 8, "the spread did not reach all eight families: {families:?}");
+        assert_eq!(families.len(), 9, "the spread did not reach all nine families: {families:?}");
     }
 
     #[test]
@@ -952,6 +961,8 @@ pub(crate) mod tests {
             let measured_arm = match &operation {
                 Operation::Upscale(upscale) => measured.contains(&upscale.variant()),
                 Operation::FaceRecovery(_) => true,
+                // Lima's one setting, the CPU under Auto, which `remove::lima` pins and measures.
+                Operation::Remove(_) => true,
                 // Both variants at FP16, which is the one family here that splits by precision on its own carrier
                 // rather than inside a list of upscale arms; see each model's own directory for which settings and why
                 // they disagree. Paris at FP32 too, for its WebGPU settings alone, which `paris` pins.
