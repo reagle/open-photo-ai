@@ -7,7 +7,7 @@
 //! it onto each of them from there. A file that cannot be written is not recorded here either: `opai` records it,
 //! where it happened.
 
-use opai::{Enhanced, InferenceError, OutputDepth, ProcessOptions};
+use opai::{Enhanced, InferenceError, Mask, OutputDepth, ProcessOptions};
 use serde::Serialize;
 
 use opai::export::{Named, WriteError, WriteOptions, Written, write};
@@ -16,7 +16,7 @@ use super::Exports;
 use super::names::ExportNaming;
 use super::progress::ExportReporting;
 use crate::command::{Answer, CommandError, Ended};
-use crate::enhance::{EnhanceError, Enhancer, Prepared, Processor, Requested, judge_chain, prepare_chain};
+use crate::enhance::{EnhanceError, Enhancer, Prepared, Processor, Requested, judge_chain, prepare_chain, weighted};
 use crate::images::{Crop, Opened};
 
 /// How an export ended.
@@ -97,6 +97,8 @@ pub(crate) struct Request {
     pub(crate) processor: Processor,
     /// How the image is framed, or `None` to export the whole photograph.
     pub(crate) crop: Option<Crop>,
+    /// The mask painted over the framed photograph, or `None` to enhance all of it — read as the canvas's run reads it.
+    pub(crate) mask: Option<Mask>,
     /// What the file is called, where it goes and what it is written as, worked out from the source's own path once
     /// it is resolved.
     pub(crate) naming: ExportNaming,
@@ -169,6 +171,7 @@ pub(crate) async fn export_with<E: Enhancer>(
         on_progress: reporting.as_ref().map(|reporting| std::sync::Arc::clone(&reporting.enhancing.on_progress)),
         cancel: registration.cancel().clone(),
         faces,
+        mask: weighted(request.mask),
         ..Default::default()
     };
 
@@ -364,6 +367,7 @@ mod tests {
                 operations,
                 processor: Processor(opai::ExecutionProvider::CoreMl),
                 crop: None,
+                mask: None,
                 naming: ExportNaming {
                     naming: Naming {
                         prefix: String::new(),
@@ -451,6 +455,54 @@ mod tests {
         );
         assert_eq!(decoded(&destination).0, (16, 12), "the chain's result was not what was written");
         assert_eq!(enhancer.seen(), [(1, ExecutionProvider::CoreMl, OutputDepth::Source)]);
+    }
+
+    /// An enhancer that records the mask each call was handed.
+    #[derive(Default)]
+    struct Masks {
+        seen: Mutex<Vec<Option<Arc<Mask>>>>,
+    }
+
+    impl Enhancer for Masks {
+        fn process(
+            &self,
+            source: &Picture,
+            _operations: &[opai::Operation],
+            options: ProcessOptions,
+        ) -> impl Future<Output = Result<Enhanced, InferenceError>> + Send {
+            self.seen.lock().expect("unpoisoned").push(options.mask);
+
+            let result = enhanced(source, image::DynamicImage::new_rgb8(16, 12), "cafebabecafebabe");
+
+            async move { Ok(result) }
+        }
+    }
+
+    #[test]
+    fn a_painted_mask_reaches_the_library_with_the_export_and_an_empty_one_does_not() {
+        let fixture = Fixture::new();
+        let enhancer = Masks::default();
+        let mask =
+            Mask { strokes: vec![opai::Stroke::new(false, 0.05, 0.5, vec![0.1, 0.5, 0.9, 0.5])], ..Mask::default() };
+
+        fixture
+            .export(
+                &enhancer,
+                None,
+                Request { mask: Some(mask.clone()), ..fixture.request("export-1", vec![kyoto()], "-masked") },
+            )
+            .expect("a masked export is an export");
+        fixture
+            .export(
+                &enhancer,
+                None,
+                Request { mask: Some(Mask::default()), ..fixture.request("export-2", vec![kyoto()], "-plain") },
+            )
+            .expect("an export with an empty mask is an export");
+
+        let seen = enhancer.seen.lock().expect("unpoisoned");
+        assert_eq!(seen[0].as_deref(), Some(&mask), "the export did not carry the mask the preview runs with");
+        assert!(seen[1].is_none(), "an empty mask was handed to the library as a mask");
     }
 
     #[test]
@@ -1138,6 +1190,7 @@ mod tests {
                             operations: vec![kyoto()],
                             processor,
                             crop: None,
+                            mask: None,
                             naming: ExportNaming {
                                 naming: Naming {
                                     prefix: String::new(),

@@ -96,6 +96,31 @@ describe("enhance", () => {
         expect(args.crop).toBeUndefined();
     });
 
+    it("sends the mask under the name and shape Rust deserializes, and none when it is given none", () => {
+        // Rust's half is `mask: Option<opai::Mask>` on the command: camelCase, with no base.
+        const mask = {
+            strokes: [{ erase: true, radius: 0.02, softness: 0.5, points: [0.1, 0.2, 0.3, 0.4] }],
+            inverted: true,
+        };
+
+        const { run } = enhance("0123456789abcdef", [kyoto], "auto", undefined, mask);
+
+        expect(invoked).toHaveBeenCalledWith("enhance", {
+            run,
+            source: "0123456789abcdef",
+            operations: [kyoto],
+            processor: "auto",
+            crop: undefined,
+            mask,
+        });
+
+        enhance("0123456789abcdef", [kyoto], "auto");
+
+        const [, args] = invoked.mock.calls[1] as [string, { mask?: unknown }];
+
+        expect(args.mask).toBeUndefined();
+    });
+
     it("mints the run's name before the command is called", () => {
         // The property the whole cancellation story rests on: a stop and its run cross the boundary
         // independently and either may arrive first, so an effect that starts a run must have the

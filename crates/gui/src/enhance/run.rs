@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use opai::{
-    ChainFaces, Enhanced, ExecutionProvider, FaceSelection, InferenceError, Opai, OutputDepth, Picture, ProcessOptions,
+    ChainFaces, Enhanced, ExecutionProvider, FaceSelection, InferenceError, Mask, Opai, OutputDepth, Picture,
+    ProcessOptions,
 };
 use serde::{Deserialize, Serialize};
 
@@ -184,6 +185,17 @@ pub(crate) struct Request {
     pub(crate) processor: Processor,
     /// How the image is framed, or `None` to run over the whole photograph.
     pub(crate) crop: Option<Crop>,
+    /// The mask painted over the framed photograph, or `None` to enhance all of it — see [`weighted`].
+    pub(crate) mask: Option<Mask>,
+}
+
+/// The mask a run is handed: the one the window painted, unless it painted nothing.
+///
+/// An empty mask is **no mask**, so the window can send whatever it holds and a photograph it has never painted — or
+/// whose strokes it has all undone — runs, and is identified, exactly as it did before there was a mask. `opai` reads
+/// an empty one the same way, and this keeps it out of the options altogether.
+pub(crate) fn weighted(mask: Option<Mask>) -> Option<Arc<Mask>> {
+    mask.filter(|mask| !mask.is_empty()).map(Arc::new)
 }
 
 /// A chain judged whole and the source it runs over found: what [`prepare_chain`] goes on from.
@@ -353,6 +365,7 @@ pub(crate) async fn enhance_with<E: Enhancer>(
         on_progress: reporting.as_ref().map(|reporting| Arc::clone(&reporting.on_progress)),
         cancel,
         faces,
+        mask: weighted(request.mask),
         ..Default::default()
     };
 
@@ -794,6 +807,83 @@ mod tests {
 
         // A name no build ever published is refused, as the library refuses it, rather than run on something else.
         assert!(serde_json::from_value::<Processor>(serde_json::json!("openvino")).is_err());
+    }
+
+    // ── The mask a run is given ───────────────────────────────────────────────────────────────────────────
+
+    /// An enhancer that records the mask each call was handed, and answers as [`Recording`] does.
+    #[derive(Default)]
+    struct Masks {
+        seen: Mutex<Vec<Option<Arc<Mask>>>>,
+    }
+
+    impl Enhancer for Masks {
+        fn process(
+            &self,
+            source: &Picture,
+            _operations: &[opai::Operation],
+            options: ProcessOptions,
+        ) -> impl Future<Output = Result<Enhanced, InferenceError>> + Send {
+            self.seen.lock().expect("unpoisoned").push(options.mask);
+
+            let result = enhanced(source, 8, 4, "cafebabecafebabe");
+
+            async move { Ok(result) }
+        }
+    }
+
+    /// One stroke across the middle of the photograph.
+    fn painted() -> Mask {
+        Mask { strokes: vec![opai::Stroke::new(false, 0.05, 0.5, vec![0.1, 0.5, 0.9, 0.5])], ..Mask::default() }
+    }
+
+    #[test]
+    fn a_painted_mask_reaches_the_library_with_the_run() {
+        let (_dir, opened, runs, identity) = fixture();
+        let enhancer = Masks::default();
+        let mask = painted();
+
+        run_now(
+            &enhancer,
+            &opened,
+            &runs,
+            Request { mask: Some(mask.clone()), ..request("run-1", &identity, vec![kyoto()]) },
+        )
+        .expect("an admitted source and a published chain should run");
+
+        let seen = enhancer.seen.lock().expect("unpoisoned");
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].as_deref(), Some(&mask), "the mask the window painted was not the one the run was given");
+    }
+
+    #[test]
+    fn an_empty_mask_is_sent_as_none() {
+        let (_dir, opened, runs, identity) = fixture();
+        let enhancer = Masks::default();
+
+        // Nothing painted, and nothing painted but turned over: neither is a mask, so neither changes the run or its
+        // identity.
+        for mask in [None, Some(Mask::default()), Some(Mask { inverted: true, ..Mask::default() })] {
+            run_now(&enhancer, &opened, &runs, Request { mask, ..request("run-1", &identity, vec![kyoto()]) })
+                .expect("an admitted source and a published chain should run");
+        }
+
+        let seen = enhancer.seen.lock().expect("unpoisoned");
+        assert_eq!(seen.len(), 3);
+        assert!(seen.iter().all(Option::is_none), "an empty mask reached the library as a mask");
+    }
+
+    #[test]
+    fn the_wire_spelling_of_a_mask_is_the_librarys() {
+        // What `frontend/ipc/mask.ts` sends: camelCase, no base, values the library brings inside their range.
+        let mask: Mask = serde_json::from_value(serde_json::json!({
+            "strokes": [{ "erase": true, "radius": 0.04, "softness": 0.25, "points": [0.2, 0.3, 0.4, 0.5] }],
+            "inverted": true
+        }))
+        .expect("the window's mask is the library's");
+
+        assert!(mask.inverted);
+        assert_eq!(mask.strokes, [opai::Stroke::new(true, 0.04, 0.25, vec![0.2, 0.3, 0.4, 0.5])]);
     }
 
     // ── The framing a run is given ────────────────────────────────────────────────────────────────────────

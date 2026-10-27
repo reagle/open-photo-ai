@@ -21,6 +21,7 @@ mod gui_settings;
 mod images;
 mod links;
 mod logs;
+mod mask;
 mod menu;
 mod opened;
 mod reveal;
@@ -191,6 +192,7 @@ pub fn run(prepared: Result<(), opai::InitError>) {
             export::export_names,
             export::directory::pick_directory,
             export::written::reveal_export,
+            mask::mask_preview,
             images::files::open_images,
             images::files::describe_images,
             images::files::reveal_image,
