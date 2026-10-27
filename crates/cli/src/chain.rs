@@ -160,11 +160,21 @@ pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u3
     // Last, as the library runs it. The f-number and the focus are the catalogue's defaults unless given; both are
     // already in range, so they are set as they are rather than as percentages.
     if let Some(model) = selection.lens_blur {
-        built.push(build(
+        let (blur, mut applied) = build(
             model,
             qualities,
             Parameter::LensBlur { f_number: selection.lens_blur_f, focus: selection.lens_blur_focus },
-        ));
+        );
+
+        // Not a catalogue parameter: the edges are a choice between two renders, which no control draws.
+        let blur = match (blur, selection.lens_blur_edges) {
+            (Operation::LensBlur(blur), Some(edges)) => Operation::LensBlur(blur.with_edges(edges.into())),
+            (blur, _) => blur,
+        };
+        if matches!(&blur, Operation::LensBlur(blur) if blur.edges() == opai::LensBlurEdges::Depth) {
+            applied.detail = applied.detail.map(|detail| format!("{detail}, edges from the depth"));
+        }
+        built.push((blur, applied));
     }
 
     // After everything, the lens blur included, as the library runs it: the photograph's own grain at the catalogue's
@@ -343,6 +353,20 @@ mod tests {
             plan("opai photo.jpg --lens-blur --lb-f f/1.4 --lb-focus 0.3,0.6 -o out.jpg", 4000, 3000).operations,
             vec![LensBlur::lisbon(f_number(1.4), fraction(0.3), fraction(0.6))]
         );
+
+        // Matted unless the depth alone is asked for.
+        let Operation::LensBlur(depth_only) =
+            plan("opai photo.jpg --lb --lb-edges depth -o out.jpg", 4000, 3000).operations.remove(0)
+        else {
+            panic!("not a lens blur");
+        };
+        assert_eq!(depth_only.edges(), opai::LensBlurEdges::Depth);
+        let Operation::LensBlur(matted) =
+            plan("opai photo.jpg --lb --lb-edges matte -o out.jpg", 4000, 3000).operations.remove(0)
+        else {
+            panic!("not a lens blur");
+        };
+        assert_eq!(matted.edges(), opai::LensBlurEdges::Matte);
 
         // After an upscale, whatever order the flags came in.
         assert_eq!(
