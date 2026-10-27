@@ -10,6 +10,7 @@ mod grain;
 mod identity;
 mod log;
 mod mask;
+mod matte;
 mod metadata;
 mod plan;
 mod remove;
@@ -371,6 +372,10 @@ impl Backend for Fake {
         {
             let mut log = session.log.lock().unwrap();
             log.ran.push(session.artifact.clone());
+        }
+
+        if let Some(token) = &session.cancels {
+            token.cancel();
         }
 
         if session.fails {

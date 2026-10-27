@@ -52,6 +52,7 @@ pub(super) fn enhanced(source: &Picture, width: u32, height: u32, identity: &str
         picture: Picture::new(source.path(), image::DynamicImage::new_rgb8(width, height), identity),
         providers: no_providers(),
         faces: opai::ChainFaces::NotAsked,
+        matte: opai::ChainMatte::NotAsked,
     }
 }
 
