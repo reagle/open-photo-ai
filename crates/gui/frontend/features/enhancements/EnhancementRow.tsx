@@ -9,6 +9,7 @@ import type { Operation } from "@/ipc/enhance";
 import { detectFaces } from "@/ipc/faces";
 import { type Enhancement, modelValue, optionFor, parameterOf, qualityLabel } from "@/lib/enhancements";
 import { enabledFaces } from "@/lib/faces";
+import { formatFNumber } from "@/lib/fstops";
 import { report } from "@/lib/report";
 import { toPercent } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
@@ -18,6 +19,7 @@ import { ColorBalanceOptions } from "./ColorBalanceOptions";
 import { ColorizationOptions } from "./ColorizationOptions";
 import { DenoiseOptions } from "./DenoiseOptions";
 import { FaceRecoveryOptions } from "./FaceRecoveryOptions";
+import { LensBlurOptions } from "./LensBlurOptions";
 import { LightAdjustmentOptions } from "./LightAdjustmentOptions";
 import { OptionsPanel } from "./OptionsPanel";
 import { SharpenOptions } from "./SharpenOptions";
@@ -206,6 +208,16 @@ export const EnhancementRow = ({
                 return (
                     <UpscaleOptions enhancement={enhancement} operation={operation} entry={entry} onChange={onChange} />
                 );
+            case "lens_blur":
+                return (
+                    <LensBlurOptions
+                        enhancement={enhancement}
+                        operation={operation}
+                        entry={entry}
+                        {...(identity !== undefined && { identity })}
+                        onChange={onChange}
+                    />
+                );
         }
     };
 
@@ -276,6 +288,16 @@ export const EnhancementRow = ({
                     // 1x where the scale is known to nobody: a factor that changes nothing.
                     scale: Number.parseFloat((parameterOf(operation, entry, "scale") ?? 1).toFixed(SCALE_PLACES)),
                 });
+            case "lens_blur": {
+                // The model and the aperture, with no quality: the model is published at one precision, which says
+                // nothing. The stop's own number, as the user set it.
+                const f = parameterOf(operation, entry, "f_number");
+
+                // The model alone where neither the operation nor the catalogue knows an aperture: nothing to report.
+                return f === undefined
+                    ? t("enhancements.infoModel", { name, quality })
+                    : t("enhancements.infoLensBlur", { name, f: formatFNumber(f) });
+            }
         }
     };
 

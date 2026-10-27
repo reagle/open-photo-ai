@@ -349,6 +349,18 @@
                 "osaka": "Använd den här modellen när du vill ha bästa möjliga uppskalningskvalitet. Den bygger upp detaljer på nytt i stället för att bara skärpa dem, och går längst på mjuka eller hårt komprimerade foton. Den är dock långsam och kräver ett kraftfullt grafikkort för att fungera bra."
             }
         },
+        "lensBlur": {
+            "name": "Objektivoskärpa",
+            "models": {
+                "lisbon": "Använd den här modellen för att göra ett foto suddigt som en objektivöppning med större bländare skulle göra, medan punkten du väljer hålls skarp. Den uppskattar hur långt bort allt på fotografiet är (MoGe-2 ViT-B, 324 MB). Första användningen kompilerar modellen för din processor, vilket tar cirka en minut på en Mac."
+            },
+            "fNumber": "Bländare",
+            "equivalent": "fullformatsekvivalent",
+            "asTaken": "Original",
+            "assumed": "Fotografiet saknar objektivinformation; f/{{f}} antas",
+            "setFocus": "Ställ in fokus",
+            "focusHint": "Klicka på fotografiet där det ska vara skarpt. Esc för att avbryta."
+        },
         "add": "Lägg till förbättring",
         "remove": "Ta bort förbättring",
         "modelSelector": "AI-modell",
@@ -372,7 +384,8 @@
             "button": "Välj ansikten ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoLensBlur": "{{name}}, f/{{f}}"
     },
     "preview": {
         "empty": {
@@ -393,6 +406,7 @@
             "colorBalance": "Färgbalans",
             "upscale": "Uppskalning",
             "sharpen": "Skärpa",
+            "lensBlur": "Oskärpa",
             "enhancing": "Förbättrar"
         }
     },

@@ -357,6 +357,18 @@
                 "osaka": "Utilisez ce modèle lorsque vous voulez la meilleure qualité d'agrandissement possible. Il reconstruit le détail au lieu de simplement l'accentuer, et c'est lui qui va le plus loin sur les photos floues ou fortement compressées. Il est toutefois lent et exige un GPU puissant pour bien fonctionner."
             }
         },
+        "lensBlur": {
+            "name": "Flou d'objectif",
+            "models": {
+                "lisbon": "Utilisez ce modèle pour flouter une photo comme le ferait une plus grande ouverture d'objectif, en gardant net le point que vous choisissez. Il estime la distance de chaque élément de la photo (MoGe-2 ViT-B, 324 Mo). La première utilisation compile le modèle pour votre processeur, ce qui prend environ une minute sur Mac."
+            },
+            "fNumber": "Ouverture",
+            "equivalent": "équivalent plein format",
+            "asTaken": "D'origine",
+            "assumed": "Cette photo ne contient aucune information d'objectif, f/{{f}} supposé",
+            "setFocus": "Définir la mise au point",
+            "focusHint": "Cliquez sur la zone de la photo qui doit être nette. Esc pour annuler."
+        },
         "add": "Ajouter",
         "remove": "Supprimer l'amélioration",
         "modelSelector": "Modèle d'IA",
@@ -382,7 +394,8 @@
             "button": "Sélectionner les visages ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoLensBlur": "{{name}}, f/{{f}}"
     },
     "preview": {
         "empty": {
@@ -403,6 +416,7 @@
             "colorBalance": "Couleurs",
             "upscale": "Agrandissement",
             "sharpen": "Netteté",
+            "lensBlur": "Flou objectif",
             "enhancing": "Amélioration"
         }
     },
