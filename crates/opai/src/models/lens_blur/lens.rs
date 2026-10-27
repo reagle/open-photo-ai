@@ -34,6 +34,11 @@ const NEAREST_FOCUS: f32 = 1.5;
 /// the lens would otherwise ask for discs larger than the photograph.
 const MAX_RADIUS: f32 = 0.06;
 
+/// The range a [`Lens::depth_scale`] is held to: a ratio of the EXIF's focal length to the depth model's estimate
+/// outside it is taken as a garbled field or an estimate gone wrong, not as a scene four times nearer or eight times
+/// farther than the model read it.
+const DEPTH_SCALES: std::ops::RangeInclusive<f32> = 0.25..=8.0;
+
 /// Where a [`Lens`]'s numbers came from: what a front end says beside them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -58,6 +63,16 @@ pub struct Lens {
     pub own_f_number: f32,
     /// Where the two came from.
     pub origin: LensOrigin,
+    /// How many times farther everything is than the depth map says: the focal length over the depth model's own
+    /// estimate of it where the focal length is the EXIF's, else 1.
+    ///
+    /// The depth model reads metric distances consistent with the focal length it estimates for the picture, not the
+    /// lens's. Under a pinhole camera a point at `(X, Z)` lands at `x = f · X / Z` on the sensor, so the same object
+    /// the same size in the picture is at `Z ∝ f`: a scene the model takes for a 52 mm view is read at 52/181 of its
+    /// distance from a 181 mm lens, and every disparity is `181/52` times too large — and so is every radius, since a
+    /// radius is linear in the disparity's distance from the focus's. Scaling every distance by `f_exif / f_depth`
+    /// puts the scene back where the lens saw it. Rounded to a thousandth, and held to 0.25..=8.
+    pub depth_scale: f32,
 }
 
 impl Lens {
@@ -67,7 +82,20 @@ impl Lens {
             focal_35mm: (focal_35mm * 10.0).round() / 10.0,
             own_f_number: (own_f_number * 100.0).round() / 100.0,
             origin,
+            depth_scale: 1.0,
         }
+    }
+
+    /// This lens, with the depth map's distances scaled by `scale` (see [`depth_scale`](Self::depth_scale)): rounded
+    /// to a thousandth and held to its range, and 1 for a scale that is not a number.
+    pub(crate) fn with_depth_scale(self, scale: f32) -> Self {
+        let scale = if scale.is_finite() && scale > 0.0 {
+            (scale.clamp(*DEPTH_SCALES.start(), *DEPTH_SCALES.end()) * 1000.0).round() / 1000.0
+        } else {
+            1.0
+        };
+
+        Self { depth_scale: scale, ..self }
     }
 
     /// The lens `exif` records for a photograph framed as the file was shot or cut from it, with what the EXIF leaves
@@ -96,6 +124,13 @@ impl Lens {
     /// is asking `f/(N/k)` of the whole frame: wider, as the narrower view of the same lens would be.
     ///
     /// The depth model's own estimates are of the cropped picture and are not scaled again.
+    ///
+    /// # The depth's scale
+    ///
+    /// Where the focal length is the EXIF's (its 35 mm equivalent, or its focal length times a measured crop factor)
+    /// and the depth model estimated its own, the depth map's distances are scaled by the one over the other: see
+    /// [`depth_scale`](Self::depth_scale). Where the focal length is the depth model's, or neither says, they are
+    /// taken as read.
     pub fn resolve(exif: &LensExif, depth_focal_35mm: Option<f32>, framing: f32) -> Self {
         let framing = sane_framing(framing);
         let measured_crop = measured_crop(exif);
@@ -112,18 +147,36 @@ impl Lens {
             None => (estimated_crop(), true),
         };
 
-        let focal_35mm = exif
+        // The focal length the EXIF settles alone, then one from the depth model's crop (which is its own estimate
+        // again), then its estimate, then a normal lens.
+        let exif_focal = exif
             .focal_35mm
             .map(|equivalent| equivalent * framing)
+            .or_else(|| exif.focal_mm.zip(measured_crop).map(|(focal, crop)| focal * crop * framing));
+        let focal_35mm = exif_focal
             .or_else(|| exif.focal_mm.zip(crop).map(|(focal, crop)| focal * crop))
             .or(depth_focal_35mm)
             .unwrap_or(ASSUMED_FOCAL_35MM);
 
-        match exif.f_number.zip(crop) {
+        let lens = match exif.f_number.zip(crop) {
             Some((f_number, crop)) => {
                 Self::new(focal_35mm, f_number * crop, if estimated { LensOrigin::Estimated } else { LensOrigin::Exif })
             }
             None => Self::new(focal_35mm, ASSUMED_F_NUMBER * framing, LensOrigin::Assumed),
+        };
+
+        // The depth model's distances are consistent with its own focal estimate: scaled to the EXIF's lens.
+        match exif_focal.zip(depth_focal_35mm.filter(|focal| focal.is_finite() && *focal > 0.0)) {
+            Some((exif_focal, depth_focal)) => {
+                let scale = exif_focal / depth_focal;
+                if !DEPTH_SCALES.contains(&scale) {
+                    tracing::debug!(exif_focal, depth_focal, scale, "the depth's scale is out of range; clamped");
+                }
+                let lens = lens.with_depth_scale(scale);
+                tracing::debug!(exif_focal, depth_focal, depth_scale = lens.depth_scale, "the depth's scale");
+                lens
+            }
+            None => lens,
         }
     }
 
@@ -139,8 +192,17 @@ impl Lens {
     }
 
     /// How this lens is spelled in a cache tag: `l36-6`, focal length and own f-number with no trailing zeros.
+    ///
+    /// A depth scale other than 1 adds `-z` and the scale, `l181-8.38-z3.454`, so the tag of a lens whose distances are
+    /// taken as read is what it always was.
     pub(crate) fn tag(&self) -> String {
-        format!("l{}-{}", trimmed(self.focal_35mm, 1), trimmed(self.own_f_number, 2))
+        let tag = format!("l{}-{}", trimmed(self.focal_35mm, 1), trimmed(self.own_f_number, 2));
+
+        if self.depth_scale.to_bits() == 1.0_f32.to_bits() {
+            tag
+        } else {
+            format!("{tag}-z{}", trimmed(self.depth_scale, 3))
+        }
     }
 }
 
@@ -195,12 +257,13 @@ impl OwnLens {
     }
 }
 
-// By the bits of the two rounded numbers, which is what the cache tag spells: two lenses are one when they blur alike.
-// The origin is not in it, since it changes no pixel.
+// By the bits of the three rounded numbers, which is what the cache tag spells: two lenses are one when they blur
+// alike. The origin is not in it, since it changes no pixel.
 impl PartialEq for Lens {
     fn eq(&self, other: &Self) -> bool {
         self.focal_35mm.to_bits() == other.focal_35mm.to_bits()
             && self.own_f_number.to_bits() == other.own_f_number.to_bits()
+            && self.depth_scale.to_bits() == other.depth_scale.to_bits()
     }
 }
 
@@ -210,6 +273,7 @@ impl std::hash::Hash for Lens {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.focal_35mm.to_bits().hash(state);
         self.own_f_number.to_bits().hash(state);
+        self.depth_scale.to_bits().hash(state);
     }
 }
 
@@ -230,8 +294,10 @@ fn trimmed(value: f32, decimals: usize) -> String {
 pub(crate) struct Blur {
     /// Pixels of added radius per unit of disparity (`1 / m`) away from the plane of focus.
     per_disparity: f32,
-    /// The disparity of the plane of focus.
+    /// The disparity of the plane of focus, as the depth map reads it.
     focus_disparity: f32,
+    /// The distance focused at, as the lens saw it.
+    focus_m: f32,
     /// The largest radius added either way, in pixels.
     cap: f32,
 }
@@ -248,6 +314,9 @@ impl Blur {
     /// The blur `lens`, opened to `f_number` (equivalent) and focused at `focus_m` metres, adds to a photograph
     /// `diagonal_px` across, or `None` where it adds nothing: at or above the photograph's own f-number.
     ///
+    /// `focus_m`, and every disparity [`radius`](Self::radius) is asked of, are the depth map's as read; the lens's
+    /// [`depth_scale`](Lens::depth_scale) is applied here, so the thin-lens maths sees the distances the lens saw.
+    ///
     /// A thin lens of focal length `f` at `N`, focused at `zf`, images a point at `z` as a disc of diameter
     /// `c = f² zf |1/zf − 1/z| / (N (zf − f))` on the full-frame sensor, which is `diagonal_px / 43.27 mm` pixels a
     /// millimetre on the output — so the radius scales with the output's size. The photograph already holds its own
@@ -258,16 +327,30 @@ impl Blur {
         }
 
         let focal = lens.focal_35mm / 1000.0;
-        let focus = focus_m.max(NEAREST_FOCUS * focal);
+        let scale = lens.depth_scale;
+        let focus = (focus_m * scale).max(NEAREST_FOCUS * focal);
         let pixels_per_metre = diagonal_px / (FULL_FRAME_DIAGONAL_MM / 1000.0);
         // Half the disc's diameter per unit of disparity, on the sensor and then in pixels.
         let radius = focal * focal * focus / (f_number * (focus - focal)) / 2.0 * pixels_per_metre;
         let added = (1.0 - (f_number / lens.own_f_number).powi(2)).sqrt();
 
-        Some(Self { per_disparity: radius * added, focus_disparity: focus.recip(), cap: MAX_RADIUS * diagonal_px })
+        // In the map's disparity `d`, the true one is `d / scale`: `r = P (d / scale − 1 / focus)` is
+        // `(P / scale) (d − scale / focus)`.
+        Some(Self {
+            per_disparity: radius * added / scale,
+            focus_disparity: scale / focus,
+            focus_m: focus,
+            cap: MAX_RADIUS * diagonal_px,
+        })
     }
 
-    /// The radius added to a pixel at `disparity` (`1 / m`), in pixels.
+    /// The distance focused at, in metres as the lens saw it: the depth map's times the lens's depth scale, and no
+    /// nearer than the lens can focus.
+    pub(crate) fn focus_metres(&self) -> f32 {
+        self.focus_m
+    }
+
+    /// The radius added to a pixel at `disparity` (`1 / m`, as the depth map reads it), in pixels.
     pub(crate) fn radius(&self, disparity: f32) -> f32 {
         (self.per_disparity * (disparity - self.focus_disparity)).clamp(-self.cap, self.cap)
     }
@@ -305,7 +388,71 @@ mod tests {
 
             assert_eq!((lens.focal_35mm, lens.own_f_number), (focal, f_number), "{recorded:?}");
             assert_eq!(lens.origin, LensOrigin::Exif);
+            assert!((lens.depth_scale - focal / 28.9).abs() < 1e-3, "{recorded:?}: {}", lens.depth_scale);
         }
+    }
+
+    #[test]
+    fn the_depth_is_scaled_by_the_exif_focal_length_over_the_depth_models() {
+        // A 100 mm equivalent the depth model took for 50 mm: it read everything at half its distance.
+        let recorded = exif(Some(100.0), Some(100.0), Some(2.0), None);
+        let lens = Lens::resolve(&recorded, Some(50.0), 1.0);
+        assert_eq!((lens.focal_35mm, lens.own_f_number, lens.origin), (100.0, 2.0, LensOrigin::Exif));
+        assert_eq!(lens.depth_scale, 2.0);
+        assert_eq!(lens.tag(), "l100-2-z2");
+
+        // The same lens with the map's distances doubled by hand: one blur, radius for radius.
+        let as_read = Lens::new(100.0, 2.0, LensOrigin::Exif);
+        let diagonal = 6000.0_f32.hypot(4000.0);
+        let scaled = Blur::new(&lens, 1.4, 5.0, diagonal).expect("adds a blur");
+        let doubled = Blur::new(&as_read, 1.4, 10.0, diagonal).expect("adds a blur");
+        let unscaled = Blur::new(&as_read, 1.4, 5.0, diagonal).expect("adds a blur");
+        assert_eq!(scaled.focus_metres(), 10.0);
+        assert_eq!(unscaled.focus_metres(), 5.0);
+        for map_metres in [2.5_f32, 4.0, 5.0, 8.0, 20.0] {
+            let (map, true_disparity) = (map_metres.recip(), (2.0 * map_metres).recip());
+            assert!((scaled.radius(map) - doubled.radius(true_disparity)).abs() < 1e-3, "{map_metres} m");
+            // Twice as far, half the disparity from the focus's: half the radius, but for the focal length's small part
+            // of the focus distance (100 mm of 5 m against 10 m).
+            let ratio = scaled.radius(map) / unscaled.radius(map);
+            if unscaled.radius(map) != 0.0 {
+                assert!((ratio - 0.5).abs() < 0.02, "{map_metres} m: {ratio}");
+            }
+        }
+        assert_eq!(scaled.radius(0.2), 0.0, "the focus is still the point clicked");
+    }
+
+    #[test]
+    fn the_depth_is_taken_as_read_where_the_focal_length_is_the_depth_models_own() {
+        // No EXIF: the depth model's focal length and its distances, as before.
+        let lens = Lens::resolve(&LensExif::default(), Some(28.94), 1.0);
+        assert_eq!((lens.depth_scale, lens.tag().as_str()), (1.0, "l28.9-8"));
+        // Its crop factor from the depth model's estimate: the focal length is the estimate again.
+        let lens = Lens::resolve(&exif(Some(24.0), None, Some(4.0), None), Some(36.7), 1.0);
+        assert_eq!((lens.origin, lens.depth_scale), (LensOrigin::Estimated, 1.0));
+        // An EXIF focal length but no depth estimate to compare it with.
+        assert_eq!(Lens::resolve(&exif(Some(24.0), Some(36.0), Some(4.0), None), None, 1.0).depth_scale, 1.0);
+        // And a blur of an unscaled lens is the one it always was.
+        let lens = Lens::new(36.0, 6.0, LensOrigin::Exif);
+        let blur = Blur::new(&lens, 1.4, 2.0, 7211.1).expect("adds a blur");
+        assert_eq!(blur.radius(0.125), added_radius(&lens, 1.4, 2.0, 8.0, 7211.1));
+    }
+
+    #[test]
+    fn the_depth_scale_is_held_to_a_believable_range_and_in_the_lenss_identity() {
+        let recorded = exif(Some(121.0), Some(181.0), Some(5.6), None);
+        assert_eq!(Lens::resolve(&recorded, Some(10.0), 1.0).depth_scale, 8.0);
+        assert_eq!(Lens::resolve(&exif(Some(10.0), Some(10.0), Some(2.0), None), Some(80.0), 1.0).depth_scale, 0.25);
+        // Over a crop, the EXIF's focal length is the crop's, and the depth model's estimate already was.
+        assert_eq!(Lens::resolve(&exif(Some(24.0), Some(36.0), Some(4.0), None), Some(36.0), 2.0).depth_scale, 2.0);
+
+        let as_read = Lens::new(181.0, 8.38, LensOrigin::Exif);
+        let scaled = Lens::resolve(&recorded, Some(52.4), 1.0);
+        assert_eq!(scaled.depth_scale, 3.454);
+        assert_eq!(scaled.tag(), "l181-8.38-z3.454");
+        assert_ne!(scaled, as_read);
+        assert_eq!(scaled, as_read.with_depth_scale(3.4542));
+        assert_eq!(as_read.with_depth_scale(f32::NAN).depth_scale, 1.0);
     }
 
     #[test]
@@ -476,7 +623,7 @@ mod tests {
         // 0.51282 mm on the full-frame sensor. On a 6000 x 4000 output, 7211.1 px stand for 43.267 mm, so the radius
         // is 0.25641 · 166.665 = 42.735 px, behind the plane of focus. The own f-number is so narrow that nothing is
         // taken off for the blur the photograph already has (√(1 − (2/2000)²) = 0.9999995).
-        let lens = Lens { focal_35mm: 50.0, own_f_number: 2000.0, origin: LensOrigin::Exif };
+        let lens = Lens::new(50.0, 2000.0, LensOrigin::Exif);
         let diagonal = 6000.0_f32.hypot(4000.0);
 
         let far = added_radius(&lens, 2.0, 2.0, 10.0, diagonal);
@@ -492,7 +639,7 @@ mod tests {
 
     #[test]
     fn the_blur_already_in_the_photograph_is_taken_off_in_quadrature() {
-        let wide = Lens { focal_35mm: 50.0, own_f_number: 2000.0, origin: LensOrigin::Exif };
+        let wide = Lens::new(50.0, 2000.0, LensOrigin::Exif);
         let own = Lens { own_f_number: 4.0, ..wide };
 
         let full = added_radius(&wide, 2.0, 2.0, 10.0, 7211.1);

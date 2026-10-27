@@ -256,6 +256,8 @@ impl Refined {
 /// What a run settles before it renders: the blur, the distance focused at, and the depth at the input's size.
 struct Prepared {
     blur: Blur,
+    /// The distance focused at as the depth map reads it, which the subject's band is drawn around: the band is a
+    /// ratio of distances, so the lens's depth scale would not move it.
     focus_m: f32,
     refined: Arc<Refined>,
     /// The input's diagonal over [`REFERENCE_DIAGONAL`].
@@ -274,7 +276,15 @@ impl Prepared {
         // What explains a result: where it focused, and how far the discs reach either side of the plane of focus.
         let (behind, front) =
             grown.as_slice().iter().fold((0.0_f32, 0.0_f32), |(low, high), &r| (low.min(r), high.max(r)));
-        tracing::debug!(operation = %name, focus_m = self.focus_m, behind, front, "lens blur radii");
+        // The focus as the lens saw it: the depth map's reading times the lens's depth scale.
+        tracing::debug!(
+            operation = %name,
+            focus_m = self.blur.focus_metres(),
+            map_focus_m = self.focus_m,
+            behind,
+            front,
+            "lens blur radii"
+        );
 
         grown
     }
