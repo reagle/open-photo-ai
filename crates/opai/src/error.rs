@@ -311,9 +311,10 @@ impl From<Cancelled> for SessionError {
 
 /// Why an operation has no pipeline.
 ///
-/// Every family this crate publishes has a pipeline for every variant it publishes, so the one case left is *"this
-/// model's declaration is incomplete"*: a bug in this crate, not a feature gap, and unreachable from any shipped
-/// variant. Matched rather than string-compared, so the wording is not a compatibility surface.
+/// Every family this crate publishes has a pipeline for every variant it publishes, so the cases left are *"this
+/// model's declaration is incomplete"* — a bug in this crate, not a feature gap, and unreachable from any shipped
+/// variant — and an analysis handed to the entry point whose result it does not produce. Matched rather than
+/// string-compared, so the wording is not a compatibility surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[non_exhaustive]
 pub enum UnsupportedReason {
@@ -326,6 +327,17 @@ pub enum UnsupportedReason {
     IncompleteGraphSet {
         /// The role with no graph behind it.
         missing: &'static str,
+    },
+
+    // Reachable through the public API: `VariantEntry::build` returns a depth row as an `Analysis::Depth`, so a caller
+    // that builds from the catalogue and hands the result to `Opai::execute` gets this refusal rather than a run. A
+    // depth row is run through `Opai::estimate_depth`, with the `Depth` that `Depth::lisbon` returns.
+    /// An analysis whose result is not the [`Faces`](crate::Faces) [`Opai::execute`](crate::Opai::execute) returns,
+    /// handed to it rather than to its own entry point.
+    #[error("this analysis produces {produces}, not faces, and has an entry point of its own")]
+    OtherResult {
+        /// What the analysis produces.
+        produces: &'static str,
     },
 }
 
@@ -427,6 +439,18 @@ pub enum InferenceError {
         column: usize,
     },
 
+    // Raised rather than returned as a flat map: a depth model that could place almost nothing of a photograph — a
+    // blank wall, a picture of fog — has no shift to recover, and a map of one distance would be a blur everywhere or
+    // nowhere with nothing to say why.
+    /// A depth model placed too few of the photograph's pixels to measure any distance.
+    #[error("{operation} could place only {valid} of the points it samples, too few to measure distances")]
+    Unmeasurable {
+        /// The operation whose model placed too little, as a user would see it named.
+        operation: String,
+        /// How many of the sampled points the model marked valid.
+        valid: usize,
+    },
+
     // A refusal rather than a plain resample presented as a successful enhancement, which is what running zero passes
     // and then correcting the overshoot would produce.
     /// No sequence of native passes covers the requested scale, so there is nothing to run.
@@ -489,6 +513,7 @@ impl InferenceError {
             Self::Run { .. } => "run",
             Self::Untileable { .. } => "untileable",
             Self::ColourMapping { .. } => "colour_mapping",
+            Self::Unmeasurable { .. } => "unmeasurable",
             Self::NoPasses { .. } => "no_passes",
             Self::Cancelled => "cancelled",
             Self::Shutdown => "shutdown",
@@ -901,6 +926,7 @@ mod tests {
             (InferenceError::run("Kyoto", 3)(std::io::Error::other("the model failed")), "run"),
             (InferenceError::Untileable { width: 0, height: 480 }, "untileable"),
             (InferenceError::ColourMapping { operation: "Rio".to_string(), column: 2 }, "colour_mapping"),
+            (InferenceError::Unmeasurable { operation: "Lisbon".to_string(), valid: 3 }, "unmeasurable"),
             (InferenceError::NoPasses { operation: "Kyoto".to_string(), scale: 3.0 }, "no_passes"),
             (InferenceError::Cancelled, "cancelled"),
             (InferenceError::Shutdown, "shutdown"),
@@ -925,6 +951,7 @@ mod tests {
             InferenceError::run("Kyoto", 3)(std::io::Error::other("the model failed")),
             InferenceError::Untileable { width: 0, height: 480 },
             InferenceError::ColourMapping { operation: "Rio".to_string(), column: 2 },
+            InferenceError::Unmeasurable { operation: "Lisbon".to_string(), valid: 3 },
             InferenceError::NoPasses { operation: "Kyoto".to_string(), scale: 3.0 },
         ];
         for failure in failures {
