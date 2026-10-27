@@ -1,0 +1,20 @@
+## 1. Base
+
+- [x] 1.1 Rebase (duplicate) the lens blur slices 0a (the local listing) to 3 onto `add-color-4-ultra-hdr-gainmap` as bookmark `add-lens-blur-5-hdr-gainmap`'s base, resolving the overlaps (the `[patch]` stays `26.10.1-meta.6`; the lens reader takes the EXIF block from `Picture::metadata()` when present, else the file: **not done**, the lens is still read from the file, since moving it changes `find_chain_depth`'s signature inside the duplicated slice 3 and slice 4 has still to be stacked on it; slice 4 is not in this stack); verify `cargo test --workspace` is green before any new code
+
+## 2. Parameters and maths
+
+- [x] 2.1 Add `image/gain_map_params.rs`: `GainMapParams` from ISO 21496-1 binary metadata, else from `hdrgm` XMP (attribute and element forms, single and per-channel `rdf:Seq`, Adobe defaults; `Xmp::seq_values` added), and `GainMap::params()` (design.md - H4); tests on the hawk fixture's XMP and ISO payload (both give the same values), element-form XMP, a single-channel map, a truncated ISO payload and garbage XMP (refused, no panic)
+- [x] 2.2 Add `models/lens_blur/gain_map.rs`: decode `g` to `G`, reconstruct HDR, the ratio and its encoding (design.md - H1), as pure functions; tests: encode(decode(g)) round-trips every 8-bit value per channel for the hawk's parameters; a uniform SDR and gain give the same gain back; a luminance ratio for a single-channel map; a channel with max equal to min keeps its values; at the photograph's own size nothing is reduced and the step's radii and SDR render are reused
+- [x] 2.3 Add `GainMap::rewritten(pixels)` (keeps metadata and scale, clears `source`, L8 or Rgb8 as before); test that the export then re-encodes it
+
+## 3. The hook
+
+- [x] 3.1 Add `ImagePipeline::run_with_gain_map(input, gain_map, sessions, depth, progress, cancelled)` (default `run` and `None`) and `rewrites_gain_map` (default `false`; "changes the gain map") and call it in place of `run` in `process::run` for a picture with a gain map, carrying the replacement forward and onto the result, dropping it with the existing warning on an error (`InferenceError::GainMap`) (design.md - H3); tests with a fake pipeline that rewrites the gain map: the result carries it, a following step keeps it, an error drops it with the warning (a stop fails the step), a pipeline without the method leaves the existing pointer-equality test passing
+- [x] 3.2 Cache the replacement (or a drop's reason) under `<step key>|gm` and restore it on a hit, treating a hit without it as a miss; tests: a second run is served from the cache with the same replacement; a cache holding only the pixels re-runs the step; a stored drop is served and drops again
+- [x] 3.3 Implement it for the lens blur at the gain map's resolution (design.md - H2), dropping the gain map with the export's warning for unreadable parameters, an HDR base, a map larger than its photograph and three channels with the base-colour-space flag clear; tests: the highlight scenario of `specs/lens-blur/spec.md` on a synthetic picture with a synthetic gain map, an in-focus region unchanged within rounding, an Android-style quarter-resolution map, the four drop cases with one warning each
+
+## 4. Checks
+
+- [x] 4.1 Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`
+- [ ] 4.2 Run the CLI on the bonsai, Nora and Tokyo photographs at f/1.4 to JPEG; check each output with `exiftool -validate -warning -a`, `exiftool -MPF:all`, `ultrahdr_app -m 1 -j <file> -P` (Ultra HDR: yes) and in macOS Preview and Photos on an HDR display (highlights bloom into discs, no sharp bright ghosts in the background); record the gain-map render time and the results in design.md, outputs kept in `opai-notes/lens-blur/out/`. Done except the HDR-display look, which is Joseph's (`opai-notes/TESTING.md`); Nora's output has no gain map at all, because the colour stack's export refuses her extended XMP (a colour-stack issue); the first-build timings in design.md are supplemented by the bonsai's after the review fixes (rewrite 0.94 s, total 2.11 s, peak 2.59 GB)
