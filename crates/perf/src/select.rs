@@ -80,6 +80,15 @@ pub enum SelectionError {
         /// The codename, as the catalogue spells it.
         codename: &'static str,
     },
+
+    // A removal over no region removes nothing and is left out of the chain, so a run of one measures nothing; one over
+    // a region needs a mask this harness has no way to be handed. Reported when named, for `NotAnEnhancement`'s reason.
+    /// A removal, which takes a painted region this harness has none of.
+    #[error("{codename} removes a painted region, and this harness paints none")]
+    NeedsMask {
+        /// The codename, as the catalogue spells it.
+        codename: &'static str,
+    },
 }
 
 /// The models `options` selects.
@@ -125,7 +134,7 @@ fn every_published(options: &Options) -> Result<Vec<Selected>, SelectionError> {
         // Dropped for the same reason and on the same terms as an unpublished precision below: this harness measures
         // the enhancement chain, a caller who named nothing did not ask for a detection run, and naming one explicitly
         // reports `SelectionError::NotAnEnhancement`.
-        if entry.family == Family::Detection {
+        if matches!(entry.family, Family::Detection | Family::Remove) {
             continue;
         }
 
@@ -167,6 +176,10 @@ fn select(entry: &FamilyEntry, variant: &VariantEntry, options: &Options) -> Res
 
     if entry.family == Family::Detection {
         return Err(SelectionError::NotAnEnhancement { codename: variant.codename });
+    }
+
+    if entry.family == Family::Remove {
+        return Err(SelectionError::NeedsMask { codename: variant.codename });
     }
 
     let operation = build(variant, precision, options)?
@@ -301,6 +314,7 @@ pub fn listing() -> String {
                 .map(|parameter| match parameter.kind {
                     ParameterKind::Range { min, max, .. } => format!("--{} {min}..{max}", parameter.name),
                     ParameterKind::Faces => format!("{} (from a detection run)", parameter.name),
+                    ParameterKind::Mask => format!("{} (painted, not measured)", parameter.name),
                 })
                 .collect();
             let note = if parameters.is_empty() { "no parameter".to_string() } else { parameters.join(", ") };
@@ -365,9 +379,9 @@ mod tests {
             for variant in &entry.variants {
                 let published = variant.parameters.iter().any(|parameter| parameter.kind == ParameterKind::Faces);
 
-                // Detection is not an enhancement and never reaches a selection at all, so there is no row of it to
-                // compare against.
-                if entry.family == Family::Detection {
+                // Detection is not an enhancement and a removal needs a mask, so neither reaches a selection at all,
+                // and there is no row of either to compare against.
+                if matches!(entry.family, Family::Detection | Family::Remove) {
                     continue;
                 }
 
@@ -490,11 +504,12 @@ mod tests {
     ///
     /// Detection is excluded because its result is not a picture, so it is not carried in what this harness's one
     /// entry point takes. That is a property of the *path*, decided by the library's type, and not the "which models
-    /// will actually run" this module keeps no opinion about.
+    /// will actually run" this module keeps no opinion about. A removal is excluded because it needs a painted region
+    /// the harness has none of.
     fn published_at(precision: Precision) -> Vec<&'static str> {
         catalogue()
             .iter()
-            .filter(|entry| entry.family != Family::Detection)
+            .filter(|entry| !matches!(entry.family, Family::Detection | Family::Remove))
             .flat_map(|entry| &entry.variants)
             .filter(|variant| variant.precisions.contains(&precision))
             .map(|variant| variant.codename)
@@ -543,6 +558,14 @@ mod tests {
         let kyoto = selection(&["kyoto", "--scale", "2"]).pop().expect("kyoto resolves");
         // The scale reaches the operation, which is what the display name is composed from.
         assert!(kyoto.operation.display_name().contains('2'), "{}", kyoto.operation.display_name());
+    }
+
+    #[test]
+    fn a_removal_named_explicitly_is_refused_for_the_mask_it_needs() {
+        let refused = resolve(&options(&["lima"])).expect_err("a removal needs a mask");
+
+        assert!(matches!(refused, SelectionError::NeedsMask { codename: "lima" }), "{refused:?}");
+        assert!(refused.to_string().contains("paints none"), "{refused}");
     }
 
     #[test]

@@ -128,7 +128,7 @@ mod tests {
             entry("face_recovery"),
             serde_json::json!({
                 "family": "face_recovery",
-                "order": 1,
+                "order": 2,
                 "variants": [
                     {
                         "codename": "athens",
@@ -148,7 +148,21 @@ mod tests {
                 ],
             })
         );
-        assert_eq!(entry("colorization")["order"], serde_json::json!(2));
+        assert_eq!(entry("colorization")["order"], serde_json::json!(3));
+        // Remove runs first, and its one parameter is a painted region rather than a control.
+        assert_eq!(
+            entry("remove"),
+            serde_json::json!({
+                "family": "remove",
+                "order": 0,
+                "variants": [{
+                    "codename": "lima",
+                    "label": "Lima",
+                    "precisions": ["fp32"],
+                    "parameters": [{ "name": "mask", "kind": "mask" }],
+                }],
+            })
+        );
         // Detection is never in a chain, so it carries no place in one — absent rather than null.
         assert!(entry("detection").get("order").is_none());
         assert_eq!(

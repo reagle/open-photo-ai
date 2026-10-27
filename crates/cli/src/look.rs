@@ -318,6 +318,7 @@ pub fn whole_percent(fraction: f64) -> u8 {
 pub(crate) const fn family_label(family: Family) -> &'static str {
     match family {
         Family::Detection | Family::FaceRecovery => "Face Recovery",
+        Family::Remove => "Remove",
         Family::Denoise => "Denoise",
         Family::Colorization => "Colorize",
         Family::LightAdjustment => "Light Adjust",
@@ -794,6 +795,7 @@ mod tests {
             labels,
             [
                 "Face Recovery",
+                "Remove",
                 "Denoise",
                 "Face Recovery",
                 "Colorize",

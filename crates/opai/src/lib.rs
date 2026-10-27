@@ -231,9 +231,9 @@ pub use models::{
     DetectionVariant, Face, FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant, Faces, Family, FamilyEntry,
     Fidelity, FloatPrecision, Grain, GrainAmount, GrainMode, GrainParams, GrainVariant, GraphRole, LightAdjustment,
     LightAdjustmentParams, LightAdjustmentVariant, Operation, OsakaPrecision, ParameterEntry, ParameterKind,
-    ParameterValues, Pass, Point, Precision, RangeError, Rect, Resolution, Restore, RestoreParams, RestoreVariant,
-    Scale, Sharpen, SharpenParams, SharpenVariant, Strength, Subject, UnknownRole, Upscale, UpscaleParams,
-    UpscaleVariant, VariantEntry, catalogue,
+    ParameterValues, Pass, Point, Precision, RangeError, Rect, Remove, RemoveVariant, Resolution, Restore,
+    RestoreParams, RestoreVariant, Scale, Sharpen, SharpenParams, SharpenVariant, Strength, Subject, UnknownRole,
+    Upscale, UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
 };
 pub use progress::{Dependency, OnPlan, OnProgress, Phase, PlannedDependency, Progress};
 pub use providers::{ExecutionProvider, SupportedProviders};

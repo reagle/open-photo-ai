@@ -19,7 +19,7 @@ use super::simple::SimpleVariant;
 use super::strength::Strength;
 use super::upscale;
 use super::{
-    color_balance, colorization, denoise, detection, face_recovery, grain, light_adjustment, restore, sharpen,
+    color_balance, colorization, denoise, detection, face_recovery, grain, light_adjustment, remove, restore, sharpen,
 };
 
 /// One model a user can choose, and what building it takes.
@@ -90,6 +90,13 @@ pub enum ParameterKind {
     /// There is no range to publish and no slider to draw. What it tells a front end is that this variant needs
     /// another operation's output before it can be built at all.
     Faces,
+    /// A region of the photograph, painted with a brush or read from a mask file rather than set by a control: an
+    /// [`opai::Mask`](crate::Mask), set with
+    /// [`ParameterValues::with_mask`](super::build::ParameterValues::with_mask).
+    ///
+    /// What it tells a front end is that this variant needs a brush, and that it does nothing until something is
+    /// painted: a removal whose mask is empty is left out of the chain it is in.
+    Mask,
 }
 
 /// One parameter a variant takes, and what kind of value it is.
@@ -211,6 +218,10 @@ pub(crate) const FACES_AND_FIDELITY_PARAMETERS: [ParameterEntry; 2] = [
     },
 ];
 
+/// What a removal takes: the region it removes, and nothing a control can set.
+pub(crate) const MASK_PARAMETER: [ParameterEntry; 1] =
+    [ParameterEntry { name: remove::MASK, kind: ParameterKind::Mask }];
+
 /// How the set of faces a face-recovery run takes is named.
 ///
 /// Spelled here rather than on a bounded type, because unlike every other parameter there is no bounded type to
@@ -241,6 +252,9 @@ static CATALOGUE: LazyLock<Vec<FamilyEntry>> = LazyLock::new(|| {
         // Appended rather than placed beside upscale, as detection and face recovery were: this order is pinned and is
         // not a presentation order, so inserting would churn it for nothing.
         restore_family(),
+        // Listed last, though it runs first: where an entry is listed is a presentation decision, and `order` is what
+        // says where it runs.
+        remove_family(),
         // Appended, as restore was: this order is pinned and is not a presentation order. One precision, the
         // arithmetic's, since it runs no model.
         FamilyEntry {
@@ -283,6 +297,24 @@ fn simple_family(family: Family, rows: &[SimpleVariant]) -> FamilyEntry {
                 codename: row.codename,
                 label: row.label,
                 precisions: &FloatPrecision::PRECISIONS,
+                parameters: row.parameters,
+            })
+            .collect(),
+    }
+}
+
+/// The remove family's entry: Lima, at FP32 alone, so it cannot be built through [`simple_family`]'s float pair.
+fn remove_family() -> FamilyEntry {
+    FamilyEntry {
+        family: Family::Remove,
+        order: Family::Remove.applied_at(),
+        variants: remove::ALL
+            .iter()
+            .map(|row| VariantEntry {
+                family: Family::Remove,
+                codename: row.codename,
+                label: row.label,
+                precisions: &remove::variant::PRECISIONS,
                 parameters: row.parameters,
             })
             .collect(),
@@ -345,11 +377,12 @@ mod tests {
 
     /// The families published as one graph per variant per precision, all sharing one shape. Derived from
     /// [`Family::ALL`] rather than transcribed, so a family added later is covered here without being remembered:
-    /// restore and grain are left out, because Osaka's precisions are its own and the grain's are its arithmetic's.
+    /// restore is left out, because Osaka's precisions are its own, remove, published at FP32 alone, and grain, whose
+    /// one precision is its arithmetic's.
     fn single_graph_families() -> Vec<Family> {
         Family::ALL
             .into_iter()
-            .filter(|family| !matches!(family, Family::Restore | Family::Grain))
+            .filter(|family| !matches!(family, Family::Restore | Family::Remove | Family::Grain))
             .collect()
     }
 
@@ -404,7 +437,7 @@ mod tests {
             .iter()
             .map(|entry| match entry.kind {
                 ParameterKind::Range { min, max, .. } => (entry.name, min, max),
-                ParameterKind::Faces => panic!("{} is not a range", entry.name),
+                ParameterKind::Faces | ParameterKind::Mask => panic!("{} is not a range", entry.name),
             })
             .collect()
     }
@@ -671,6 +704,7 @@ mod tests {
                 Family::Detection,
                 Family::FaceRecovery,
                 Family::Restore,
+                Family::Remove,
                 Family::Grain,
             ]
         );
@@ -785,6 +819,11 @@ mod tests {
                     (Family::FaceRecovery, "faces"),
                     "{codename} published a set of faces outside the family that consumes one"
                 ),
+                ParameterKind::Mask => assert_eq!(
+                    (family, parameter.name),
+                    (Family::Remove, "mask"),
+                    "{codename} published a mask outside the family that consumes one"
+                ),
             }
         }
     }
@@ -808,7 +847,7 @@ mod tests {
             .flat_map(|family| family_entry(family).variants[0].parameters.iter())
             .filter_map(|parameter| match parameter.kind {
                 ParameterKind::Range { default, .. } => Some((parameter.name, default)),
-                ParameterKind::Faces => None,
+                ParameterKind::Faces | ParameterKind::Mask => None,
             })
             .collect();
 
