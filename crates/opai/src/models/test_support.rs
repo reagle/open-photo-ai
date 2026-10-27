@@ -10,9 +10,9 @@
 //! build cannot ask for.
 
 use super::{
-    Analysis, Bias, ColorBalance, Colorization, Denoise, Detection, FaceRecovery, Faces, Fidelity, LightAdjustment,
-    Operation, ParameterValues, Scale, Sharpen, Strength, Upscale, catalogue, color_balance, colorization, denoise,
-    detection, face, light_adjustment, sharpen, upscale,
+    Analysis, Bias, ColorBalance, Colorization, Denoise, Depth, Detection, FaceRecovery, Faces, Fidelity,
+    LightAdjustment, Operation, ParameterValues, Scale, Sharpen, Strength, Upscale, catalogue, color_balance,
+    colorization, denoise, depth, detection, face, light_adjustment, sharpen, upscale,
 };
 
 /// The values a front end would hand back for the controls one published row told it to draw.
@@ -148,12 +148,17 @@ pub(crate) fn every_operation() -> Vec<Operation> {
 
 /// Every operation whose result is not an image, carried as [`Analysis`].
 ///
-/// [`every_operation`]'s counterpart on the other run path, and the other half of "all eight families" for the
-/// checks that need it. One family and no per-run parameter, so the spread is its published precisions.
+/// [`every_operation`]'s counterpart on the other run path, and the other half of "all nine families" for the
+/// checks that need it. Two families and no per-run parameter, so the spread is their published precisions.
 pub(crate) fn every_analysis() -> Vec<Analysis> {
     detection::variant::tests::every_variant()
         .into_iter()
         .map(|variant| Analysis::Detection(Detection::new(variant)))
+        .chain(
+            depth::variant::tests::every_variant()
+                .into_iter()
+                .map(|variant| Analysis::Depth(Depth::new(variant))),
+        )
         .collect()
 }
 

@@ -164,7 +164,7 @@ pub(crate) async fn execute<B: Backend, O: DataOperation>(
     // The pipeline before anything is installed, which is what keeps this refusal structural: a run that reaches the
     // acquisition below has already been judged servable. Recorded here, before the opening record, so a refusal is
     // one record rather than an analysis that began and failed.
-    let pipeline = operation.pipeline::<B>().inspect_err(|error| {
+    let pipeline = operation.pipeline::<B>(source.dimensions()).inspect_err(|error| {
         tracing::warn!(id = %named.cache_tag(), %error, "analysis refused");
     })?;
 
@@ -389,7 +389,7 @@ mod tests {
     use crate::logging::{self, field, records};
     use crate::models::artifact::Family;
     use crate::models::face::{Confidence, Face, Faces, Point, Rect};
-    use crate::models::{Analysis, ArtifactId, Detection, FloatPrecision, Precision};
+    use crate::models::{Analysis, ArtifactId, Depth, DepthMap, Detection, FloatPrecision, Precision};
     use crate::pipeline::{DataPipeline, Model, SharedData};
     use crate::progress::{Dependency, Phase, Progress};
     use crate::providers::profile::EpProfile;
@@ -1324,6 +1324,120 @@ mod tests {
         assert_eq!(found.len(), 1, "a run with no callback produced no result");
     }
 
+    /// A depth pipeline standing in for Lisbon: it counts its runs and answers with one fixed map.
+    struct FakeDepth {
+        log: Arc<Mutex<Log>>,
+        artifact: [ArtifactId; 1],
+        profile: EpProfile,
+    }
+
+    impl FakeDepth {
+        fn shared(log: &Arc<Mutex<Log>>) -> SharedData<Fake, DepthMap> {
+            Arc::new(Self {
+                log: Arc::clone(log),
+                artifact: [Depth::lisbon().required_artifacts()[0].clone()],
+                profile: EpProfile::default(),
+            })
+        }
+    }
+
+    impl Model<Fake> for FakeDepth {
+        fn required(&self) -> &[ArtifactId] {
+            &self.artifact
+        }
+
+        fn sessions(&self) -> Vec<(&ArtifactId, &EpProfile)> {
+            vec![(&self.artifact[0], &self.profile)]
+        }
+    }
+
+    impl DataPipeline<Fake> for FakeDepth {
+        type Output = DepthMap;
+
+        fn run(
+            &self,
+            _input: &DynamicImage,
+            _sessions: &[SessionHandle<()>],
+            _progress: Option<&dyn Fn(f64)>,
+            _cancelled: &dyn Fn() -> bool,
+        ) -> Result<DepthMap, InferenceError> {
+            lock(&self.log).runs += 1;
+
+            Ok(depth_map())
+        }
+    }
+
+    /// The map [`FakeDepth`] answers with: distances from half a metre to about thirty, nothing repeated.
+    fn depth_map() -> DepthMap {
+        let metres: Vec<f32> = (0..40 * 30).map(|i| 0.5 + (i as f32 * 0.37) % 30.0).collect();
+
+        DepthMap::new(40, 30, &metres, Some(36.0))
+    }
+
+    /// One depth estimate of `source` through the driver, over `memo`.
+    async fn estimate(backend: &Fake, memo: &Memo, source: &Picture) -> DepthMap {
+        let cache = RunCache::for_run(Some(memo), true, source);
+        let named = crate::models::Subject::Analysis(Analysis::Depth(Depth::lisbon()));
+        let options = ExecuteOptions::default();
+
+        let (map, _) = run::<Fake, Depth>(
+            backend,
+            source,
+            FakeDepth::shared(&backend.log),
+            &named,
+            options.provider,
+            None,
+            &options.cancel,
+            cache.as_ref(),
+        )
+        .await
+        .expect("an estimate");
+
+        map
+    }
+
+    #[tokio::test]
+    async fn a_second_depth_estimate_of_one_picture_is_served_and_equal_to_the_first() {
+        // The `depth-estimation` scenario: the model runs once, and both results are equal — equal rather than within
+        // quantisation, because the map a run produces is already held as the store keeps it.
+        let memo = Memo::memory(CacheOpts::new()).expect("a memory store");
+        let backend = Fake::new();
+
+        let first = estimate(&backend, &memo, &picture()).await;
+        let second = estimate(&backend, &memo, &picture()).await;
+
+        assert_eq!(backend.log().runs, 1, "the second estimate ran the model");
+        assert_eq!(second, first, "the served map differs from the computed one");
+        assert_eq!(second.signature(), first.signature());
+    }
+
+    #[tokio::test]
+    async fn a_cropped_picture_is_estimated_again() {
+        // A crop is a new identity, so its depth is estimated in its own coordinates rather than served the uncropped
+        // picture's.
+        let memo = Memo::memory(CacheOpts::new()).expect("a memory store");
+        let backend = Fake::new();
+        let whole = picture();
+        let cropped = Picture::new(
+            whole.path(),
+            whole.pixels().crop_imm(0, 0, 32, 24),
+            format!("{}-crop-32x24", whole.identity()),
+        );
+
+        estimate(&backend, &memo, &whole).await;
+        estimate(&backend, &memo, &cropped).await;
+        estimate(&backend, &memo, &cropped).await;
+
+        assert_eq!(backend.log().runs, 2, "a cropped picture was served the whole picture's depth, or not kept");
+    }
+
+    #[test]
+    fn a_depth_estimate_and_a_detection_of_one_picture_are_kept_apart() {
+        let depth = crate::models::Subject::Analysis(Analysis::Depth(Depth::lisbon()));
+
+        assert_ne!(identity_of_data(picture().identity(), &depth), slot());
+    }
+
     /// An analysis whose pipeline is refused, whatever the backend: the refusal no shipped operation can reach, which
     /// is what the record for it is asserted against.
     struct Refused;
@@ -1335,7 +1449,7 @@ mod tests {
             asked()
         }
 
-        fn pipeline<B: Backend>(&self) -> Result<SharedData<B, Faces>, InferenceError> {
+        fn pipeline<B: Backend>(&self, _dimensions: (u32, u32)) -> Result<SharedData<B, Faces>, InferenceError> {
             Err(InferenceError::Unsupported {
                 operation: "New York (FP32)".to_string(),
                 reason: crate::error::UnsupportedReason::IncompleteGraphSet { missing: "detector" },

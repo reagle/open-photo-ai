@@ -222,12 +222,12 @@ pub use libpath::prepare_library_path;
 pub use logging::LogError;
 pub use models::{
     Analysis, ArtifactId, Bias, BuildError, ColorBalance, ColorBalanceParams, ColorBalanceVariant, Colorization,
-    ColorizationVariant, Confidence, DataOperation, Denoise, DenoiseParams, DenoiseVariant, Detection, DetectionOutput,
-    DetectionVariant, Face, FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant, Faces, Family, FamilyEntry,
-    Fidelity, FloatPrecision, GraphRole, GraphSet, LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant,
-    Operation, OsakaPrecision, ParameterEntry, ParameterKind, ParameterValues, Pass, Point, Precision, RangeError,
-    Rect, Resolution, Scale, Sharpen, SharpenParams, SharpenVariant, Strength, Subject, UnknownRole, Upscale,
-    UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
+    ColorizationVariant, Confidence, DataOperation, Denoise, DenoiseParams, DenoiseVariant, Depth, DepthMap,
+    DepthVariant, Detection, DetectionOutput, DetectionVariant, Face, FaceRecovery, FaceRecoveryParams,
+    FaceRecoveryVariant, Faces, Family, FamilyEntry, Fidelity, FloatPrecision, GraphRole, GraphSet, LightAdjustment,
+    LightAdjustmentParams, LightAdjustmentVariant, Operation, OsakaPrecision, ParameterEntry, ParameterKind,
+    ParameterValues, Pass, Point, Precision, RangeError, Rect, Resolution, Scale, Sharpen, SharpenParams,
+    SharpenVariant, Strength, Subject, UnknownRole, Upscale, UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
 };
 pub use progress::{Dependency, OnPlan, OnProgress, Phase, PlannedDependency, Progress};
 pub use providers::{ExecutionProvider, SupportedProviders};
@@ -810,6 +810,42 @@ impl Opai {
         options: Option<ExecuteOptions>,
     ) -> Result<Executed<Faces>, InferenceError> {
         inference::execute::execute(self, self.inner.cache.handle().as_ref(), source, analysis, options).await
+    }
+
+    /// Estimates how far from the camera every pixel of `source` is, in metres, and hands it back beside what it ran
+    /// on.
+    ///
+    /// [`execute`](Self::execute)'s sibling for the depth family, whose result is a [`DepthMap`] rather than faces:
+    /// the same driver, the same progress, the same cancellation, and the same store. `source` is left untouched.
+    ///
+    /// ```no_run
+    /// # async fn run(opai: &opai::Opai, picture: &opai::Picture) -> Result<(), opai::InferenceError> {
+    /// use opai::{Depth, Executed};
+    ///
+    /// let Executed { value: map, .. } = opai.estimate_depth(picture, &Depth::lisbon(), None).await?;
+    ///
+    /// println!("the centre is {} m away", map.focus_metres(0.5, 0.5));
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// The map is at the model's resolution — about 1280 pixels on the long side — in the photograph's own frame and
+    /// aspect. Lisbon has one graph per orientation and opens only the one `source` needs.
+    ///
+    /// **Estimated once per photograph and framing.** Served from the store on a repeat, as a detection is: under the
+    /// picture's identity, which a crop changes, so a cropped photograph is estimated again in its own coordinates.
+    ///
+    /// # Errors
+    ///
+    /// [`InferenceError`], and in every case **no map at all** — including
+    /// [`Unmeasurable`](InferenceError::Unmeasurable) where the model could place almost nothing of the photograph.
+    pub async fn estimate_depth(
+        &self,
+        source: &Picture,
+        depth: &Depth,
+        options: Option<ExecuteOptions>,
+    ) -> Result<Executed<DepthMap>, InferenceError> {
+        inference::execute::execute(self, self.inner.cache.handle().as_ref(), source, depth, options).await
     }
 
     /// Analyses `source` and returns the enhancements that photograph calls for.

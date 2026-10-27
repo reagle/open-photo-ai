@@ -5,16 +5,17 @@
 //! later takes as a parameter — so they describe *what* to run and own no native resource, which is what lets one
 //! outlive and stay independent of any session built from it.
 //!
-//! All eight families are named here: [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`],
-//! [`Colorization`], [`Detection`] and [`FaceRecovery`]. Each is its own type, so no codename can be paired with the
-//! family it does not belong to.
+//! All nine families are named here: [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`],
+//! [`Colorization`], [`Detection`], [`Depth`] and [`FaceRecovery`]. Each is its own type, so no codename can be paired
+//! with the family it does not belong to.
 //!
 //! [`Operation`] is where that match lives. It carries an operation of any of the seven image families, one arm per
-//! family holding that family's own type, and forwards the five questions they all answer; a detection run is
+//! family holding that family's own type, and forwards the five questions they all answer; a detection or depth run is
 //! carried by [`Analysis`] instead.
 //!
-//! Two of them break the mould the other six share. [`Detection`] is the one family whose result is not an image: a
-//! run produces a [`DetectionOutput`], the set of [`Face`]s found. [`FaceRecovery`] is the one whose per-run input is
+//! Three of them break the mould the other six share. [`Detection`] and [`Depth`] are the two families whose result is
+//! not an image: a detection produces a [`DetectionOutput`], the set of [`Face`]s found, and a depth estimate a
+//! [`DepthMap`], the distance of every pixel from the camera. [`FaceRecovery`] is the one whose per-run input is
 //! not a scalar: it carries the [`Faces`] it is to restore, supplied by a detection run rather than adjusted through
 //! a control, which is why it is `Clone` rather than `Copy`.
 //!
@@ -111,6 +112,7 @@ pub(crate) mod catalogue;
 pub(crate) mod color_balance;
 pub(crate) mod colorization;
 pub(crate) mod denoise;
+pub(crate) mod depth;
 pub(crate) mod detection;
 pub(crate) mod face;
 pub(crate) mod face_recovery;
@@ -136,6 +138,7 @@ pub use catalogue::{FamilyEntry, ParameterEntry, ParameterKind, VariantEntry, ca
 pub use color_balance::{ColorBalance, ColorBalanceParams, ColorBalanceVariant};
 pub use colorization::{Colorization, ColorizationVariant};
 pub use denoise::{Denoise, DenoiseParams, DenoiseVariant};
+pub use depth::{Depth, DepthMap, DepthVariant};
 pub use detection::{Detection, DetectionVariant};
 pub use face::{Confidence, DetectionOutput, Face, Faces, Point, Rect};
 pub use face_recovery::{FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant};

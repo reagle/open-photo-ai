@@ -1729,7 +1729,7 @@ mod tests {
     async fn a_set_with_nothing_suggestible_reads_nothing_and_is_complete() {
         let source = picture_of(everything_wrong(512, 384));
 
-        for families in [&[][..], &[Family::Detection][..]] {
+        for families in [&[][..], &[Family::Detection][..], &[Family::Depth][..]] {
             let (log, outcome) =
                 logging::records_of("debug", || suggest::<NoBackend>(&NoBackend, None, &source, Some(families), None))
                     .await;
@@ -1773,7 +1773,7 @@ mod tests {
     /// analysis can suggest is still suggested when it is the only one asked for, on a photograph that calls for it.
     #[tokio::test]
     async fn every_suggestible_family_is_suggested_when_it_is_asked_for_alone() {
-        for family in Family::ALL.into_iter().filter(|family| *family != Family::Detection) {
+        for family in Family::ALL.into_iter().filter(|family| !matches!(family, Family::Detection | Family::Depth)) {
             let source = match family {
                 Family::Colorization => black_and_white(512, 384),
                 _ => picture_of(everything_wrong(512, 384)),

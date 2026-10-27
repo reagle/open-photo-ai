@@ -16,6 +16,8 @@ use super::precision::Precision;
 pub enum Family {
     /// Face detection, which the families that work on faces depend on to find them.
     Detection,
+    /// Depth estimation: how far from the camera each pixel of a photograph is, in metres.
+    Depth,
     /// Noise removal.
     Denoise,
     /// Face recovery.
@@ -38,8 +40,9 @@ impl Family {
     /// The one list, so a family added later is covered by everything that iterates families rather than by whichever
     /// of them its author remembered to extend. Not the order the catalogue publishes — that one is a presentation
     /// decision and is pinned where it is made.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Detection,
+        Self::Depth,
         Self::Denoise,
         Self::FaceRecovery,
         Self::Colorization,
@@ -53,7 +56,8 @@ impl Family {
     ///
     /// **The one order of a chain**, which [`Opai::process`](crate::Opai::process) puts every chain into before it
     /// runs and the catalogue publishes, so a front end draws a stack in the order it will actually run rather than
-    /// in an order of its own. Detection is not in it: its result is not an image, so it is never in a chain.
+    /// in an order of its own. Detection and depth are not in it: neither result is an image, so neither is ever in a
+    /// chain.
     ///
     /// Why this order, family by family:
     ///
@@ -68,17 +72,17 @@ impl Family {
     ///   photograph's own resolution rather than at up to sixty-four times its pixels.
     ///
     /// The same order the application has always presented its enhancements in; it is [`Family::ALL`] without
-    /// detection, and derived from it so the two cannot drift apart.
+    /// detection and depth, and derived from it so the two cannot drift apart.
     pub const APPLY_ORDER: [Self; 7] = {
         assert!(
-            matches!(Self::ALL[0], Self::Detection),
-            "`ALL` must begin with the family that is never applied"
+            matches!(Self::ALL[0], Self::Detection) && matches!(Self::ALL[1], Self::Depth),
+            "`ALL` must begin with the two families that are never applied"
         );
-        *Self::ALL.last_chunk().unwrap()
+        *Self::ALL.last_chunk::<7>().unwrap()
     };
 
-    /// Where this family's operation sits in a chain — its index in [`Family::APPLY_ORDER`] — or `None` for detection,
-    /// which is never in one.
+    /// Where this family's operation sits in a chain — its index in [`Family::APPLY_ORDER`] — or `None` for detection
+    /// and depth, which are never in one.
     pub fn applied_at(self) -> Option<usize> {
         Self::APPLY_ORDER.iter().position(|family| *family == self)
     }
@@ -97,6 +101,7 @@ impl Family {
     pub const fn prefix(self) -> &'static str {
         match self {
             Self::Detection => "dt",
+            Self::Depth => "dp",
             Self::Denoise => "dn",
             Self::FaceRecovery => "fr",
             Self::LightAdjustment => "la",
@@ -118,6 +123,7 @@ impl Family {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Detection => "Detection",
+            Self::Depth => "Depth",
             Self::Denoise => "Denoise",
             Self::FaceRecovery => "Face Recovery",
             Self::LightAdjustment => "Light Adjustment",
@@ -188,6 +194,7 @@ mod tests {
     fn each_family_renders_its_documented_prefix() {
         // Transcribed from the names already published; a change to any of these renames every artifact of a family.
         assert_eq!(Family::Detection.prefix(), "dt");
+        assert_eq!(Family::Depth.prefix(), "dp");
         assert_eq!(Family::Denoise.prefix(), "dn");
         assert_eq!(Family::FaceRecovery.prefix(), "fr");
         assert_eq!(Family::LightAdjustment.prefix(), "la");
@@ -203,6 +210,7 @@ mod tests {
         // coordinates.
         assert!(Family::FaceRecovery.applied_at() < Family::Upscale.applied_at());
         assert_eq!(Family::Detection.applied_at(), None);
+        assert_eq!(Family::Depth.applied_at(), None);
         assert_eq!(Family::Upscale.applied_at(), Some(Family::APPLY_ORDER.len() - 1));
     }
 

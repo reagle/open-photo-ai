@@ -16,13 +16,14 @@ use test_support::{DNG_MAKE, DNG_MODEL, write_fixture, written_dng};
 
 use opai::{
     ArtifactId, Bias, ColorBalance, ColorBalanceParams, ColorBalanceVariant, Colorization, ColorizationVariant,
-    Confidence, Denoise, DenoiseParams, DenoiseVariant, Dependency, Detection, DetectionOutput, DetectionVariant,
-    EncodeOptions, ExecutionProvider, Face, FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant, Faces, Family,
-    FamilyEntry, FloatPrecision, GraphRole, GraphSet, ImageError, ImageFormat, ImageInfo, ImageIoError, InitError,
-    LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant, OnProgress, Opai, Operation, OsakaPrecision,
-    ParameterEntry, Pass, Phase, Picture, Point, Precision, Progress, RangeError, RawFormat, RawImageInfo, Rect,
-    Resolution, Scale, Sharpen, SharpenParams, SharpenVariant, Strength, SupportedProviders, UnknownRole, Upscale,
-    UpscaleParams, UpscaleVariant, VariantEntry, catalogue, prepare_library_path,
+    Confidence, Denoise, DenoiseParams, DenoiseVariant, Dependency, Depth, DepthMap, DepthVariant, Detection,
+    DetectionOutput, DetectionVariant, EncodeOptions, ExecutionProvider, Face, FaceRecovery, FaceRecoveryParams,
+    FaceRecoveryVariant, Faces, Family, FamilyEntry, FloatPrecision, GraphRole, GraphSet, ImageError, ImageFormat,
+    ImageInfo, ImageIoError, InitError, LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant, OnProgress,
+    Opai, Operation, OsakaPrecision, ParameterEntry, Pass, Phase, Picture, Point, Precision, Progress, RangeError,
+    RawFormat, RawImageInfo, Rect, Resolution, Scale, Sharpen, SharpenParams, SharpenVariant, Strength,
+    SupportedProviders, UnknownRole, Upscale, UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
+    prepare_library_path,
 };
 // What this slice added: the fidelity Athens carries, the carrier for the run path that produces no image, the kind
 // a published parameter reports, and the value a progress report names a run by — each reached only through the
@@ -356,7 +357,7 @@ fn the_two_face_families_are_reachable_from_the_crate_root() {
     );
 
     // The typed value is reachable by matching the carrier, exactly as an enhancement's is.
-    let Analysis::Detection(typed) = detection;
+    let Analysis::Detection(typed) = detection else { panic!("New York built {detection:?}") };
     let typed: Detection = typed;
     assert_eq!(typed.artifact().as_str(), "dt_newyork_fp32");
 
@@ -449,10 +450,10 @@ fn the_two_face_families_are_reachable_from_the_crate_root() {
     );
 }
 
-/// The catalogue as a front end offering all eight families reads it: every chooser and every control configured
+/// The catalogue as a front end offering all nine families reads it: every chooser and every control configured
 /// from this alone.
 #[test]
-fn the_catalogue_publishes_all_eight_families_to_the_crate_root() {
+fn the_catalogue_publishes_all_nine_families_to_the_crate_root() {
     let families: &'static [FamilyEntry] = catalogue();
 
     assert_eq!(
@@ -466,6 +467,7 @@ fn the_catalogue_publishes_all_eight_families_to_the_crate_root() {
             Family::Upscale,
             Family::Detection,
             Family::FaceRecovery,
+            Family::Depth,
         ]
     );
 
@@ -1270,7 +1272,7 @@ async fn a_non_image_operation_can_be_built_and_run_through_the_public_surface_a
     assert_eq!(detection.family(), Family::Detection);
 
     // The typed value is still reachable by matching the carrier, exactly as an enhancement's is.
-    let Analysis::Detection(typed) = detection;
+    let Analysis::Detection(typed) = detection else { panic!("New York built {detection:?}") };
     assert_eq!(Analysis::Detection(typed), detection);
     assert_eq!(typed.artifact().as_str(), "dt_newyork_fp32");
 
@@ -1361,6 +1363,55 @@ async fn a_non_image_operation_can_be_built_and_run_through_the_public_surface_a
 
     cancel.cancel();
     assert!(seen.lock().unwrap().is_empty(), "nothing ran, so nothing reported");
+}
+
+/// A depth estimate, named, carried and pinned through the public surface alone: the family, its one model, the entry
+/// point and the map it returns.
+#[test]
+fn a_depth_estimate_can_be_named_and_read_through_the_public_surface_alone() {
+    // The constructor returns the typed operation, which is what `estimate_depth` takes.
+    let depth: Depth = Depth::lisbon();
+    assert_eq!(depth.variant(), DepthVariant::Lisbon(FloatPrecision::Fp16));
+    assert_eq!(depth.display_name(), "Lisbon (FP16)");
+    assert_eq!(depth.cache_tag(), "dp-lisbon-fp16");
+    assert_eq!(
+        depth.required_artifacts().iter().map(ArtifactId::as_str).collect::<Vec<_>>(),
+        vec!["dp_lisbon_landscape_fp16", "dp_lisbon_portrait_fp16"]
+    );
+
+    // Carried as an analysis, which is how a report names it.
+    let carried = Analysis::Depth(depth);
+    assert_eq!(carried.family(), Family::Depth);
+    assert_eq!(Subject::Analysis(carried).display_name(), "Lisbon (FP16)");
+    assert_eq!(Family::Depth.applied_at(), None, "depth was placed in a chain's order");
+
+    // The entry point, pinned through a function pointer as `execute` is.
+    type Estimate<'a> = std::pin::Pin<Box<dyn Future<Output = Result<Executed<DepthMap>, InferenceError>> + Send + 'a>>;
+    let estimate: for<'a> fn(&'a Opai, &'a Picture, &'a Depth, Option<ExecuteOptions>) -> Estimate<'a> =
+        |opai, source, depth, options| Box::pin(opai.estimate_depth(source, depth, options));
+    let _ = estimate;
+
+    fn result_of<O: DataOperation<Output = DepthMap>>(_operation: &O) {}
+    result_of(&depth);
+
+    // The map, as the run cache keeps it and as a front end reads it.
+    let map: DepthMap = serde_json::from_str(
+        r#"{"width":3,"height":1,"near":1.0,"far":4.0,"focal_35mm":24.0,"disparity":[65535,21845,0]}"#,
+    )
+    .expect("a map deserializes");
+    assert_eq!(map.dimensions(), (3, 1));
+    assert_eq!(map.metres_at(0, 0), 1.0);
+    assert_eq!(map.metres(), &[1.0, 2.0, 4.0]);
+    assert_eq!(map.disparity(), vec![1.0, 0.5, 0.25]);
+    assert_eq!(map.focal_35mm(), Some(24.0));
+    assert!((1.0..=4.0).contains(&map.focus_metres(0.5, 0.5)));
+    assert_ne!(map.signature(), 0);
+
+    // The two refusals the family adds, named.
+    let unmeasurable = InferenceError::Unmeasurable { operation: depth.display_name(), valid: 3 };
+    assert!(unmeasurable.to_string().contains("Lisbon (FP16)"));
+    let other = UnsupportedReason::OtherResult { produces: "a depth map" };
+    assert!(other.to_string().contains("a depth map"));
 }
 
 /// What a run reports having executed on, and the gesture that gives every resident session back — the two halves of

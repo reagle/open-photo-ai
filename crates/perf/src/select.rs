@@ -69,9 +69,9 @@ pub enum SelectionError {
     Parameter(#[from] UnknownParameter),
 
     // This harness measures one entry point — the enhancement chain — and an operation whose result is a set of faces
-    // rather than a picture is not carried in what that entry point takes. It is not a model this binary declines to
-    // run: it is a run of a different kind, on a path nothing here measures yet. Reported when named for the reason
-    // `Unpublished` is: you asked for it by name, so you find out why you are not getting it.
+    // or a depth map rather than a picture is not carried in what that entry point takes. It is not a model this binary
+    // declines to run: it is a run of a different kind, on a path nothing here measures yet. Reported when named for
+    // the reason `Unpublished` is: you asked for it by name, so you find out why you are not getting it.
     /// A codename the catalogue publishes for a family whose result is not an image.
     ///
     /// Reported rather than silently skipped when the codename was named explicitly.
@@ -123,9 +123,9 @@ fn every_published(options: &Options) -> Result<Vec<Selected>, SelectionError> {
 
     for entry in catalogue() {
         // Dropped for the same reason and on the same terms as an unpublished precision below: this harness measures
-        // the enhancement chain, a caller who named nothing did not ask for a detection run, and naming one explicitly
-        // reports `SelectionError::NotAnEnhancement`.
-        if entry.family == Family::Detection {
+        // the enhancement chain, a caller who named nothing did not ask for a detection or a depth run, and naming one
+        // explicitly reports `SelectionError::NotAnEnhancement`.
+        if matches!(entry.family, Family::Detection | Family::Depth) {
             continue;
         }
 
@@ -165,7 +165,7 @@ fn select(entry: &FamilyEntry, variant: &VariantEntry, options: &Options) -> Res
     // two places that have to be found.
     let precision = options.precision();
 
-    if entry.family == Family::Detection {
+    if matches!(entry.family, Family::Detection | Family::Depth) {
         return Err(SelectionError::NotAnEnhancement { codename: variant.codename });
     }
 
@@ -188,8 +188,8 @@ pub fn needs_faces(selection: &[Selected]) -> bool {
 
 /// `selection` with every face-recovery row handed `faces`, or blocked with the reason there are none.
 ///
-/// Through [`opai::FaceRecovery::with_faces`], which swaps the faces and nothing else — the variant, its precision and its
-/// fidelity are the ones the row was selected with — so a row measures the operation a caller would have built, and
+/// Through [`opai::FaceRecovery::with_faces`], which swaps the faces and nothing else — the variant, its precision and
+/// its fidelity are the ones the row was selected with — so a row measures the operation a caller would have built, and
 /// nothing here matches on a model to rebuild it. That is the reference harness's `faceEntry`, using only the public
 /// API.
 ///
@@ -365,9 +365,9 @@ mod tests {
             for variant in &entry.variants {
                 let published = variant.parameters.iter().any(|parameter| parameter.kind == ParameterKind::Faces);
 
-                // Detection is not an enhancement and never reaches a selection at all, so there is no row of it to
-                // compare against.
-                if entry.family == Family::Detection {
+                // Detection and depth are not enhancements and never reach a selection at all, so there is no row of
+                // either to compare against.
+                if matches!(entry.family, Family::Detection | Family::Depth) {
                     continue;
                 }
 
@@ -488,13 +488,13 @@ mod tests {
     /// Every codename the catalogue publishes at `precision` whose result is an image, in catalogue order —
     /// computed here from the catalogue so the assertion cannot pass by agreeing with the resolution's own traversal.
     ///
-    /// Detection is excluded because its result is not a picture, so it is not carried in what this harness's one
-    /// entry point takes. That is a property of the *path*, decided by the library's type, and not the "which models
-    /// will actually run" this module keeps no opinion about.
+    /// Detection and depth are excluded because their result is not a picture, so neither is carried in what this
+    /// harness's one entry point takes. That is a property of the *path*, decided by the library's type, and not the
+    /// "which models will actually run" this module keeps no opinion about.
     fn published_at(precision: Precision) -> Vec<&'static str> {
         catalogue()
             .iter()
-            .filter(|entry| entry.family != Family::Detection)
+            .filter(|entry| !matches!(entry.family, Family::Detection | Family::Depth))
             .flat_map(|entry| &entry.variants)
             .filter(|variant| variant.precisions.contains(&precision))
             .map(|variant| variant.codename)
