@@ -58,5 +58,9 @@ wild = "2.2.1"
 # A scratch directory for the input check's tests, as `opai` and `gui` use it.
 tempfile = "3.27"
 
+# The mask images `--mask`'s tests write, pinned as `opai` pins it so that the two are one crate. PNG only; the codecs
+# are compiled for `opai` regardless.
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+
 # The recorder the telemetry tests read their spans and records back with (`src/test_support.rs`), as `gui`'s does.
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry"] }

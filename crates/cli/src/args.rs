@@ -42,6 +42,14 @@ pub struct Args {
     #[arg(long = "autopilot", visible_alias = "ap", conflicts_with = "Selection")]
     pub autopilot: bool,
 
+    // On `Args` rather than on `Selection`: it is not an enhancement, so it goes with `--autopilot` as well as with the
+    // flags, and the refusal of a command with neither covers it already.
+    /// Limit the enhancements to the white part of a mask image: black keeps the photograph as it was and grey mixes
+    /// the two. Its luminance is the weight and any transparency is ignored. It is resized to each photograph, whose
+    /// aspect ratio must match it within 1%.
+    #[arg(long, value_name = "FILE")]
+    pub mask: Option<PathBuf>,
+
     /// `hd` runs every model at its higher-fidelity build, `sd` at its lighter, faster one.
     #[arg(long, short = 'q', value_enum, default_value_t = Quality::Hd, ignore_case = true)]
     pub quality: Quality,
@@ -737,6 +745,26 @@ mod tests {
             assert_eq!(error.kind(), ErrorKind::MissingRequiredArgument, "{flags}: {error}");
             assert!(error.to_string().contains(required), "{error}");
         }
+    }
+
+    #[test]
+    fn a_mask_is_read_with_an_enhancement_or_with_autopilot() {
+        let args = parse("opai photo.jpg --sh --mask subject.png -o out.png").expect("parses");
+        assert_eq!(args.mask, Some(PathBuf::from("subject.png")));
+
+        assert!(parse("opai photo.jpg --ap --mask subject.png -o out.png").expect("parses").mask.is_some());
+        assert_eq!(parse("opai photo.jpg --sh -o out.png").expect("parses").mask, None);
+    }
+
+    #[test]
+    fn a_mask_without_an_enhancement_is_a_usage_error() {
+        let error = parse("opai photo.jpg --mask subject.png -o out.png").expect_err("nothing to mask");
+
+        assert_eq!(error.exit_code(), 2);
+        assert!(error.to_string().contains("at least one enhancement is required"), "{error}");
+
+        let error = parse("opai photo.jpg --sh --mask -o out.png").expect_err("no file named");
+        assert_eq!(error.exit_code(), 2, "{error}");
     }
 
     /// The one place the CLI's model names, default models, parameter ranges and documented defaults are checked

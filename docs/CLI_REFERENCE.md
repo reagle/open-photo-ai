@@ -7,6 +7,7 @@
 - [Arguments and global options](#arguments-and-global-options)
 - [Where the results go](#where-the-results-go)
 - [Enhancements](#enhancements)
+- [Masks](#masks)
 - [Autopilot](#autopilot)
 - [Processing order](#processing-order)
 - [Supported formats](#supported-formats)
@@ -211,6 +212,8 @@ Default models are in **bold**.
 | Sharpen          | `--sharpen`          | `--sh` | **moscow**, petersburg, novgorod               | `--sh-str` (1 to 300)      |
 | Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, osaka, saitama               | `--scale` (1.0 to 8.0)     |
 
+`--mask <FILE>` limits whichever enhancements are asked for (or chosen by `--ap`) to part of the photograph. See [Masks](#masks).
+
 The sections below explain each enhancement briefly. For more detail on when to pick each model, see the [Enhancements section of the README](../README.md#-enhancements).
 
 ### Strength and bias
@@ -342,6 +345,26 @@ Option: `--scale <FACTOR>`, the upscale factor, from `1.0` to `8.0`. Decimals ar
 > [!IMPORTANT]
 > If the image is larger than 4 MP and you don't pass `--scale`, the upscale step is **skipped**. The terminal doesn't warn about this; it's only recorded in the [log file](#log-file). Any other enhancements in the command still run, and the file is still written at the original resolution. To upscale a large image anyway, pass `--scale`.
 
+## Masks
+
+`--mask <FILE>` applies the enhancements only where a mask image is white, and leaves the photograph as it was where the mask is black:
+
+```bash
+# Sharpen the subject only, with a mask that is white over the subject and black elsewhere
+opai photo.jpg --sh --mask subject.png -o out.jpg
+
+# Denoise a whole directory through one mask, e.g. a fixed camera's sky
+opai photos --dn --mask sky.png -o enhanced
+```
+
+- **White applies, black keeps, grey mixes.** The mask's brightness (its luminance) is the weight: a pixel 25% grey gets a quarter of the enhancement. Soft edges in the mask give soft transitions in the result. A 16-bit mask keeps its 16 bits.
+- **Transparency is ignored.** Only the mask's colour is read; a PNG with an alpha channel is read as if it were opaque. Flatten it first if the transparency is what you meant.
+- **Any format `opai` reads**, oriented by its EXIF like a photograph. It's resized to each photograph's size, so it needn't be the same resolution, only the same shape.
+- **The shapes must match.** A photograph whose aspect ratio differs from the mask's by more than 1% is refused, naming both ratios, and the rest of the batch still runs. With several inputs, one mask applies to each.
+- **It needs an enhancement**, or `--ap`, which it then limits to the mask.
+- **The models still run over the whole photograph**; the mask decides afterwards how much of their result each pixel shows. So a mask adds a quick blend to a run (and, under an upscale, an enlargement of the photograph), but changes neither how long the models take nor what the [run cache](#run-cache) stores, and running the same enhancements again with a different mask runs no model.
+- **With an upscale**, the black part shows a plain (Lanczos) enlargement of the photograph, which is softer than the upscaled part. A strongly changed result, such as an upscale or a colorization, can show a visible seam at the mask's edge: a softer edge in the mask hides it.
+
 ## Autopilot
 
 `--autopilot` (alias `--ap`) runs the same analysis as the GUI's Autopilot on each image, once it's loaded, and applies the enhancements that image calls for: denoise for visible grain, face recovery when there are faces to restore, colorization for a black & white photo, light adjustment for a badly exposed one, color balance for a color cast, sharpen for a blurred one, and an upscale for a small one. Different images in one batch can get different enhancements. They still run in the [fixed order](#processing-order).
@@ -350,7 +373,7 @@ Option: `--scale <FACTOR>`, the upscale factor, from `1.0` to `8.0`. Decimals ar
 opai photos --ap -o enhanced
 ```
 
-- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
+- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `--mask`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
 - **Each enhancement uses its default strength or bias**: strength `100` for denoise and sharpen, bias `50` for light adjustment and color balance. An upscale runs at the factor the image's size calls for (see [Upscale](#upscale---upscale-model---up-model)); an image above 4 MP is not upscaled.
 - **An image that needs nothing is still written**, unchanged, in the format asked for. Its row ends with `Enhancements applied to` as any other.
 - **If face detection can't run** (for example, its model can't be downloaded), the image still gets the other enhancements, without face recovery, and the [log file](#log-file) records a warning.
@@ -620,6 +643,8 @@ What's in it that the terminal doesn't show:
 | `🧨 cannot write out/a.png: …`                                                 | The result couldn't be written there: the directory is missing or not writable, or every numbered name up to `_999` is taken. |
 | `🧨 Open Photo AI is already running …; close it and try again`                | Another `opai` process or the GUI is running. Close it and try again. |
 | `🧨 the processor … is not available on this machine; use …`                   | This machine doesn't offer the processor given with `-p` (for example, no supported NVIDIA GPU for `cuda`). Use one of the processors listed, or leave `-p` out. Exit code `2`. |
+| `🧨 the mask could not be read: …`                                             | The file given with `--mask` doesn't exist or isn't an image `opai` can read. Exit code `2`. |
+| `🧨 could not enhance photos/b.jpg: the mask's aspect ratio is 1.500 (3000x2000) and the photograph's is 1.333 (4000x3000); …` | The mask isn't the photograph's shape. Make a mask for it, or leave that photograph out; the rest of the batch went on. |
 | `🧨 [ 42%] Failed to enhance photos/b.jpg`                                      | That image failed; the rest of the batch went on. Its reason is listed under the view when the run ends. |
 | `🧨 could not enhance photos/b.jpg: …`                                         | That image failed; the rest of the batch went on. The log file has the full error. |
 | `🧨 failed to decode photos/b.jpg: …`                                          | That image's header was readable, but the image itself wasn't; the rest of the batch went on. |

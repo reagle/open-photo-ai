@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! the update check             --> started at launch, beside the checks below
-//! output, inputs               --> refused here: nothing installed
+//! output, inputs, the mask     --> refused here: nothing installed; the mask is read once for every image
 //! the update line              --> 💡 and a blank line, when the check answered "outdated" within 1.5s of launch
 //! initialize                   --> once; the 💾 line; a Ctrl-C on it abandons initialization; another instance ends it
 //! check the processor          --> one this machine does not offer is refused here: no image loaded
@@ -12,6 +12,7 @@
 //! for each image:
 //!   plan, start its row        --> 🖼️ [  0%] Preparing to enhance <path>; the bar is not touched. Under --ap the
 //!                                  plan waits for the image itself
+//!   check the mask             --> a mask whose aspect ratio is not the image's fails this image alone
 //!   load                       --> under --ap: 🖼️ [  0%] Choosing enhancements for <path> while the analysis runs,
 //!                                  then the chain planned from its suggestions and the OPAI_AP_* models; a signal it
 //!                                  could not read is logged and the image goes on
@@ -29,11 +30,12 @@
 //! executed on and every path written go to the log, not to the terminal.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 use opai::{
     APP_NAME, CLI, CancellationToken, ChainFaces, Enhanced, ExecuteOptions, ExecutionProvider, FaceSelection,
-    InitOptions, OnInference, Opai, OutputDepth, Picture, ProcessOptions, ProviderVerdict, Suggestions,
+    InitOptions, Mask, OnInference, Opai, OutputDepth, Picture, ProcessOptions, ProviderVerdict, Suggestions,
     default_face_selection, image,
 };
 
@@ -78,6 +80,10 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
     };
     let sources = inputs::expand(&args.inputs, args.recursive, skip.as_deref())?;
     events::files_added(&sources.iter().map(|source| source.path.as_path()).collect::<Vec<_>>());
+    let mask = match &args.mask {
+        Some(path) => Some(read_mask(path).await?),
+        None => None,
+    };
 
     // Before the dependency line, the first thing that can draw. A refusal above prints its failure line alone.
     if update::outdated(update, launched + update::WAIT).await {
@@ -159,7 +165,7 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
             outcome = tracing::field::Empty,
             error = tracing::field::Empty
         );
-        let result = enhance_one(&opai, &args, &target, source, index, planner, &view, &cancel)
+        let result = enhance_one(&opai, &args, &target, source, index, planner, mask.as_ref(), &view, &cancel)
             .instrument(span.clone())
             .await;
         analytics::mark(&span, &result);
@@ -268,7 +274,7 @@ enum Planner<'a> {
 }
 
 /// Enhances `source`, the image at `index`, with the chain `planner` gives for its own size, on the processor `args`
-/// names, and writes it, answering the path written.
+/// names, limited to `mask` where there is one, and writes it, answering the path written.
 #[allow(
     clippy::too_many_arguments,
     reason = "one run's state, threaded through rather than bundled for one caller"
@@ -280,9 +286,15 @@ async fn enhance_one(
     source: &Source,
     index: usize,
     planner: Planner<'_>,
+    mask: Option<&Arc<Mask>>,
     view: &View,
     cancel: &CancellationToken,
 ) -> Result<PathBuf, CliError> {
+    // From the header's size, before the pixels are decoded: a mask that does not fit costs this image nothing.
+    if let Some(mask) = mask {
+        check_mask(mask, source.width, source.height)?;
+    }
+
     // A file whose header read cleanly but whose pixels do not decode fails this image, not the batch. The library's
     // message names the path.
     let picture = image::load(&source.path).await.map_err(|error| CliError::Load(Box::new(error)))?;
@@ -300,7 +312,7 @@ async fn enhance_one(
         events::enhancement_added(operation.family(), from);
     }
 
-    let enhanced = enhance(opai, &picture, &plan.operations, provider, view, cancel).await?;
+    let enhanced = enhance(opai, &picture, &plan.operations, provider, mask, view, cancel).await?;
 
     // A Ctrl-C that landed after the last tile was checked still means "write nothing".
     if cancel.is_cancelled() {
@@ -387,19 +399,19 @@ fn log_notes(path: &Path, plan: &Plan) {
     }
 }
 
-/// Runs `operations` on `provider`, finding the faces its face recoveries restore first, reporting onto the image's
-/// row and the batch's bar.
+/// Runs `operations` on `provider`, finding the faces its face recoveries restore first, limited to `mask`, reporting
+/// onto the image's row and the batch's bar.
 async fn enhance(
     opai: &Opai,
     picture: &Picture,
     operations: &[opai::Operation],
     provider: ExecutionProvider,
+    mask: Option<&Arc<Mask>>,
     view: &View,
     cancel: &CancellationToken,
 ) -> Result<Enhanced, CliError> {
-    let enhanced = opai
-        .process(picture, operations, Some(chain_options(provider, view.on_inference(), cancel)))
-        .await?;
+    let options = ProcessOptions { mask: mask.cloned(), ..chain_options(provider, view.on_inference(), cancel) };
+    let enhanced = opai.process(picture, operations, Some(options)).await?;
 
     if let Some(report) = face_report(&enhanced.faces) {
         if matches!(enhanced.faces, ChainFaces::Failed(_)) {
@@ -423,6 +435,40 @@ fn chain_options(provider: ExecutionProvider, on_progress: OnInference, cancel: 
         faces: FaceSelection::restorable(),
         ..Default::default()
     }
+}
+
+/// How far a mask's aspect ratio may be from a photograph's, as a fraction of the photograph's: 1 percent, which is
+/// a mask saved a few pixels off at any size, and not a 3:2 mask over a 4:3 photograph.
+const MASK_ASPECT_TOLERANCE: f64 = 0.01;
+
+/// The mask at `path`, read once for every image of the run: its luminance is the weight, white applies the
+/// enhancements and any alpha is ignored. Refused as a usage error where it cannot be read.
+async fn read_mask(path: &Path) -> Result<Arc<Mask>, CliError> {
+    // Through the library's loader, so a mask is decoded and oriented exactly as a photograph is, in any format it
+    // reads. Its message names the path.
+    let picture = image::load(path)
+        .await
+        .map_err(|error| CliError::Usage(format!("the mask could not be read: {error}")))?;
+
+    Ok(Arc::new(Mask::from_image(picture.pixels())))
+}
+
+/// Refuses `mask` for a `width` x `height` photograph whose aspect ratio differs from the mask's by more than
+/// [`MASK_ASPECT_TOLERANCE`], naming both. A mask with no base, which a file never gives, fits anything.
+fn check_mask(mask: &Mask, width: u32, height: u32) -> Result<(), CliError> {
+    let Some(base) = &mask.base else { return Ok(()) };
+    let (mask_width, mask_height) = (base.plane().width(), base.plane().height());
+    let ratio = |width: u32, height: u32| f64::from(width) / f64::from(height);
+    let (theirs, ours) = (ratio(mask_width, mask_height), ratio(width, height));
+
+    if (theirs / ours - 1.0).abs() <= MASK_ASPECT_TOLERANCE {
+        return Ok(());
+    }
+
+    Err(CliError::Usage(format!(
+        "the mask's aspect ratio is {theirs:.3} ({mask_width}x{mask_height}) and the photograph's is {ours:.3} \
+         ({width}x{height}); they must match within 1%"
+    )))
 }
 
 /// Cancels `cancel` on the first SIGINT, which arrives only while no live session holds the terminal in raw mode.
@@ -651,11 +697,69 @@ mod tests {
         for processor in Processor::value_variants() {
             let provider = ExecutionProvider::from(*processor);
 
-            let chain = chain_options(provider, std::sync::Arc::new(|_| {}), &cancel);
+            let chain = chain_options(provider, Arc::new(|_| {}), &cancel);
             assert_eq!(chain.provider, provider);
             assert_eq!(chain.depth, OutputDepth::Source);
             assert!(matches!(chain.faces, FaceSelection::Detect(_)), "the chain finds no faces");
         }
+    }
+
+    /// A mask of `width` x `height` grey, as `--mask` would read one.
+    fn grey(width: u32, height: u32) -> Mask {
+        Mask::from_image(&::image::DynamicImage::ImageLuma8(::image::ImageBuffer::new(width, height)))
+    }
+
+    #[test]
+    fn a_mask_fits_a_photograph_of_its_shape_at_any_size_to_within_a_percent() {
+        for (width, height) in [(300, 200), (3000, 2000), (6000, 4000), (3000, 2012), (2980, 2000)] {
+            assert!(check_mask(&grey(300, 200), width, height).is_ok(), "{width}x{height}");
+        }
+    }
+
+    #[test]
+    fn a_mask_of_another_shape_is_refused_naming_both_ratios() {
+        for (width, height) in [(4000, 3000), (2000, 3000), (3000, 2040)] {
+            let error = check_mask(&grey(300, 200), width, height).expect_err("the shapes differ");
+
+            assert_eq!(error.exit_code(), 2);
+            let message = error.to_string();
+            assert!(message.contains("1.500 (300x200)"), "{message}");
+            assert!(message.contains(&format!("{:.3} ({width}x{height})", f64::from(width) / f64::from(height))));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_mask_file_is_read_for_its_luminance_and_not_its_transparency() {
+        // White, black and mid grey, each fully transparent: a reading that went through the alpha would make all
+        // three black.
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let path = dir.path().join("mask.png");
+        let levels = [255_u8, 0, 128];
+        let image = ::image::ImageBuffer::from_fn(3, 1, |x, _| {
+            let level = levels[x as usize];
+            ::image::Rgba([level, level, level, 0])
+        });
+        image.save(&path).expect("the mask is written");
+
+        let mask = read_mask(&path).await.expect("the mask is read");
+        let plane = mask.base.as_ref().expect("a file is a base").plane();
+
+        assert_eq!((plane.width(), plane.height()), (3, 1));
+        assert!((plane.get(0, 0) - 1.0).abs() < 1e-6);
+        assert_eq!(plane.get(1, 0), 0.0);
+        assert!((plane.get(2, 0) - 128.0 / 255.0).abs() < 1e-6);
+        assert!(mask.strokes.is_empty() && !mask.inverted);
+    }
+
+    #[tokio::test]
+    async fn a_mask_that_cannot_be_read_is_a_usage_error_naming_it() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let path = dir.path().join("missing.png");
+
+        let error = read_mask(&path).await.expect_err("there is no mask");
+
+        assert_eq!(error.exit_code(), 2);
+        assert!(error.to_string().contains("missing.png"), "{error}");
     }
 
     #[test]

@@ -997,6 +997,7 @@ name = "cli"
 version = "26.10.0"
 dependencies = [
  "clap",
+ "image",
  "opai",
  "ratatui",
  "rust-sak",
