@@ -10,7 +10,8 @@
 //!   lens known from the EXIF alone, and every lens blur at or above its own f-number?
 //!                            --> each lens blur := with_lens(lens); nothing estimated
 //!   Depth (cached execute) on the chain's input
-//!      Ok(map)    --> lens := Lens::resolve(exif, map's focal estimate, framing)
+//!      Ok(map)    --> lens := Lens::resolve(exif, map's focal estimate, framing),
+//!                     calibrated by the EXIF's subject distance against the map's centre where believable
 //!                     each lens blur := with_depth(map), with_lens(lens)
 //!      Err(error) --> the run fails with it (a stop included)
 //!   each lens blur matting its edges whose blur reaches 3 px, with a subject in focus:
@@ -156,7 +157,13 @@ where
     }
 
     let map = estimate(depth, options).await?;
-    let lens = Lens::resolve(&exif, map.focal_35mm(), framing);
+    // Calibrated at the picture's centre, where the camera focused and where the default focus is, never the focus a
+    // blur asks for: see `Lens::calibrated`.
+    let lens = Lens::resolve(&exif, map.focal_35mm(), framing).calibrated(
+        exif.subject_distance_m,
+        map.focus_metres(0.5, 0.5),
+        framing,
+    );
 
     // `info`, once per run: which lens a blur was rendered for is what explains a result that looks too strong or
     // too weak, and an assumed one is the case a user most needs to see.
@@ -164,11 +171,13 @@ where
         focal_35mm = lens.focal_35mm,
         own_f_number = lens.own_f_number,
         origin = ?lens.origin,
+        depth_scale = lens.depth_scale,
         framing,
         exif_focal = exif.focal_mm,
         exif_focal_35mm = exif.focal_35mm,
         exif_f_number = exif.f_number,
         depth_focal_35mm = map.focal_35mm(),
+        exif_subject_m = exif.subject_distance_m,
         "the lens a lens blur is rendered for"
     );
 

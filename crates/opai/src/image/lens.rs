@@ -23,6 +23,11 @@ const FOCAL_LENGTHS: std::ops::RangeInclusive<f32> = 1.0..=2000.0;
 /// phone sensor to a large-format back.
 const SENSOR_DIAGONALS: std::ops::RangeInclusive<f32> = 2.0..=100.0;
 
+/// The nearest and farthest subject distance, in metres, a camera's focus is believed to have been read at: a close-up
+/// to the far distance a phone writes for a landscape. Zero is how the standard writes "unknown" and `0xFFFFFFFF / 1`
+/// how it writes infinity, which the bound refuses with everything else no focus could be.
+const SUBJECT_DISTANCES: std::ops::RangeInclusive<f32> = 0.05..=1000.0;
+
 /// How far the EXIF's image diagonal may be from the file's own, as a fraction, before the EXIF is taken to describe
 /// other pixels than the file holds. Slack for a camera that records the size of a frame it then trims by a few pixels.
 const DIAGONAL_TOLERANCE: f32 = 0.01;
@@ -46,6 +51,10 @@ pub struct LensExif {
     /// pixels the focal-plane resolution counts, which [`checked_against`](Self::checked_against) compares with the
     /// file's own.
     pub diagonal_px: Option<f32>,
+    /// How far away the camera focused, in metres (`SubjectDistance`): what its autofocus measured, which a depth
+    /// model's metric reading is checked against. The maker-neutral field only: the focus distances some makers keep
+    /// in their own notes are not read, there being no reader for them here that is not a dependency of its own.
+    pub subject_distance_m: Option<f32>,
 }
 
 impl LensExif {
@@ -130,6 +139,7 @@ fn lens_of(exif: &exif::Exif) -> LensExif {
         f_number: number(Tag::FNumber).filter(|f_number| F_NUMBERS.contains(f_number)),
         sensor_diagonal_mm: sensor_diagonal_mm.filter(|diagonal| SENSOR_DIAGONALS.contains(diagonal)),
         diagonal_px,
+        subject_distance_m: number(Tag::SubjectDistance).filter(|metres| SUBJECT_DISTANCES.contains(metres)),
     }
 }
 
@@ -297,6 +307,26 @@ pub(crate) mod tests {
 
         let lens = read(&jpeg(&fields(Some(0.5), Some(3000), Some(90.0), None)), "jpg");
         assert_eq!(lens, LensExif::default());
+    }
+
+    #[test]
+    fn the_subject_distance_is_read_and_unknown_or_infinity_is_absent() {
+        // The Pixel 11 Pro's 1.947 m, written in thousandths as it writes it.
+        let mut recorded = fields(Some(6.9), Some(24), Some(1.7), None);
+        recorded.push(field(Tag::SubjectDistance, Value::Rational(vec![Rational { num: 1947, denom: 1000 }])));
+        let lens = read(&jpeg(&recorded), "jpg");
+        assert!(lens.subject_distance_m.is_some_and(|metres| (metres - 1.947).abs() < 1e-6), "{lens:?}");
+
+        // Zero is unknown and `0xFFFFFFFF / 1` is infinity; neither is a distance a depth can be checked against.
+        for (num, denom) in [(0, 1), (u32::MAX, 1), (5, 1000)] {
+            let mut recorded = fields(Some(6.9), Some(24), Some(1.7), None);
+            recorded.push(field(Tag::SubjectDistance, Value::Rational(vec![Rational { num, denom }])));
+
+            assert_eq!(read(&jpeg(&recorded), "jpg").subject_distance_m, None, "{num}/{denom}");
+        }
+
+        // And a photograph that does not write it has none.
+        assert_eq!(read(&jpeg(&fields(Some(6.9), Some(24), Some(1.7), None)), "jpg").subject_distance_m, None);
     }
 
     #[test]
