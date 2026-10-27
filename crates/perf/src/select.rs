@@ -142,7 +142,10 @@ fn every_published(options: &Options) -> Result<Vec<Selected>, SelectionError> {
         // the enhancement chain, a caller who named nothing did not ask for a detection or a depth run, and naming one
         // explicitly reports `SelectionError::NotAnEnhancement`. A lens blur runs no model of its own: what it costs is
         // its depth estimate, measured as depth, and a render. A removal needs a mask this harness has none of.
-        if matches!(entry.family, Family::Detection | Family::Depth | Family::LensBlur | Family::Remove) {
+        if matches!(
+            entry.family,
+            Family::Detection | Family::Depth | Family::Matting | Family::LensBlur | Family::Remove
+        ) {
             continue;
         }
 
@@ -182,7 +185,7 @@ fn select(entry: &FamilyEntry, variant: &VariantEntry, options: &Options) -> Res
     // two places that have to be found.
     let precision = options.precision();
 
-    if matches!(entry.family, Family::Detection | Family::Depth) {
+    if matches!(entry.family, Family::Detection | Family::Depth | Family::Matting) {
         return Err(SelectionError::NotAnEnhancement { codename: variant.codename });
     }
 
@@ -393,7 +396,10 @@ mod tests {
 
                 // Detection and depth are not enhancements and a removal needs a mask, so none reaches a selection at
                 // all, and there is no row of any to compare against.
-                if matches!(entry.family, Family::Detection | Family::Depth | Family::LensBlur | Family::Remove) {
+                if matches!(
+                    entry.family,
+                    Family::Detection | Family::Depth | Family::Matting | Family::LensBlur | Family::Remove
+                ) {
                     continue;
                 }
 
@@ -522,7 +528,10 @@ mod tests {
         catalogue()
             .iter()
             .filter(|entry| {
-                !matches!(entry.family, Family::Detection | Family::Depth | Family::LensBlur | Family::Remove)
+                !matches!(
+                    entry.family,
+                    Family::Detection | Family::Depth | Family::Matting | Family::LensBlur | Family::Remove
+                )
             })
             .flat_map(|entry| &entry.variants)
             .filter(|variant| variant.precisions.contains(&precision))

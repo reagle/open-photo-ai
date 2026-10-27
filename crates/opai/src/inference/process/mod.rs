@@ -36,7 +36,7 @@ use tokio_util::sync::CancellationToken;
 use std::future::Future;
 
 use super::acquire;
-use super::depth_map::{depth_asked, find_chain_depth};
+use super::depth_map::{ChainMatte, depth_asked, find_chain_depth, find_chain_matte, mattes_asked};
 use super::execute::{ExecuteOptions, execute};
 use super::faces::{ChainFaces, FaceSelection, FacedChain, find_chain_faces};
 use super::handover::Handover;
@@ -47,7 +47,7 @@ use crate::image::{GainMap, Picture};
 use crate::mask::Mask;
 use crate::models::grain::is_grain_reference;
 use crate::models::remove::RemovedAt;
-use crate::models::{Depth, DepthMap, Detection, Faces, Family, Operation, Remove};
+use crate::models::{Depth, DepthMap, Detection, Faces, Family, Matte, Matting, Operation, Remove};
 use crate::pipeline::{Backend, Shared};
 use crate::providers::ExecutionProvider;
 use crate::sessions::SessionHandle;
@@ -116,14 +116,21 @@ pub(crate) async fn process<B: Backend>(
         |depth, options| async move {
             execute(backend, cache, source, &depth, options).await.map(|executed| executed.value)
         },
+        |matting, options| async move {
+            execute(backend, cache, source, &matting, options).await.map(|executed| executed.value)
+        },
     )
     .await
 }
 
-/// [`process`] over any face detection and any depth estimate: `detect` is called at most once, and only where
+/// [`process`] over any face detection, depth estimate and matting: `detect` is called at most once, and only where
 /// [`ProcessOptions::faces`] asks for one and the chain carries a face recovery; `estimate` is called at most once, and
-/// only where the chain carries a lens blur.
-pub(crate) async fn process_with<B, D, F, E, G>(
+/// only where the chain carries a lens blur; `matte` once for each lens blur whose subject is worth matting.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the arguments of `process`, and the three analyses a chain may need"
+)]
+pub(crate) async fn process_with<B, D, F, E, G, M, H>(
     backend: &B,
     cache: Option<&Memo>,
     source: &Picture,
@@ -131,6 +138,7 @@ pub(crate) async fn process_with<B, D, F, E, G>(
     options: Option<ProcessOptions>,
     detect: D,
     estimate: E,
+    matte: M,
 ) -> Result<Enhanced, InferenceError>
 where
     B: Backend,
@@ -138,6 +146,8 @@ where
     F: Future<Output = Result<Faces, InferenceError>>,
     E: FnOnce(Depth, Option<ExecuteOptions>) -> G,
     G: Future<Output = Result<DepthMap, InferenceError>>,
+    M: Fn(Matting, Option<ExecuteOptions>) -> H,
+    H: Future<Output = Result<Matte, InferenceError>>,
 {
     let mut options = options.unwrap_or_default();
 
@@ -179,32 +189,39 @@ where
     // Beside the faces and for the same reason: the depth map and the lens every lens blur carries are part of every
     // cache key the run derives. Estimated on `source`, the chain's input, so no earlier enhancement and no change of
     // focus or aperture estimates it again — the cached run serves it. Its progress shares the first slot as the
-    // detection's does; one served from the store reports nothing.
-    let operations = match depth_asked(&operations) {
-        None => operations,
+    // detection's does; one served from the store reports nothing. The matte of a lens blur's subject follows it, on
+    // the same input and through the same cached run, keyed by its trimap: a change of focus mattes again, a change of
+    // aperture does not. The depth and each matte that may be asked for share the slot's head in turn, each from where
+    // the last left off, and the chain starts where the last of them did.
+    let (operations, matte) = match depth_asked(&operations) {
+        None => (operations, ChainMatte::NotAsked),
         Some(_) => {
             let handover = options.on_progress.as_ref().map(|on_progress| Handover::new(on_progress, &operations));
-            let estimation = ExecuteOptions {
-                provider: options.provider,
-                on_progress: handover.as_ref().map(Handover::detection),
-                cancel: options.cancel.clone(),
-                cache: options.cache,
+            let analysis = |remaining: usize| {
+                Some(ExecuteOptions {
+                    provider: options.provider,
+                    on_progress: handover.as_ref().map(|handover| handover.next_analysis(remaining)),
+                    cancel: options.cancel.clone(),
+                    cache: options.cache,
+                })
             };
 
+            let mattes = mattes_asked(&operations);
             let filled = find_chain_depth(
                 operations.into_owned(),
                 source.path(),
                 source.dimensions(),
-                Some(estimation),
+                analysis(1 + mattes),
                 estimate,
             )
             .await?;
+            let (filled, matte) = find_chain_matte(filled, source, analysis, matte).await?;
 
             if let Some(handover) = &handover {
                 options.on_progress = Some(handover.chain());
             }
 
-            std::borrow::Cow::Owned(filled)
+            (std::borrow::Cow::Owned(filled), matte)
         }
     };
 
@@ -363,7 +380,7 @@ where
     };
     let picture = source.derive(pixels, named).with_shared_gain_map(gain_map);
 
-    Ok(Enhanced { picture, providers, faces })
+    Ok(Enhanced { picture, providers, faces, matte })
 }
 
 /// `pixels`, the chain's result, limited to `mask`: blended with `photograph` — the chain's input after its removals —

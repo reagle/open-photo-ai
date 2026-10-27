@@ -98,7 +98,13 @@ mod tests {
         Family::ALL.into_iter().filter(|family| {
             !matches!(
                 family,
-                Family::Detection | Family::Depth | Family::Remove | Family::Restore | Family::LensBlur | Family::Grain
+                Family::Detection
+                    | Family::Depth
+                    | Family::Matting
+                    | Family::Remove
+                    | Family::Restore
+                    | Family::LensBlur
+                    | Family::Grain
             )
         })
     }
@@ -118,6 +124,7 @@ mod tests {
             &[][..],
             &[Family::Detection][..],
             &[Family::Depth][..],
+            &[Family::Matting][..],
             &[Family::LensBlur][..],
             &[Family::Remove][..],
         ] {

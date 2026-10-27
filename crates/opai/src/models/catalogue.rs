@@ -22,8 +22,8 @@ use super::simple::SimpleVariant;
 use super::strength::Strength;
 use super::upscale;
 use super::{
-    color_balance, colorization, denoise, depth, detection, face_recovery, grain, lens_blur, light_adjustment, remove,
-    restore, sharpen,
+    color_balance, colorization, denoise, depth, detection, face_recovery, grain, lens_blur, light_adjustment, matting,
+    remove, restore, sharpen,
 };
 
 /// One model a user can choose, and what building it takes.
@@ -285,6 +285,9 @@ static CATALOGUE: LazyLock<Vec<FamilyEntry>> = LazyLock::new(|| {
         depth_family(),
         // Appended, as each family after the first six was. Lisbon at its depth model's one precision.
         lens_blur_family(),
+        // Listed for depth's reason, and like it with no order and no parameter: the trimap a matting runs over is
+        // injected by its caller, never set by a control.
+        matting_family(),
         // Listed last, though it runs first: where an entry is listed is a presentation decision, and `order` is what
         // says where it runs.
         remove_family(),
@@ -371,6 +374,24 @@ fn lens_blur_family() -> FamilyEntry {
     }
 }
 
+/// The matting family's entry: [`depth_family`]'s shape, at the one precision Porto is published in.
+fn matting_family() -> FamilyEntry {
+    FamilyEntry {
+        family: Family::Matting,
+        order: Family::Matting.applied_at(),
+        variants: matting::ALL
+            .iter()
+            .map(|row| VariantEntry {
+                family: Family::Matting,
+                codename: row.codename,
+                label: row.label,
+                precisions: &matting::variant::PRECISIONS,
+                parameters: row.parameters,
+            })
+            .collect(),
+    }
+}
+
 /// The remove family's entry: Lima, at FP32 alone, so it cannot be built through [`simple_family`]'s float pair.
 fn remove_family() -> FamilyEntry {
     FamilyEntry {
@@ -446,12 +467,21 @@ mod tests {
     /// The families published as one graph per variant per precision, all sharing one shape. Derived from
     /// [`Family::ALL`] rather than transcribed, so a family added later is covered here without being remembered:
     /// restore is left out, because Osaka's precisions are its own, depth, because Lisbon is published at FP16 alone
-    /// and two graphs at that, remove, published at FP32 alone, and grain, whose one precision is its arithmetic's.
+    /// and two graphs at that, matting, because Porto is published at FP32 alone, lens blur, which runs no graph of its
+    /// own, remove, published at FP32 alone, and grain, whose one precision is its arithmetic's.
     fn single_graph_families() -> Vec<Family> {
         Family::ALL
             .into_iter()
             .filter(|family| {
-                !matches!(family, Family::Restore | Family::Depth | Family::LensBlur | Family::Remove | Family::Grain)
+                !matches!(
+                    family,
+                    Family::Restore
+                        | Family::Depth
+                        | Family::Matting
+                        | Family::LensBlur
+                        | Family::Remove
+                        | Family::Grain
+                )
             })
             .collect()
     }
@@ -481,6 +511,16 @@ mod tests {
         assert_eq!(entry.variants[0].precisions, [Precision::Fp16]);
         assert!(entry.variants[0].parameters.is_empty());
         assert_eq!(entry.order, None, "depth was published as an enhancement a chain applies");
+    }
+
+    #[test]
+    fn matting_is_published_as_porto_at_full_precision_alone_with_no_parameter_and_no_order() {
+        let entry = family_entry(Family::Matting);
+
+        assert_eq!(variants(Family::Matting), vec![("porto", "Porto")]);
+        assert_eq!(entry.variants[0].precisions, [Precision::Fp32]);
+        assert!(entry.variants[0].parameters.is_empty());
+        assert_eq!(entry.order, None, "matting was published as an enhancement a chain applies");
     }
 
     fn family_entry(family: Family) -> &'static FamilyEntry {
@@ -817,6 +857,7 @@ mod tests {
                 Family::Restore,
                 Family::Depth,
                 Family::LensBlur,
+                Family::Matting,
                 Family::Remove,
                 Family::Grain,
             ]
