@@ -198,6 +198,7 @@ impl LensBlurPipeline {
         )]
         let radii = FUSION_RADII.map(|radius| (radius * prepared.scale).round().max(1.0) as u32);
         let colour = foreground(&linear, &alpha, width, height, &radii);
+        let subject_alpha = held(&alpha, &linear, &colour);
 
         // The background's colour behind the subject, from what lies behind the band and is not covered. Not from what is
         // in front of it: focused low on a tree, the canopy above is nearer, and its colour would wash the background.
@@ -230,7 +231,7 @@ impl LensBlurPipeline {
         {
             let kept = beside_nearer.as_slice()[index] > 0.5 && beside_behind.as_slice()[index] < 0.5;
             if covered(index) && !kept {
-                let share = coverage[index].min(1.0);
+                let share = subject_alpha.as_slice()[index].min(1.0);
                 for ((value, fill), own) in pixel.iter_mut().zip(fill).zip(own) {
                     *value = (*value - share * own).max(0.0) + share * fill;
                 }
@@ -241,7 +242,7 @@ impl LensBlurPipeline {
 
         tracing::debug!(operation = %self.name, ring, "lens blur subject matted");
 
-        Matted { background, radius, colour, alpha }
+        Matted { background, radius, colour, alpha: subject_alpha }
     }
 }
 
@@ -440,6 +441,35 @@ fn layer_count(radius: &Plane, settings: Defocus, subject: bool) -> usize {
     };
 
     layers + usize::from(subject)
+}
+
+/// How much of each pixel the subject takes, `alpha` held to what the photograph `linear` has of the subject's own
+/// `colour`: the photograph is `a F + (1 - a) B`, and the background's share of it is never negative, so `a` is at most
+/// `I / F` in every channel.
+///
+/// A matting model's edge fades out over a few dozen pixels past a leaf, and blur fusion takes the colour of that faint
+/// alpha from the leaves around it. Against a dark bush the subject's share of a pixel was then more than the whole
+/// pixel (alpha 0.18, the photograph (21, 32, 16) in sRGB, the subject alone (56, 49, 15)): what is left of the pixel
+/// for the background is clamped at nothing, and the sharp subject laid the leaves' yellow over the blurred bush, a
+/// soft olive glow around the outline. Held, the alpha there is what of the leaves' colour the pixel can hold, and the
+/// rest of it is the background.
+fn held(alpha: &Plane, linear: &[f32], colour: &[f32]) -> Plane {
+    let mut share = alpha.clone();
+    let pixels = linear.as_chunks::<3>().0.iter().zip(colour.as_chunks::<3>().0);
+
+    for (value, (photograph, own)) in share.as_mut_slice().iter_mut().zip(pixels) {
+        // A NaN or nothing is no subject, as the render reads it, and stays so; a channel the subject has none of
+        // bounds nothing.
+        if *value > 0.0 {
+            for (photograph, own) in photograph.iter().zip(own) {
+                if *own > 0.0 {
+                    *value = value.min(photograph.max(0.0) / own);
+                }
+            }
+        }
+    }
+
+    share
 }
 
 /// `input`'s sRGB values in `0..=1`, three interleaved a pixel: what the depth is refined along.
@@ -727,6 +757,64 @@ mod tests {
         // Filled whole, the gap's middle reads [205, 205, 195]: the wall.
         let middle = result.get_pixel(160, 120);
         assert!(middle.0.iter().all(|&value| value < 90), "{middle:?}");
+    }
+
+    #[test]
+    fn a_faint_alpha_past_the_subjects_edge_adds_none_of_its_colour_to_a_dark_background() {
+        // A yellow subject before a dark bush, and a matte whose edge fades out over 12 px beyond it, where the
+        // photograph is only the bush: a matting model's soft ramp. Blur fusion gives the ramp the subject's yellow, so
+        // its alpha times that colour is more than the whole pixel there; composited sharp over the blurred bush, it
+        // was a yellow glow around the subject. What the render shows there is the bush.
+        let (x0, y0, x1, y1) = INSIDE;
+        let inside = |x: u32, y: u32| (x0..x1).contains(&x) && (y0..y1).contains(&y);
+        let within =
+            |x: u32, y: u32, inset: u32| x + inset >= x0 && x < x1 + inset && y + inset >= y0 && y < y1 + inset;
+        let bush = Rgb([20, 32, 16]);
+        let picture =
+            DynamicImage::ImageRgb8(RgbImage::from_fn(
+                320,
+                240,
+                |x, y| {
+                    if inside(x, y) { Rgb([210, 180, 40]) } else { bush }
+                },
+            ));
+        let alpha: Vec<f32> = (0..240)
+            .flat_map(|y| (0..320).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                if inside(x, y) {
+                    1.0
+                } else if within(x, y, 12) {
+                    0.2
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+
+        let result = run(&matted_pipeline(Matte::new(320, 240, &alpha)), &picture).to_rgb8();
+        // Unheld, the ramp reads [79, 69, 18] three pixels out.
+        for x in [x0 - 3, x0 - 8] {
+            let pixel = result.get_pixel(x, 120);
+            assert!(
+                pixel.0.iter().zip(bush.0).all(|(&value, bush)| value.abs_diff(bush) <= 6),
+                "({x}, 120): {pixel:?}"
+            );
+        }
+        assert_eq!(result.get_pixel(160, 120).0, [210, 180, 40]);
+    }
+
+    #[test]
+    fn the_subjects_share_of_a_pixel_is_no_more_than_the_photograph_has_of_its_colour() {
+        // Half covered by a yellow the pixel has a tenth of in red: a tenth is all it can hold. Where the photograph
+        // can hold the subject, or there is no subject, the alpha stands; a channel the subject has none of bounds
+        // nothing.
+        let alpha = Plane::from_vec(4, 1, vec![0.5, 0.5, 0.0, 0.5]).unwrap();
+        let linear = [0.05, 0.5, 0.5, 0.5, 0.4, 0.2, 0.1, 0.1, 0.1, 0.3, 0.3, 0.0];
+        let colour = [0.5, 0.5, 0.0, 0.6, 0.6, 0.2, 0.8, 0.8, 0.8, 0.4, 0.4, 0.0];
+        let held = held(&alpha, &linear, &colour);
+
+        let expected = [0.1, 0.5, 0.0, 0.5];
+        assert!(held.as_slice().iter().zip(expected).all(|(a, b)| (a - b).abs() < 1e-6), "{:?}", held.as_slice());
     }
 
     #[test]
