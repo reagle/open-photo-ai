@@ -12,11 +12,12 @@
 // means), which is what makes solving them coarsely nearly free in quality; the photograph's own edges come back in at
 // the last step through `I`, which is read at full resolution.
 //
-// Box means by running sums, so the cost per pixel does not grow with the window. The window is clipped at the edges
-// of the plane and divided by the number of pixels it actually holds, the original paper's convention, rather than
-// reflected: a reflected window counts the pixels next to an edge twice.
+// Box means by running sums ([`boxes`](crate::boxes)), so the cost per pixel does not grow with the window. The window
+// is clipped at the edges of the plane and divided by the number of pixels it actually holds, the original paper's
+// convention, rather than reflected: a reflected window counts the pixels next to an edge twice.
 
 use crate::bilinear::Axis;
+use crate::boxes::{box_mean, reduced};
 use crate::plane::Plane;
 use crate::rows::for_each_row;
 
@@ -148,81 +149,6 @@ fn shrunk(low: &Plane, width: u32, height: u32) -> Plane {
     Plane::from_vec(columns.div_ceil(factor) as u32, rows.div_ceil(factor) as u32, data)
         .expect("one value for every pixel of the reduction")
         .resized(width, height)
-}
-
-/// `data`, `N` interleaved values a pixel over `width` x `height`, reduced by `factor` on each axis: every block's
-/// mean, with the blocks along the right and bottom edges as wide as what is left.
-fn reduced<const N: usize>(data: &[f32], width: usize, height: usize, factor: usize) -> Vec<f32> {
-    let (small_width, small_height) = (width.div_ceil(factor), height.div_ceil(factor));
-    let mut out = vec![0.0_f32; N * small_width * small_height];
-
-    for_each_row(&mut out, N * small_width, small_height, |row, out| {
-        let ys = row * factor..((row + 1) * factor).min(height);
-
-        for (column, mean) in out.as_chunks_mut::<N>().0.iter_mut().enumerate() {
-            let xs = column * factor..((column + 1) * factor).min(width);
-            let mut sum = [0.0_f32; N];
-
-            for y in ys.clone() {
-                for pixel in data[N * (y * width + xs.start)..N * (y * width + xs.end)].as_chunks::<N>().0 {
-                    sum = std::array::from_fn(|channel| sum[channel] + pixel[channel]);
-                }
-            }
-
-            let count = (ys.len() * xs.len()) as f32;
-            *mean = sum.map(|value| value / count);
-        }
-    });
-
-    out
-}
-
-/// The mean of each of `data`'s `channels` interleaved planes over the `2 * radius + 1` square around every pixel,
-/// clipped at the edges and divided by what it holds.
-fn box_mean(data: &[f32], channels: usize, width: usize, height: usize, radius: usize) -> Vec<f32> {
-    let row_len = channels * width;
-    let mut across = vec![0.0_f32; data.len()];
-
-    // Along each row by a running sum in `f64`, so a long row accumulates no drift from what it has already passed.
-    for_each_row(&mut across, row_len, height, |y, out| {
-        let row = &data[row_len * y..][..row_len];
-        let mut prefix = vec![0.0_f64; row_len + channels];
-
-        for (index, value) in row.iter().enumerate() {
-            prefix[index + channels] = prefix[index] + f64::from(*value);
-        }
-
-        for x in 0..width {
-            let (first, last) = (x.saturating_sub(radius), (x + radius).min(width - 1));
-            let count = (last - first + 1) as f64;
-
-            for channel in 0..channels {
-                let sum = prefix[channels * (last + 1) + channel] - prefix[channels * first + channel];
-                out[channels * x + channel] = (sum / count) as f32;
-            }
-        }
-    });
-
-    // Down each column as a direct sum over the window's rows, which keeps the rows independent of each other and so
-    // splittable across cores; the window is a handful of rows at the reduced resolution.
-    let mut out = vec![0.0_f32; data.len()];
-
-    for_each_row(&mut out, row_len, height, |y, out| {
-        let (first, last) = (y.saturating_sub(radius), (y + radius).min(height - 1));
-
-        for source in first..=last {
-            for (value, add) in out.iter_mut().zip(&across[row_len * source..][..row_len]) {
-                *value += add;
-            }
-        }
-
-        let count = (last - first + 1) as f32;
-        for value in out.iter_mut() {
-            *value /= count;
-        }
-    });
-
-    out
 }
 
 /// `plane` grey-dilated by a disc of `radius` pixels: each pixel takes the largest value within the disc around it.
