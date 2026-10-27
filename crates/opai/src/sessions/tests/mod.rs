@@ -115,6 +115,8 @@ struct Bench {
     /// Builds that run the device out of memory: each one on a provider listed here fails that way and takes its
     /// entry out, so a provider listed twice fails twice.
     out_of_memory: Mutex<Vec<ExecutionProvider>>,
+    /// How long each build takes, standing in for a compile; nothing by default.
+    takes: Duration,
 }
 
 impl Bench {
@@ -143,6 +145,8 @@ fn builder(bench: &Arc<Bench>) -> Builder<Fake> {
             builds.push(request);
             builds.len()
         };
+
+        std::thread::sleep(bench.takes);
 
         if bench.unreadable {
             return Err(unreadable(&model));

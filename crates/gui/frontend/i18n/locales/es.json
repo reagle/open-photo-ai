@@ -464,9 +464,11 @@
             "restore": "Restaurando",
             "grain": "Grano",
             "enhancing": "Mejorando",
-            "optimizing": "Optimizando el modelo {{model}}",
+            "compiling": "Compilando el modelo {{model}}",
             "loading": "Cargando el modelo {{model}}",
-            "firstUse": "Solo la primera vez, puede tardar unos minutos"
+            "firstUse": "Solo la primera vez, puede tardar unos minutos",
+            "firstUseAbout_one": "Solo la primera vez, puede tardar alrededor de {{count}} minuto",
+            "firstUseAbout_other": "Solo la primera vez, puede tardar unos {{count}} minutos"
         }
     },
     "menu": {

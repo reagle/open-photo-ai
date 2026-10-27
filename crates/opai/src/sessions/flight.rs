@@ -1,6 +1,7 @@
 //! One build in progress, shared by every request waiting on it, and the install inside it that answers to them.
 
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
@@ -13,11 +14,11 @@ use crate::task::lock;
 use super::resident::Resident;
 
 /// Told that a build has put its model on disk and is opening a session on this provider — which, the first time, can
-/// be minutes of compiling it.
+/// be minutes of compiling it — and how long that is expected to take, where a slow open of it has been seen before.
 ///
 /// A callback of its own beside [`OnProgress`] rather than a phase of an install's report: an install's report is about
 /// bytes and names a dependency, and this moves none and is about a session. `Arc<dyn Fn>` for the reason that one is.
-pub(crate) type OnPreparing = Arc<dyn Fn(ExecutionProvider) + Send + Sync>;
+pub(crate) type OnPreparing = Arc<dyn Fn(ExecutionProvider, Option<Duration>) + Send + Sync>;
 
 /// What one request brings to the build it is waiting on: where its install's progress goes, where the news that the
 /// session is being opened goes, and how long it wants that install to happen at all.
@@ -137,10 +138,13 @@ impl<S, E> Flight<S, E> {
 
         // Outside the lock, as every report is, and only while the build has not ended: one that has is about to hand
         // this request its session, and there is nothing being prepared to tell it about.
-        if let (Some(provider), Some(on_preparing)) = (preparing, &interest.on_preparing)
+        //
+        // With what is left of the estimate rather than all of it: the request joins a compile that is already under
+        // way, and an estimate counted again from zero would hold its bar back behind a compile that is partway done.
+        if let (Some(opening), Some(on_preparing)) = (preparing, &interest.on_preparing)
             && !self.cell.initialized()
         {
-            on_preparing(provider);
+            on_preparing(opening.provider, opening.remaining());
         }
 
         waiting
@@ -176,9 +180,9 @@ pub(super) struct Audience {
     next: u64,
     /// Who is waiting: the place each holds, and where that request's reports go where it asked for any.
     pub(super) waiting: Vec<(u64, Listener)>,
-    /// The provider the build is opening its session on, once its install is done; `None` before then. Kept so a
-    /// request that joins afterwards can be told, which a report sent once could not do.
-    preparing: Option<ExecutionProvider>,
+    /// The session the build is opening, once its install is done; `None` before then. Kept so a request that joins
+    /// afterwards can be told, which a report sent once could not do.
+    preparing: Option<Opening>,
     /// Cancelled when the last request withdraws, and replaced when one joins again.
     ///
     /// Replaced rather than reset, because a [`CancellationToken`] is one-shot — and the thing that has to be
@@ -209,6 +213,24 @@ impl Audience {
         self.waiting.push((place, listener));
 
         Waiting { audience: Arc::clone(held), place: Some(place) }
+    }
+}
+
+/// A session a build has begun opening: on what, how long that was expected to take, and since when.
+#[derive(Debug, Clone, Copy)]
+struct Opening {
+    /// The provider of the rung being opened.
+    provider: ExecutionProvider,
+    /// How long the last slow open of this model on it took, where one has been seen.
+    expected: Option<Duration>,
+    /// When the build said it was opening it.
+    since: Instant,
+}
+
+impl Opening {
+    /// What is left of the estimate now, and nothing once it has run out rather than a negative wait.
+    fn remaining(&self) -> Option<Duration> {
+        self.expected.map(|expected| expected.saturating_sub(self.since.elapsed()))
     }
 }
 
@@ -279,21 +301,21 @@ impl Install {
     }
 
     /// Tells every waiting request — and every one that joins from now on — that the model is on disk and its session
-    /// is being opened on `provider`.
+    /// is being opened on `provider`, expected to take `expected` where a slow open of it has been seen before.
     ///
     /// Called by the build between its install and the open, which is the one point that knows both that nothing is
     /// left to transfer and which rung of the ladder it is on.
-    pub(super) fn preparing(&self, provider: ExecutionProvider) {
+    pub(super) fn preparing(&self, provider: ExecutionProvider, expected: Option<Duration>) {
         // Cloned out from under the lock and called after it, for the reason `reporting` gives.
         let listening: Vec<OnPreparing> = {
             let mut audience = lock(&self.audience);
-            audience.preparing = Some(provider);
+            audience.preparing = Some(Opening { provider, expected, since: Instant::now() });
 
             audience.waiting.iter().filter_map(|(_, listener)| listener.on_preparing.clone()).collect()
         };
 
         for on_preparing in listening {
-            on_preparing(provider);
+            on_preparing(provider, expected);
         }
     }
 
