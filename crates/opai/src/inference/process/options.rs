@@ -1,10 +1,13 @@
 //! What a caller may say about a run beyond the picture and the operations.
 
+use std::sync::Arc;
+
 use tokio_util::sync::CancellationToken;
 
 use crate::inference::depth::OutputDepth;
 use crate::inference::faces::FaceSelection;
 use crate::inference::progress::OnInference;
+use crate::mask::Mask;
 use crate::providers::ExecutionProvider;
 
 /// Everything about a run that has a sensible default.
@@ -78,6 +81,21 @@ pub struct ProcessOptions {
     /// operation owns an equal `1 / N` of it and the detection takes the first fifth of the first operation's slot
     /// (none, when the store already knew the faces).
     pub faces: FaceSelection,
+
+    // An `Arc` because a batch export hands one mask to every photograph's run and these options are `Clone`: a mask
+    // from a file holds a plane the size of that file.
+    /// The part of the photograph the enhancements are for. Defaults to none: the result is the chain's everywhere.
+    ///
+    /// With a mask, the chain still runs over the whole frame, and its result is then blended with the photograph it
+    /// started from, `source + w (result - source)` per pixel: the result where the mask is white, the photograph where
+    /// it is black. A chain that changed the size (an upscale) is blended with a Lanczos3 enlargement of the
+    /// photograph, so the masked-out part is a plain enlargement. A result that is not the photograph's shape is an
+    /// error ([`InferenceError::MaskShape`](crate::InferenceError::MaskShape)), not an unmasked picture.
+    ///
+    /// **No step's cache key includes the mask**, so a run that differs from an earlier one only in its mask runs no
+    /// model: it serves every step from the store and redoes the blend. The result's identity does include it. An
+    /// [empty](Mask::is_empty) mask, and a mask over an empty chain, are no mask at all, identity included.
+    pub mask: Option<Arc<Mask>>,
 }
 
 impl std::fmt::Debug for ProcessOptions {
@@ -91,6 +109,8 @@ impl std::fmt::Debug for ProcessOptions {
             .field("cancel", &self.cancel)
             .field("cache", &self.cache)
             .field("faces", &self.faces)
+            // The signature rather than the strokes, which can run to thousands of points, or a base's millions.
+            .field("mask", &self.mask.as_ref().map(|mask| format!("{:016x}", mask.signature())))
             .finish()
     }
 }
@@ -106,6 +126,7 @@ impl Default for ProcessOptions {
             // twice, and a default of `false` would mean every caller had to know to ask for that.
             cache: true,
             faces: FaceSelection::AsGiven,
+            mask: None,
         }
     }
 }
