@@ -401,6 +401,19 @@ pub struct Selection {
     #[arg(long = "lb-f", value_name = "F", value_parser = parse_f_number, requires = "lens_blur")]
     pub lens_blur_f: Option<f64>,
 
+    /// How much blur to add, from 0 (the photograph as taken) to 100 (f/1.4 full-frame equivalent), the Blur amount
+    /// slider of the app. The amount is laid out evenly in blur between the photograph's own aperture and f/1.4, so
+    /// the same amount gives the same look on a photograph of any aperture. Instead of --lb-f.
+    #[arg(
+        long = "lb-amount",
+        value_name = "AMOUNT",
+        value_parser = parse_blur_amount,
+        requires = "lens_blur",
+        conflicts_with = "lens_blur_f",
+        allow_hyphen_values = true
+    )]
+    pub lens_blur_amount: Option<f64>,
+
     /// The point to focus on, as fractions of the photograph's width and height from 0 to 1 (`0.5,0.3` is the middle
     /// across and 30 percent down); default 0.5,0.5, the centre.
     // Hyphen values allowed so that `-0.1,0.5`, which is no number clap would read as one, reaches `parse_focus` and is
@@ -422,6 +435,35 @@ pub struct Selection {
 }
 
 impl Selection {
+    /// This selection with a `--lb-amount` turned into the `--lb-f` it comes to on a photograph with the `lens` its
+    /// EXIF settles (the assumed f/8 where there is none), and a sentence saying what it came to for the log.
+    ///
+    /// An amount is against the photograph's own aperture, which only the photograph has, so a selection is resolved
+    /// for each. The f-number is the library's ([`opai::OwnLens::f_number_for_amount`]), the same the app's slider
+    /// writes, so nothing downstream knows the difference. A selection with no amount is returned as it is.
+    pub fn with_blur_amount_resolved(mut self, lens: Option<opai::OwnLens>) -> (Self, Option<String>) {
+        let Some(amount) = self.lens_blur_amount.take() else { return (self, None) };
+
+        let own = lens.unwrap_or_else(|| opai::OwnLens::from_exif(&opai::LensExif::default(), 1.0));
+        let f_number = own.f_number_for_amount(amount);
+        self.lens_blur_f = Some(f_number);
+
+        let note = if own.can_blur_more() {
+            format!(
+                "the lens blur's amount {amount} is f/{f_number} (full-frame equivalent), against the photograph's own f/{}",
+                own.own_f_number
+            )
+        } else {
+            format!(
+                "the lens blur's amount has no effect: the photograph was taken at f/{} (full-frame equivalent), as wide \
+                 as the blur goes",
+                own.own_f_number
+            )
+        };
+
+        (self, Some(note))
+    }
+
     /// Whether no enhancement is asked for.
     pub const fn is_empty(&self) -> bool {
         self.denoise.is_none()
@@ -490,6 +532,14 @@ fn parse_f_number(text: &str) -> Result<f64, String> {
 
     let value: f64 = bare.trim().parse().map_err(|_| format!("{text:?} is not a number; {}", range()))?;
     opai::FNumber::new(value).map(opai::FNumber::get).map_err(|_| range())
+}
+
+/// A `--lb-amount` value: a number from 0 to 100.
+fn parse_blur_amount(text: &str) -> Result<f64, String> {
+    let range = || "the blur amount must be from 0 to 100".to_string();
+
+    let value: f64 = text.trim().parse().map_err(|_| format!("{text:?} is not a number; {}", range()))?;
+    if (0.0..=100.0).contains(&value) { Ok(value) } else { Err(range()) }
 }
 
 /// A `--lb-focus` value: two fractions from 0 to 1, across and down, separated by a comma.
@@ -693,6 +743,7 @@ mod tests {
             ("--cb-bias 20", "--cb-bias"),
             ("--lb", "--lens-blur"),
             ("--lb --lb-f 2", "--lens-blur"),
+            ("--lb --lb-amount 50", "--lens-blur"),
         ];
 
         for (flags, name) in cases {
@@ -822,6 +873,7 @@ mod tests {
             ("--cb --la-bias 20", "--light-adjustment"),
             ("--la --cb-bias 20", "--color-balance"),
             ("--up --lb-f 2", "--lens-blur"),
+            ("--up --lb-amount 50", "--lens-blur"),
             ("--up --lb-focus 0.3,0.6", "--lens-blur"),
             ("--up --lb-edges matte", "--lens-blur"),
         ] {
@@ -956,6 +1008,89 @@ mod tests {
             assert_eq!(error.kind(), ErrorKind::ValueValidation, "{flags}: {error}");
             assert!(error.to_string().contains(expected), "{flags}: {error}");
         }
+    }
+
+    #[test]
+    fn a_lens_blur_takes_a_blur_amount_from_0_to_100_instead_of_an_f_number() {
+        let args = parse("opai photo.jpg --lb --lb-amount 50 -o out.jpg").expect("parses");
+        assert_eq!((args.selection.lens_blur_amount, args.selection.lens_blur_f), (Some(50.0), None));
+
+        for (text, expected) in [("0", 0.0), ("100", 100.0), (" 37.5 ", 37.5)] {
+            assert_eq!(parse_blur_amount(text), Ok(expected), "{text}");
+        }
+
+        for (flags, expected) in [
+            ("--lb-amount 101", "the blur amount must be from 0 to 100"),
+            ("--lb-amount -1", "the blur amount must be from 0 to 100"),
+            ("--lb-amount lots", "the blur amount must be from 0 to 100"),
+        ] {
+            let error = parse(&format!("opai photo.jpg --lb {flags} -o out.jpg")).expect_err(flags);
+
+            assert!(error.to_string().contains(expected), "{flags}: {error}");
+        }
+    }
+
+    /// The lens of a photograph taken at the equivalent f-number `own`.
+    fn lens_at(own: f32) -> opai::OwnLens {
+        opai::OwnLens { own_f_number: own, focal_35mm: None, origin: opai::LensOrigin::Exif, crop_factor: None }
+    }
+
+    /// The `--lb-f` the command line `line` comes to on a photograph with `lens`, and what the log is told.
+    fn resolved(line: &str, lens: Option<opai::OwnLens>) -> (Option<f64>, Option<String>) {
+        let (selection, note) = parse(line).expect("parses").selection.with_blur_amount_resolved(lens);
+        assert_eq!(selection.lens_blur_amount, None, "{line}: the amount is spent");
+
+        (selection.lens_blur_f, note)
+    }
+
+    #[test]
+    fn a_blur_amount_comes_to_the_f_number_the_apps_slider_writes_for_it() {
+        // The same numbers as the library's `a_blur_amount_runs_from_...` and the app's `blurAmount.test.ts`.
+        let bonsai = Some(lens_at(6.0));
+        for (amount, expected) in [(50, 2.27), (100, 1.4), (0, 6.0), (25, 3.294)] {
+            let line = format!("opai photo.jpg --lb --lb-amount {amount} -o out.jpg");
+
+            assert_eq!(resolved(&line, bonsai).0, Some(expected), "{line}");
+        }
+        assert_eq!(resolved("opai photo.jpg --lb --lb-amount 50 -o out.jpg", Some(lens_at(12.0))).0, Some(2.507));
+
+        // The same amount is another aperture on another photograph, and the f/8 assumed where the lens is unknown.
+        assert_eq!(resolved("opai photo.jpg --lb --lb-amount 50 -o out.jpg", None).0, Some(2.383));
+    }
+
+    #[test]
+    fn a_resolved_blur_amount_says_what_it_came_to() {
+        let (_, note) = resolved("opai photo.jpg --lb --lb-amount 50 -o out.jpg", Some(lens_at(6.0)));
+
+        assert_eq!(
+            note.as_deref(),
+            Some("the lens blur's amount 50 is f/2.27 (full-frame equivalent), against the photograph's own f/6")
+        );
+    }
+
+    #[test]
+    fn a_blur_amount_on_a_photograph_as_wide_as_the_blur_goes_adds_nothing_and_says_so() {
+        let (f_number, note) = resolved("opai photo.jpg --lb --lb-amount 100 -o out.jpg", Some(lens_at(1.2)));
+
+        assert_eq!(f_number, Some(1.2));
+        let note = note.expect("says so");
+        assert!(note.contains("no effect") && note.contains("f/1.2"), "{note}");
+    }
+
+    #[test]
+    fn a_selection_with_no_blur_amount_is_left_as_it_is() {
+        let selection = parse("opai photo.jpg --lb --lb-f 2 -o out.jpg").expect("parses").selection;
+
+        let (resolved, note) = selection.with_blur_amount_resolved(Some(lens_at(6.0)));
+
+        assert_eq!((resolved, note), (selection, None));
+    }
+
+    #[test]
+    fn a_blur_amount_and_an_f_number_are_two_ways_to_say_one_thing() {
+        let error = parse("opai photo.jpg --lb --lb-f 2 --lb-amount 50 -o out.jpg").expect_err("both");
+
+        assert_eq!(error.kind(), ErrorKind::ArgumentConflict, "{error}");
     }
 
     #[test]
