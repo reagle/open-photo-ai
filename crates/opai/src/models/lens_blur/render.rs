@@ -181,7 +181,7 @@ impl<B: Backend> ImagePipeline<B> for LensBlurPipeline {
         };
 
         let blurred =
-            defocus(&linear, width, height, &radius, self.keep_sharp.as_deref(), Defocus::DEFAULT, &per_layer)
+            defocus(&linear, width, height, &radius, self.keep_sharp.as_deref(), None, Defocus::DEFAULT, &per_layer)
                 .ok_or(InferenceError::Cancelled)?;
         drop(linear);
 

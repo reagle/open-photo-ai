@@ -1,8 +1,9 @@
 //! Box filters over interleaved planes: the mean over a square window around every pixel, and the mean of every
 //! block of a reduction.
 //!
-//! The first caller is the guided upsampling ([`guided`](crate::guided)), which solves its linear models over box
-//! windows at a reduced resolution.
+//! Three callers, all of the lens blur: the guided upsampling ([`guided`](crate::guided)) solves its linear models
+//! over box windows at a reduced resolution, blur fusion ([`fusion`](crate::fusion)) estimates a matted subject's
+//! colour from box means, and the push-pull fill ([`fill`](crate::fill)) builds its pyramid from reductions by two.
 
 // Box means by running sums, so the cost per pixel does not grow with the window. The window is clipped at the edges
 // of the plane and divided by the number of pixels it actually holds, the original paper's convention, rather than
@@ -13,6 +14,19 @@ use crate::rows::for_each_row;
 /// `data`, `N` interleaved values a pixel over `width` x `height`, reduced by `factor` on each axis: every block's
 /// mean, with the blocks along the right and bottom edges as wide as what is left.
 pub fn reduced<const N: usize>(data: &[f32], width: usize, height: usize, factor: usize) -> Vec<f32> {
+    reduced_with::<N>(width, height, factor, |x, y| std::array::from_fn(|channel| data[N * (y * width + x) + channel]))
+}
+
+/// [`reduced`] of the `N` values `at` answers for each pixel `(x, y)` of `width` x `height`.
+///
+/// For a caller whose values are worked out per pixel (a product of two planes, a weight times a colour), so the
+/// full-size interleaved plane they would make is never allocated: at 24 megapixels, four values a pixel are 384 MB.
+pub fn reduced_with<const N: usize>(
+    width: usize,
+    height: usize,
+    factor: usize,
+    at: impl Fn(usize, usize) -> [f32; N] + Sync,
+) -> Vec<f32> {
     let (small_width, small_height) = (width.div_ceil(factor), height.div_ceil(factor));
     let mut out = vec![0.0_f32; N * small_width * small_height];
 
@@ -24,7 +38,8 @@ pub fn reduced<const N: usize>(data: &[f32], width: usize, height: usize, factor
             let mut sum = [0.0_f32; N];
 
             for y in ys.clone() {
-                for pixel in data[N * (y * width + xs.start)..N * (y * width + xs.end)].as_chunks::<N>().0 {
+                for x in xs.clone() {
+                    let pixel = at(x, y);
                     sum = std::array::from_fn(|channel| sum[channel] + pixel[channel]);
                 }
             }
