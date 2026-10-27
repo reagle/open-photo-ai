@@ -27,9 +27,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::error::InferenceError;
-use crate::image::{read_frame_diagonal, read_lens};
+use crate::image::{LensExif, read_frame_diagonal, read_lens};
 use crate::inference::execute::ExecuteOptions;
-use crate::models::{Depth, DepthMap, Lens, Operation};
+use crate::models::{Depth, DepthMap, Lens, Operation, OwnLens};
 use crate::task::spawn_blocking;
 
 /// `operations` with every lens blur handed `map` and `lens`; every other operation unchanged.
@@ -73,6 +73,33 @@ fn framing_of(file_diagonal: Option<f32>, dimensions: (u32, u32)) -> f32 {
     }
 }
 
+/// The lens the file at `path` records, checked against the file's own frame, and the framing of the `picture` (its
+/// dimensions in pixels) cut from it: the reads [`own_lens`] and [`find_chain_depth`] share, so what a front end shows
+/// is what a run blurs from. Reads the file's EXIF and header, so a caller on an async runtime runs it on a blocking
+/// thread. A picture with no file reads as a lens nothing is known about, at the framing it has.
+fn framed_exif(path: &Path, picture: (u32, u32)) -> (LensExif, f32) {
+    let exif = read_lens(path);
+    let file_diagonal = read_frame_diagonal(path);
+    let framing = framing_of(file_diagonal, picture);
+    // The sensor the EXIF names is of the pixels the EXIF says it has: a file since resized has not those.
+    let exif = file_diagonal.map_or(exif, |diagonal| exif.checked_against(diagonal));
+
+    (exif, framing)
+}
+
+/// The lens of the file at `path` as its EXIF alone settles it, for the picture `framed` (its dimensions in pixels, or
+/// `None` for the whole frame): what a front end shows before any depth is estimated, answered at once and never
+/// running the depth model. Reads the file's EXIF and header, so a caller on an async runtime runs it on a blocking
+/// thread.
+///
+/// The same reads, checks and framing as [`find_chain_depth`], so the f-number a slider ends at is the one a run blurs
+/// from. A file that cannot be read is a lens nothing is known about: the assumed f/8.
+pub fn own_lens(path: &Path, framed: Option<(u32, u32)>) -> OwnLens {
+    let (exif, framing) = framed_exif(path, framed.unwrap_or_default());
+
+    OwnLens::from_exif(&exif, framing)
+}
+
 /// `operations` with every lens blur handed the depth `estimate` finds and the lens the file at `path` records, framed
 /// as the `picture` (its dimensions) it is run over is: `estimate` is called at most once, with `options`, and only for
 /// a chain holding a lens blur that the lens does not already show adds nothing.
@@ -96,14 +123,9 @@ where
     };
 
     // A few reads of the file's header, off the runtime as every file read is, and before the estimate: they decide
-    // whether it is needed. A picture with no file — a sweep or a test — reads as a lens nothing is known about, at the
-    // framing it has.
+    // whether it is needed.
     let path = path.to_path_buf();
-    let (exif, file_diagonal) =
-        spawn_blocking::<_, InferenceError, _>(move || (read_lens(&path), read_frame_diagonal(&path))).await?;
-    let framing = framing_of(file_diagonal, picture);
-    // The sensor the EXIF names is of the pixels the EXIF says it has: a file since resized has not those.
-    let exif = file_diagonal.map_or(exif, |diagonal| exif.checked_against(diagonal));
+    let (exif, framing) = spawn_blocking::<_, InferenceError, _>(move || framed_exif(&path, picture)).await?;
 
     // A lens the EXIF alone settles, and every blur at or above its own f-number: the photograph is returned as it is,
     // so the model that would say how far away things are is neither loaded nor run.
@@ -316,6 +338,28 @@ mod tests {
         assert_eq!(calls, 1);
         let lens = lens_blur(&outcome.expect("filled")[0]).lens().expect("a lens");
         assert_eq!((lens.focal_35mm, lens.own_f_number, lens.origin), (72.0, 12.0, LensOrigin::Exif));
+    }
+
+    #[test]
+    fn the_own_lens_is_the_one_a_run_blurs_from_for_the_picture_as_framed() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let path = photograph(dir.path(), 600, 400);
+
+        // Whole, and with no framing given: the 36 mm f/6 of the file's EXIF, read and never estimated.
+        let whole = own_lens(&path, Some((600, 400)));
+        assert_eq!((whole.own_f_number, whole.focal_35mm, whole.origin), (6.0, Some(36.0), LensOrigin::Exif));
+        assert_eq!(own_lens(&path, None), whole);
+
+        // Cut to half the width and height: 72 mm at f/12, exactly as `find_chain_depth` resolves it for the same crop.
+        let cropped = own_lens(&path, Some((300, 200)));
+        assert_eq!((cropped.own_f_number, cropped.focal_35mm, cropped.origin), (12.0, Some(72.0), LensOrigin::Exif));
+    }
+
+    #[test]
+    fn the_own_lens_of_a_file_that_cannot_be_read_is_the_assumed_f8() {
+        let own = own_lens(Path::new("/nowhere/at/all.jpg"), Some((300, 200)));
+
+        assert_eq!((own.own_f_number, own.focal_35mm, own.origin), (8.0, None, LensOrigin::Assumed));
     }
 
     #[test]
