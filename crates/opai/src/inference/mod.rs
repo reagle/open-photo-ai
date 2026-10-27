@@ -11,6 +11,7 @@
 
 pub(crate) mod acquire;
 pub(crate) mod depth;
+pub(crate) mod depth_map;
 pub(crate) mod execute;
 pub(crate) mod faces;
 pub(crate) mod handover;
