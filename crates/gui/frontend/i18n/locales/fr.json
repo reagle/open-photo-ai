@@ -418,6 +418,7 @@
         "autopilotFailed": "Une erreur s'est produite. Impossible d'exécuter l'autopilote.",
         "enhanceFailed": "Une erreur s'est produite. Impossible d'améliorer l'image.",
         "faceDetectFailed": "Une erreur s'est produite. Impossible de détecter les visages.",
+        "matteFailed": "Une erreur s'est produite. Impossible de détourer le sujet : le flou d'objectif utilise uniquement la profondeur.",
         "showLogsFailed": "Impossible d'ouvrir le fichier journal. Vous le trouverez dans le dossier de configuration de l'application.",
         "revealFailed": "Impossible d'ouvrir le gestionnaire de fichiers. Le fichier reste enregistré à son emplacement d'exportation.",
         "revealFileFailed": "Impossible d'ouvrir le gestionnaire de fichiers.",

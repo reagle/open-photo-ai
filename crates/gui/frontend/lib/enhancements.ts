@@ -65,9 +65,9 @@ export type Enhancement = {
  * its comment is that *"the add menu offering them in one order while the pipeline ran them in another
  * would be a silent inconsistency."* A test holds them to each other.
  *
- * **`detection` and `depth` are named nowhere here.** The catalogue publishes them - deliberately, so that
- * "which model detects faces" or "which model measures depth" is not something a front end restates - but
- * they are not enhancements a user adds, so they get no row. That is how the two families stay out of a
+ * **`detection`, `depth` and `matting` are named nowhere here.** The catalogue publishes them - deliberately, so
+ * that "which model detects faces" or "which model measures depth" is not something a front end restates - but
+ * they are not enhancements a user adds, so they get no row. That is how the three families stay out of a
  * dialog about enhancements without the catalogue being filtered on the wire.
  */
 export const ENHANCEMENTS = [
@@ -433,9 +433,9 @@ export const withModel = (
  * The families a progress report can carry that are not enhancements a user adds, and the enhancement
  * each is reported **as**.
  *
- * Two entries: a detection is run for a face recovery and a depth estimate for a lens blur, and nothing else, so what
- * the user should read on the chip is the enhancement they asked for. The detector is offered by no menu in this
- * application and named in no catalogue row, so naming it there would name a model nobody chose.
+ * Three entries: a detection is run for a face recovery, and a depth estimate and a matte for a lens blur, and nothing
+ * else, so what the user should read on the chip is the enhancement they asked for. The detector is offered by no menu
+ * in this application and named in no catalogue row, so naming it there would name a model nobody chose.
  *
  * **Honest on the wire, named here.** Rust sends `detection`, because the operation *is* a detection
  * and saying otherwise would make the report's own diagnostic (`New York (FP32)`) disagree with its
@@ -443,7 +443,11 @@ export const withModel = (
  * business - the same decision that keeps `detection` out of {@link ENHANCEMENTS} - so the mapping is
  * one entry beside that list rather than a lie on the wire. See design.md D8.
  */
-const REPORTED_AS: Partial<Record<Family, Operation["family"]>> = { detection: "face_recovery", depth: "lens_blur" };
+const REPORTED_AS: Partial<Record<Family, Operation["family"]>> = {
+    detection: "face_recovery",
+    depth: "lens_blur",
+    matting: "lens_blur",
+};
 
 /**
  * What the progress chip calls the family a report carries, or `undefined` where this application has

@@ -6,9 +6,16 @@
 //! EXIF, and hands both to every lens blur in it — see `inference::depth_map`. What a run then does is
 //! [`render`]'s: the depth brought to the output's size along the photograph's edges, the radius a thin lens would
 //! add at every pixel, and the layered render of `imaging::defocus`.
+//!
+//! **The subject's edges are matted.** Where the blur is large enough to show it, the chain also builds a trimap of the
+//! subject in focus from the depth ([`trimap`]), has the matting model estimate its edge — every strand of hair or
+//! fur and every leaf tip that is part sharp subject and part blurred background — and hands the blur the [`Matte`].
+//! The render then fills the background in behind the subject, blurs it, and composites the subject over it as one
+//! sharp layer, so the street seen between the strands of a fur hood is blurred and the strands are not.
 
 pub(crate) mod lens;
 pub(crate) mod render;
+pub(crate) mod trimap;
 pub(crate) mod variant;
 
 use std::sync::Arc;
@@ -20,6 +27,8 @@ use super::artifact::{ArtifactId, Family};
 use super::depth::{Depth, DepthMap};
 use super::f_number::FNumber;
 use super::fraction::Fraction;
+use super::handle::PlaneHandle;
+use super::matting::{Matte, Matting};
 use super::operation::Operation;
 use super::precision::{FloatPrecision, Precision};
 
@@ -29,6 +38,7 @@ use crate::providers::profile::EpProfile;
 
 use lens::Blur;
 pub use lens::{Lens, LensOrigin, OwnLens};
+use render::Refined;
 pub(crate) use variant::ALL;
 pub use variant::LensBlurVariant;
 
@@ -37,6 +47,26 @@ pub const FOCUS_X: &str = "focus_x";
 
 /// The name the catalogue publishes the focus point's vertical fraction under.
 pub const FOCUS_Y: &str = "focus_y";
+
+/// How a lens blur treats the edge of the subject in focus.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LensBlurEdges {
+    /// The subject in focus is matted and composited over the blurred background, so hair, fur and leaf edges stay
+    /// sharp with the background between them blurred. Where the blur is too small to show the difference, or the
+    /// matting model cannot run, the render is the depth's alone.
+    #[default]
+    Matte,
+    /// The depth alone decides what is sharp, pixel by pixel: the render before matting existed.
+    Depth,
+}
+
+impl LensBlurEdges {
+    /// Whether this is [`Matte`](Self::Matte), the default, which a serialized lens blur leaves out.
+    fn is_matte(&self) -> bool {
+        *self == Self::Matte
+    }
+}
 
 /// One lens blur: which model's depth drives it, the f-number it opens the lens to, the point it focuses on, and —
 /// once a chain has injected them — the depth map and the photograph's own lens.
@@ -57,6 +87,10 @@ pub struct LensBlur {
     focus_x: Fraction,
     /// And down it.
     focus_y: Fraction,
+    /// How the subject's edges are treated. Left out of the serialized form where it is the default, so a front end
+    /// that has never heard of it reads and writes lens blurs as it always has.
+    #[serde(default, skip_serializing_if = "LensBlurEdges::is_matte")]
+    edges: LensBlurEdges,
     /// The depth of the chain's input, injected by the chain.
     #[serde(skip)]
     depth: Option<DepthHandle>,
@@ -68,6 +102,9 @@ pub struct LensBlur {
     /// A weight in `0..=1` at any resolution that keeps pixels sharp: each pixel's radius is scaled by one minus it.
     #[serde(skip)]
     keep_sharp: Option<PlaneHandle>,
+    /// The subject in focus, matted on the chain's input, injected by the chain after the depth.
+    #[serde(skip)]
+    matte: Option<MatteHandle>,
 }
 
 impl LensBlur {
@@ -78,7 +115,17 @@ impl LensBlur {
 
     /// The lens blur running `variant` at `f_number`, focused at (`focus_x`, `focus_y`).
     pub fn new(variant: LensBlurVariant, f_number: FNumber, focus_x: Fraction, focus_y: Fraction) -> Self {
-        Self { variant, f_number, focus_x, focus_y, depth: None, lens: None, keep_sharp: None }
+        Self {
+            variant,
+            f_number,
+            focus_x,
+            focus_y,
+            edges: LensBlurEdges::Matte,
+            depth: None,
+            lens: None,
+            keep_sharp: None,
+            matte: None,
+        }
     }
 
     /// This blur driven by `map`, the depth of the picture it will run over.
@@ -91,6 +138,20 @@ impl LensBlur {
     #[must_use]
     pub fn with_lens(self, lens: Lens) -> Self {
         Self { lens: Some(lens), ..self }
+    }
+
+    /// This blur treating the subject's edges as `edges` says.
+    #[must_use]
+    pub fn with_edges(self, edges: LensBlurEdges) -> Self {
+        Self { edges, ..self }
+    }
+
+    /// This blur compositing the subject `matte` covers, matted on the picture it will run over, over its blurred
+    /// background; `refined` is the depth refined to that picture for the trimap, which the render then uses rather
+    /// than refining it again. Part of no comparison and no cache key: it is the depth's and the picture's, which are.
+    #[must_use]
+    pub(crate) fn with_matte(self, matte: Arc<Matte>, refined: Option<Arc<Refined>>) -> Self {
+        Self { matte: Some(MatteHandle::new(matte, refined)), ..self }
     }
 
     /// This blur keeping the pixels `weight` covers sharp, in proportion to it. The masking seam: nothing in the
@@ -138,6 +199,25 @@ impl LensBlur {
     /// The photograph's own lens, if a chain has handed it one.
     pub const fn lens(&self) -> Option<Lens> {
         self.lens
+    }
+
+    /// How this blur treats the subject's edges.
+    pub const fn edges(&self) -> LensBlurEdges {
+        self.edges
+    }
+
+    /// The matte of the subject this blur was handed, if a chain has handed it one.
+    #[cfg(test)]
+    pub(crate) fn matte(&self) -> Option<&Matte> {
+        self.matte.as_ref().map(|handle| &*handle.matte)
+    }
+
+    /// The matting a chain runs to matte this blur's subject: none where it renders from the depth alone.
+    pub(crate) fn matting(&self) -> Option<Matting> {
+        match self.edges {
+            LensBlurEdges::Matte => Some(self.variant.matting()),
+            LensBlurEdges::Depth => None,
+        }
     }
 
     /// The model this runs, as a metric is tagged with it: `lb_lisbon_fp16`.
@@ -190,6 +270,7 @@ impl LensBlur {
             (None, _) => return Err(refused("a depth map")),
         };
         let lens = self.lens.ok_or_else(|| refused("the photograph's lens"))?;
+        let matte = self.matte.as_ref().filter(|_| self.edges == LensBlurEdges::Matte);
 
         Ok(Arc::new(render::LensBlurPipeline::new(
             self.display_name(),
@@ -200,7 +281,10 @@ impl LensBlur {
                 lens,
             },
             depth,
-            self.keep_sharp.as_ref().map(|handle| Arc::clone(&handle.plane)),
+            self.keep_sharp.as_ref().map(|handle| Arc::clone(handle.plane())),
+            // Never a matte for a blur told to render from the depth alone, whoever handed it one.
+            matte.map(|handle| Arc::clone(&handle.matte)),
+            matte.and_then(|handle| handle.refined.clone()),
         )))
     }
 
@@ -208,9 +292,10 @@ impl LensBlur {
     /// `lb-lisbon-fp16-n1.4-x0.55-y0.3-d<signature>-l36-6`.
     ///
     /// The f-number, the focus point, the depth map's signature (`d0` before one is injected) and the lens the blur
-    /// used (`l0` before one is), so a photograph whose EXIF differs is never served another's blur. A keep-sharp
-    /// weight adds its own signature, `-k<signature>`. Hyphen-separated, so it cannot be mistaken for an
-    /// underscore-separated artifact name.
+    /// used (`l0` before one is), so a photograph whose EXIF differs is never served another's blur. A matte adds its
+    /// signature, `-a<signature>`, and rendering from the depth alone by request adds `-e0`; a keep-sharp weight adds
+    /// its own signature, `-k<signature>`. Hyphen-separated, so it cannot be mistaken for an underscore-separated
+    /// artifact name.
     pub fn cache_tag(&self) -> String {
         let depth = self
             .depth
@@ -227,8 +312,13 @@ impl LensBlur {
             self.focus_x,
             self.focus_y,
         );
+        match (&self.matte, self.edges) {
+            (Some(matte), LensBlurEdges::Matte) => tag.push_str(&format!("-a{:016x}", matte.signature)),
+            (_, LensBlurEdges::Depth) => tag.push_str("-e0"),
+            (None, LensBlurEdges::Matte) => {}
+        }
         if let Some(weight) = &self.keep_sharp {
-            tag.push_str(&format!("-k{:016x}", weight.signature));
+            tag.push_str(&format!("-k{:016x}", weight.signature()));
         }
 
         tag
@@ -238,6 +328,46 @@ impl LensBlur {
 impl std::fmt::Display for LensBlur {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} ({})", self.variant.label(), self.variant.precision().label())
+    }
+}
+
+/// A matte as a lens blur holds it: shared, and compared, hashed and printed by its signature, computed once; with the
+/// depth its trimap was drawn on, refined to the chain's input, when there is one to hand on.
+#[derive(Clone)]
+pub(crate) struct MatteHandle {
+    matte: Arc<Matte>,
+    /// [`Matte::signature`], computed here once.
+    signature: u64,
+    refined: Option<Arc<Refined>>,
+}
+
+impl MatteHandle {
+    fn new(matte: Arc<Matte>, refined: Option<Arc<Refined>>) -> Self {
+        let signature = matte.signature();
+
+        Self { matte, signature, refined }
+    }
+}
+
+impl PartialEq for MatteHandle {
+    fn eq(&self, other: &Self) -> bool {
+        self.signature == other.signature
+    }
+}
+
+impl Eq for MatteHandle {}
+
+impl std::hash::Hash for MatteHandle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.signature.hash(state);
+    }
+}
+
+impl std::fmt::Debug for MatteHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (width, height) = self.matte.dimensions();
+
+        write!(f, "Matte({width}x{height}, {:016x})", self.signature)
     }
 }
 
@@ -277,47 +407,6 @@ impl std::fmt::Debug for DepthHandle {
         let (width, height) = self.map.dimensions();
 
         write!(f, "DepthMap({width}x{height}, {:016x})", self.signature)
-    }
-}
-
-/// A keep-sharp weight as a lens blur holds it: shared, and compared, hashed and printed by a signature of its values.
-#[derive(Clone)]
-pub(crate) struct PlaneHandle {
-    plane: Arc<Plane>,
-    signature: u64,
-}
-
-impl PlaneHandle {
-    fn new(plane: Arc<Plane>) -> Self {
-        let mut bytes = Vec::with_capacity(8 + plane.as_slice().len() * 4);
-        bytes.extend_from_slice(&plane.width().to_le_bytes());
-        bytes.extend_from_slice(&plane.height().to_le_bytes());
-        for value in plane.as_slice() {
-            bytes.extend_from_slice(&value.to_bits().to_le_bytes());
-        }
-        let signature = u64::from_str_radix(&rust_sak::crypto::xxh3_bytes(&bytes), 16).unwrap_or_default();
-
-        Self { plane, signature }
-    }
-}
-
-impl PartialEq for PlaneHandle {
-    fn eq(&self, other: &Self) -> bool {
-        self.signature == other.signature
-    }
-}
-
-impl Eq for PlaneHandle {}
-
-impl std::hash::Hash for PlaneHandle {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.signature.hash(state);
-    }
-}
-
-impl std::fmt::Debug for PlaneHandle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Plane({}x{}, {:016x})", self.plane.width(), self.plane.height(), self.signature)
     }
 }
 
@@ -382,6 +471,8 @@ pub(crate) mod tests {
             LensBlur { focus_x: fraction(0.2), ..base.clone() },
             injected(2.8),
             base.clone().with_keep_sharp(Arc::new(Plane::new(4, 4, 1.0))),
+            base.clone().with_matte(Arc::new(Matte::new(2, 2, &[0.0, 0.5, 1.0, 1.0])), None),
+            base.clone().with_edges(LensBlurEdges::Depth),
         ];
 
         for other in others {
@@ -392,6 +483,35 @@ pub(crate) mod tests {
 
         // The same map handed twice is one operation: the handle compares by the map's signature, not its address.
         assert_eq!(base.clone().with_depth(Arc::new(two_planes(64, 48, 1.0, 10.0))), base);
+    }
+
+    #[test]
+    fn a_matte_and_the_depth_alone_are_each_spelled_in_the_cache_tag() {
+        let base = injected(1.4);
+        let matte = Arc::new(Matte::new(2, 2, &[0.0, 0.5, 1.0, 1.0]));
+        let signature = matte.signature();
+
+        let matted = base.clone().with_matte(Arc::clone(&matte), None);
+        assert_eq!(matted.cache_tag(), format!("{}-a{signature:016x}", base.cache_tag()));
+
+        // The refined depth handed beside it is the depth's and the picture's, already in the key: no other operation.
+        let map = two_planes(64, 48, 1.0, 10.0);
+        let picture = image::DynamicImage::new_rgb8(64, 48);
+        let refined = Arc::new(Refined::of(&map, &picture));
+        let handed = base.clone().with_matte(matte, Some(refined));
+        assert_eq!(handed, matted);
+        assert_eq!(handed.cache_tag(), matted.cache_tag());
+        assert_eq!(matted.matte().map(Matte::signature), Some(signature));
+
+        let depth_only = base.clone().with_edges(LensBlurEdges::Depth);
+        assert_eq!(depth_only.cache_tag(), format!("{}-e0", base.cache_tag()));
+        assert_eq!(depth_only.matting(), None);
+        assert_eq!(base.matting(), Some(Matting::porto()));
+
+        // A blur told to render from the depth alone is spelled as one, whatever it was handed.
+        let both = depth_only.clone().with_matte(Arc::new(Matte::new(1, 1, &[1.0])), None);
+        assert_eq!(both.cache_tag(), depth_only.cache_tag());
+        assert!(!matted.cache_tag().contains('_'), "{}", matted.cache_tag());
     }
 
     #[test]
@@ -451,5 +571,18 @@ pub(crate) mod tests {
         };
         assert_eq!((back.depth(), back.lens()), (None, None));
         assert_eq!((back.f_number(), back.focus()), (injected(1.4).f_number(), injected(1.4).focus()));
+        assert_eq!(back.edges(), LensBlurEdges::Matte);
+    }
+
+    #[test]
+    fn edges_from_the_depth_alone_are_serialized_and_the_default_is_left_out() {
+        let depth_only = injected(1.4).with_edges(LensBlurEdges::Depth);
+        let json = serde_json::to_string(&Operation::LensBlur(depth_only)).expect("serializes");
+
+        assert!(json.ends_with(r#""focus_y":0.5,"edges":"depth"}"#), "{json}");
+        let Operation::LensBlur(back) = serde_json::from_str(&json).expect("deserializes") else {
+            panic!("the tag named another family");
+        };
+        assert_eq!(back.edges(), LensBlurEdges::Depth);
     }
 }

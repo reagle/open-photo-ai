@@ -29,6 +29,7 @@ use super::face::Faces;
 use super::face_recovery::FaceRecovery;
 use super::lens_blur::LensBlur;
 use super::light_adjustment::LightAdjustment;
+use super::matting::{Matte, Matting, MattingVariant};
 use super::precision::Precision;
 use super::sharpen::Sharpen;
 use super::upscale::Upscale;
@@ -269,7 +270,9 @@ impl Operation {
 /// // unsatisfied bound: what refuses it is that the two carriers are two types, with nothing converting either way.
 /// let chain: Vec<Operation> = vec![Detection::newyork(FloatPrecision::Fp32)];
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+// `Clone` rather than `Copy` since matting: its operation holds the trimap it was handed, behind an `Arc`, as a face
+// recovery holds its faces.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "family", rename_all = "snake_case")]
 pub enum Analysis {
     // What lets every model's constructor return "the carrier for the path it runs on" without detection reading as an
@@ -285,6 +288,8 @@ pub enum Analysis {
     Detection(Detection),
     /// A depth-estimation run, whose result is a [`DepthMap`].
     Depth(Depth),
+    /// A matting run, whose result is a [`Matte`].
+    Matting(Matting),
 }
 
 impl Analysis {
@@ -294,6 +299,7 @@ impl Analysis {
         match self {
             Self::Detection(_) => Family::Detection,
             Self::Depth(_) => Family::Depth,
+            Self::Matting(_) => Family::Matting,
         }
     }
 
@@ -302,14 +308,16 @@ impl Analysis {
         match self {
             Self::Detection(operation) => operation.precision(),
             Self::Depth(operation) => operation.precision(),
+            Self::Matting(operation) => operation.precision(),
         }
     }
 
-    /// The name a user interface shows for this operation: `New York (FP32)`, `Lisbon (FP16)`.
+    /// The name a user interface shows for this operation: `New York (FP32)`, `Lisbon (FP16)`, `Porto (FP32)`.
     pub fn display_name(&self) -> String {
         match self {
             Self::Detection(operation) => operation.display_name(),
             Self::Depth(operation) => operation.display_name(),
+            Self::Matting(operation) => operation.display_name(),
         }
     }
 
@@ -318,6 +326,7 @@ impl Analysis {
         match self {
             Self::Detection(operation) => operation.required_artifacts(),
             Self::Depth(operation) => operation.required_artifacts(),
+            Self::Matting(operation) => operation.required_artifacts(),
         }
     }
 
@@ -327,6 +336,7 @@ impl Analysis {
         match self {
             Self::Detection(operation) => operation.cache_tag(),
             Self::Depth(operation) => operation.cache_tag(),
+            Self::Matting(operation) => operation.cache_tag(),
         }
     }
     /// The execution-provider tuning measured for the model this operation runs: [`Operation::profile`]'s
@@ -344,6 +354,7 @@ impl Analysis {
         match self {
             Self::Detection(operation) => operation.profile(),
             Self::Depth(operation) => operation.profile(),
+            Self::Matting(operation) => operation.profile(),
         }
     }
 }
@@ -491,6 +502,27 @@ impl sealed::DataModel for Depth {
     private_interfaces,
     reason = "the seal is the point: these methods speak the crate-private `pipeline` vocabulary and are unreachable outside it"
 )]
+impl sealed::DataModel for Matting {
+    /// How much of each pixel the subject covers.
+    type Output = Matte;
+
+    fn as_subject(&self) -> crate::models::Subject {
+        crate::models::Subject::Analysis(Analysis::Matting(self.clone()))
+    }
+
+    /// The family's model over the trimap it was handed, or a refusal where it was handed none.
+    fn pipeline<B: Backend>(&self, _dimensions: (u32, u32)) -> Result<SharedData<B, Self::Output>, InferenceError> {
+        match self.variant() {
+            MattingVariant::Porto(_) => super::matting::porto::pipeline::<B>(self),
+        }
+    }
+}
+
+#[expect(
+    private_bounds,
+    private_interfaces,
+    reason = "the seal is the point: these methods speak the crate-private `pipeline` vocabulary, unreachable outside"
+)]
 impl sealed::DataModel for Analysis {
     // Faces whichever arm is carried, because this impl exists for `Opai::execute`, whose result has always been a set
     // of faces. A depth run has its own entry point and reaches the driver through `Depth`'s impl above, never this
@@ -500,7 +532,7 @@ impl sealed::DataModel for Analysis {
     type Output = Faces;
 
     fn as_subject(&self) -> crate::models::Subject {
-        crate::models::Subject::Analysis(*self)
+        crate::models::Subject::Analysis(self.clone())
     }
 
     /// The detection's pipeline, or a refusal for a depth estimate handed to the entry point that returns faces.
@@ -510,6 +542,10 @@ impl sealed::DataModel for Analysis {
             Self::Depth(depth) => Err(InferenceError::Unsupported {
                 operation: depth.display_name(),
                 reason: crate::error::UnsupportedReason::OtherResult { produces: "a depth map" },
+            }),
+            Self::Matting(matting) => Err(InferenceError::Unsupported {
+                operation: matting.display_name(),
+                reason: crate::error::UnsupportedReason::OtherResult { produces: "a matte" },
             }),
         }
     }
@@ -573,7 +609,10 @@ pub(crate) mod tests {
         assert_eq!(reason, crate::error::UnsupportedReason::OtherResult { produces: "a depth map" });
 
         // Reported as the analysis it is, whichever value it is asked of.
-        assert_eq!(sealed::DataModel::as_subject(&Depth::lisbon()), crate::models::Subject::Analysis(wrapped));
+        assert_eq!(
+            sealed::DataModel::as_subject(&Depth::lisbon()),
+            crate::models::Subject::Analysis(wrapped.clone())
+        );
         assert_eq!(wrapped.family(), Family::Depth);
         assert_eq!(wrapped.cache_tag(), "dp-lisbon-fp16");
     }
@@ -598,7 +637,7 @@ pub(crate) mod tests {
         // `Subject`, so the driver needs this and must get the value carrying the very operation it was handed.
         let detection = Detection::newyork(FloatPrecision::Fp16);
 
-        assert_eq!(sealed::DataModel::as_subject(&detection), crate::models::Subject::Analysis(detection));
+        assert_eq!(sealed::DataModel::as_subject(&detection), crate::models::Subject::Analysis(detection.clone()));
         assert_eq!(sealed::DataModel::as_subject(&detection).cache_tag(), detection.cache_tag());
     }
 
@@ -994,7 +1033,7 @@ pub(crate) mod tests {
             }
         }
 
-        assert_eq!(families.len(), 10, "the spread did not reach all ten families: {families:?}");
+        assert_eq!(families.len(), 11, "the spread did not reach all eleven families: {families:?}");
     }
 
     #[test]
@@ -1053,8 +1092,9 @@ pub(crate) mod tests {
 
         // New York is measured at **both** precisions, unlike every upscale arm below — which is the whole of what
         // makes it a traversal of its own carrier rather than an arm in the one below. See `DetectionVariant::profile`
-        // for why the layout is declared at FP32 as well as FP16.
-        for analysis in every_analysis() {
+        // for why the layout is declared at FP32 as well as FP16. Porto, at FP32 alone, runs on the provider defaults,
+        // which its measurement settled (see `porto::profile`).
+        for analysis in every_analysis().into_iter().filter(|analysis| analysis.family() != Family::Matting) {
             assert_ne!(
                 analysis.profile(),
                 EpProfile::default(),

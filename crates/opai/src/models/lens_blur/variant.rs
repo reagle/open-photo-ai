@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::super::catalogue::LENS_BLUR_PARAMETERS;
 use super::super::depth::Depth;
+use super::super::matting::Matting;
 use super::super::precision::{FloatPrecision, Precision};
 use super::super::simple::SimpleVariant;
 
@@ -39,6 +40,13 @@ impl LensBlurVariant {
     pub fn depth(self) -> Depth {
         match self {
             Self::Lisbon(_) => Depth::lisbon(),
+        }
+    }
+
+    /// The matting a chain runs to matte this blur's subject.
+    pub(crate) fn matting(self) -> Matting {
+        match self {
+            Self::Lisbon(_) => Matting::porto(),
         }
     }
 

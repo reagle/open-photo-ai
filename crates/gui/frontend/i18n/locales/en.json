@@ -408,6 +408,7 @@
         "autopilotFailed": "Something went wrong. Failed to run autopilot.",
         "enhanceFailed": "Something went wrong. Failed to enhance image.",
         "faceDetectFailed": "Something went wrong. Failed to detect faces.",
+        "matteFailed": "Something went wrong. Failed to matte the subject, so the Lens Blur uses the depth alone.",
         "showLogsFailed": "Couldn't open the log file. You can find it in the app's configuration folder.",
         "revealFailed": "Couldn't open the file manager. The file is still saved at its export location.",
         "revealFileFailed": "Couldn't open the file manager.",

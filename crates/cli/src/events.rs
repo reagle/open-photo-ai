@@ -103,6 +103,7 @@ fn family_name(family: Family) -> &'static str {
     match family {
         Family::Detection => "detection",
         Family::Depth => "depth",
+        Family::Matting => "matting",
         Family::Denoise => "denoise",
         Family::FaceRecovery => "face_recovery",
         Family::Colorization => "colorization",

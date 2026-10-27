@@ -35,6 +35,7 @@ use super::fidelity::Fidelity;
 use super::fraction::Fraction;
 use super::lens_blur::{FOCUS_X, FOCUS_Y, LensBlur, LensBlurVariant};
 use super::light_adjustment::{LightAdjustment, LightAdjustmentVariant};
+use super::matting::{Matting, MattingVariant};
 use super::precision::Precision;
 use super::scale::Scale;
 use super::sharpen::{Sharpen, SharpenVariant};
@@ -285,7 +286,8 @@ impl VariantEntry {
     ///
     /// A depth row builds an [`Analysis::Depth`] like detection's [`Analysis::Detection`]; it is run through
     /// [`Opai::estimate_depth`](crate::Opai::estimate_depth), not [`Opai::execute`](crate::Opai::execute), which
-    /// refuses it.
+    /// refuses it. A matting row builds an [`Analysis::Matting`] with no trimap, run through
+    /// [`Opai::matte`](crate::Opai::matte) once one is handed it.
     ///
     /// # Errors
     ///
@@ -304,7 +306,7 @@ impl VariantEntry {
         let codename = self.codename;
 
         let enhancement = match self.family {
-            // The two families on the other run path, and the only arms that do not produce an `Operation`.
+            // The three families on the other run path, and the only arms that do not produce an `Operation`.
             Family::Detection => {
                 let variant = DetectionVariant::from_codename(codename, precision).ok_or_else(unpublished)?;
 
@@ -317,6 +319,13 @@ impl VariantEntry {
 
                 return Ok(Subject::Analysis(Analysis::Depth(match variant {
                     DepthVariant::Lisbon(_) => Depth::lisbon(),
+                })));
+            }
+            Family::Matting => {
+                let variant = MattingVariant::from_codename(codename, precision).ok_or_else(unpublished)?;
+
+                return Ok(Subject::Analysis(Analysis::Matting(match variant {
+                    MattingVariant::Porto(_) => Matting::porto(),
                 })));
             }
             Family::Denoise => match DenoiseVariant::from_codename(codename, precision).ok_or_else(unpublished)? {

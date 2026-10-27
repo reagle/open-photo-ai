@@ -10,16 +10,20 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use image::DynamicImage;
 use imaging::ChannelDepth;
-use imaging::defocus::{Defocus, defocus};
+use imaging::defocus::{Defocus, Spacing, Subject, defocus};
+use imaging::fill::filled;
+use imaging::fusion::foreground;
 use imaging::guided::{dilated_nearer, upsampled};
 use imaging::linear::{decoded_linear, encoded};
+use imaging::morph::dilated;
 use imaging::plane::Plane;
 use imaging::rows::for_each_row;
 use imaging::tensor::{Sampler, flattened};
 
 use super::lens::{Blur, Lens};
+use super::trimap::{Band, matted_focus, unknown_radius};
 use crate::error::InferenceError;
-use crate::models::{ArtifactId, DepthMap};
+use crate::models::{ArtifactId, DepthMap, Matte};
 use crate::pipeline::{Backend, ImagePipeline, Model, checkpoint, reporter};
 use crate::providers::profile::EpProfile;
 use crate::sessions::SessionHandle;
@@ -44,6 +48,26 @@ const EDGE_GROW: f32 = 3.0;
 const REFINE_SHARE: f64 = 0.1;
 const ENCODE_SHARE: f64 = 0.1;
 
+/// The layers a matted render is spread over: from a pixel either side of focus, each 1.4 times the last.
+///
+/// Evenly spaced layers at a long lens's radii (-400 to +150 px at 181 mm f/1.4) are 40 px apart, so nothing near focus
+/// is rendered at its own radius, and the matted subject's filled-in background shows through the gaps that leaves.
+const MATTED_SPACING: Spacing = Spacing::Geometric { first: 1.0, ratio: 1.4 };
+
+/// The coverage above which a pixel is part of the subject, and has the background filled in behind it.
+const COVERED: f32 = 0.004;
+
+// Not the radius of the subject's median distance, which the design proposed: on a long lens the band of distances is
+// deep in radius (at 181 mm f/1.4 a street portrait's spans -20 to +20 px), and its median, pulled back by the hair,
+// fur and leaf tips it is generous to, put the face focused on 9 px out of focus. Everything in the band is sharp: a
+// focus range.
+/// The one radius the matted subject is rendered at: none, so the whole subject in focus is sharp.
+const SUBJECT_RADIUS: f32 = 0.0;
+
+/// Blur fusion's two window radii at [`REFERENCE_DIAGONAL`]: a wide pass for the colours either side of the edge, then
+/// a narrow one along the strands.
+const FUSION_RADII: [f32; 2] = [90.0, 6.0];
+
 /// What a run is asked for: the aperture, the focus point and the photograph's own lens.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Settings {
@@ -65,6 +89,11 @@ pub(crate) struct LensBlurPipeline {
     /// The depth of the chain's input, or `None` for a blur the chain knew adds nothing and so never estimated one.
     depth: Option<Arc<DepthMap>>,
     keep_sharp: Option<Arc<Plane>>,
+    /// The subject in focus, matted on the chain's input, or `None` to render from the depth alone.
+    matte: Option<Arc<Matte>>,
+    /// The depth refined to the chain's input when its trimap was built, if it was: the render's own, where the input
+    /// is still that size, rather than refined a second time.
+    refined: Option<Arc<Refined>>,
 }
 
 impl LensBlurPipeline {
@@ -74,24 +103,135 @@ impl LensBlurPipeline {
         settings: Settings,
         depth: Option<Arc<DepthMap>>,
         keep_sharp: Option<Arc<Plane>>,
+        matte: Option<Arc<Matte>>,
+        refined: Option<Arc<Refined>>,
     ) -> Self {
-        Self { name, required, settings, depth, keep_sharp }
+        Self { name, required, settings, depth, keep_sharp, matte, refined }
     }
 
-    /// The signed radius every pixel of the `input` is blurred by, or `None` where the blur adds nothing anywhere.
+    /// The blur at the `input`'s size and the depth refined to it, or `None` where the blur adds nothing anywhere.
     ///
     /// Decided before anything is built from the photograph: the guide the depth is refined along is a float copy of
     /// every pixel, which a blur at or above the photograph's own f-number would have made for nothing.
-    fn radii(&self, input: &DynamicImage) -> Option<Plane> {
-        let (width, height) = (input.width(), input.height());
-        let diagonal = (width as f32).hypot(height as f32);
+    fn prepared(&self, input: &DynamicImage) -> Option<Prepared> {
+        let diagonal = (input.width() as f32).hypot(input.height() as f32);
         // None where the chain knew the blur adds nothing and estimated no depth, which `Blur::new` then agrees with.
         let depth = self.depth.as_ref()?;
         let (fx, fy) = self.settings.focus;
-        // Read from the map as estimated, before the edge grow moves any edge: the focus is the depth at the point.
-        let focus = depth.focus_metres(fx, fy);
-        let blur = Blur::new(&self.settings.lens, self.settings.f_number, focus, diagonal)?;
+        // Read from the map as estimated, before the edge grow moves any edge: the focus is the depth at the point. A
+        // matted subject's is the rounded distance its band was drawn around, so the render's band is the trimap's.
+        let focus_m = depth.focus_metres(fx, fy);
+        let focus_m = if self.matte.is_some() { matted_focus(focus_m) } else { focus_m };
+        let blur = Blur::new(&self.settings.lens, self.settings.f_number, focus_m, diagonal)?;
+        let refined = match &self.refined {
+            Some(refined) if (refined.plane.width(), refined.plane.height()) == (input.width(), input.height()) => {
+                Arc::clone(refined)
+            }
+            _ => Arc::new(Refined::of(depth, input)),
+        };
 
+        Some(Prepared { blur, focus_m, refined, scale: diagonal / REFERENCE_DIAGONAL })
+    }
+
+    /// The signed radius every pixel of the `input` is blurred by, or `None` where the blur adds nothing anywhere.
+    #[cfg(test)]
+    fn radii(&self, input: &DynamicImage) -> Option<Plane> {
+        self.prepared(input).map(|prepared| prepared.radius(&prepared.refined.plane, &self.name))
+    }
+
+    /// The scene filled in behind the subject `matte` covers, and the subject, for a render at `prepared`'s size.
+    ///
+    /// The composite of the OpenSpec design of `add-lens-blur-8-matting` (X8): the colour behind the subject filled
+    /// from the background around it; the disparity filled likewise, over the subject and over a ring around it within
+    /// the band, where the depth map's soft edge put the background at the subject's distance and would leave a crisp
+    /// halo; and the subject's own colour by blur fusion. The subject is rendered sharp.
+    fn matted(&self, linear: Vec<f32>, prepared: &Prepared, matte: &Matte, width: u32, height: u32) -> Matted {
+        let pixels = width as usize * height as usize;
+        let alpha = matte.plane().resized(width, height);
+        let coverage = alpha.as_slice();
+        let band = Band::around(prepared.focus_m);
+        let nearest = prepared.refined.nearest;
+        let disparity = prepared.refined.plane.as_slice();
+        let ring = unknown_radius(width, height);
+        let plane_of = |at: &dyn Fn(usize) -> bool| {
+            Plane::from_vec(width, height, (0..pixels).map(|index| f32::from(u8::from(at(index)))).collect())
+                .expect("one value a pixel")
+        };
+
+        // Each full-size mask is dropped as soon as what it was made for is: at 24 megapixels each is 96 MB.
+
+        // What the subject covers, and the ring around it within the band where the depth bled the subject outward.
+        let covered = |index: usize| coverage[index] > COVERED;
+        let around = dilated(&plane_of(&covered), ring);
+        let near_band = |index: usize| around.as_slice()[index] > 0.5 && band.holds(disparity[index] * nearest);
+        let hidden = plane_of(&|index| covered(index) || near_band(index));
+        drop(around);
+
+        // The background's distance there, from what lies behind the band and is not hidden; never nearer than the
+        // depth already says, so a ring pixel that truly was background keeps its own.
+        let behind = plane_of(&|index| hidden.as_slice()[index] < 0.5 && band.behind(disparity[index] * nearest));
+        let filled_disparity = filled(disparity, 1, width, height, &behind);
+        drop(behind);
+        let background_disparity = Plane::from_vec(
+            width,
+            height,
+            (0..pixels)
+                .map(|index| {
+                    if hidden.as_slice()[index] > 0.5 {
+                        filled_disparity[index].min(disparity[index])
+                    } else {
+                        disparity[index]
+                    }
+                })
+                .collect(),
+        )
+        .expect("one value a pixel");
+        drop((filled_disparity, hidden));
+        let radius = prepared.radius(&background_disparity, &self.name);
+        drop(background_disparity);
+
+        // The subject's own colour, from the photograph as it is: what of each edge pixel is not the background.
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a window of a few dozen pixels"
+        )]
+        let radii = FUSION_RADII.map(|radius| (radius * prepared.scale).round().max(1.0) as u32);
+        let colour = foreground(&linear, &alpha, width, height, &radii);
+
+        // The background's colour behind the subject, from what lies behind the band and is not covered.
+        let known = plane_of(&|index| !covered(index) && band.behind(disparity[index] * nearest));
+        let filled_colour = filled(&linear, 3, width, height, &known);
+        drop(known);
+        let mut background = linear;
+        for (index, (pixel, fill)) in
+            background.as_chunks_mut::<3>().0.iter_mut().zip(filled_colour.as_chunks::<3>().0).enumerate()
+        {
+            if covered(index) {
+                pixel.copy_from_slice(fill);
+            }
+        }
+        drop(filled_colour);
+
+        tracing::debug!(operation = %self.name, ring, "lens blur subject matted");
+
+        Matted { background, radius, colour, alpha }
+    }
+}
+
+/// The depth brought to a picture's size along its edges: disparity over the map's nearest, guided-upsampled.
+pub(crate) struct Refined {
+    /// Disparity divided by [`nearest`](Self::nearest), so in `0..=1`, at the picture's size.
+    pub(crate) plane: Plane,
+    /// The largest disparity in the map, in `1 / m`.
+    pub(crate) nearest: f32,
+}
+
+impl Refined {
+    /// `depth`, refined along `input`'s edges to its size by D9's guided filter.
+    pub(crate) fn of(depth: &DepthMap, input: &DynamicImage) -> Self {
+        let (width, height) = (input.width(), input.height());
+        let diagonal = (width as f32).hypot(height as f32);
         let guide = srgb(input);
 
         // In disparity, which the radius is linear in, normalised to `0..=1` for the filter's regularisation.
@@ -108,20 +248,48 @@ impl LensBlurPipeline {
             reason = "a radius of a few dozen pixels"
         )]
         let radius = (GUIDE_RADIUS * scale).round().max(1.0) as u32;
-        let refined = upsampled(&low, &guide, width, height, radius, GUIDE_EPS);
-        let mut grown = dilated_nearer(&refined, (EDGE_GROW * scale).max(1.0));
+
+        Self { plane: upsampled(&low, &guide, width, height, radius, GUIDE_EPS), nearest }
+    }
+}
+
+/// What a run settles before it renders: the blur, the distance focused at, and the depth at the input's size.
+struct Prepared {
+    blur: Blur,
+    focus_m: f32,
+    refined: Arc<Refined>,
+    /// The input's diagonal over [`REFERENCE_DIAGONAL`].
+    scale: f32,
+}
+
+impl Prepared {
+    /// The signed radius of every pixel of `disparity`, a plane like [`Refined::plane`], after the edge grow.
+    fn radius(&self, disparity: &Plane, name: &str) -> Plane {
+        let mut grown = dilated_nearer(disparity, (EDGE_GROW * self.scale).max(1.0));
 
         for value in grown.as_mut_slice() {
-            *value = blur.radius(*value * nearest);
+            *value = self.blur.radius(*value * self.refined.nearest);
         }
 
         // What explains a result: where it focused, and how far the discs reach either side of the plane of focus.
         let (behind, front) =
             grown.as_slice().iter().fold((0.0_f32, 0.0_f32), |(low, high), &r| (low.min(r), high.max(r)));
-        tracing::debug!(operation = %self.name, focus_m = focus, behind, front, "lens blur radii");
+        tracing::debug!(operation = %name, focus_m = self.focus_m, behind, front, "lens blur radii");
 
-        Some(grown)
+        grown
     }
+}
+
+/// A matted render's inputs: the scene with the subject taken out and filled in, and the subject.
+struct Matted {
+    /// Linear colour, three values a pixel, filled in behind the subject.
+    background: Vec<f32>,
+    /// The background's signed radius a pixel, filled in behind the subject and around it.
+    radius: Plane,
+    /// The subject's own colour, linear, three values a pixel.
+    colour: Vec<f32>,
+    /// How much of each pixel the subject covers, at the input's size.
+    alpha: Plane,
 }
 
 impl<B: Backend> Model<B> for LensBlurPipeline {
@@ -159,20 +327,33 @@ impl<B: Backend> ImagePipeline<B> for LensBlurPipeline {
             return Err(InferenceError::Cancelled);
         }
 
-        let Some(radius) = self.radii(input) else {
+        let Some(prepared) = self.prepared(input) else {
             // At or above the photograph's own f-number: the photograph as it is, at the depth asked for, and never
             // decoded to linear light and back.
             report(1.0);
             return Ok(unchanged(input, depth));
         };
 
-        checkpoint(&report, cancelled, REFINE_SHARE)?;
-
         let (linear, _) = decoded_linear(input);
 
+        // With a matte, the scene behind the subject and the subject, spread over geometric layers; without one, the
+        // depth's own radii over even ones, exactly as before there was a matte.
+        let (scene, radius, subject, settings) = match &self.matte {
+            Some(matte) => {
+                let matted = self.matted(linear, &prepared, matte, width, height);
+                let settings = Defocus { spacing: MATTED_SPACING, ..Defocus::DEFAULT };
+
+                (matted.background, matted.radius, Some((matted.colour, matted.alpha)), settings)
+            }
+            None => (linear, prepared.radius(&prepared.refined.plane, &self.name), None, Defocus::DEFAULT),
+        };
+        drop(prepared);
+
+        checkpoint(&report, cancelled, REFINE_SHARE)?;
+
         // The render asks whether to stop before each layer, which is the one place it can be heard from: each
-        // question after the first is a layer done. About `layers + 1` of them, one being the plane of focus.
-        let layers = (Defocus::DEFAULT.layers + 1) as f64;
+        // question after the first is a layer done.
+        let layers = layer_count(&radius, settings, subject.is_some()) as f64;
         let asked = AtomicUsize::new(0);
         let per_layer = || {
             let done = asked.fetch_add(1, Ordering::Relaxed) as f64;
@@ -180,20 +361,49 @@ impl<B: Backend> ImagePipeline<B> for LensBlurPipeline {
             cancelled()
         };
 
+        let subject = subject.as_ref().map(|(colour, alpha)| Subject { colour, alpha, radius: SUBJECT_RADIUS });
         let blurred =
-            defocus(&linear, width, height, &radius, self.keep_sharp.as_deref(), None, Defocus::DEFAULT, &per_layer)
+            defocus(&scene, width, height, &radius, self.keep_sharp.as_deref(), subject, settings, &per_layer)
                 .ok_or(InferenceError::Cancelled)?;
-        drop(linear);
+        drop(scene);
 
         checkpoint(&report, cancelled, 1.0 - ENCODE_SHARE)?;
 
         let result = encoded(&blurred, width, height, depth);
         report(1.0);
 
-        tracing::debug!(operation = %self.name, width, height, "lens blur rendered");
+        tracing::debug!(operation = %self.name, width, height, matted = self.matte.is_some(), "lens blur rendered");
 
         Ok(result)
     }
+}
+
+/// About how many times a render over `radius` with `settings` asks whether to stop: once a layer, one being the plane
+/// of focus, and once more for a subject.
+///
+/// With even spacing that is the settings' layer count and one; with geometric spacing it is counted as the render
+/// spaces them, from a pixel either side of focus out to the extreme radii. Only the progress bar reads it.
+fn layer_count(radius: &Plane, settings: Defocus, subject: bool) -> usize {
+    let layers = match settings.spacing {
+        Spacing::Even => settings.layers + 1,
+        Spacing::Geometric { first, ratio } => {
+            let (behind, front) =
+                radius.as_slice().iter().fold((0.0_f32, 0.0_f32), |(low, high), &r| (low.min(r), high.max(r)));
+            let side = |extreme: f32| {
+                let (mut count, mut at) = (0, first);
+                while at < extreme {
+                    count += 1;
+                    at = (at * ratio).max(at + 1.0);
+                }
+
+                count + usize::from(extreme >= first)
+            };
+
+            1 + side(-behind) + side(front)
+        }
+    };
+
+    layers + usize::from(subject)
 }
 
 /// `input`'s sRGB values in `0..=1`, three interleaved a pixel: what the depth is refined along.
@@ -253,6 +463,8 @@ mod tests {
             Settings { f_number, focus: (0.5, 0.5), lens: Lens::new(36.0, 6.0, LensOrigin::Exif) },
             Some(Arc::new(two_planes(96, 72, 1.0, 10.0))),
             keep_sharp,
+            None,
+            None,
         )
     }
 
@@ -343,6 +555,152 @@ mod tests {
         let stopped =
             ImagePipeline::<NoBackend>::run(&pipeline(1.4, None), &input, &[], ChannelDepth::Eight, None, &|| true);
         assert!(matches!(stopped, Err(InferenceError::Cancelled)));
+    }
+
+    /// FNV-1a over a picture's bytes: a fingerprint a test can pin a render to.
+    fn fingerprint(picture: &DynamicImage) -> u64 {
+        picture
+            .as_bytes()
+            .iter()
+            .fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3))
+    }
+
+    #[test]
+    fn without_a_matte_the_render_is_exactly_what_it_was_before_matting() {
+        // Fingerprints of the render as slice 3 made it, taken before matting existed: the depth-only path, which
+        // `--lb-edges depth` and a blur too small to matte both take, must not move by a bit.
+        let input = checkerboard(320, 240);
+        let everything = Arc::new(Plane::new(8, 6, 0.25));
+
+        assert_eq!(fingerprint(&run(&pipeline(1.4, None), &input)), 0x2da7_4a6e_90f7_36d5);
+        assert_eq!(fingerprint(&run(&pipeline(2.0, Some(everything)), &input)), 0x510b_b171_6e9f_72fd);
+    }
+
+    /// The square the two-plane map's near plane covers on a 320 x 240 picture, inset a little, and a soft ring of
+    /// strands 6 px wide around it: alpha 1 inside, 0.5 on the ring, 0 beyond.
+    const INSIDE: (u32, u32, u32, u32) = (110, 84, 210, 156);
+    const RING: u32 = 6;
+
+    fn on_ring(x: u32, y: u32) -> bool {
+        let (x0, y0, x1, y1) = INSIDE;
+        let within = |inset: u32| x + inset >= x0 && x < x1 + inset && y + inset >= y0 && y < y1 + inset;
+
+        within(RING) && !within(0)
+    }
+
+    /// A red subject over the checkerboard, its strands half red and half the checkerboard behind them, and its matte.
+    fn subject() -> (DynamicImage, Matte) {
+        let (x0, y0, x1, y1) = INSIDE;
+        let board = checkerboard(320, 240).to_rgb8();
+        let red = Rgb([200, 30, 30]);
+        let picture = RgbImage::from_fn(320, 240, |x, y| {
+            let behind = *board.get_pixel(x, y);
+            if (x0..x1).contains(&x) && (y0..y1).contains(&y) {
+                red
+            } else if on_ring(x, y) {
+                Rgb(std::array::from_fn(|channel| {
+                    ((u16::from(red[channel]) + u16::from(behind[channel])) / 2) as u8
+                }))
+            } else {
+                behind
+            }
+        });
+        let alpha: Vec<f32> = (0..240)
+            .flat_map(|y| (0..320).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                if (x0..x1).contains(&x) && (y0..y1).contains(&y) {
+                    1.0
+                } else if on_ring(x, y) {
+                    0.5
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+
+        (DynamicImage::ImageRgb8(picture), Matte::new(320, 240, &alpha))
+    }
+
+    fn matted_pipeline(matte: Matte) -> LensBlurPipeline {
+        let base = pipeline(1.4, None);
+
+        LensBlurPipeline { matte: Some(Arc::new(matte)), ..base }
+    }
+
+    #[test]
+    fn a_matted_subject_stays_sharp_and_the_background_between_its_strands_is_blurred() {
+        let (input, matte) = subject();
+        let matted = run(&matted_pipeline(matte), &input);
+        let plain = run(&pipeline(1.4, None), &input);
+
+        // The subject itself, as it was.
+        assert!(difference(&input, &matted, (130, 100, 190, 140)) < 1.0);
+        // The background, well away from it, blurred as it is without a matte.
+        assert!(difference(&input, &matted, BACKGROUND) > 30.0, "{}", difference(&input, &matted, BACKGROUND));
+
+        // Down the left side of the ring, the checkerboard seen between the strands alternates yellow and blue in the
+        // photograph. Matted, what shows between them is the blurred background, so it hardly varies; and it varies
+        // less than where the depth alone decides which strand pixel is sharp and which is blurred.
+        let spread = |picture: &DynamicImage| {
+            let picture = picture.to_rgb8();
+            let blues: Vec<u8> = (90..150).map(|y| picture.get_pixel(INSIDE.0 - 2, y)[2]).collect();
+
+            blues.iter().max().unwrap() - blues.iter().min().unwrap()
+        };
+        assert!(spread(&input) >= 40, "{}", spread(&input));
+        assert!(3 * spread(&matted) < spread(&input), "{} against {}", spread(&matted), spread(&input));
+        assert!(spread(&matted) < spread(&plain), "{} against {}", spread(&matted), spread(&plain));
+
+        // Half the strand pixel is the subject's red.
+        let strand = matted.to_rgb8();
+        let strand = strand.get_pixel(INSIDE.0 - 2, 120);
+        assert!(strand[0] > 90 && strand[0] < 200, "{strand:?}");
+    }
+
+    #[test]
+    fn a_matted_render_reports_its_progress_forward_to_one_and_can_be_stopped() {
+        let (input, matte) = subject();
+        let seen = Mutex::new(Vec::new());
+        let record = |fraction: f64| seen.lock().unwrap().push(fraction);
+        let pipeline = matted_pipeline(matte);
+
+        ImagePipeline::<NoBackend>::run(&pipeline, &input, &[], ChannelDepth::Eight, Some(&record), &|| false)
+            .expect("runs");
+
+        let seen = seen.into_inner().unwrap();
+        assert!(seen.windows(2).all(|pair| pair[1] >= pair[0]), "{seen:?}");
+        assert_eq!(seen.last(), Some(&1.0));
+
+        let stopped = ImagePipeline::<NoBackend>::run(&pipeline, &input, &[], ChannelDepth::Eight, None, &|| true);
+        assert!(matches!(stopped, Err(InferenceError::Cancelled)));
+    }
+
+    #[test]
+    fn the_depth_refined_for_the_trimap_is_the_one_the_render_uses_and_only_at_its_size() {
+        let (input, matte) = subject();
+        let depth = two_planes(96, 72, 1.0, 10.0);
+        let own = run(&matted_pipeline(matte.clone()), &input);
+
+        // Refined on the same picture: the same render, refined once.
+        let refined = Arc::new(Refined::of(&depth, &input));
+        let handed = LensBlurPipeline { refined: Some(Arc::clone(&refined)), ..matted_pipeline(matte.clone()) };
+        assert_eq!(run(&handed, &input).to_rgb8(), own.to_rgb8());
+
+        // Refined at another size — an upscale between the chain's input and the blur — it is refined again.
+        let elsewhere = Arc::new(Refined::of(&depth, &checkerboard(160, 120)));
+        let resized = LensBlurPipeline { refined: Some(elsewhere), ..matted_pipeline(matte) };
+        assert_eq!(run(&resized, &input).to_rgb8(), own.to_rgb8());
+    }
+
+    #[test]
+    fn geometric_layers_are_counted_as_the_render_spaces_them() {
+        // 1, 2, 3, 4.2, 5.9, 8.2 and the extreme 10 behind; 1, 2, 3 in front; and the plane of focus.
+        let radius = Plane::from_vec(3, 1, vec![-10.0, 0.0, 3.0]).unwrap();
+        let geometric = Defocus { spacing: MATTED_SPACING, ..Defocus::DEFAULT };
+
+        assert_eq!(layer_count(&radius, geometric, false), 1 + 7 + 3);
+        assert_eq!(layer_count(&radius, geometric, true), 1 + 7 + 3 + 1);
+        assert_eq!(layer_count(&radius, Defocus::DEFAULT, false), Defocus::DEFAULT.layers + 1);
     }
 
     #[test]

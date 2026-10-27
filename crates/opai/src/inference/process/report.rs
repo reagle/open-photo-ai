@@ -1,6 +1,7 @@
 //! What a run returns: the picture, and what it was actually executed on.
 
 use crate::image::Picture;
+use crate::inference::depth_map::ChainMatte;
 use crate::inference::faces::ChainFaces;
 use crate::providers::ExecutionProvider;
 
@@ -145,4 +146,9 @@ pub struct Enhanced {
     /// What finding the faces for the chain's face recoveries came to: [`ChainFaces::NotAsked`] unless
     /// [`ProcessOptions::faces`] asked for a detection and the chain carries a face recovery.
     pub faces: ChainFaces,
+
+    /// What matting the subjects of the chain's lens blurs came to: [`ChainMatte::NotAsked`] unless the chain carries
+    /// a lens blur that mattes its subject's edges and adds a blur. A matte that failed is not a failed run: that blur
+    /// rendered from its depth alone, and this is the one place that says so.
+    pub matte: ChainMatte,
 }

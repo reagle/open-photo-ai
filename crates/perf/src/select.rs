@@ -133,7 +133,7 @@ fn every_published(options: &Options) -> Result<Vec<Selected>, SelectionError> {
         // the enhancement chain, a caller who named nothing did not ask for a detection or a depth run, and naming one
         // explicitly reports `SelectionError::NotAnEnhancement`. A lens blur runs no model of its own: what it costs is
         // its depth estimate, measured as depth, and a render.
-        if matches!(entry.family, Family::Detection | Family::Depth | Family::LensBlur) {
+        if matches!(entry.family, Family::Detection | Family::Depth | Family::Matting | Family::LensBlur) {
             continue;
         }
 
@@ -173,7 +173,7 @@ fn select(entry: &FamilyEntry, variant: &VariantEntry, options: &Options) -> Res
     // two places that have to be found.
     let precision = options.precision();
 
-    if matches!(entry.family, Family::Detection | Family::Depth) {
+    if matches!(entry.family, Family::Detection | Family::Depth | Family::Matting) {
         return Err(SelectionError::NotAnEnhancement { codename: variant.codename });
     }
 
@@ -379,7 +379,7 @@ mod tests {
 
                 // Detection and depth are not enhancements and never reach a selection at all, so there is no row of
                 // either to compare against.
-                if matches!(entry.family, Family::Detection | Family::Depth | Family::LensBlur) {
+                if matches!(entry.family, Family::Detection | Family::Depth | Family::Matting | Family::LensBlur) {
                     continue;
                 }
 
@@ -506,7 +506,9 @@ mod tests {
     fn published_at(precision: Precision) -> Vec<&'static str> {
         catalogue()
             .iter()
-            .filter(|entry| !matches!(entry.family, Family::Detection | Family::Depth | Family::LensBlur))
+            .filter(|entry| {
+                !matches!(entry.family, Family::Detection | Family::Depth | Family::Matting | Family::LensBlur)
+            })
             .flat_map(|entry| &entry.variants)
             .filter(|variant| variant.precisions.contains(&precision))
             .map(|variant| variant.codename)

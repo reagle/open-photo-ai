@@ -408,6 +408,7 @@
         "autopilotFailed": "Etwas ist schiefgelaufen. Der Autopilot konnte nicht ausgeführt werden.",
         "enhanceFailed": "Etwas ist schiefgelaufen. Das Bild konnte nicht verbessert werden.",
         "faceDetectFailed": "Etwas ist schiefgelaufen. Gesichter konnten nicht erkannt werden.",
+        "matteFailed": "Etwas ist schiefgelaufen. Das Motiv konnte nicht freigestellt werden, daher nutzt die Objektivunschärfe nur die Tiefe.",
         "showLogsFailed": "Die Protokolldatei konnte nicht geöffnet werden. Sie befindet sich im Konfigurationsordner der App.",
         "revealFailed": "Der Dateimanager konnte nicht geöffnet werden. Die Datei liegt weiterhin am Exportort.",
         "revealFileFailed": "Der Dateimanager konnte nicht geöffnet werden.",

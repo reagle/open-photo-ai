@@ -264,6 +264,15 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
                     toast.error(notice.current("errors.faceDetectFailed"));
                     record([]);
                 }
+
+                /*
+                 * The lens blur rendered from its depth alone, and the result is kept: the subject's
+                 * edges are only softer. A matting model that is not installed sends nothing here.
+                 */
+                if (outcome.matteError !== undefined) {
+                    report("matting the lens blur's subject failed", outcome.matteError);
+                    toast.error(notice.current("errors.matteFailed"));
+                }
             },
             (error: unknown) => {
                 ended();

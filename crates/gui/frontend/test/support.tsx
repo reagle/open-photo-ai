@@ -215,7 +215,7 @@ const LENS_BLUR: VariantEntry["parameters"] = [
     { name: "focus_y", kind: "range", min: 0, max: 1, default: 0.5 },
 ];
 
-/** The place `opai`'s `Family::APPLY_ORDER` gives each family in a chain; detection and depth have none. */
+/** The place `opai`'s `Family::APPLY_ORDER` gives each family in a chain; detection, depth and matting have none. */
 const ORDER: Partial<Record<Family, number>> = {
     denoise: 0,
     face_recovery: 1,
@@ -287,6 +287,8 @@ export const CATALOGUE: FamilyEntry[] = [
     ]),
     // Last, as the library publishes it: it runs after everything else, and is the one model published at FP16 alone.
     family("lens_blur", [variant("lisbon", "Lisbon", ["fp16"], LENS_BLUR)]),
+    // Published, and drawn by nothing, for depth's reason: the model a lens blur mattes its subject with.
+    family("matting", [variant("porto", "Porto", ["fp32"])]),
 ];
 
 /**
