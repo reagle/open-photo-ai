@@ -63,6 +63,7 @@ describe("the enhancements table", () => {
             "Color Balance",
             "Sharpen",
             "Upscale",
+            "Lens Blur",
         ]) {
             expect(screen.getByRole("combobox", { name })).toBeInTheDocument();
         }
@@ -73,10 +74,10 @@ describe("the enhancements table", () => {
 
         // Published by the library and drawn by nothing: it is not an enhancement a user adds.
         expect(screen.queryByRole("combobox", { name: "Detection" })).not.toBeInTheDocument();
-        expect(screen.getAllByRole("combobox")).toHaveLength(9);
+        expect(screen.getAllByRole("combobox")).toHaveLength(10);
     });
 
-    it("fetches the catalogue once for all seven", async () => {
+    it("fetches the catalogue once for all eight", async () => {
         await mount();
 
         expect(invoked).toHaveBeenCalledTimes(1);
@@ -204,10 +205,10 @@ describe("the Autopilot switches", () => {
     it("are addressable by their family's name", async () => {
         await mount();
 
-        for (const name of NAMES) {
+        for (const name of [...NAMES, "Lens Blur"]) {
             expect(screen.getByRole("switch", { name: `Autopilot: ${name}` })).toBeInTheDocument();
         }
-        expect(screen.getAllByRole("switch")).toHaveLength(9);
+        expect(screen.getAllByRole("switch")).toHaveLength(10);
     });
 
     it("are off and unavailable for restore, which Autopilot never suggests", async () => {
@@ -216,6 +217,14 @@ describe("the Autopilot switches", () => {
         const restore = screen.getByRole("switch", { name: "Autopilot: Restore" });
         expect(restore).not.toBeChecked();
         expect(restore).toBeDisabled();
+    });
+
+    it("are off and unavailable for lens blur, which Autopilot never suggests", async () => {
+        await mount();
+
+        const lensBlur = screen.getByRole("switch", { name: "Autopilot: Lens Blur" });
+        expect(lensBlur).not.toBeChecked();
+        expect(lensBlur).toBeDisabled();
     });
 
     it("are all on for a user who has never chosen", async () => {

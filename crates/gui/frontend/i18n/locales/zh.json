@@ -457,6 +457,18 @@
                 "osaka": "当你想要最彻底的修复效果时使用此模型。它会重建细节，而不只是锐化细节，在发虚或压缩严重的照片上效果最为出色。不过它速度较慢，需要性能强劲的显卡才能跑得顺畅。"
             }
         },
+        "lensBlur": {
+            "name": "镜头模糊",
+            "models": {
+                "lisbon": "使用此模型可像更大光圈的镜头那样虚化照片，同时保持你所选的点清晰。它会估算照片中每个部分的距离（MoGe-2 ViT-B，324 MB）。首次使用时会为你的处理器编译模型，在 Mac 上大约需要一分钟。"
+            },
+            "fNumber": "光圈",
+            "equivalent": "全画幅等效",
+            "asTaken": "原始",
+            "assumed": "此照片没有镜头信息；假定为 f/{{f}}",
+            "setFocus": "设置对焦",
+            "focusHint": "点击照片中应当清晰的位置。按 Esc 取消。"
+        },
         "grain": {
             "name": "颗粒",
             "amount": "数量",
@@ -492,6 +504,7 @@
         "infoFaces": "{{name}}，{{faces}}，{{quality}}",
         "infoScale": "{{name}}，{{scale}}x，{{quality}}",
         "infoRestore": "{{name}}，{{scale}}x，{{intensity}}%，{{quality}}",
+        "infoLensBlur": "{{name}}，f/{{f}}",
         "infoGrain": "{{name}}，{{intensity}}%，{{mode}}"
     },
     "preview": {
@@ -515,6 +528,7 @@
             "upscale": "放大中",
             "sharpen": "锐化中",
             "restore": "修复中",
+            "lensBlur": "虚化中",
             "grain": "颗粒",
             "enhancing": "增强中",
             "compiling": "正在编译 {{model}} 模型",

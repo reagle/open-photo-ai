@@ -12,6 +12,7 @@ const Slider = ({
     min = 0,
     max = 100,
     thumbLabel,
+    thumbValueText,
     formatValue,
     track = true,
     ...props
@@ -25,6 +26,12 @@ const Slider = ({
      * four would announce as an unnamed slider carrying a number.
      */
     thumbLabel?: string;
+    /**
+     * What a screen reader reads for a thumb's value, where the number the slider holds is not it - added to what
+     * `shadcn add` generates, like `thumbLabel`. A slider over the stops of a scale holds the stop's index, and
+     * "17" says nothing where "f/6.3" does. Becomes the thumb's `aria-valuetext`.
+     */
+    thumbValueText?: (value: number) => string;
     /**
      * How a thumb's value reads in the bubble above it - also added to what `shadcn add` generates.
      *
@@ -91,6 +98,7 @@ const Slider = ({
             // `map` below, where the tooltip branch repeats it.
             key={index}
             {...(thumbLabel !== undefined && { "aria-label": thumbLabel })}
+            {...(thumbValueText !== undefined && { "aria-valuetext": thumbValueText(_values[index] ?? min) })}
             onPointerEnter={() => setHovered(index)}
             // Guarded rather than a bare `setHovered(undefined)`: the pointer can enter the next thumb
             // of a range slider before it leaves this one, and an unguarded clear would then wipe the
