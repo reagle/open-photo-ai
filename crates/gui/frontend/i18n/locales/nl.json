@@ -379,9 +379,11 @@
             "upscale": "Opschalen",
             "sharpen": "Verscherpen",
             "enhancing": "Verbeteren",
-            "optimizing": "Model {{model}} optimaliseren",
+            "compiling": "Model {{model}} compileren",
             "loading": "Model {{model}} laden",
-            "firstUse": "Alleen de eerste keer, kan enkele minuten duren"
+            "firstUse": "Alleen de eerste keer, kan enkele minuten duren",
+            "firstUseAbout_one": "Alleen de eerste keer, kan ongeveer {{count}} minuut duren",
+            "firstUseAbout_other": "Alleen de eerste keer, kan ongeveer {{count}} minuten duren"
         }
     },
     "menu": {

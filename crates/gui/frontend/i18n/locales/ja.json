@@ -369,9 +369,10 @@
             "upscale": "アップスケール中",
             "sharpen": "シャープ化中",
             "enhancing": "補正中",
-            "optimizing": "{{model}} モデルを最適化中",
+            "compiling": "{{model}} モデルをコンパイル中",
             "loading": "{{model}} モデルを読み込み中",
-            "firstUse": "初回のみ。数分かかることがあります"
+            "firstUse": "初回のみ。数分かかることがあります",
+            "firstUseAbout_other": "初回のみ。約 {{count}} 分かかることがあります"
         }
     },
     "menu": {

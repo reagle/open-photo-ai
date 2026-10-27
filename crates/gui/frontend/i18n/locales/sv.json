@@ -379,9 +379,11 @@
             "upscale": "Skalar upp",
             "sharpen": "Skärper",
             "enhancing": "Förbättrar",
-            "optimizing": "Optimerar modellen {{model}}",
+            "compiling": "Kompilerar modellen {{model}}",
             "loading": "Läser in modellen {{model}}",
-            "firstUse": "Bara första gången, kan ta några minuter"
+            "firstUse": "Bara första gången, kan ta några minuter",
+            "firstUseAbout_one": "Bara första gången, kan ta ungefär {{count}} minut",
+            "firstUseAbout_other": "Bara första gången, kan ta ungefär {{count}} minuter"
         }
     },
     "menu": {

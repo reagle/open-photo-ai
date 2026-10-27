@@ -125,7 +125,7 @@ impl ImageProgress {
         let family = report.subject.family();
         match report.stage {
             Stage::Installing(_) => self.state = RowState::Working(Activity::Downloading(family)),
-            Stage::Preparing(_) => self.state = RowState::Working(Activity::Loading(family)),
+            Stage::Preparing { .. } => self.state = RowState::Working(Activity::Loading(family)),
             Stage::Running | Stage::Cached => self.state = RowState::Working(Activity::Applying(family)),
             _ => {}
         }
@@ -652,7 +652,11 @@ pub(crate) mod tests {
         assert_eq!(image.state, RowState::Working(Activity::Downloading(Family::Upscale)));
         assert_eq!(image.percent(), 12);
 
-        image.report(&inference(face_recovery(), Stage::Preparing(opai::ExecutionProvider::CoreMl), 0.2));
+        image.report(&inference(
+            face_recovery(),
+            Stage::Preparing { provider: opai::ExecutionProvider::CoreMl, expected: None },
+            0.2,
+        ));
         assert_eq!(image.state, RowState::Working(Activity::Loading(Family::FaceRecovery)));
 
         image.report(&inference(face_recovery(), Stage::Running, 0.3));

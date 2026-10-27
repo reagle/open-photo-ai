@@ -379,9 +379,11 @@
             "upscale": "Wird hochskaliert",
             "sharpen": "Wird geschärft",
             "enhancing": "Wird verbessert",
-            "optimizing": "Modell {{model}} wird optimiert",
+            "compiling": "Modell {{model}} wird kompiliert",
             "loading": "Modell {{model}} wird geladen",
-            "firstUse": "Nur beim ersten Mal, kann einige Minuten dauern"
+            "firstUse": "Nur beim ersten Mal, kann einige Minuten dauern",
+            "firstUseAbout_one": "Nur beim ersten Mal, kann etwa {{count}} Minute dauern",
+            "firstUseAbout_other": "Nur beim ersten Mal, kann etwa {{count}} Minuten dauern"
         }
     },
     "menu": {

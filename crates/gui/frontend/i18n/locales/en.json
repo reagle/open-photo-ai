@@ -379,9 +379,11 @@
             "upscale": "Upscaling",
             "sharpen": "Sharpening",
             "enhancing": "Enhancing",
-            "optimizing": "Optimizing {{model}} model",
+            "compiling": "Compiling {{model}} model",
             "loading": "Loading {{model}} model",
-            "firstUse": "First use only, may take a few minutes"
+            "firstUse": "First use only, may take a few minutes",
+            "firstUseAbout_one": "First use only, may take about {{count}} minute",
+            "firstUseAbout_other": "First use only, may take about {{count}} minutes"
         }
     },
     "menu": {

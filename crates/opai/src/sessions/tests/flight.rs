@@ -29,7 +29,16 @@ fn interested() -> (Interest, CancellationToken, Arc<Mutex<Vec<crate::progress::
 fn preparing() -> (Interest, Arc<Mutex<Vec<ExecutionProvider>>>) {
     let heard = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&heard);
-    let on_preparing: OnPreparing = Arc::new(move |provider| sink.lock().unwrap().push(provider));
+    let on_preparing: OnPreparing = Arc::new(move |provider, _| sink.lock().unwrap().push(provider));
+
+    (Interest { on_preparing: Some(on_preparing), ..Interest::default() }, heard)
+}
+
+/// A request that wants to hear that its session is being opened, and the estimates it was told.
+fn estimating() -> (Interest, Arc<Mutex<Vec<Option<Duration>>>>) {
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&heard);
+    let on_preparing: OnPreparing = Arc::new(move |_, expected| sink.lock().unwrap().push(expected));
 
     (Interest { on_preparing: Some(on_preparing), ..Interest::default() }, heard)
 }
@@ -344,7 +353,7 @@ async fn every_request_waiting_on_a_build_is_told_its_session_is_being_opened_ev
         tokio::spawn(async move {
             cache
                 .get_or_build(&id, ExecutionProvider::Cpu, ExecutionProvider::Cpu, &first, |install| async move {
-                    install.preparing(ExecutionProvider::CoreMl);
+                    install.preparing(ExecutionProvider::CoreMl, None);
                     told.send(()).unwrap();
                     // The compile, standing in for minutes of it.
                     held.await.unwrap();
@@ -401,4 +410,86 @@ async fn a_session_being_opened_is_reported_on_each_rung_it_is_tried_on_and_a_re
     let (again, heard_again) = preparing();
     sessions.session(&id, &EpProfile::default(), ExecutionProvider::Cpu, &again).await.unwrap();
     assert!(heard_again.lock().unwrap().is_empty(), "a resident session was reported as being opened");
+}
+
+#[tokio::test]
+async fn a_request_that_joins_a_compile_under_way_is_told_what_is_left_of_its_estimate() {
+    // Told the whole of it, the late request would count three minutes from the moment it joined, and its bar would
+    // still be filling when the compile it joined had finished.
+    let cache: Arc<SessionCache<Fake>> = Arc::new(SessionCache::default());
+    let id = kyoto();
+    let estimate = Duration::from_secs(186);
+
+    let (release, held) = tokio::sync::oneshot::channel::<()>();
+    let (told, compiling) = tokio::sync::oneshot::channel::<()>();
+    let (first, heard_first) = estimating();
+    let (second, heard_second) = estimating();
+
+    let starting = {
+        let (cache, id) = (Arc::clone(&cache), id.clone());
+
+        tokio::spawn(async move {
+            cache
+                .get_or_build(&id, ExecutionProvider::Cpu, ExecutionProvider::Cpu, &first, |install| async move {
+                    install.preparing(ExecutionProvider::CoreMl, Some(estimate));
+                    told.send(()).unwrap();
+                    held.await.unwrap();
+
+                    Ok(Some(Fake(1)))
+                })
+                .await
+                .map(|handle| handle.map(|handle| *handle.session()))
+        })
+    };
+
+    compiling.await.unwrap();
+    assert_eq!(*heard_first.lock().unwrap(), [Some(estimate)]);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let joining = {
+        let (cache, id) = (Arc::clone(&cache), id.clone());
+
+        tokio::spawn(async move {
+            cache
+                .get_or_build(&id, ExecutionProvider::Cpu, ExecutionProvider::Cpu, &second, |_| async move {
+                    Ok(Some(Fake(2)))
+                })
+                .await
+                .map(|handle| handle.map(|handle| *handle.session()))
+        })
+    };
+
+    waiting_on(&cache, &id, 2).await;
+    let left = heard_second.lock().unwrap()[0].expect("the late request was told there was no estimate");
+    assert!(left < estimate, "the late request was told the whole estimate: {left:?}");
+    assert!(
+        left > estimate - Duration::from_secs(30),
+        "the late request was told too little is left: {left:?}"
+    );
+
+    release.send(()).unwrap();
+    starting.await.unwrap().unwrap();
+    joining.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn the_last_slow_open_of_a_model_is_what_the_next_one_is_expected_to_take() {
+    // The whole round trip, through a build slow enough to count as a compile: recorded as it finished, and reported
+    // with the next opening of the same model on the same provider once the first session is gone.
+    let server = TestServer::start(vec![]).await;
+    let (_root, app_dir) = app();
+    let bench = Arc::new(Bench { takes: super::super::compile_times::RECORDED_FROM, ..Bench::default() });
+    let id = kyoto();
+    let sessions = sessions(&bench, &server, listing_for(&[&id]), &app_dir, machine_supporting(false, false, false));
+
+    let (first, heard_first) = estimating();
+    drop(sessions.session(&id, &EpProfile::default(), ExecutionProvider::Cpu, &first).await.unwrap());
+    assert_eq!(*heard_first.lock().unwrap(), [None], "a model never opened before came with an estimate");
+
+    sessions.cache().clear();
+
+    let (second, heard_second) = estimating();
+    drop(sessions.session(&id, &EpProfile::default(), ExecutionProvider::Cpu, &second).await.unwrap());
+    let expected = heard_second.lock().unwrap()[0].expect("the slow open was not remembered");
+    assert!(expected >= super::super::compile_times::RECORDED_FROM, "remembered as {expected:?}");
 }

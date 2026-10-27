@@ -1,6 +1,7 @@
 //! What a run reports while it works, and the three weightings behind the one number it reports.
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::models::{ArtifactId, Subject};
 use crate::progress::{OnProgress, Progress};
@@ -33,9 +34,19 @@ pub enum Stage {
     // It carries the provider and not a verdict on whether this will be slow, because this layer cannot know: what
     // CoreML compiles is cached twice, once under `engines/` and once by the system, per application, where nothing
     // here can see it. A front end that waits a moment before saying "this can take minutes" is the one that knows.
-    /// The operation's model is on disk and a session is being opened on it, on this provider — which may mean
-    /// compiling it for that provider first. Followed by [`Running`](Self::Running) once it is open.
-    Preparing(ExecutionProvider),
+    //
+    // What it can carry is history: how long the last slow open of this model on this provider took, which is what
+    // the next compile will take give or take — it is repeated exactly when what the last one wrote was discarded. An
+    // estimate, never a promise; `None` the first time, and for a model that has only ever opened quickly.
+    /// The operation's model is on disk and a session is being opened on it — which may mean compiling it for the
+    /// provider first. Followed by [`Running`](Self::Running) once it is open.
+    Preparing {
+        /// What the session is being opened on.
+        provider: ExecutionProvider,
+        /// How long the last slow open of this model on `provider` took, or, for a request that joined one already
+        /// under way, what is left of that. `None` where no slow open of it has been seen.
+        expected: Option<Duration>,
+    },
     /// The model is on disk and is being run over the image.
     Running,
     // A variant of its own rather than `Running` reported at `1.0`, so that a front end can say *"Upscale — from an
@@ -184,7 +195,9 @@ impl OperationProgress {
         // At no fraction of its own: what opening a session will cost is unknowable, so the bar holds where the
         // install left it — the clamp in `emit` keeps it there — and moves again with the first tile. Not an install
         // either, so the split of the operation's range is left as it is.
-        Some(Arc::new(move |provider| reporter.emit(Stage::Preparing(provider), 0.0, false)))
+        Some(Arc::new(move |provider, expected| {
+            reporter.emit(Stage::Preparing { provider, expected }, 0.0, false)
+        }))
     }
 
     /// Reports the run's own `0.0..=1.0` position, mapped onto whatever the install left of this operation's range.
@@ -408,11 +421,14 @@ mod tests {
 
         let install = operation.installing(&requires(&[4])).unwrap();
         install(&installing(weights(4), 1.0));
-        operation.preparing().unwrap()(ExecutionProvider::CoreMl);
+        operation.preparing().unwrap()(ExecutionProvider::CoreMl, Some(Duration::from_secs(186)));
         operation.running(0.0);
 
         let reports = seen.lock().unwrap().clone();
-        assert_eq!(reports[1].stage, Stage::Preparing(ExecutionProvider::CoreMl));
+        assert_eq!(
+            reports[1].stage,
+            Stage::Preparing { provider: ExecutionProvider::CoreMl, expected: Some(Duration::from_secs(186)) }
+        );
         assert!((reports[1].chain_fraction - INSTALL_SHARE).abs() < 1e-9, "preparing moved the bar");
         assert!((reports[2].chain_fraction - INSTALL_SHARE).abs() < 1e-9, "the run restarted the bar");
     }
@@ -423,7 +439,7 @@ mod tests {
         let (progress, seen) = recording(1);
         let operation = Arc::new(progress.operation(0, kyoto(2.0)));
 
-        operation.preparing().unwrap()(ExecutionProvider::Cpu);
+        operation.preparing().unwrap()(ExecutionProvider::Cpu, None);
         operation.running(0.5);
 
         assert_eq!(chain(&seen), vec![0.0, 0.5]);

@@ -389,9 +389,12 @@
             "upscale": "Ingrandimento",
             "sharpen": "Aumento nitidezza",
             "enhancing": "Miglioramento",
-            "optimizing": "Ottimizzazione del modello {{model}}",
+            "compiling": "Compilazione del modello {{model}}",
             "loading": "Caricamento del modello {{model}}",
-            "firstUse": "Solo al primo utilizzo, può richiedere qualche minuto"
+            "firstUse": "Solo al primo utilizzo, può richiedere qualche minuto",
+            "firstUseAbout_one": "Solo al primo utilizzo, può richiedere circa {{count}} minuto",
+            "firstUseAbout_many": "Solo al primo utilizzo, può richiedere circa {{count}} minuti",
+            "firstUseAbout_other": "Solo al primo utilizzo, può richiedere circa {{count}} minuti"
         }
     },
     "menu": {

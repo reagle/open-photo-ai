@@ -369,9 +369,10 @@
             "upscale": "放大中",
             "sharpen": "锐化中",
             "enhancing": "增强中",
-            "optimizing": "正在优化 {{model}} 模型",
+            "compiling": "正在编译 {{model}} 模型",
             "loading": "正在加载 {{model}} 模型",
-            "firstUse": "仅首次使用，可能需要几分钟"
+            "firstUse": "仅首次使用，可能需要几分钟",
+            "firstUseAbout_other": "仅首次使用，可能需要约 {{count}} 分钟"
         }
     },
     "menu": {

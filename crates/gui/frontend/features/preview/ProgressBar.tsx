@@ -43,9 +43,58 @@ const useLingering = (key: string | undefined, delay: number) => {
     return key !== undefined && lingered === key;
 };
 
+/** How often a bar filling against an estimate moves: a compile of minutes has no use for a finer step. */
+export const ESTIMATE_TICK_MS = 1000;
+
 /**
- * What the chip says about a session that has been opening for a while: which model, and whether it is being optimized
- * (compiled, the first time) or loaded. The machine is not named: what matters is the wait, not what it is for.
+ * How long `key` has stayed the same, and defined, in milliseconds - counted from when it became that, and brought up
+ * to date every {@link ESTIMATE_TICK_MS}. `0` while it is undefined, and again from the start for a new key.
+ */
+const useElapsed = (key: string | undefined) => {
+    const [since, setSince] = useState<{ key: string; at: number }>();
+    const [now, setNow] = useState(() => Date.now());
+
+    useEffect(() => {
+        if (key === undefined) return;
+
+        setSince({ key, at: Date.now() });
+        setNow(Date.now());
+        const timer = setInterval(() => setNow(Date.now()), ESTIMATE_TICK_MS);
+
+        return () => clearInterval(timer);
+    }, [key]);
+
+    return key !== undefined && since?.key === key ? Math.max(0, now - since.at) : 0;
+};
+
+/** Where a bar filling against an estimate stands once the estimate has run out. */
+const AT_ESTIMATE = 0.9;
+/** The most a bar filling against an estimate ever shows: the rest is the session actually opening. */
+const CEILING = 0.95;
+
+/**
+ * How far to fill a bar for a wait expected to take `expectedMs`, `elapsedMs` into it.
+ *
+ * Linear up to {@link AT_ESTIMATE} at the estimate, because the estimate is the last compile of the same model on the
+ * same machine and is usually close. Past it, approaching {@link CEILING} and never reaching it - halfway there for
+ * every further half of the estimate - so a compile slower than the last one is a bar still creeping rather than one
+ * standing full, and the end of the bar is kept for the session actually opening. An estimate of nothing - a request
+ * that joined a compile already past its estimate - starts at the ceiling's edge rather than dividing by zero.
+ */
+export const estimatedFraction = (elapsedMs: number, expectedMs: number) => {
+    const through = expectedMs > 0 ? elapsedMs / expectedMs : Number.POSITIVE_INFINITY;
+
+    if (through <= 1) return AT_ESTIMATE * through;
+
+    return CEILING - (CEILING - AT_ESTIMATE) * 2 ** (-(through - 1) / 0.5);
+};
+
+/** The whole minutes a wait of `ms` is said to take: rounded, and never fewer than one. */
+export const estimatedMinutes = (ms: number) => Math.max(1, Math.round(ms / 60_000));
+
+/**
+ * What the chip says about a session that has been opening for a while: which model, and whether it is being compiled
+ * (the first time) or loaded. The machine is not named: what matters is the wait, not what it is for.
  *
  * A component of its own so the catalogue the model's name is read from is asked for only here, the one place that
  * needs it, rather than on every render of every run.
@@ -64,7 +113,7 @@ const PreparingLabel = ({
 
     const model = preparingName(t, families, operations, report.family) ?? t("preview.progress.enhancing");
 
-    return t(compiles ? "preview.progress.optimizing" : "preview.progress.loading", { model });
+    return t(compiles ? "preview.progress.compiling" : "preview.progress.loading", { model });
 };
 
 /**
@@ -119,10 +168,16 @@ const PreparingLabel = ({
  * **A session that is slow to open says so, after {@link PREPARING_NOTICE_DELAY_MS}.** Opening a model on CoreML or
  * TensorRT compiles it the first time, which is minutes with the bar standing still and the machine looking idle - and
  * nothing to tell a compile from a hang. Once the report has said `preparing` for that long the chip names the model
- * and what is happening to it (*Optimizing Kazan model*, or *Loading Kazan model* where nothing compiles), adds that this happens once and can take
- * minutes, and sweeps an indeterminate bar rather than holding a still one. A fast load never reaches the delay, and
- * reads as the activity it is about to become. The model is named from `operations`, the chain being run, since a
- * report names its family and not its model.
+ * and what is happening to it (*Compiling Kazan model*, or *Loading Kazan model* where nothing compiles), adds that
+ * this happens once and can take minutes, and sweeps an indeterminate bar rather than holding a still one. A fast load
+ * never reaches the delay, and reads as the activity it is about to become. The model is named from `operations`, the
+ * chain being run, since a report names its family and not its model.
+ *
+ * **Where the library remembers the last slow open of the model, the chip says how long it took** - *First use only,
+ * may take about 3 minutes* - and fills its bar against it rather than sweeping, by {@link estimatedFraction}: the
+ * compile is repeated exactly when what the last one wrote was discarded, on the same machine, so the last time is a
+ * good guess and a bar that moves says more than one that sweeps. Counted from the first `preparing` report rather
+ * than from the notice, since the estimate is for the whole open.
  */
 export const ProgressBar = ({
     report,
@@ -142,6 +197,17 @@ export const ProgressBar = ({
         PREPARING_NOTICE_DELAY_MS,
     );
     const compiles = slow && preparing?.provider !== undefined && COMPILES.has(preparing.provider);
+    const expectedMs = preparing?.expectedMs;
+    const elapsed = useElapsed(
+        preparing && expectedMs !== undefined
+            ? `${preparing.run}:${preparing.family}:${preparing.provider ?? ""}`
+            : undefined,
+    );
+    const value = !slow
+        ? toPercent(fraction)
+        : expectedMs === undefined
+          ? null
+          : toPercent(estimatedFraction(elapsed, expectedMs));
 
     const label =
         slow && preparing ? (
@@ -173,10 +239,7 @@ export const ProgressBar = ({
              * be the whole of how the bar reads. It also makes the thing a `progressbar` to a
              * screen reader, which a pair of nested boxes was not.
              */}
-            <Progress
-                value={slow ? null : toPercent(fraction)}
-                className="absolute inset-0 h-full rounded-lg bg-secondary"
-            />
+            <Progress value={value} className="absolute inset-0 h-full rounded-lg bg-secondary" />
 
             {/*
              * The bevel, as an overlay of its own rather than as an inset shadow on the box above:
@@ -202,7 +265,11 @@ export const ProgressBar = ({
             <span className="relative flex min-h-8 flex-col items-center justify-center px-3 py-1 font-medium text-[13px] text-white whitespace-nowrap">
                 {label}
                 {compiles && (
-                    <span className="font-normal text-[11px] text-white/85">{t("preview.progress.firstUse")}</span>
+                    <span className="font-normal text-[11px] text-white/85">
+                        {expectedMs === undefined
+                            ? t("preview.progress.firstUse")
+                            : t("preview.progress.firstUseAbout", { count: estimatedMinutes(expectedMs) })}
+                    </span>
                 )}
             </span>
         </div>

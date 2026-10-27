@@ -510,7 +510,7 @@ export const PreviewImage = () => {
      */
     const { enhanced, report, running, fraction } = useEnhancementRun(file, crop);
     /*
-     * The chain this file runs, for the bar to name the model a slow session is being opened for - *Optimizing Kazan
+     * The chain this file runs, for the bar to name the model a slow session is being opened for - *Compiling Kazan
      * model* - since a report names its family and not its model.
      */
     const operations = useFileEnhancements(file?.path);

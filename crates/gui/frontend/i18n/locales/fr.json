@@ -389,9 +389,12 @@
             "upscale": "Agrandissement",
             "sharpen": "Accentuation",
             "enhancing": "Amélioration",
-            "optimizing": "Optimisation du modèle {{model}}",
+            "compiling": "Compilation du modèle {{model}}",
             "loading": "Chargement du modèle {{model}}",
-            "firstUse": "Première utilisation seulement, peut prendre quelques minutes"
+            "firstUse": "Première utilisation seulement, peut prendre quelques minutes",
+            "firstUseAbout_one": "Première utilisation seulement, peut prendre environ {{count}} minute",
+            "firstUseAbout_many": "Première utilisation seulement, peut prendre environ {{count}} minutes",
+            "firstUseAbout_other": "Première utilisation seulement, peut prendre environ {{count}} minutes"
         }
     },
     "menu": {
