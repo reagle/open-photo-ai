@@ -55,8 +55,9 @@ opt-level = 3
 # `rebuild_exif`, `exif_field`) that `preserve-metadata-2-exif` needs, and the HDR detection (`hdr_bytes`, `Hdr`) that
 # `add-color-2-loss-warnings` needs, and the JPEG gain-map container (`Metadata::iso_gain_map`/`gain_map`, read and
 # written with an MPF index, and found after the primary's `EOI` when its offset is stale) that
-# `add-color-4-ultra-hdr-gainmap` needs. `26.10.1-meta.6` is 26.10.1 plus those six commits and one of fixes from
+# `add-color-4-ultra-hdr-gainmap` needs, with a JPEG's oversized XMP split by property so `hdrgm:` and the container
+# directory stay in the standard segment. `26.10.1-meta.7` is 26.10.1 plus those seven commits and one of fixes from
 # review, so nothing else changes. Once upstream releases them, delete this section and move the four
 # `tag = "26.10.1"` pins to that release.
 [patch."https://github.com/vegidio/rust-sak"]
-rust-sak = { git = "https://github.com/reagle/rust-sak", tag = "26.10.1-meta.6" }
+rust-sak = { git = "https://github.com/reagle/rust-sak", tag = "26.10.1-meta.7" }
