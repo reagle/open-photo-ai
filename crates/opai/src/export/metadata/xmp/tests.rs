@@ -590,8 +590,8 @@ fn a_directory_without_a_gain_map_item_is_dropped_whole() {
 #[test]
 fn a_lightroom_size_packet_written_with_its_gain_map_stays_one_standard_segment() {
     // Lightroom's packets are mostly develop settings; the hawk's is 17,048 bytes. One padded to 120 kB with them still
-    // fits one `APP1` once they are dropped, so `hdrgm:Version` is never moved into extended XMP, where Android does
-    // not look.
+    // fits one `APP1` once they are dropped, so it needs no extended XMP at all (were it to, `rust-sak` would keep
+    // `hdrgm:Version` in the standard segment, where Android looks, and move the largest other properties).
     let padding: String = (0..3000).map(|n| format!("\n   crs:Setting{n}=\"{n:020}\"")).collect();
     let large = LIGHTROOM.replace(r#"crs:Version="18.7""#, &format!(r#"crs:Version="18.7"{padding}"#));
     assert!(large.len() > 120_000);
