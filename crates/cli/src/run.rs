@@ -150,7 +150,13 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
         let planner = match &autopilot {
             Some(models) => Planner::Autopilot(models),
             None => {
-                let plan = chain::plan(&args.selection, args.quality, source.width, source.height);
+                // An amount of blur is against the photograph's own aperture, so it comes to an f-number for each.
+                let lens = own_lens_asked(&args.selection, &source.path).await;
+                let (selection, amount_note) = args.selection.with_blur_amount_resolved(lens);
+                if let Some(note) = amount_note {
+                    tracing::info!("{}: {note}", source.path.display());
+                }
+                let plan = chain::plan(&selection, args.quality, source.width, source.height);
                 log_notes(&source.path, &plan);
                 Planner::Fixed(plan)
             }
@@ -410,6 +416,18 @@ fn plan_suggested(
     let plan = chain::plan(&Selection::from_suggestions(&suggestions.suggested, models), quality, width, height);
 
     (plan, warning)
+}
+
+/// The lens the photograph at `path` was taken with, as its EXIF settles it, where the selection asks for a blur
+/// amount: an amount is against the photograph's own aperture. Nothing for a run that asks for none, which reads no
+/// file for it. Read on a blocking thread, as a RAW's header is probed whole.
+async fn own_lens_asked(selection: &Selection, path: &Path) -> Option<opai::OwnLens> {
+    selection.lens_blur_amount?;
+
+    let path = path.to_path_buf();
+
+    // A thread that did not come back is a photograph nothing is known of: the planner assumes the f/8 the library does.
+    tokio::task::spawn_blocking(move || opai::own_lens(&path, None)).await.ok()
 }
 
 /// Records `plan`'s notes about the image at `path` in the log.

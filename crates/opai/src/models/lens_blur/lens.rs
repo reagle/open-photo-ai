@@ -9,6 +9,7 @@
 use serde::Serialize;
 
 use crate::image::LensExif;
+use crate::models::f_number::FNumber;
 
 /// The full-frame diagonal, in millimetres: what the output's diagonal in pixels stands for.
 const FULL_FRAME_DIAGONAL_MM: f32 = 43.267;
@@ -33,6 +34,11 @@ const NEAREST_FOCUS: f32 = 1.5;
 /// The largest radius a lens blur adds, as a fraction of the output's diagonal. A foreground a few centimetres from
 /// the lens would otherwise ask for discs larger than the photograph.
 const MAX_RADIUS: f32 = 0.06;
+
+/// The widest aperture a blur amount of 100 stands for: f/1.4 in full-frame-equivalent terms, as wide as a fast prime
+/// opened all the way and about as shallow a depth of field as a photograph is made at. See
+/// [`OwnLens::f_number_for_amount`].
+pub(crate) const AMOUNT_WIDEST_F_NUMBER: f64 = 1.4;
 
 /// The range a [`Lens::depth_scale`] is held to: a ratio of the EXIF's focal length to the depth model's estimate
 /// outside it is taken as a garbled field or an estimate gone wrong, not as a scene four times nearer or eight times
@@ -259,6 +265,40 @@ impl OwnLens {
             origin: lens.origin,
             crop_factor: measured_crop(exif).map(|crop| (crop * sane_framing(framing) * 1000.0).round() / 1000.0),
         }
+    }
+
+    /// Whether a blur can be added to this photograph at all: its own f-number is wider than the one a blur amount of
+    /// 100 stands for. A lens already at or past f/1.4 equivalent cannot be blurred more than it was.
+    pub fn can_blur_more(&self) -> bool {
+        // In hundredths, which is what an own f-number is rounded to, so f/1.4 held as an `f32` is not wider than f/1.4.
+        let hundredths = |f_number: f64| (f_number * 100.0).round();
+
+        hundredths(f64::from(self.own_f_number)) > hundredths(AMOUNT_WIDEST_F_NUMBER)
+    }
+
+    /// The equivalent f-number a blur `amount` from 0 to 100 stands for on this photograph: 0 is the photograph as
+    /// taken (its own f-number, which adds nothing) and 100 is [`AMOUNT_WIDEST_F_NUMBER`].
+    ///
+    /// **Even in blur, not in stops.** A lens blurs by a disc whose diameter goes as `1 / N`, so the amount is laid
+    /// out in `1 / N` between the photograph's own and the widest: `1/N = 1/N0 + (a/100) (1/1.4 - 1/N0)`. Halfway is
+    /// then half the blur of the widest aperture over what the photograph has, which is what a slider is felt to do,
+    /// where an even walk through stops would spend most of its length at apertures that blur little.
+    ///
+    /// Where the photograph is already as wide as the widest, there is nothing to add and this is its own f-number,
+    /// which adds nothing. Rounded to the thousandths [`FNumber`] keeps, and held to its range: an own f-number past
+    /// f/32, which a heavy crop can have, comes out as f/32.
+    pub fn f_number_for_amount(&self, amount: f64) -> f64 {
+        // Held to the range an f-number is taken in, so a heavy crop's "as taken" can be written.
+        let own = f64::from(self.own_f_number).min(FNumber::MAX);
+        let amount = if amount.is_nan() { 0.0 } else { amount.clamp(0.0, 100.0) };
+
+        let f_number = if self.can_blur_more() {
+            1.0 / (1.0 / own + amount / 100.0 * (1.0 / AMOUNT_WIDEST_F_NUMBER - 1.0 / own))
+        } else {
+            own
+        };
+
+        ((f_number * 1000.0).round() / 1000.0).clamp(FNumber::MIN, FNumber::MAX)
     }
 }
 
@@ -630,6 +670,73 @@ mod tests {
             (own.own_f_number, own.focal_35mm, own.origin),
             (ASSUMED_F_NUMBER, Some(28.0), LensOrigin::Assumed)
         );
+    }
+
+    /// A photograph at `own` equivalent, from nothing but its f-number.
+    fn at(own: f32) -> OwnLens {
+        OwnLens { own_f_number: own, focal_35mm: None, origin: LensOrigin::Exif, crop_factor: None }
+    }
+
+    #[test]
+    fn a_blur_amount_runs_from_the_photograph_as_taken_to_f1_4_evenly_in_blur() {
+        // The bonsai's f/6 (the a6700 at f/4, crop 1.5): 0 is the photograph, 100 is f/1.4.
+        let own = at(6.0);
+        assert_eq!(own.f_number_for_amount(0.0), 6.0);
+        assert_eq!(own.f_number_for_amount(100.0), 1.4);
+
+        // Halfway in 1/N: 1/N = (1/6 + 1/1.4) / 2 = 0.44048, N = 2.27. The window's `fNumberForAmount` is pinned to the
+        // same numbers (`blurAmount.test.ts`).
+        assert_eq!(own.f_number_for_amount(50.0), 2.270);
+        assert_eq!(own.f_number_for_amount(25.0), 3.294);
+        assert_eq!(at(5.91).f_number_for_amount(50.0), 2.264);
+        assert_eq!(at(8.0).f_number_for_amount(50.0), 2.383);
+        assert_eq!(at(12.0).f_number_for_amount(50.0), 2.507);
+        assert_eq!(at(2.8).f_number_for_amount(1.0), 2.772);
+
+        // Each step of the amount adds the same to the disc's size (1/N), whatever the photograph's own aperture.
+        for own in [at(2.5), at(6.0), at(12.0), at(32.0)] {
+            let disc = |amount| 1.0 / own.f_number_for_amount(amount);
+            let step = disc(10.0) - disc(0.0);
+            for amount in [20.0, 50.0, 80.0, 100.0] {
+                let walked = disc(amount) - disc(0.0);
+                assert!(
+                    (walked / (step * amount / 10.0) - 1.0).abs() < 0.005,
+                    "{} at {amount}: {walked} against {step} a tenth",
+                    own.own_f_number
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_blur_amount_of_nothing_adds_nothing_and_every_amount_above_it_does() {
+        for own in [at(1.8), at(5.91), at(8.0), at(8.38), at(32.0)] {
+            let lens = Lens::new(50.0, own.own_f_number, LensOrigin::Exif);
+            let nothing = own.f_number_for_amount(0.0);
+
+            // As the library receives it, a thousandth-quantised f-number, and as it reads the photograph's own.
+            let received = FNumber::new(nothing).expect("in range").as_f32();
+            assert!(Blur::adds_nothing(&lens, received), "{} at amount 0 is {nothing}", own.own_f_number);
+            let a_little = FNumber::new(own.f_number_for_amount(1.0)).expect("in range").as_f32();
+            assert!(!Blur::adds_nothing(&lens, a_little), "{} at amount 1 is {a_little}", own.own_f_number);
+        }
+    }
+
+    #[test]
+    fn a_photograph_already_as_wide_as_the_widest_has_nothing_to_add() {
+        for own in [at(1.4), at(1.2), at(1.0)] {
+            assert!(!own.can_blur_more(), "{}", own.own_f_number);
+            assert_eq!(own.f_number_for_amount(100.0), (f64::from(own.own_f_number) * 1000.0).round() / 1000.0);
+        }
+        assert!(at(1.41).can_blur_more());
+
+        // An own f-number past f/32, which a heavy crop of a small sensor can have, lays its amounts out from f/32.
+        assert_eq!(at(48.0).f_number_for_amount(0.0), 32.0);
+        assert_eq!(at(48.0).f_number_for_amount(50.0), 2.683);
+        // Amounts outside 0..=100 and not-a-number are held to the ends.
+        assert_eq!(at(6.0).f_number_for_amount(140.0), 1.4);
+        assert_eq!(at(6.0).f_number_for_amount(-5.0), 6.0);
+        assert_eq!(at(6.0).f_number_for_amount(f64::NAN), 6.0);
     }
 
     #[test]

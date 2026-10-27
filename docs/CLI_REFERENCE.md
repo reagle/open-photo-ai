@@ -210,7 +210,7 @@ Default models are in **bold**.
 | Color Balance    | `--color-balance`    | `--cb` | **rio**, saopaulo                              | `--cb-bias` (-100 to 100)  |
 | Sharpen          | `--sharpen`          | `--sh` | **moscow**, petersburg, novgorod               | `--sh-str` (1 to 300)      |
 | Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, osaka, saitama               | `--scale` (1.0 to 8.0)     |
-| Lens Blur        | `--lens-blur`        | `--lb` | **lisbon**                                     | `--lb-f` (1.0 to 32), `--lb-focus` (X,Y), `--lb-edges` (matte, depth) |
+| Lens Blur        | `--lens-blur`        | `--lb` | **lisbon**                                     | `--lb-f` (1.0 to 32) or `--lb-amount` (0 to 100), `--lb-focus` (X,Y), `--lb-edges` (matte, depth) |
 
 The sections below explain each enhancement briefly. For more detail on when to pick each model, see the [Enhancements section of the README](../README.md#-enhancements).
 
@@ -354,16 +354,17 @@ Gives the photo the shallow depth of field of a wider lens aperture: the point y
 Options:
 
 - `--lb-f <F>`, the f-number to simulate, from `1.0` to `32`, written bare (`1.4`) or with its prefix (`f/1.4`); default `2.8`. Smaller is a wider aperture and more blur.
+- `--lb-amount <AMOUNT>`, how much blur to add, from `0` to `100`, instead of `--lb-f`: the Blur amount slider of the app. `0` is the photo as taken (nothing is added) and `100` is f/1.4 full-frame equivalent, the widest the blur goes; `50` is halfway. The amount is laid out evenly in blur (in `1/f-number`) between the photo's own aperture and f/1.4, so the same amount gives the same look on photos of any aperture, and is the f-number the app's slider would write: the log file says which one (`the lens blur's amount 50 is f/2.27 (full-frame equivalent), against the photograph's own f/6`). A photo already taken at f/1.4 equivalent or wider cannot be blurred more, so the amount has no effect on it. Giving both `--lb-amount` and `--lb-f` is refused.
 - `--lb-focus <X,Y>`, the point to keep sharp, as two fractions of the photo's width and height from `0` to `1`: `0,0` is the top-left corner, `0.5,0.5` the centre (the default), `0.6,0.3` is 60% across and 30% down. To find one, hover over the subject in an image viewer that shows the cursor's pixel position and divide by the photo's width and height.
 - `--lb-edges <EDGES>`, how the edge of the subject in focus is made: `matte` (the default) or `depth`. See below.
 
-**The f-number is the 35 mm full-frame equivalent**: the lens's own f-number times the camera's crop factor, so `--lb-f 1.4` gives the same look on a phone photo as on a camera's. A photo already has the blur of the aperture it was taken at, so only the difference is added: at or above the photo's own equivalent f-number (a phone photo is typically around f/6 to f/10 equivalent), the photo is **left unchanged**.
+**The f-number is the 35 mm full-frame equivalent**: the lens's own f-number times the camera's crop factor, so `--lb-f 1.4` gives the same look on a phone photo as on a camera's. A photo already has the blur of the aperture it was taken at, so only the difference is added: at or above the photo's own equivalent f-number (a phone photo is typically around f/6 to f/10 equivalent), the photo is **left unchanged**. `--lb-amount` is the same aperture said as a percentage of the way from the photo's own to f/1.4.
 
 How much blur, in one paragraph: a thin lens of the photo's 35 mm-equivalent focal length, focused at the depth found at the focus point, turns every other point into a disc whose size grows with its distance in front of or behind that depth (in `1/distance`), and shrinks as the f-number grows; the disc is measured against the full-frame diagonal, so it is the same fraction of the photo at any resolution. The blur the photo already has is subtracted in quadrature. The depth is sharpened along the photo's own edges so hair and leaves keep their outline.
 
 **The lens is read from the photo's EXIF**: the focal length, its 35 mm equivalent, the f-number and the sensor's focal-plane resolution. The depth model reads distances to suit its own estimate of the field of view, so where the EXIF gives the focal length and it differs, every distance is scaled by the one over the other (the same object the same size in the photo is twice as far at twice the focal length), held to between a quarter and eight times. Where the focal length is missing, the depth model's own estimate of the field of view is used; where the f-number or the crop factor is missing, the photo is assumed to have been taken at **f/8 equivalent**. Which lens was used is recorded in the [log file](#log-file). EXIF is read from JPEG, TIFF, PNG, WebP, HEIF and the TIFF-based RAW formats (NEF, ARW, DNG, ORF, PEF and others); CR3 and RAF are not TIFF-based, so their lens is estimated or assumed.
 
-The depth is estimated once per photo (and per crop) and kept in the [run cache](#run-cache), so a second run with another `--lb-f` or `--lb-focus`, or with other enhancements before it, does not estimate it again. Where the EXIF alone shows that `--lb-f` is at or above the photo's own equivalent f-number, the photo is left unchanged without estimating the depth at all.
+The depth is estimated once per photo (and per crop) and kept in the [run cache](#run-cache), so a second run with another `--lb-f`, `--lb-amount` or `--lb-focus`, or with other enhancements before it, does not estimate it again. Where the EXIF alone shows that `--lb-f` is at or above the photo's own equivalent f-number, the photo is left unchanged without estimating the depth at all.
 
 **The subject's edges are matted** (`--lb-edges matte`, the default). A depth map cannot say that an edge pixel is half a strand of hair and half the street behind it, so on its own it either keeps such pixels sharp, background and all, or blurs the strand's colour into the background as a dark haze. Instead, the subject in focus (everything from a little nearer than the focus point to half as far again behind it) is matted by a second model, **Porto** (ViTMatte-S, 104 MB), over a band along its edge; the background is filled in behind the subject and blurred, and the subject is laid over it, so hair, fur and leaf edges stay sharp with the background between them blurred. Everything within that range of distances is kept sharp, as one subject. The matte costs about 15 s for a new focus point (a few seconds to load the model, then about 0.5 s per 1024-pixel tile on a Mac's GPU or 0.8 s on the CPU, 15 to 25 tiles on a 12 to 24 MP photo) and is kept in the run cache afterwards, so it is computed once per photo and focus point: focus points within about 2.5 percent of the same distance share one, another `--lb-f` reuses it, and another `--lb-focus` on something else mattes again. It is skipped where the blur is under 3 pixels everywhere. `--lb-edges depth` renders from the depth alone, as before matting existed, for comparison.
 
@@ -372,6 +373,9 @@ Porto's graph is not yet published with the other models. Where it is not instal
 ```bash
 # Blur the background behind a subject 60% across and 30% down, at f/1.4
 opai portrait.jpg --lb --lb-f f/1.4 --lb-focus 0.6,0.3 -o portrait-f1.4.jpg
+
+# Half the blur the lens goes to, whatever aperture the photo was taken at
+opai portrait.jpg --lb --lb-amount 50 -o portrait-half.jpg
 
 # Denoise, upscale 2x, then blur at f/2.8 focused on the centre
 opai photo.jpg --dn --up --scale 2 --lb -o photo-blurred.png
@@ -388,7 +392,7 @@ opai portrait.jpg --lb --lb-f f/1.4 --lb-focus 0.6,0.3 --lb-edges depth -o portr
 opai photos --ap -o enhanced
 ```
 
-- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--lb`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--lb-f`, `--lb-focus`, `--lb-edges`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
+- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--lb`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--lb-f`, `--lb-amount`, `--lb-focus`, `--lb-edges`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
 - **Each enhancement uses its default strength or bias**: strength `100` for denoise and sharpen, bias `50` for light adjustment and color balance. An upscale runs at the factor the image's size calls for (see [Upscale](#upscale---upscale-model---up-model)); an image above 4 MP is not upscaled.
 - **An image that needs nothing is still written**, unchanged, in the format asked for. Its row ends with `Enhancements applied to` as any other.
 - **If face detection can't run** (for example, its model can't be downloaded), the image still gets the other enhancements, without face recovery, and the [log file](#log-file) records a warning.
@@ -661,9 +665,11 @@ What's in it that the terminal doesn't show:
 | `error: invalid value 'photo.jpg' for '--upscale [<MODEL>]'`                   | An input was placed after a flag. Put the `INPUT`s first. |
 | `error: invalid value '9' for '--scale <FACTOR>': the scale must be from 1.0 to 8.0` | `--scale` out of range or not a number. |
 | `error: invalid value '0.5' for '--lb-f <F>': the f-number must be from 1 to 32` | `--lb-f` out of range or not a number. |
+| `error: invalid value '101' for '--lb-amount <AMOUNT>': the blur amount must be from 0 to 100` | `--lb-amount` out of range or not a number. |
+| `error: the argument '--lb-amount <AMOUNT>' cannot be used with '--lb-f <F>'` | An aperture is asked for twice: choose one of `--lb-f` and `--lb-amount`. |
 | `error: invalid value '1.2,0.5' for '--lb-focus <X,Y>': the focus point must be two fractions from 0 to 1; focus_x must be between 0 and 1 inclusive, but 1.2 was supplied` | Each of the two numbers must be from 0 to 1, separated by a comma, with no space after it unless quoted; the message names `focus_x` (across) or `focus_y` (down), whichever was refused, and a negative one is refused the same way. |
 | `error: invalid value '0.5' for '--la-bias <BIAS>': the bias must be a whole number from -100 to 100` | Strength/bias must be a whole number within range. |
-| `error: the following required arguments were not provided: --denoise [<MODEL>]` | A strength/bias/scale option was used without its enhancement flag (e.g. `--dn-str` without `--dn`, `--scale` without `--up`, or `--lb-f` or `--lb-edges` without `--lb`). |
+| `error: the following required arguments were not provided: --denoise [<MODEL>]` | A strength/bias/scale option was used without its enhancement flag (e.g. `--dn-str` without `--dn`, `--scale` without `--up`, or `--lb-f`, `--lb-amount` or `--lb-edges` without `--lb`). |
 | `error: invalid value 'raw' for '--format <FORMAT>': "raw" is not a format; use preserve, …` | Unknown `--format`. Pick one from the list shown. |
 | `error: invalid value 'cuda' for '--processor <PROCESSOR>'` followed by `[possible values: …]` | That processor doesn't exist for your operating system (`coreml` exists only on macOS; `cuda` and `tensorrt` never on macOS). Pick one from the list shown. |
 | `🧨 cannot read missing.jpg: No such file or directory …`                      | A named input doesn't exist or can't be read. If it's a wildcard, it matched nothing. |
