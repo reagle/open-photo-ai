@@ -164,6 +164,7 @@ where
         focal_35mm = lens.focal_35mm,
         own_f_number = lens.own_f_number,
         origin = ?lens.origin,
+        depth_scale = lens.depth_scale,
         framing,
         exif_focal = exif.focal_mm,
         exif_focal_35mm = exif.focal_35mm,
