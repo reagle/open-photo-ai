@@ -17,7 +17,10 @@
 //! And the model-free half of the lens blur: a single-channel plane of any size ([`plane`]), sRGB to linear light and
 //! back ([`linear`]), edge-aware upsampling and the edge grow ([`guided`]) over shared box means (`boxes`), and the
 //! layered depth-of-field render ([`defocus`]). A depth model's map arrives through the first three; the render takes
-//! a blur radius per pixel and knows nothing of lenses or depth.
+//! a blur radius per pixel and knows nothing of lenses or depth. For a matted subject, whose edge pixels are part
+//! subject and part background (hair, fur, leaves), the render composites the subject as one layer over a background
+//! filled in behind it ([`fill`]), in the subject's own colour with the background taken out ([`fusion`]); the trimap
+//! a matting model is given is the depth's in-focus band eroded and dilated ([`morph`]).
 //!
 //! **This crate knows nothing of `opai`**: no model, session, execution provider or orchestration. It depends on
 //! `image` and `thiserror` alone, so that independence is a compile error to break rather than a convention to keep.
@@ -51,10 +54,13 @@ pub mod blend;
 pub(crate) mod boxes;
 pub mod canvas;
 pub mod defocus;
+pub mod fill;
+pub mod fusion;
 pub mod grid;
 pub mod guided;
 pub mod linear;
 pub mod mix;
+pub mod morph;
 pub mod pad;
 pub mod plane;
 pub mod present;
