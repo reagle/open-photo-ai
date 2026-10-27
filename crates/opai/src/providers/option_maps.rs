@@ -13,7 +13,8 @@ use rust_sak::ai::{self, CachePaths, ExecutionMode, ExecutionProvider, Tuning};
 use crate::models::operation::sealed::DataModel as _;
 use crate::models::test_support::{every_analysis, every_operation};
 use crate::models::{
-    ArtifactId, FloatPrecision, OsakaPrecision, Restore, RestoreVariant, Scale, Strength, Upscale, UpscaleVariant,
+    Analysis, ArtifactId, FloatPrecision, OsakaPrecision, Restore, RestoreVariant, Scale, Strength, Upscale,
+    UpscaleVariant,
 };
 use crate::pipeline::test_support::NoBackend;
 
@@ -45,9 +46,22 @@ fn every_session() -> Vec<(ArtifactId, Tuning)> {
         }
     }
     for analysis in every_analysis() {
-        let pipeline = analysis.pipeline::<NoBackend>().expect("every analysis reaches a pipeline");
-        for (artifact, tuning) in pipeline.sessions() {
-            push(artifact, tuning);
+        match analysis {
+            Analysis::Detection(detection) => {
+                let pipeline = detection.pipeline::<NoBackend>((640, 480)).expect("every analysis reaches a pipeline");
+                for (artifact, tuning) in pipeline.sessions() {
+                    push(artifact, tuning);
+                }
+            }
+            // Lisbon opens one graph per orientation, chosen by the photograph's dimensions: ask for both.
+            Analysis::Depth(depth) => {
+                for dimensions in [(640, 480), (480, 640)] {
+                    let pipeline = depth.pipeline::<NoBackend>(dimensions).expect("every analysis reaches a pipeline");
+                    for (artifact, tuning) in pipeline.sessions() {
+                        push(artifact, tuning);
+                    }
+                }
+            }
         }
     }
 
@@ -130,7 +144,11 @@ fn upscale(variant: UpscaleVariant) -> Upscale {
 
 /// Osaka at `precision`, restoring at 4x at full strength.
 fn osaka(precision: OsakaPrecision) -> Restore {
-    Restore::new(RestoreVariant::Osaka(precision), Scale::new(4.0).expect("4.0 is in range"), Strength::clamped(1.0))
+    Restore::new(
+        RestoreVariant::Osaka(precision),
+        Scale::new(4.0).expect("4.0 is in range"),
+        Strength::clamped(1.0),
+    )
 }
 
 /// One CoreML option of `upscale`'s tuning.

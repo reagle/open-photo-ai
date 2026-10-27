@@ -28,6 +28,7 @@ use super::catalogue::{VariantEntry, catalogue};
 use super::color_balance::{ColorBalance, ColorBalanceVariant};
 use super::colorization::{Colorization, ColorizationVariant};
 use super::denoise::{Denoise, DenoiseVariant};
+use super::depth::{Depth, DepthVariant};
 use super::detection::{Detection, DetectionVariant};
 use super::face::Faces;
 use super::face_recovery::{FaceRecovery, FaceRecoveryVariant};
@@ -43,6 +44,7 @@ use super::sharpen::{Sharpen, SharpenVariant};
 use super::strength::Strength;
 use super::upscale::{Upscale, UpscaleVariant};
 
+use super::operation::Analysis;
 use super::subject::Subject;
 
 use crate::mask::Mask;
@@ -288,8 +290,8 @@ impl VariantEntry {
     /// row is what *knows*: the precisions it is published at and the parameters it takes are fields of it, so the
     /// check and the construction read the same data and there is nothing for a second table to disagree with.
     ///
-    /// A [`Subject`] rather than an [`Operation`](super::Operation), because the nine families are carried in two
-    /// values — the eight whose result is an image and the one whose result is not — and a caller walking the
+    /// A [`Subject`] rather than an [`Operation`](super::Operation), because the ten families are carried in two
+    /// values — the eight whose result is an image and the two whose result is not — and a caller walking the
     /// catalogue crosses both. A caller that knows it asked an enhancement family matches
     /// [`Subject::Enhancement`] and has the operation [`Opai::process`](crate::Opai::process) takes.
     ///
@@ -297,6 +299,10 @@ impl VariantEntry {
     /// constructor for the variant its `from_codename` resolved, so the precision domain is known statically at the
     /// one place that calls it. Osaka having no FP32 build is stated once, by the row, and is refused below by the
     /// same `contains` every other variant is refused by.
+    ///
+    /// A depth row builds an [`Analysis::Depth`] like detection's [`Analysis::Detection`]; it is run through
+    /// [`Opai::estimate_depth`](crate::Opai::estimate_depth), not [`Opai::execute`](crate::Opai::execute), which
+    /// refuses it.
     ///
     /// # Errors
     ///
@@ -315,13 +321,20 @@ impl VariantEntry {
         let codename = self.codename;
 
         let enhancement = match self.family {
-            // The one family on the other run path, and the only arm that does not produce an `Operation`.
+            // The two families on the other run path, and the only arms that do not produce an `Operation`.
             Family::Detection => {
                 let variant = DetectionVariant::from_codename(codename, precision).ok_or_else(unpublished)?;
 
                 return Ok(Subject::Analysis(match variant {
                     DetectionVariant::NewYork(precision) => Detection::newyork(precision),
                 }));
+            }
+            Family::Depth => {
+                let variant = DepthVariant::from_codename(codename, precision).ok_or_else(unpublished)?;
+
+                return Ok(Subject::Analysis(Analysis::Depth(match variant {
+                    DepthVariant::Lisbon(_) => Depth::lisbon(),
+                })));
             }
             Family::Denoise => match DenoiseVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
                 DenoiseVariant::Stockholm(precision) => Denoise::stockholm(precision, values.strength),

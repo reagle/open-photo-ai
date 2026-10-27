@@ -342,6 +342,7 @@ pub(crate) const fn family_label(family: Family) -> &'static str {
     match family {
         Family::Detection | Family::FaceRecovery => "Face Recovery",
         Family::Remove => "Remove",
+        Family::Depth => "Depth",
         Family::Denoise => "Denoise",
         Family::Colorization => "Colorize",
         Family::LightAdjustment => "Light Adjust",
@@ -842,6 +843,7 @@ mod tests {
             labels,
             [
                 "Face Recovery",
+                "Depth",
                 "Remove",
                 "Denoise",
                 "Face Recovery",
