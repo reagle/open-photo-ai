@@ -1734,7 +1734,7 @@ mod tests {
     async fn a_set_with_nothing_suggestible_reads_nothing_and_is_complete() {
         let source = picture_of(everything_wrong(512, 384));
 
-        for families in [&[][..], &[Family::Detection][..], &[Family::Remove][..]] {
+        for families in [&[][..], &[Family::Detection][..], &[Family::Depth][..], &[Family::Remove][..]] {
             let (log, outcome) =
                 logging::records_of("debug", || suggest::<NoBackend>(&NoBackend, None, &source, Some(families), None))
                     .await;
@@ -1778,10 +1778,11 @@ mod tests {
     /// analysis can suggest is still suggested when it is the only one asked for, on a photograph that calls for it.
     #[tokio::test]
     async fn every_suggestible_family_is_suggested_when_it_is_asked_for_alone() {
-        // Not detection, which is never applied, not restore or grain, which an analysis never suggests, and not
-        // remove, whose region is the user's to paint: no analysis of a photograph suggests what to take out of it.
-        let suggestible =
-            |family: &Family| !matches!(family, Family::Detection | Family::Remove | Family::Restore | Family::Grain);
+        // Not detection or depth, which are never applied, not restore or grain, which an analysis never suggests, and
+        // not remove, whose region is the user's to paint: no analysis of a photograph suggests what to take out of it.
+        let suggestible = |family: &Family| {
+            !matches!(family, Family::Detection | Family::Depth | Family::Remove | Family::Restore | Family::Grain)
+        };
         for family in Family::ALL.into_iter().filter(suggestible) {
             let source = match family {
                 Family::Colorization => black_and_white(512, 384),

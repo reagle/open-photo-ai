@@ -19,7 +19,8 @@ use super::simple::SimpleVariant;
 use super::strength::Strength;
 use super::upscale;
 use super::{
-    color_balance, colorization, denoise, detection, face_recovery, grain, light_adjustment, remove, restore, sharpen,
+    color_balance, colorization, denoise, depth, detection, face_recovery, grain, light_adjustment, remove, restore,
+    sharpen,
 };
 
 /// One model a user can choose, and what building it takes.
@@ -252,6 +253,9 @@ static CATALOGUE: LazyLock<Vec<FamilyEntry>> = LazyLock::new(|| {
         // Appended rather than placed beside upscale, as detection and face recovery were: this order is pinned and is
         // not a presentation order, so inserting would churn it for nothing.
         restore_family(),
+        // Listed for detection's reason: which model estimates depth is model vocabulary. No order and no parameter,
+        // so no front end draws it as an enhancement.
+        depth_family(),
         // Listed last, though it runs first: where an entry is listed is a presentation decision, and `order` is what
         // says where it runs.
         remove_family(),
@@ -297,6 +301,24 @@ fn simple_family(family: Family, rows: &[SimpleVariant]) -> FamilyEntry {
                 codename: row.codename,
                 label: row.label,
                 precisions: &FloatPrecision::PRECISIONS,
+                parameters: row.parameters,
+            })
+            .collect(),
+    }
+}
+
+/// The depth family's entry: [`simple_family`]'s shape, at the one precision Lisbon is published in.
+fn depth_family() -> FamilyEntry {
+    FamilyEntry {
+        family: Family::Depth,
+        order: Family::Depth.applied_at(),
+        variants: depth::ALL
+            .iter()
+            .map(|row| VariantEntry {
+                family: Family::Depth,
+                codename: row.codename,
+                label: row.label,
+                precisions: &depth::variant::PRECISIONS,
                 parameters: row.parameters,
             })
             .collect(),
@@ -377,13 +399,23 @@ mod tests {
 
     /// The families published as one graph per variant per precision, all sharing one shape. Derived from
     /// [`Family::ALL`] rather than transcribed, so a family added later is covered here without being remembered:
-    /// restore is left out, because Osaka's precisions are its own, remove, published at FP32 alone, and grain, whose
-    /// one precision is its arithmetic's.
+    /// restore is left out, because Osaka's precisions are its own, depth, because Lisbon is published at FP16 alone
+    /// and two graphs at that, remove, published at FP32 alone, and grain, whose one precision is its arithmetic's.
     fn single_graph_families() -> Vec<Family> {
         Family::ALL
             .into_iter()
-            .filter(|family| !matches!(family, Family::Restore | Family::Remove | Family::Grain))
+            .filter(|family| !matches!(family, Family::Restore | Family::Depth | Family::Remove | Family::Grain))
             .collect()
+    }
+
+    #[test]
+    fn depth_is_published_as_lisbon_at_half_precision_alone_with_no_parameter_and_no_order() {
+        let entry = family_entry(Family::Depth);
+
+        assert_eq!(variants(Family::Depth), vec![("lisbon", "Lisbon")]);
+        assert_eq!(entry.variants[0].precisions, [Precision::Fp16]);
+        assert!(entry.variants[0].parameters.is_empty());
+        assert_eq!(entry.order, None, "depth was published as an enhancement a chain applies");
     }
 
     fn family_entry(family: Family) -> &'static FamilyEntry {
@@ -704,6 +736,7 @@ mod tests {
                 Family::Detection,
                 Family::FaceRecovery,
                 Family::Restore,
+                Family::Depth,
                 Family::Remove,
                 Family::Grain,
             ]
