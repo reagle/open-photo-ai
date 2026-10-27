@@ -40,14 +40,14 @@ vi.mock("@/ipc/os", () => ({ isMacOs: vi.fn(() => false), isWindows: vi.fn(() =>
 // and the tier behind it all come from what the library publishes. So is the scale a new upscale starts
 // at, which is the library's ladder - answered here as 2x, so the value visibly came from the backend.
 vi.mock("@tauri-apps/api/core", () => ({
-    // A new lens blur's aperture is the photograph's own, which is `opai`'s to work out: here an f/6 equivalent, as the
-    // bonsai's EXIF gives.
+    // A new lens blur's aperture comes from the photograph's own, which is `opai`'s to work out: here an f/6
+    // equivalent, as the bonsai's EXIF gives.
     invoke: vi.fn((command: string) =>
         Promise.resolve(
             command === "suggested_scale"
                 ? 2
                 : command === "lens_info"
-                  ? { ownFNumber: 6, focal35mm: 36, origin: "exif" }
+                  ? { ownFNumber: 6, focal35mm: 36, cropFactor: 1.5, origin: "exif" }
                   : CATALOGUE,
         ),
     ),
@@ -157,7 +157,7 @@ describe("adding an enhancement", () => {
         expect(invoke).not.toHaveBeenCalledWith("suggested_scale", expect.anything());
     });
 
-    it("adds a lens blur at the photograph's own aperture, so it changes nothing until the slider is moved", async () => {
+    it("adds a lens blur at a blur amount of 50 on the photograph's own lens", async () => {
         openFiles(HOLIDAY);
         render(
             <>
@@ -169,19 +169,19 @@ describe("adding an enhancement", () => {
         open();
         fireEvent.click(await screen.findByRole("menuitem", { name: "Lens Blur" }));
 
-        // The stop at or above f/6, which is where the library adds no blur; Lisbon, in the middle of the frame.
+        // Halfway in blur between the photograph's own f/6 and f/1.4, which is f/2.27; Lisbon, in the middle of the frame.
         await waitFor(() =>
             expect(stack()).toEqual([
                 {
                     family: "lens_blur",
                     codename: "lisbon",
                     precision: "fp16",
-                    parameters: { f_number: 6.3, focus_x: 0.5, focus_y: 0.5 },
+                    parameters: { f_number: 2.27, focus_x: 0.5, focus_y: 0.5 },
                 },
             ]),
         );
         expect(invoke).toHaveBeenCalledWith("lens_info", { source: HOLIDAY.identity, crop: undefined });
-        expect(await screen.findByText("Lisbon, f/6.3")).toBeInTheDocument();
+        expect(await screen.findByText("Lisbon, blur 50")).toBeInTheDocument();
         expect(document.querySelector("[data-slot='enhancement-options']")).toBeNull();
         expect(track).toHaveBeenCalledExactlyOnceWith("enhancement_added", { family: "lens_blur", source: "manual" });
     });

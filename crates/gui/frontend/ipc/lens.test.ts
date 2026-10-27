@@ -23,7 +23,7 @@ const framing: CropInfo = {
     flipVertical: false,
 };
 
-const LENS: LensInfo = { ownFNumber: 6, focal35mm: 36, origin: "exif" };
+const LENS: LensInfo = { ownFNumber: 6, focal35mm: 36, cropFactor: 1.5, origin: "exif" };
 
 beforeEach(() => {
     invoked.mockReset();

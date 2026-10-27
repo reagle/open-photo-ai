@@ -21,7 +21,8 @@ use crate::task::spawn_blocking;
 ///
 /// `own_f_number` is the 35 mm full-frame-equivalent f-number the photograph already has, which is where the slider
 /// ends: an f-number at or above it adds no blur. `focal_35mm` is `None` where only the depth model could say, and
-/// the window does not show it then.
+/// the window does not show it then. `crop_factor` is the picture's as framed, which the window divides an equivalent
+/// f-number by to read the real aperture beside it; `None` where the EXIF cannot measure one.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LensInfo {
@@ -29,6 +30,8 @@ pub(crate) struct LensInfo {
     pub(crate) own_f_number: f32,
     /// The equivalent focal length in millimetres, where the EXIF gives it.
     pub(crate) focal_35mm: Option<f32>,
+    /// The crop factor of the photograph as it is framed, where the EXIF gives one to measure.
+    pub(crate) crop_factor: Option<f32>,
     /// Whether the numbers were read (`exif`) or assumed (`assumed`). `estimated` needs the depth model and is never
     /// answered here.
     pub(crate) origin: LensOrigin,
@@ -36,7 +39,12 @@ pub(crate) struct LensInfo {
 
 impl From<OwnLens> for LensInfo {
     fn from(own: OwnLens) -> Self {
-        Self { own_f_number: own.own_f_number, focal_35mm: own.focal_35mm, origin: own.origin }
+        Self {
+            own_f_number: own.own_f_number,
+            focal_35mm: own.focal_35mm,
+            crop_factor: own.crop_factor,
+            origin: own.origin,
+        }
     }
 }
 
@@ -159,10 +167,13 @@ mod tests {
 
         let info = tauri::async_runtime::block_on(lens_of(&opened, identity, None)).expect("an admitted photograph");
 
-        assert_eq!(info, LensInfo { own_f_number: 6.0, focal_35mm: Some(36.0), origin: LensOrigin::Exif });
+        assert_eq!(
+            info,
+            LensInfo { own_f_number: 6.0, focal_35mm: Some(36.0), crop_factor: Some(1.5), origin: LensOrigin::Exif }
+        );
         assert_eq!(
             serde_json::to_value(info).expect("serializes"),
-            serde_json::json!({ "ownFNumber": 6.0, "focal35mm": 36.0, "origin": "exif" })
+            serde_json::json!({ "ownFNumber": 6.0, "focal35mm": 36.0, "cropFactor": 1.5, "origin": "exif" })
         );
     }
 
@@ -174,10 +185,13 @@ mod tests {
 
         let info = tauri::async_runtime::block_on(lens_of(&opened, identity, None)).expect("an admitted photograph");
 
-        assert_eq!(info, LensInfo { own_f_number: 8.0, focal_35mm: None, origin: LensOrigin::Assumed });
+        assert_eq!(
+            info,
+            LensInfo { own_f_number: 8.0, focal_35mm: None, crop_factor: None, origin: LensOrigin::Assumed }
+        );
         assert_eq!(
             serde_json::to_value(info).expect("serializes"),
-            serde_json::json!({ "ownFNumber": 8.0, "focal35mm": null, "origin": "assumed" })
+            serde_json::json!({ "ownFNumber": 8.0, "focal35mm": null, "cropFactor": null, "origin": "assumed" })
         );
     }
 

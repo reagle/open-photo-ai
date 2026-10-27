@@ -6,19 +6,12 @@ import { Separator } from "@/components/ui/separator";
 import { useLensInfo } from "@/hooks/useLensInfo";
 import type { FamilyEntry } from "@/ipc/catalogue";
 import type { Operation } from "@/ipc/enhance";
-import type { LensInfo } from "@/ipc/lens";
+import { ASSUMED_LENS, canBlurMore, fNumberForAmount, formatFNumber, shownAmount } from "@/lib/blurAmount";
 import { type Enhancement, F_NUMBER, parameterOf, withParameter } from "@/lib/enhancements";
-import { ASSUMED_F_NUMBER, F_STOPS, formatFNumber, stopsUpTo } from "@/lib/fstops";
 import { useImageCrop } from "@/stores/crop";
 import { useFocusPickStore } from "@/stores/focusPick";
-import { FStopSlider } from "./FStopSlider";
+import { BlurAmountSlider } from "./BlurAmountSlider";
 import { OperationModelTray } from "./ModelTray";
-
-/**
- * What a photograph the lens of which could not be asked about is taken to be: the f/8 the library assumes for a
- * photograph with no lens information, so the panel and a run agree on it.
- */
-const ASSUMED: LensInfo = { ownFNumber: ASSUMED_F_NUMBER, focal35mm: null, origin: "assumed" };
 
 type LensBlurOptionsProps = {
     /** The enhancement this panel is open over, which every control here reports and writes. */
@@ -37,11 +30,13 @@ type LensBlurOptionsProps = {
 };
 
 /**
- * What a lens blur can be set to: which model measures the depth, how wide the aperture is, and where the focus falls.
+ * What a lens blur can be set to: which model measures the depth, how much blur there is, and where the focus falls.
  *
- * **The slider is bounded by the photograph.** Its right end is the photograph's own equivalent f-number, from its
- * EXIF, which is where a lens blur adds nothing; until that has been asked for the slider is drawn and unavailable. A
- * photograph with no lens information is taken at the f/8 the library assumes, and the panel says so.
+ * **The slider is a blur amount, 0 to 100, against the photograph.** 0 is the photograph as taken - its own equivalent
+ * f-number, from its EXIF, which is where a lens blur adds nothing - and 100 is f/1.4; the f-number the amount stands
+ * for is what the operation carries (`lib/blurAmount.ts`). Until the lens has been asked for the slider is drawn and
+ * unavailable, and so it is for a photograph taken at f/1.4 or wider, which has no more blur to add, with a note saying
+ * so. A photograph with no lens information is taken at the f/8 the library assumes, and the panel says so.
  *
  * **Set focus closes the panel and arms the preview**, which then takes the next click on the photograph as the point.
  * The panel is where it is chosen and the photograph is where the point is, so the two cannot be one surface - see
@@ -58,10 +53,13 @@ export const LensBlurOptions = ({ enhancement, operation, entry, identity, onCha
     const asked = useLensInfo(identity, crop);
 
     // A failed question is the assumed lens, which is what a photograph the library knows nothing about is.
-    const lens = asked === null ? ASSUMED : asked;
-    const stops = lens ? stopsUpTo(lens.ownFNumber) : F_STOPS;
+    const lens = asked === null ? ASSUMED_LENS : asked;
+    const own = (lens ?? ASSUMED_LENS).ownFNumber;
+    const blurrable = canBlurMore(own);
 
-    const fNumber = parameterOf(operation, entry, F_NUMBER) ?? lens?.ownFNumber ?? ASSUMED_F_NUMBER;
+    // The amount is not stored: it is read back from the f-number the operation carries, against the photograph's own.
+    const fNumber = parameterOf(operation, entry, F_NUMBER) ?? own;
+    const amount = shownAmount(fNumber, own);
 
     return (
         <>
@@ -69,12 +67,19 @@ export const LensBlurOptions = ({ enhancement, operation, entry, identity, onCha
 
             <Separator />
 
-            <FStopSlider
-                stops={stops}
-                value={fNumber}
-                disabled={lens === undefined}
-                onChange={(stop) => onChange(withParameter(operation, F_NUMBER, stop))}
+            <BlurAmountSlider
+                value={amount}
+                own={own}
+                cropFactor={lens?.cropFactor ?? null}
+                disabled={lens === undefined || !blurrable}
+                onChange={(next) => onChange(withParameter(operation, F_NUMBER, fNumberForAmount(next, own)))}
             />
+
+            {lens !== undefined && !blurrable && (
+                <p className="text-[12px] text-muted-foreground leading-normal" data-slot="lens-cannot-blur-more">
+                    {t("enhancements.lensBlur.cannotBlurMore", { f: formatFNumber(own) })}
+                </p>
+            )}
 
             {lens?.origin === "assumed" && (
                 <p className="text-[12px] text-muted-foreground leading-normal" data-slot="lens-assumed">

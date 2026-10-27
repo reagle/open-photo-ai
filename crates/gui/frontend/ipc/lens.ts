@@ -21,8 +21,12 @@ export type LensOrigin = "exif" | "estimated" | "assumed";
  * `ownFNumber` is the f-number the photograph already has - **as it is framed**, so a crop of it is wider-numbered
  * than the whole frame - and where the Lens Blur slider ends: an f-number at or above it adds no blur. `focal35mm` is
  * absent (`null` on the wire) where only the depth model could say.
+ *
+ * `cropFactor` is the photograph's **as it is framed** - a crop of it has a larger one - where the EXIF gives one to
+ * measure, and `null` where it does not. The real f-number, which is what the lens's barrel says and the EXIF records,
+ * is the equivalent one over it; with none, no real f-number is claimed.
  */
-export type LensInfo = { ownFNumber: number; focal35mm: number | null; origin: LensOrigin };
+export type LensInfo = { ownFNumber: number; focal35mm: number | null; cropFactor: number | null; origin: LensOrigin };
 
 /**
  * Why the `lens_info` command rejected.
