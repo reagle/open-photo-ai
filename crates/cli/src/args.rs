@@ -184,6 +184,25 @@ pub enum LensBlurModel {
     Lisbon,
 }
 
+/// How a lens blur treats the edge of the subject in focus, as the command line names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
+pub enum LensBlurEdges {
+    /// Matte the subject in focus and composite it over the blurred background.
+    #[default]
+    Matte,
+    /// Let the depth alone decide what is sharp, as before matting existed.
+    Depth,
+}
+
+impl From<LensBlurEdges> for opai::LensBlurEdges {
+    fn from(edges: LensBlurEdges) -> Self {
+        match edges {
+            LensBlurEdges::Matte => Self::Matte,
+            LensBlurEdges::Depth => Self::Depth,
+        }
+    }
+}
+
 /// The face-recovery models, as the command line names them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum FaceModel {
@@ -485,8 +504,8 @@ pub struct Selection {
     #[arg(long, value_name = "FACTOR", value_parser = parse_scale, requires = "upscale")]
     pub scale: Option<Scale>,
 
-    /// Restore the photograph generatively, last, with MODEL or Kazan where none is named. It redraws detail rather
-    /// than recovering it, so it can change faces, textures and lettering.
+    /// Restore the photograph generatively, after every other enhancement but a lens blur, with MODEL or Kazan where
+    /// none is named. It redraws detail rather than recovering it, so it can change faces, textures and lettering.
     #[arg(
         long = "restore",
         visible_alias = "rs",
@@ -536,9 +555,16 @@ pub struct Selection {
     )]
     pub lens_blur_focus: Option<(f64, f64)>,
 
-    /// Add grain last of all, after every other enhancement, with MODEL or Sensor where none is named: the
-    /// photograph's own sensor noise, put back where the enhancements smoothed it away. After a denoise, the noise the
-    /// denoise left is matched instead, so the grain never undoes it; a clean photograph gets none.
+    /// How the edge of the subject in focus is made: `matte` mattes it (hair, fur and leaves stay sharp with the
+    /// background between them blurred; about 15 s for a new focus point, cached afterwards), `depth` leaves it to the
+    /// depth alone. Default matte.
+    #[arg(long = "lb-edges", value_name = "EDGES", value_enum, ignore_case = true, requires = "lens_blur")]
+    pub lens_blur_edges: Option<LensBlurEdges>,
+
+    /// Add grain last of all, after every other enhancement and a lens blur, with MODEL or Sensor where none is
+    /// named: the photograph's own sensor noise, put back where the enhancements smoothed it away, the lens blur's
+    /// background included. After a denoise, the noise the denoise left is matched instead, so the grain never undoes
+    /// it; a clean photograph gets none.
     #[arg(
         long = "grain",
         visible_alias = "gr",
@@ -1174,6 +1200,7 @@ mod tests {
             ("--sh --rs-str 50", "--restore"),
             ("--up --lb-f 2", "--lens-blur"),
             ("--up --lb-focus 0.3,0.6", "--lens-blur"),
+            ("--up --lb-edges matte", "--lens-blur"),
             ("--rs --gr-amount 50", "--grain"),
             ("--rs --gr-add", "--grain"),
         ] {
@@ -1355,6 +1382,25 @@ mod tests {
     fn a_refused_focus_names_the_axis_it_was_refused_for() {
         assert!(parse_focus("1.2,0.5").expect_err("outside").contains("focus_x must be between 0 and 1"));
         assert!(parse_focus("0.5,-0.1").expect_err("outside").contains("focus_y must be between 0 and 1"));
+    }
+
+    #[test]
+    fn the_lens_blurs_edges_are_matted_unless_the_depth_is_asked_for() {
+        let args = parse("opai photo.jpg --lb -o out.jpg").expect("parses");
+        assert_eq!(args.selection.lens_blur_edges, None);
+
+        for (flag, edges) in [
+            ("matte", LensBlurEdges::Matte),
+            ("depth", LensBlurEdges::Depth),
+            ("DEPTH", LensBlurEdges::Depth),
+        ] {
+            let args = parse(&format!("opai photo.jpg --lb --lb-edges {flag} -o out.jpg")).expect(flag);
+            assert_eq!(args.selection.lens_blur_edges, Some(edges));
+        }
+
+        let error = parse("opai photo.jpg --lb --lb-edges hair -o out.jpg").expect_err("not an edge");
+        assert_eq!(error.kind(), ErrorKind::InvalidValue, "{error}");
+        assert_eq!(opai::LensBlurEdges::from(LensBlurEdges::default()), opai::LensBlurEdges::default());
     }
 
     #[test]
