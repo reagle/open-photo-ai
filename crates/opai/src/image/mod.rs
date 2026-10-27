@@ -125,6 +125,7 @@ mod error;
 mod extensions;
 mod fidelity;
 mod gain_map;
+mod gain_map_params;
 mod identity;
 mod lens;
 mod load;
@@ -146,6 +147,7 @@ pub use extensions::{extensions_of, input_extensions};
 pub use fidelity::{Depth, Discarded, Fidelity};
 pub use gain_map::GainMap;
 pub(crate) use gain_map::base_orientation;
+pub(crate) use gain_map_params::GainMapParams;
 pub use identity::{identity, identity_blocking};
 pub(crate) use lens::read_frame_diagonal;
 #[cfg(test)]

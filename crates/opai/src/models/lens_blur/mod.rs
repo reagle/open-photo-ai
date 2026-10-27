@@ -7,6 +7,7 @@
 //! [`render`]'s: the depth brought to the output's size along the photograph's edges, the radius a thin lens would
 //! add at every pixel, and the layered render of `imaging::defocus`.
 
+pub(crate) mod gain_map;
 pub(crate) mod lens;
 pub(crate) mod render;
 pub(crate) mod variant;
