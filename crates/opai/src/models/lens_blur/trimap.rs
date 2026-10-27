@@ -84,7 +84,7 @@ impl Band {
     }
 
     /// Whether a pixel at `disparity` lies in front of the band.
-    fn in_front(self, disparity: f32) -> bool {
+    pub(crate) fn in_front(self, disparity: f32) -> bool {
         disparity > self.near
     }
 }
@@ -129,27 +129,36 @@ pub(crate) fn trimap(refined: &Refined, band: Band) -> Plane {
     let disparity = |index: usize| values[index] * refined.nearest;
     let held = |index: usize| band.holds(disparity(index));
 
-    // The band reduced by a box: a reduced pixel is in it where most of its block is.
+    // The band reduced by a box: a reduced pixel is in it where most of its block is. And the band with what is in
+    // front of it, likewise: the subject's edge against a nearer thing is that thing's edge, not one to matte.
     let (small_width, small_height) = (width.div_ceil(REDUCTION), height.div_ceil(REDUCTION));
-    let mut small = Plane::new(small_width, small_height, 0.0);
-    for_each_row(small.as_mut_slice(), small_width as usize, small_height as usize, |y, out| {
-        let top = y * REDUCTION as usize;
-        let bottom = (top + REDUCTION as usize).min(rows);
+    let in_front = |index: usize| band.in_front(disparity(index));
+    let reduced = |inside_of: &(dyn Fn(usize) -> bool + Sync)| {
+        let mut small = Plane::new(small_width, small_height, 0.0);
+        for_each_row(small.as_mut_slice(), small_width as usize, small_height as usize, |y, out| {
+            let top = y * REDUCTION as usize;
+            let bottom = (top + REDUCTION as usize).min(rows);
 
-        for (x, value) in out.iter_mut().enumerate() {
-            let left = x * REDUCTION as usize;
-            let right = (left + REDUCTION as usize).min(columns);
-            let inside = (top..bottom).flat_map(|row| (left..right).map(move |column| row * columns + column));
-            let (count, total) =
-                inside.fold((0, 0), |(count, total), index| (count + usize::from(held(index)), total + 1));
+            for (x, value) in out.iter_mut().enumerate() {
+                let left = x * REDUCTION as usize;
+                let right = (left + REDUCTION as usize).min(columns);
+                let inside = (top..bottom).flat_map(|row| (left..right).map(move |column| row * columns + column));
+                let (count, total) =
+                    inside.fold((0, 0), |(count, total), index| (count + usize::from(inside_of(index)), total + 1));
 
-            *value = if 2 * count > total { 1.0 } else { 0.0 };
-        }
-    });
+                *value = if 2 * count > total { 1.0 } else { 0.0 };
+            }
+        });
+        small
+    };
+    let small = reduced(&held);
+    let unoccluded = reduced(&|index| held(index) || in_front(index));
 
     // Rounded up, so the ring is at least the 0.7 percent asked for at the full size.
     let reduced_radius = unknown_radius(width, height).div_ceil(REDUCTION).max(1);
-    let (sure, maybe) = (eroded(&small, reduced_radius), dilated(&small, reduced_radius));
+    // Sure where the band, with what is in front of it, holds the whole ring: an edge against a nearer thing is not
+    // left unknown, or the matting model, which cannot see depth, takes the subject's side of it for background.
+    let (sure, maybe) = (eroded(&unoccluded, reduced_radius), dilated(&small, reduced_radius));
 
     let mut trimap = Plane::new(width, height, 0.0);
     for_each_row(trimap.as_mut_slice(), columns, rows, |y, out| {
@@ -164,7 +173,7 @@ pub(crate) fn trimap(refined: &Refined, band: Band) -> Plane {
                 // A nearer thing — a person passing in front — is never the subject, however close to its edge: left
                 // unknown, the matting model gives its edge to the subject, and it is then rendered sharp.
                 0.0
-            } else if sure.get(small_x, small_y) > 0.5 {
+            } else if sure.get(small_x, small_y) > 0.5 && small.get(small_x, small_y) > 0.5 {
                 // Sure only where the full-size pixel agrees with the reduced band it was enlarged from.
                 if inside { 1.0 } else { 0.5 }
             } else if maybe.get(small_x, small_y) > 0.5 || inside {
@@ -266,15 +275,16 @@ mod tests {
         assert_eq!(trimap.get(200, 150), 1.0);
         assert_eq!(trimap.get(380, 150), 0.0);
 
-        // Right up to its edge with the subject: the ring is unknown on the subject's side and behind it, never on the
-        // nearer person's, whose edge would otherwise be matted into the sharp subject.
+        // Right up to its edge with the subject: that edge is the nearer person's, so neither side of it is left
+        // unknown — the person's would be matted into the sharp subject, and the subject's taken for background by a
+        // model that cannot see depth. The edge against the wall behind is unknown as before.
         let radius = unknown_radius(400, 300);
         for y in [0, 150, 299] {
             for x in 0..100 {
                 assert_eq!(trimap.get(x, y), 0.0, "({x}, {y}) in front of the band is not surely background");
             }
-            assert_eq!(trimap.get(100, y), 0.5, "the subject's side of the edge is sure");
-            assert_eq!(trimap.get(300 + radius / 2, y), 0.5, "the wall's side of the edge is sure");
+            assert_eq!(trimap.get(100, y), 1.0, "the subject's side of the nearer person's edge is sure");
+            assert_eq!(trimap.get(300 + radius / 2, y), 0.5, "the wall's side of the edge is unknown");
         }
     }
 
