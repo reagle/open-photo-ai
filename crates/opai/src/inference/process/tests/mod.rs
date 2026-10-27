@@ -1,6 +1,7 @@
 //! The chain's tests, and the fake backend and fixtures every group of them runs against.
 
 mod cache;
+mod depth;
 mod entry;
 mod faces;
 mod identity;
@@ -385,12 +386,40 @@ impl Backend for Fake {
         Ok(())
     }
 
-    // The two seams this chain's models never reach — see `stub_backend_runs`.
-    stub_backend_runs!(
-        "nothing here runs a graph with more than one output, or one fed a value beside its image";
-        run_named_outputs,
-        run_weighted,
-    );
+    /// The depth graph's call, recorded as the others are and answered with a scene the depth model's recovery reads
+    /// back as a slope from two metres on the left to five on the right — so a lens blur's depth is estimated through
+    /// the real pipeline and the real cached run, and how many times is in the log.
+    fn run_named_outputs(
+        handle: &SessionHandle<Self::Session>,
+        _input: &[f32],
+        input_shape: GraphShape,
+        outputs: &mut [crate::pipeline::session::NamedOutput<'_>],
+    ) -> Result<(), Self::Error> {
+        let session = handle.session();
+        session.log.lock().unwrap().ran.push(session.artifact.clone());
+
+        let (width, height) = (input_shape.width, input_shape.height);
+        for output in outputs.iter_mut() {
+            match output.name {
+                "points" => output.buffer.copy_from_slice(&crate::models::depth::recover::tests::synthetic(
+                    width,
+                    height,
+                    1.6,
+                    0.7,
+                    3.0,
+                    |x, _| 2.0 + 3.0 * x as f64 / width as f64,
+                )),
+                "mask" => output.buffer.fill(1.0),
+                "metric_scale" => output.buffer[0] = 3.0,
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    // The seam this chain's models never reach — see `stub_backend_runs`.
+    stub_backend_runs!("nothing here runs a graph fed a value beside its image"; run_weighted);
 }
 
 /// Runs a chain through the fake with nothing watching it and no cancellation.

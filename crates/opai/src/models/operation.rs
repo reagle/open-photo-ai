@@ -1,7 +1,7 @@
 //! The values that carry an operation of any family, so that holding, storing, sending or dispatching on one does not
 //! mean knowing which family it is.
 //!
-//! **Two of them, one per run path.** [`Operation`] carries the seven families whose result is an image and is what
+//! **Two of them, one per run path.** [`Operation`] carries the eight families whose result is an image and is what
 //! [`Opai::process`](crate::Opai::process) takes; [`Analysis`] carries the two families whose result is not, and is
 //! what [`Opai::execute`](crate::Opai::execute) takes for a detection. Which of the two an operation is carried in
 //! follows from the model being named — every model's constructor returns the carrier for the path it runs on — so a
@@ -27,6 +27,7 @@ use super::depth::{Depth, DepthMap, DepthVariant};
 use super::detection::{Detection, DetectionVariant};
 use super::face::Faces;
 use super::face_recovery::FaceRecovery;
+use super::lens_blur::LensBlur;
 use super::light_adjustment::LightAdjustment;
 use super::precision::Precision;
 use super::sharpen::Sharpen;
@@ -88,6 +89,8 @@ pub enum Operation {
     Sharpen(Sharpen),
     /// An upscale run.
     Upscale(Upscale),
+    /// A lens blur, driven by the depth of the chain's input, which a chain runs last.
+    LensBlur(LensBlur),
 }
 
 // The five methods below differ in nothing but the name of the method they call, and writing the seven arms out five
@@ -107,6 +110,7 @@ macro_rules! forward {
             Self::Colorization(operation) => operation.$question(),
             Self::Sharpen(operation) => operation.$question(),
             Self::Upscale(operation) => operation.$question(),
+            Self::LensBlur(operation) => operation.$question(),
         }
     };
 }
@@ -124,6 +128,7 @@ impl Operation {
             Self::Colorization(_) => Family::Colorization,
             Self::Sharpen(_) => Family::Sharpen,
             Self::Upscale(_) => Family::Upscale,
+            Self::LensBlur(_) => Family::LensBlur,
         }
     }
 
@@ -156,8 +161,14 @@ impl Operation {
     ///
     /// The name of the first artifact it needs, so a strength or a requested scale never reaches it and two operations
     /// differing only in one share it. An upscale whose scale selects the weights names the native scale of its first
-    /// pass. The values are the published catalogue's, never [`cache_tag`](Self::cache_tag)'s.
+    /// pass. A lens blur, which runs no graph of its own, has a name of its own (`lb_lisbon_fp16`) rather than the
+    /// depth model's, which its depth estimate is measured under. The values are the published catalogue's, never
+    /// [`cache_tag`](Self::cache_tag)'s.
     pub(crate) fn model_tag(&self) -> String {
+        if let Self::LensBlur(blur) = self {
+            return blur.model_tag();
+        }
+
         // Every operation needs at least one artifact, so the empty fallback is never reached.
         self.required_artifacts()
             .into_iter()
@@ -225,6 +236,9 @@ impl Operation {
             // Wrapped for light adjustment's reason: all three variants run through one pipeline, the two contracts
             // told apart as data on the variant, so there is nothing for this seam to refuse.
             Self::Colorization(colorization) => Ok(colorization.pipeline::<B>()),
+            // Kept as a `Result` for a real guard: a lens blur runs only once a chain has handed it the depth map and
+            // the lens it is driven by, and one planned by hand without them is refused before anything is installed.
+            Self::LensBlur(blur) => blur.pipeline::<B>(),
         }
     }
 }
@@ -674,10 +688,10 @@ pub(crate) mod tests {
         Fidelity::new(Fidelity::MAX).expect("the maximum is in range")
     }
 
-    /// One operation of each of the seven families this carrier holds, paired with the family it belongs to.
+    /// One operation of each of the eight families this carrier holds, paired with the family it belongs to.
     ///
-    /// Seven rather than eight: detection is carried in [`Analysis`], and the tests that need all eight say so by
-    /// reaching across both carriers — see `every_family_can_be_carried_by_the_carrier_for_its_own_path`.
+    /// Eight rather than ten: detection and depth are carried in [`Analysis`], and the tests that need all ten say so
+    /// by reaching across both carriers — see `every_family_can_be_carried_by_the_carrier_for_its_own_path`.
     fn one_of_each() -> Vec<(Operation, Family)> {
         let strength = Strength::new(0.5).expect("the test supplied a strength in range");
         let bias = Bias::new(-0.5).expect("the test supplied a bias in range");
@@ -712,6 +726,7 @@ pub(crate) mod tests {
                 Operation::Upscale(Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Int8), scale)),
                 Family::Upscale,
             ),
+            (Operation::LensBlur(crate::models::lens_blur::tests::injected(1.4)), Family::LensBlur),
         ]
     }
 
@@ -721,7 +736,7 @@ pub(crate) mod tests {
             assert_eq!(operation.family(), family, "{operation:?} reported a family it does not belong to");
         }
 
-        // Every family, and each of them once, **across both carriers**: the seven whose result is an image and the
+        // Every family, and each of them once, **across both carriers**: the eight whose result is an image and the
         // two whose result is not. A list that had drifted or repeated an arm would pass the per-operation check
         // above and still leave a family uncarried.
         let mut analysed: Vec<Family> = every_analysis().iter().map(Analysis::family).collect();
@@ -753,6 +768,7 @@ pub(crate) mod tests {
         let colorization = Colorization::new(ColorizationVariant::Delhi(FloatPrecision::Fp32));
         let sharpen = Sharpen::new(SharpenVariant::Moscow(FloatPrecision::Fp32), strength);
         let upscale = Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Int8), scale);
+        let blur = crate::models::lens_blur::tests::injected(1.4);
 
         macro_rules! forwards {
             ($operation:expr, $arm:expr) => {{
@@ -777,6 +793,7 @@ pub(crate) mod tests {
         forwards!(colorization, Operation::Colorization(colorization));
         forwards!(sharpen, Operation::Sharpen(sharpen));
         forwards!(upscale, Operation::Upscale(upscale));
+        forwards!(blur, Operation::LensBlur(blur.clone()));
     }
 
     #[test]
@@ -791,6 +808,12 @@ pub(crate) mod tests {
                 "{operation:?} reported the cache tag {} under another family's prefix",
                 operation.cache_tag()
             );
+
+            // A lens blur runs no graph of its own: what it needs on disk is the depth model it is driven by.
+            let prefix = match operation.family() {
+                Family::LensBlur => Family::Depth.prefix(),
+                _ => prefix,
+            };
 
             for artifact in operation.required_artifacts() {
                 assert!(
@@ -837,6 +860,17 @@ pub(crate) mod tests {
         operations.push(FaceRecovery::athens(FloatPrecision::Fp16, faces, fidelity()));
 
         for operation in operations {
+            // What a chain injects is skipped: a lens blur carries its parameters across, and the chain it runs in
+            // hands it its depth and lens again. So it round-trips to the blur as it was before the injection.
+            let operation = match operation {
+                Operation::LensBlur(blur) => Operation::LensBlur(crate::models::lens_blur::LensBlur::new(
+                    blur.variant(),
+                    blur.f_number(),
+                    blur.focus().0,
+                    blur.focus().1,
+                )),
+                other => other,
+            };
             let json = serde_json::to_string(&operation).expect("an operation serializes");
             let back: Operation = serde_json::from_str(&json).expect("an operation deserializes");
 
@@ -960,7 +994,7 @@ pub(crate) mod tests {
             }
         }
 
-        assert_eq!(families.len(), 9, "the spread did not reach all nine families: {families:?}");
+        assert_eq!(families.len(), 10, "the spread did not reach all ten families: {families:?}");
     }
 
     #[test]
@@ -1091,6 +1125,8 @@ pub(crate) mod tests {
                 // All three at FP16 only, ported from the reference. Delhi's is the reference's declaration beside
                 // Mumbai's rather than a measurement of its own graph; see `delhi`.
                 Operation::Colorization(colorization) => colorization.precision() == Precision::Fp16,
+                // The depth model's, whose graphs are what it requires: the blur itself opens no session.
+                Operation::LensBlur(_) => true,
             };
 
             if measured_arm {

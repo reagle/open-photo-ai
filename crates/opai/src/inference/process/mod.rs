@@ -2,7 +2,8 @@
 //!
 //! [`fn@plan`] decides what a chain will do and refuses what it cannot serve; [`run`] carries it out;
 //! [`identity_after`] names what came out. [`process`] is the three of them together, after finding the faces a chain's
-//! face recoveries restore where it was asked to, and is the whole body of [`Opai::process`](crate::Opai::process).
+//! face recoveries restore where it was asked to and the depth and lens its lens blurs are driven by, and is the whole
+//! body of [`Opai::process`](crate::Opai::process).
 
 // What a run leaves in the log. `process` brackets the run with a pair of records at `info` — what it was asked to
 // apply, the source's identity and the resolved depth on the way in; the elapsed time and whether it succeeded on the
@@ -34,6 +35,7 @@ use tokio_util::sync::CancellationToken;
 use std::future::Future;
 
 use super::acquire;
+use super::depth_map::{depth_asked, find_chain_depth};
 use super::execute::{ExecuteOptions, execute};
 use super::faces::{ChainFaces, FaceSelection, FacedChain, find_chain_faces};
 use super::handover::Handover;
@@ -41,7 +43,7 @@ use super::progress::{ChainProgress, OnInference};
 use crate::cache::RunCache;
 use crate::error::InferenceError;
 use crate::image::Picture;
-use crate::models::{Detection, Faces, Operation};
+use crate::models::{Depth, DepthMap, Detection, Faces, Operation};
 use crate::pipeline::{Backend, Shared};
 use crate::providers::ExecutionProvider;
 use crate::sessions::SessionHandle;
@@ -94,28 +96,42 @@ pub(crate) async fn process<B: Backend>(
     operations: &[Operation],
     options: Option<ProcessOptions>,
 ) -> Result<Enhanced, InferenceError> {
-    process_with(backend, cache, source, operations, options, |options| async move {
-        execute(backend, cache, source, &Detection::for_face_recovery(), options)
-            .await
-            .map(|executed| executed.value)
-    })
+    process_with(
+        backend,
+        cache,
+        source,
+        operations,
+        options,
+        |options| async move {
+            execute(backend, cache, source, &Detection::for_face_recovery(), options)
+                .await
+                .map(|executed| executed.value)
+        },
+        |depth, options| async move {
+            execute(backend, cache, source, &depth, options).await.map(|executed| executed.value)
+        },
+    )
     .await
 }
 
-/// [`process`] over any face detection: `detect` is called at most once, and only where
-/// [`ProcessOptions::faces`] asks for one and the chain carries a face recovery.
-pub(crate) async fn process_with<B, D, F>(
+/// [`process`] over any face detection and any depth estimate: `detect` is called at most once, and only where
+/// [`ProcessOptions::faces`] asks for one and the chain carries a face recovery; `estimate` is called at most once, and
+/// only where the chain carries a lens blur.
+pub(crate) async fn process_with<B, D, F, E, G>(
     backend: &B,
     cache: Option<&Memo>,
     source: &Picture,
     operations: &[Operation],
     options: Option<ProcessOptions>,
     detect: D,
+    estimate: E,
 ) -> Result<Enhanced, InferenceError>
 where
     B: Backend,
     D: FnOnce(Option<ExecuteOptions>) -> F,
     F: Future<Output = Result<Faces, InferenceError>>,
+    E: FnOnce(Depth, Option<ExecuteOptions>) -> G,
+    G: Future<Output = Result<DepthMap, InferenceError>>,
 {
     let mut options = options.unwrap_or_default();
 
@@ -142,6 +158,38 @@ where
             }
 
             (std::borrow::Cow::Owned(operations), faces)
+        }
+    };
+
+    // Beside the faces and for the same reason: the depth map and the lens every lens blur carries are part of every
+    // cache key the run derives. Estimated on `source`, the chain's input, so no earlier enhancement and no change of
+    // focus or aperture estimates it again — the cached run serves it. Its progress shares the first slot as the
+    // detection's does; one served from the store reports nothing.
+    let operations = match depth_asked(&operations) {
+        None => operations,
+        Some(_) => {
+            let handover = options.on_progress.as_ref().map(|on_progress| Handover::new(on_progress, &operations));
+            let estimation = ExecuteOptions {
+                provider: options.provider,
+                on_progress: handover.as_ref().map(Handover::detection),
+                cancel: options.cancel.clone(),
+                cache: options.cache,
+            };
+
+            let filled = find_chain_depth(
+                operations.into_owned(),
+                source.path(),
+                source.dimensions(),
+                Some(estimation),
+                estimate,
+            )
+            .await?;
+
+            if let Some(handover) = &handover {
+                options.on_progress = Some(handover.chain());
+            }
+
+            std::borrow::Cow::Owned(filled)
         }
     };
 

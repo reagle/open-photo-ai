@@ -179,12 +179,18 @@ mod tests {
         AutopilotModels::read(|name| map.get(name).cloned())
     }
 
+    /// Every family an analysis can suggest, in the library's apply order: all of them but lens blur, a creative choice
+    /// an analysis never makes.
+    fn suggestible() -> Vec<Family> {
+        Family::APPLY_ORDER.into_iter().filter(|family| *family != Family::LensBlur).collect()
+    }
+
     #[test]
     fn no_variable_leaves_every_family_at_its_default() {
         let models = read(&[]).expect("reads");
 
         assert_eq!(models, AutopilotModels::default());
-        assert_eq!(models.families(), Family::APPLY_ORDER);
+        assert_eq!(models.families(), suggestible());
         assert_eq!(models.model_for(), Some(DenoiseModel::Stockholm));
         assert_eq!(models.model_for(), Some(FaceModel::Athens));
         assert_eq!(models.model_for(), Some(ColorizationModel::Delhi));
@@ -214,7 +220,7 @@ mod tests {
         assert_eq!(models.model_for(), Some(BalanceModel::SaoPaulo));
         assert_eq!(models.model_for(), Some(SharpenModel::Petersburg));
         assert_eq!(models.model_for(), Some(UpscaleModel::Osaka));
-        assert_eq!(models.families(), Family::APPLY_ORDER);
+        assert_eq!(models.families(), suggestible());
     }
 
     #[test]

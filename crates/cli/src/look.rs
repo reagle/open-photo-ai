@@ -262,17 +262,18 @@ pub fn whole_percent(fraction: f64) -> u8 {
 }
 
 /// The GUI's English chip label for `family`. Total, so a family added to the library fails to compile here until it
-/// is given one. A face detection reads as the face recovery it serves, as it does in the GUI.
+/// is given one. A face detection reads as the face recovery it serves, as it does in the GUI, and a depth estimate as
+/// the lens blur it is made for, the one enhancement that asks for one.
 const fn family_label(family: Family) -> &'static str {
     match family {
         Family::Detection | Family::FaceRecovery => "Face Recovery",
-        Family::Depth => "Depth",
         Family::Denoise => "Denoise",
         Family::Colorization => "Colorize",
         Family::LightAdjustment => "Light Adjust",
         Family::ColorBalance => "Color Balance",
         Family::Sharpen => "Sharpen",
         Family::Upscale => "Upscale",
+        Family::Depth | Family::LensBlur => "Lens Blur",
     }
 }
 
@@ -636,14 +637,15 @@ mod tests {
             labels,
             [
                 "Face Recovery",
-                "Depth",
+                "Lens Blur",
                 "Denoise",
                 "Face Recovery",
                 "Colorize",
                 "Light Adjust",
                 "Color Balance",
                 "Sharpen",
-                "Upscale"
+                "Upscale",
+                "Lens Blur"
             ]
         );
     }

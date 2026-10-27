@@ -5,11 +5,11 @@
 //! later takes as a parameter — so they describe *what* to run and own no native resource, which is what lets one
 //! outlive and stay independent of any session built from it.
 //!
-//! All nine families are named here: [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`],
-//! [`Colorization`], [`Detection`], [`Depth`] and [`FaceRecovery`]. Each is its own type, so no codename can be paired
-//! with the family it does not belong to.
+//! All ten families are named here: [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`],
+//! [`Colorization`], [`Detection`], [`Depth`], [`FaceRecovery`] and [`LensBlur`]. Each is its own type, so no codename
+//! can be paired with the family it does not belong to.
 //!
-//! [`Operation`] is where that match lives. It carries an operation of any of the seven image families, one arm per
+//! [`Operation`] is where that match lives. It carries an operation of any of the eight image families, one arm per
 //! family holding that family's own type, and forwards the five questions they all answer; a detection or depth run is
 //! carried by [`Analysis`] instead.
 //!
@@ -17,13 +17,14 @@
 //! not an image: a detection produces a [`DetectionOutput`], the set of [`Face`]s found, and a depth estimate a
 //! [`DepthMap`], the distance of every pixel from the camera. [`FaceRecovery`] is the one whose per-run input is
 //! not a scalar: it carries the [`Faces`] it is to restore, supplied by a detection run rather than adjusted through
-//! a control, which is why it is `Clone` rather than `Copy`.
+//! a control, which is why it is `Clone` rather than `Copy`. [`LensBlur`] is driven by another family's result in the
+//! same way: a chain hands it the [`DepthMap`] of its input and the photograph's own [`Lens`], and it runs no graph.
 //!
 //! # An operation is the request it describes
 //!
 //! There is no operation-id string. An operation compares and hashes as a value, so it can be a lookup key directly,
 //! dispatch is an exhaustive match, and a display name is asked for rather than parsed back out of an id. The one
-//! string that survives is the cache tag — [`Upscale::cache_tag`] and its counterpart on each of the other seven —
+//! string that survives is the cache tag — [`Upscale::cache_tag`] and its counterpart on each of the other nine —
 //! because the run cache persists to disk and has to outlive the process.
 //!
 //! **Every field is in the identity.** Two operations are equal exactly when they name the same model at the same
@@ -44,7 +45,7 @@
 //! A precision travels inside the variant, in the domain that variant is actually published in — so Osaka at FP32 is
 //! not a refused request but an unwritable one. A [`Scale`], a [`Strength`] and a [`Bias`] are each bounded and
 //! quantized on acceptance, so a value that exists is a value in range, and two requests that would have collided in
-//! the cache are one value before anything is rendered. [`fn@catalogue`] publishes both facts for all eight families,
+//! the cache are one value before anything is rendered. [`fn@catalogue`] publishes both facts for all ten families,
 //! built from the same rows and constants that enforce them, so a control cannot offer what resolution would refuse.
 //! A [`Confidence`] is bounded the same way and for a related reason — a face that exists is a face whose confidence
 //! is meaningful — and quantized too, to two decimal places, because it travels inside the [`Faces`] a face recovery
@@ -61,7 +62,7 @@
 //   all three are rows of.
 // - **Every family** (cross-family tier) — shared by two or more families, and by nothing that is not a model. Four
 //   homes, by what the thing is:
-//   - this module, for the vocabulary all eight speak — the carriers, `Subject`, the parameters, the catalogue;
+//   - this module, for the vocabulary all ten speak — the carriers, `Subject`, the parameters, the catalogue;
 //   - a file directly under `models/`, for model code two families run — `filter.rs`, the tiled filter contract
 //     denoise and sharpen both run;
 //   - `crate::pipeline`, for the contract every model is written against — the pipeline traits, `Backend` and the
@@ -114,10 +115,13 @@ pub(crate) mod colorization;
 pub(crate) mod denoise;
 pub(crate) mod depth;
 pub(crate) mod detection;
+pub(crate) mod f_number;
 pub(crate) mod face;
 pub(crate) mod face_recovery;
 pub(crate) mod fidelity;
 pub(crate) mod filter;
+pub(crate) mod fraction;
+pub(crate) mod lens_blur;
 pub(crate) mod light_adjustment;
 pub(crate) mod operation;
 pub(crate) mod precision;
@@ -140,9 +144,12 @@ pub use colorization::{Colorization, ColorizationVariant};
 pub use denoise::{Denoise, DenoiseParams, DenoiseVariant};
 pub use depth::{Depth, DepthMap, DepthVariant};
 pub use detection::{Detection, DetectionVariant};
+pub use f_number::FNumber;
 pub use face::{Confidence, DetectionOutput, Face, Faces, Point, Rect};
 pub use face_recovery::{FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant};
 pub use fidelity::Fidelity;
+pub use fraction::Fraction;
+pub use lens_blur::{FOCUS_X, FOCUS_Y, Lens, LensBlur, LensBlurVariant, LensOrigin};
 pub use light_adjustment::{LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant};
 pub use operation::{Analysis, DataOperation, Operation};
 pub use precision::{FloatPrecision, Precision};
@@ -167,8 +174,8 @@ mod tests {
         // holds both. Asked of the operations themselves rather than counted, so a family left out of the spread
         // fails here by name instead of weakening the checks silently.
         //
-        // Across **both** carriers, which is what makes "every family" true: the seven whose result is an image and the
-        // one whose result is not.
+        // Across **both** carriers, which is what makes "every family" true: the eight whose result is an image and the
+        // two whose result is not.
         let carried: std::collections::HashSet<Family> = every_carried_family().into_iter().collect();
 
         for family in Family::ALL {

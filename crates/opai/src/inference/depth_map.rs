@@ -1,0 +1,335 @@
+//! Finding what a chain's lens blurs are driven by: one depth estimate of the chain's input, and the photograph's lens
+//! from its EXIF, handed to every lens blur.
+//!
+//! The counterpart of `inference::faces` for the lens blur, with one difference: a lens blur cannot run without its
+//! depth, so a failed estimate fails the run, where a failed face detection only restores nobody.
+//!
+//! ```text
+//!   chain has no lens blur?  --> chain unchanged, nothing estimated
+//!   read_lens(source path), the file's frame, the picture's framing
+//!   lens known from the EXIF alone, and every lens blur at or above its own f-number?
+//!                            --> each lens blur := with_lens(lens); nothing estimated
+//!   Depth (cached execute) on the chain's input
+//!      Ok(map)    --> lens := Lens::resolve(exif, map's focal estimate, framing)
+//!                     each lens blur := with_depth(map), with_lens(lens)
+//!      Err(error) --> the run fails with it (a stop included)
+//! ```
+//!
+//! The depth is estimated on the chain's **input** — the framed source, before any enhancement — so changing the
+//! focus, the aperture or any earlier enhancement never estimates it again: the cached run serves it.
+//!
+//! **The framing** is how much smaller the input is than its file across the diagonal: a crop made before the chain
+//! (the GUI's, which `opai` never sees) is a picture smaller than the file it names, and the file's EXIF describes the
+//! whole of it. See [`Lens::resolve`] for what a crop does to the lens.
+
+use std::future::Future;
+use std::path::Path;
+use std::sync::Arc;
+
+use crate::error::InferenceError;
+use crate::image::{read_frame_diagonal, read_lens};
+use crate::inference::execute::ExecuteOptions;
+use crate::models::{Depth, DepthMap, Lens, Operation};
+use crate::task::spawn_blocking;
+
+/// `operations` with every lens blur handed `map` and `lens`; every other operation unchanged.
+///
+/// The pure half of the injection, public so a front end answering its own test seams can follow the same rules
+/// without a depth model on disk.
+pub fn fill_chain_depth(operations: Vec<Operation>, map: &Arc<DepthMap>, lens: Lens) -> Vec<Operation> {
+    operations
+        .into_iter()
+        .map(|operation| match operation {
+            Operation::LensBlur(blur) => Operation::LensBlur(blur.with_depth(Arc::clone(map)).with_lens(lens)),
+            other => other,
+        })
+        .collect()
+}
+
+/// The depth estimate `operations` need, or `None` where they hold no lens blur.
+pub(crate) fn depth_asked(operations: &[Operation]) -> Option<Depth> {
+    operations.iter().find_map(|operation| match operation {
+        Operation::LensBlur(blur) => Some(blur.depth_estimate()),
+        _ => None,
+    })
+}
+
+/// A picture whose diagonal is within this fraction of its file's is the whole frame: a ratio of 1.005 is not a crop,
+/// and would only turn a cache tag's `l36-6` into `l36.2-6.03`.
+const WHOLE_FRAME_SLACK: f32 = 0.01;
+
+/// How many times `file_diagonal` (pixels, the whole frame's) is the diagonal of a picture `dimensions` across: 1 for
+/// the whole frame and where the file is not known, so a picture with no file is rendered as the frame it has.
+///
+/// The picture is taken to be the file's pixels at their own scale, cut: a crop is not resampled, so its diagonal over
+/// the file's is how much of the frame it holds.
+fn framing_of(file_diagonal: Option<f32>, dimensions: (u32, u32)) -> f32 {
+    #[allow(clippy::cast_precision_loss, reason = "a pixel count a ratio is taken of")]
+    let picture = (dimensions.0 as f32).hypot(dimensions.1 as f32);
+
+    match file_diagonal {
+        Some(file) if picture > 0.0 && file / picture > 1.0 + WHOLE_FRAME_SLACK => file / picture,
+        _ => 1.0,
+    }
+}
+
+/// `operations` with every lens blur handed the depth `estimate` finds and the lens the file at `path` records, framed
+/// as the `picture` (its dimensions) it is run over is: `estimate` is called at most once, with `options`, and only for
+/// a chain holding a lens blur that the lens does not already show adds nothing.
+///
+/// # Errors
+///
+/// Whatever `estimate` fails with, a stop included: a lens blur has nothing to run on without its depth.
+pub(crate) async fn find_chain_depth<E, F>(
+    operations: Vec<Operation>,
+    path: &Path,
+    picture: (u32, u32),
+    options: Option<ExecuteOptions>,
+    estimate: E,
+) -> Result<Vec<Operation>, InferenceError>
+where
+    E: FnOnce(Depth, Option<ExecuteOptions>) -> F,
+    F: Future<Output = Result<DepthMap, InferenceError>>,
+{
+    let Some(depth) = depth_asked(&operations) else {
+        return Ok(operations);
+    };
+
+    // A few reads of the file's header, off the runtime as every file read is, and before the estimate: they decide
+    // whether it is needed. A picture with no file — a sweep or a test — reads as a lens nothing is known about, at the
+    // framing it has.
+    let path = path.to_path_buf();
+    let (exif, file_diagonal) =
+        spawn_blocking::<_, InferenceError, _>(move || (read_lens(&path), read_frame_diagonal(&path))).await?;
+    let framing = framing_of(file_diagonal, picture);
+    // The sensor the EXIF names is of the pixels the EXIF says it has: a file since resized has not those.
+    let exif = file_diagonal.map_or(exif, |diagonal| exif.checked_against(diagonal));
+
+    // A lens the EXIF alone settles, and every blur at or above its own f-number: the photograph is returned as it is,
+    // so the model that would say how far away things are is neither loaded nor run.
+    if let Some(lens) = Lens::without_depth(&exif, framing) {
+        let adds_nothing = operations.iter().all(|operation| match operation {
+            Operation::LensBlur(blur) => blur.adds_nothing_to(&lens),
+            _ => true,
+        });
+
+        if adds_nothing {
+            tracing::info!(own_f_number = lens.own_f_number, framing, "no lens blur adds anything; no depth estimated");
+
+            return Ok(fill_chain_lens(operations, lens));
+        }
+    }
+
+    let map = estimate(depth, options).await?;
+    let lens = Lens::resolve(&exif, map.focal_35mm(), framing);
+
+    // `info`, once per run: which lens a blur was rendered for is what explains a result that looks too strong or
+    // too weak, and an assumed one is the case a user most needs to see.
+    tracing::info!(
+        focal_35mm = lens.focal_35mm,
+        own_f_number = lens.own_f_number,
+        origin = ?lens.origin,
+        framing,
+        exif_focal = exif.focal_mm,
+        exif_focal_35mm = exif.focal_35mm,
+        exif_f_number = exif.f_number,
+        depth_focal_35mm = map.focal_35mm(),
+        "the lens a lens blur is rendered for"
+    );
+
+    Ok(fill_chain_depth(operations, &Arc::new(map), lens))
+}
+
+/// `operations` with every lens blur handed `lens` and no depth: the blurs a chain knows add nothing.
+fn fill_chain_lens(operations: Vec<Operation>, lens: Lens) -> Vec<Operation> {
+    operations
+        .into_iter()
+        .map(|operation| match operation {
+            Operation::LensBlur(blur) => Operation::LensBlur(blur.with_lens(lens)),
+            other => other,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+    use crate::image::lens_fixtures;
+    use crate::models::lens_blur::tests::two_planes;
+    use crate::models::{FNumber, FloatPrecision, Fraction, LensBlur, LensOrigin, Scale, Upscale};
+
+    fn blur() -> Operation {
+        LensBlur::lisbon(FNumber::new(1.4).expect("in range"), Fraction::CENTRE, Fraction::CENTRE)
+    }
+
+    fn upscale() -> Operation {
+        Upscale::kyoto(FloatPrecision::Fp32, Scale::new(2.0).expect("in range"))
+    }
+
+    /// [`find_chain_depth`] over an estimate answering `answer`, for a picture with no file, and how many times it was
+    /// asked.
+    fn found(
+        operations: Vec<Operation>,
+        answer: Result<DepthMap, InferenceError>,
+    ) -> (Result<Vec<Operation>, InferenceError>, usize) {
+        found_for(operations, answer, Path::new(""), (8, 8))
+    }
+
+    /// [`found`] for the picture of `dimensions` read from the file at `path`.
+    fn found_for(
+        operations: Vec<Operation>,
+        answer: Result<DepthMap, InferenceError>,
+        path: &Path,
+        dimensions: (u32, u32),
+    ) -> (Result<Vec<Operation>, InferenceError>, usize) {
+        let calls = AtomicUsize::new(0);
+        let estimate = |depth: Depth, _options| {
+            assert_eq!(depth, Depth::lisbon());
+            calls.fetch_add(1, Ordering::SeqCst);
+            std::future::ready(answer)
+        };
+
+        let outcome = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(find_chain_depth(operations, path, dimensions, None, estimate));
+
+        (outcome, calls.load(Ordering::SeqCst))
+    }
+
+    #[test]
+    fn a_chain_without_a_lens_blur_estimates_nothing_and_is_unchanged() {
+        let (outcome, calls) = found(vec![upscale()], Ok(two_planes(8, 8, 1.0, 2.0)));
+
+        assert_eq!(calls, 0);
+        assert_eq!(outcome.expect("unchanged"), vec![upscale()]);
+    }
+
+    #[test]
+    fn every_lens_blur_is_handed_the_one_estimate_and_a_lens() {
+        let map = two_planes(8, 8, 1.0, 2.0);
+        let (outcome, calls) = found(vec![blur(), upscale(), blur()], Ok(map.clone()));
+
+        assert_eq!(calls, 1, "two lens blurs did not share one estimate");
+        let operations = outcome.expect("filled");
+        assert_eq!(operations[1], upscale());
+
+        for index in [0, 2] {
+            let Operation::LensBlur(blur) = &operations[index] else { panic!("reordered") };
+            assert_eq!(blur.depth(), Some(&map));
+            // No file, so no EXIF: the depth model's focal length, and an assumed own aperture.
+            let lens = blur.lens().expect("a lens");
+            assert_eq!((lens.focal_35mm, lens.origin), (36.0, LensOrigin::Assumed));
+        }
+    }
+
+    #[test]
+    fn a_failed_estimate_and_a_stop_each_fail_the_chain() {
+        for error in [InferenceError::Cancelled, InferenceError::Unmeasurable { operation: "Lisbon".into(), valid: 3 }]
+        {
+            let (outcome, _) = found(vec![blur()], Err(error.clone()));
+
+            assert_eq!(outcome.expect_err("no lens blur without depth").to_string(), error.to_string());
+        }
+    }
+
+    fn blur_at(f_number: f64) -> Operation {
+        LensBlur::lisbon(FNumber::new(f_number).expect("in range"), Fraction::CENTRE, Fraction::CENTRE)
+    }
+
+    fn lens_blur(operation: &Operation) -> &LensBlur {
+        let Operation::LensBlur(blur) = operation else { panic!("{operation:?} is not a lens blur") };
+
+        blur
+    }
+
+    #[test]
+    fn a_chain_of_blurs_that_add_nothing_estimates_no_depth_and_still_carries_the_lens() {
+        // No EXIF, so an assumed own f/8: f/8 and above add nothing.
+        for f_number in [8.0, 16.0] {
+            let (outcome, calls) = found(vec![blur_at(f_number), upscale()], Ok(two_planes(8, 8, 1.0, 2.0)));
+
+            assert_eq!(calls, 0, "f/{f_number} estimated a depth to add no blur");
+            let operations = outcome.expect("filled");
+            let blur = lens_blur(&operations[0]);
+            assert_eq!(blur.depth(), None);
+            assert_eq!(blur.lens().expect("a lens").own_f_number, 8.0);
+            assert_eq!(operations[1], upscale());
+        }
+
+        // Any blur that does add something needs it, and every blur is handed it.
+        let (outcome, calls) = found(vec![blur_at(16.0), blur_at(2.8)], Ok(two_planes(8, 8, 1.0, 2.0)));
+        assert_eq!(calls, 1);
+        let operations = outcome.expect("filled");
+        assert!(operations.iter().all(|operation| lens_blur(operation).depth().is_some()));
+    }
+
+    #[test]
+    fn a_blur_is_skipped_only_where_the_exif_settles_the_own_f_number_without_the_depth() {
+        // 24 mm f/4 with no 35 mm equivalent and no sensor: the crop factor is the depth model's to estimate, so even
+        // an f/32 waits for it.
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let path = dir.path().join("photo.jpg");
+        let recorded = lens_fixtures::fields(Some(24.0), None, Some(4.0), None);
+        std::fs::write(&path, lens_fixtures::jpeg(&recorded)).expect("the fixture is written");
+
+        let (outcome, calls) = found_for(vec![blur_at(32.0)], Ok(two_planes(8, 8, 1.0, 2.0)), &path, (8, 8));
+        assert_eq!(calls, 1, "the depth model's say on the crop factor was not waited for");
+        assert_eq!(lens_blur(&outcome.expect("filled")[0]).lens().expect("a lens").origin, LensOrigin::Estimated);
+    }
+
+    /// A `width` x `height` JPEG whose EXIF is that of a 24 mm f/4 lens, 36 mm equivalent, so f/6 of the whole frame.
+    fn photograph(dir: &Path, width: u32, height: u32) -> std::path::PathBuf {
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image::RgbImage::new(width, height)
+            .write_to(&mut bytes, image::ImageFormat::Jpeg)
+            .expect("encodes");
+        let (jpeg, exif) = (
+            bytes.into_inner(),
+            lens_fixtures::jpeg(&lens_fixtures::fields(Some(24.0), Some(36), Some(4.0), None)),
+        );
+
+        // The EXIF segment, between the start and end markers of its own file, spliced in after the real file's start.
+        let spliced = [&jpeg[..2], &exif[2..exif.len() - 2], &jpeg[2..]].concat();
+        let path = dir.join("photo.jpg");
+        std::fs::write(&path, spliced).expect("the fixture is written");
+
+        path
+    }
+
+    #[test]
+    fn a_crop_is_a_picture_smaller_than_its_file_and_its_lens_is_scaled_to_the_framing() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let path = photograph(dir.path(), 600, 400);
+
+        // Whole: f/10 is above the photograph's own f/6, and adds nothing.
+        let (outcome, calls) = found_for(vec![blur_at(10.0)], Ok(two_planes(8, 8, 1.0, 2.0)), &path, (600, 400));
+        assert_eq!(calls, 0);
+        let lens = lens_blur(&outcome.expect("filled")[0]).lens().expect("a lens");
+        assert_eq!((lens.focal_35mm, lens.own_f_number, lens.origin), (36.0, 6.0, LensOrigin::Exif));
+
+        // Cut to half the width and height, the same lens is a sensor half the size: 72 mm at f/12, which f/10 is wider
+        // than. The photograph is a crop, so the depth is estimated and the blur is made.
+        let (outcome, calls) = found_for(vec![blur_at(10.0)], Ok(two_planes(8, 8, 1.0, 2.0)), &path, (300, 200));
+        assert_eq!(calls, 1);
+        let lens = lens_blur(&outcome.expect("filled")[0]).lens().expect("a lens");
+        assert_eq!((lens.focal_35mm, lens.own_f_number, lens.origin), (72.0, 12.0, LensOrigin::Exif));
+    }
+
+    #[test]
+    fn the_framing_is_the_files_diagonal_over_the_pictures_and_never_less_than_one() {
+        let diagonal = 600_f32.hypot(400.0);
+
+        assert_eq!(framing_of(Some(diagonal), (600, 400)), 1.0);
+        assert!((framing_of(Some(diagonal), (300, 200)) - 2.0).abs() < 1e-5);
+        // Turned a quarter, the same diagonal; a few pixels off, still the whole frame.
+        assert_eq!(framing_of(Some(diagonal), (400, 600)), 1.0);
+        assert_eq!(framing_of(Some(diagonal), (598, 399)), 1.0);
+        // A picture larger than its file, no file, and nothing to measure.
+        assert_eq!(framing_of(Some(diagonal), (1200, 800)), 1.0);
+        assert_eq!(framing_of(None, (300, 200)), 1.0);
+        assert_eq!(framing_of(Some(diagonal), (0, 0)), 1.0);
+    }
+}
