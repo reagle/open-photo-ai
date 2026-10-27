@@ -198,9 +198,23 @@ impl LensBlurPipeline {
             reason = "a window of a few dozen pixels"
         )]
         let radii = FUSION_RADII.map(|radius| (radius * prepared.scale).round().max(1.0) as u32);
-        // The background's colour behind the subject is filled from what lies behind the band and is not covered.
+        // The background's colour behind the subject, from what lies behind the band and is not covered. Not from what is
+        // in front of it: focused low on a tree, the canopy above is nearer, and its colour would wash the background.
         let known = plane_of(&|index| !covered(index) && band.behind(disparity[index] * nearest));
-        let cutout = Cutout { alpha, known, radii };
+        // Except beside a nearer thing, where the subject goes on behind it: what shows through its blurred edge is
+        // the subject, so the subject's own colour is kept there, as far as the farthest disc reaches, and wherever
+        // no disc from there reaches the background around the subject, which it would otherwise tint.
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a radius of a few hundred pixels"
+        )]
+        let reach = (radius.as_slice().iter().fold(0.0_f32, |far, &r| far.min(r)).abs().ceil() as u32).max(ring);
+        let beside_nearer = dilated(&plane_of(&|index| band.in_front(disparity[index] * nearest)), reach);
+        let beside_behind = dilated(&known, reach);
+        let kept = plane_of(&|index| beside_nearer.as_slice()[index] > 0.5 && beside_behind.as_slice()[index] < 0.5);
+        drop((beside_nearer, beside_behind));
+        let cutout = Cutout { alpha, known, kept, radii };
         let (background, colour) = cutout.separated(linear);
 
         tracing::debug!(operation = %self.name, ring, "lens blur subject matted");
@@ -216,6 +230,9 @@ struct Cutout {
     alpha: Plane,
     /// Where the background's colour is known: behind the band and not covered.
     known: Plane,
+    /// Where a covered pixel keeps its own colour rather than the fill: beside a nearer thing, out of reach of the
+    /// background behind the band.
+    kept: Plane,
     /// Blur fusion's window radii at the input's size.
     radii: [u32; 2],
 }
@@ -236,12 +253,12 @@ impl Cutout {
 
         let mut colour = foreground(&image, &self.alpha, width, height, &self.radii);
         let filled_colour = filled(&image, 3, width, height, &self.known);
-        let coverage = self.alpha.as_slice();
+        let (coverage, kept) = (self.alpha.as_slice(), self.kept.as_slice());
         let mut background = image;
         for (index, (pixel, fill)) in
             background.as_chunks_mut::<3>().0.iter_mut().zip(filled_colour.as_chunks::<3>().0).enumerate()
         {
-            if coverage[index] > COVERED {
+            if coverage[index] > COVERED && kept[index] < 0.5 {
                 pixel.copy_from_slice(fill);
             }
         }
@@ -922,6 +939,56 @@ mod tests {
         let strand = matted.to_rgb8();
         let strand = strand.get_pixel(INSIDE.0 - 2, 120);
         assert!(strand[0] > 90 && strand[0] < 200, "{strand:?}");
+    }
+
+    #[test]
+    fn beside_a_nearer_thing_the_subject_and_not_the_background_shows_through_its_blurred_edge() {
+        // A red subject at 1 m, its left part hidden by a grey post at 0.6 m that runs the picture's height, before a
+        // checkerboard at 10 m. Where the post's edge blurs over the subject, what shows through is the subject's red,
+        // not the background's colour filled in behind the subject; away from the post, the fill is as before.
+        let metres: Vec<f32> = (0..72)
+            .flat_map(|y| (0..96).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                if (24..40).contains(&x) {
+                    0.6
+                } else if (32..64).contains(&x) && (24..48).contains(&y) {
+                    1.0
+                } else {
+                    10.0
+                }
+            })
+            .collect();
+        let depth = Arc::new(DepthMap::new(96, 72, &metres, Some(36.0)));
+        let (post, subject) = ((80..133), (133..213, 80..160));
+        let board = checkerboard(320, 240).to_rgb8();
+        let picture = DynamicImage::ImageRgb8(RgbImage::from_fn(320, 240, |x, y| {
+            if post.contains(&x) {
+                Rgb([128, 128, 128])
+            } else if subject.0.contains(&x) && subject.1.contains(&y) {
+                Rgb([200, 30, 30])
+            } else {
+                *board.get_pixel(x, y)
+            }
+        }));
+        let alpha: Vec<f32> = (0..240)
+            .flat_map(|y| (0..320).map(move |x| (x, y)))
+            .map(|(x, y)| if subject.0.contains(&x) && subject.1.contains(&y) { 1.0 } else { 0.0 })
+            .collect();
+        let pipeline = LensBlurPipeline {
+            depth: Some(depth),
+            matte: Some(Arc::new(Matte::new(320, 240, &alpha))),
+            ..pipeline(1.4, None)
+        };
+
+        // Just inside the subject, beside the post: red mixed with the post's grey, and with nothing of the
+        // checkerboard's yellow (green above blue). Filled from behind the subject, it reads [194, 71, 51].
+        let result = run(&pipeline, &picture).to_rgb8();
+        for x in [131, 135] {
+            let [red, green, blue] = result.get_pixel(x, 120).0;
+            assert!(red > green && green.abs_diff(blue) <= 4, "({x}, 120): {:?}", [red, green, blue]);
+        }
+        assert!(result.get_pixel(135, 120)[1] < 50, "{:?}", result.get_pixel(135, 120));
+        assert_eq!(result.get_pixel(140, 120).0, [200, 30, 30]);
     }
 
     #[test]
