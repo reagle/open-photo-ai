@@ -325,6 +325,18 @@
                 "osaka": "当你想要可获得的最佳放大画质时使用此模型。它会重建细节，而不只是锐化细节，在发虚或压缩严重的照片上效果最为出色。不过它速度较慢，需要性能强劲的显卡才能跑得顺畅。"
             }
         },
+        "lensBlur": {
+            "name": "镜头模糊",
+            "models": {
+                "lisbon": "使用此模型可像更大光圈的镜头那样虚化照片，同时保持你所选的点清晰。它会估算照片中每个部分的距离（MoGe-2 ViT-B，324 MB）。首次使用时会为你的处理器编译模型，在 Mac 上大约需要一分钟。"
+            },
+            "fNumber": "光圈",
+            "equivalent": "全画幅等效",
+            "asTaken": "原始",
+            "assumed": "此照片没有镜头信息；假定为 f/{{f}}",
+            "setFocus": "设置对焦",
+            "focusHint": "点击照片中应当清晰的位置。按 Esc 取消。"
+        },
         "add": "添加增强",
         "remove": "移除增强",
         "modelSelector": "AI 模型",
@@ -346,7 +358,8 @@
             "button": "选择人脸（{{count}}）"
         },
         "infoFaces": "{{name}}，{{faces}}，{{quality}}",
-        "infoScale": "{{name}}，{{scale}}x，{{quality}}"
+        "infoScale": "{{name}}，{{scale}}x，{{quality}}",
+        "infoLensBlur": "{{name}}，f/{{f}}"
     },
     "preview": {
         "empty": {
@@ -367,6 +380,7 @@
             "colorBalance": "色彩平衡",
             "upscale": "放大",
             "sharpen": "锐化",
+            "lensBlur": "镜头模糊",
             "enhancing": "增强中"
         }
     },

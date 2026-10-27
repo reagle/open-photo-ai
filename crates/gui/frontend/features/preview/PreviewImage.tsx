@@ -7,13 +7,25 @@ import { useSettledFile } from "@/hooks/useSettledFile";
 import { framedDimensions } from "@/ipc/crop";
 import { renditionFor } from "@/ipc/images";
 import { DRAWER_HEIGHT, ZOOM_WHEEL_STEP } from "@/lib/constants";
+import { FOCUS_X, FOCUS_Y, withParameter } from "@/lib/enhancements";
 import { cn } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useDrawerStore } from "@/stores/drawer";
+import { useEnhancementStore, useFileEnhancements } from "@/stores/enhancements";
+import { useFocusPickStore, useIsArmed } from "@/stores/focusPick";
 import { usePreviewStore } from "@/stores/preview";
 import { clampScale, type ImageTransform, useImageTransform, useTransformStore } from "@/stores/transform";
+import { CLICK_SLOP, FocusHint, FocusPick } from "./FocusPick";
 import { constrain, constrainPosition, fitInside, imageFraction, type Size } from "./geometry";
 import { ProgressBar } from "./ProgressBar";
+
+/**
+ * What is open over the photograph and has an Escape of its own: a dialog or alert dialog (a popover's panel is one), a
+ * menu or a listbox, and not one that is closing. The focus pick leaves on an Escape nothing else wanted.
+ */
+const OPEN_LAYER = ['[role="dialog"]', '[role="alertdialog"]', '[role="menu"]', '[role="listbox"]']
+    .map((layer) => `${layer}:not([data-state="closed"])`)
+    .join(",");
 
 type PaneProps = {
     // Handed down rather than read from the store here, so that both panes draw the same photograph on
@@ -58,6 +70,14 @@ type PaneProps = {
     // which is why this is stated rather than inferred.
     /** Which photograph's transform this pane reads and writes. Absent, the pane draws the fitted one. */
     transformKey?: string;
+    // The three of them are the focus pick's, and are the same for both panes of a comparison: whether the next click
+    // sets a lens blur's focus point, where it is now, and what to do with the one that lands.
+    /** Whether the preview is waiting for a click that sets a lens blur's focus point. */
+    armed?: boolean;
+    /** The lens blur's focus as fractions of the framed photograph, where the stack has one. */
+    focus?: { x: number; y: number };
+    /** Called with the click's place in the framed photograph, as fractions across and down. */
+    onPick?: (x: number, y: number) => void;
 };
 
 /** The gap between a pane's chip and whatever is beneath it. */
@@ -139,6 +159,9 @@ const Pane = ({
     publishViewport,
     transformKey,
     published,
+    armed = false,
+    focus,
+    onPick,
 }: PaneProps) => {
     const container = useRef<HTMLDivElement>(null);
 
@@ -332,8 +355,18 @@ const Pane = ({
     const frame = useRef<number>(undefined);
     const [dragging, setDragging] = useState(false);
 
+    /*
+     * A press that may turn out to be the click that sets the focus: where it went down, and whether it has been
+     * dragged since. Only while armed, and only the primary button. A drag still pans - the pick is decided when the
+     * pointer comes up.
+     */
+    const press = useRef<{ x: number; y: number; dragged: boolean }>(undefined);
+
     const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
         if (identity === undefined) return;
+
+        press.current =
+            armed && event.button === 0 ? { x: event.clientX, y: event.clientY, dragged: false } : undefined;
 
         // Capture rather than document-level listeners, because a drag that leaves the pane - and one
         // that leaves the window - must keep delivering moves to the element that started it, and the
@@ -344,6 +377,11 @@ const Pane = ({
     };
 
     const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+        const pressed = press.current;
+        if (pressed && Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) > CLICK_SLOP) {
+            pressed.dragged = true;
+        }
+
         const start = grab.current;
         const { drawn: current, fitted: fittedNow, measured: measuredNow, identity: id } = live.current;
         if (!start || id === undefined) return;
@@ -366,13 +404,48 @@ const Pane = ({
         });
     };
 
-    const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    /*
+     * The photograph's place under a click, as fractions across and down it as it is framed - the wheel's own anchor
+     * arithmetic - or `undefined` for a click in the margin beside it, which sets nothing.
+     */
+    const photographAt = (clientX: number, clientY: number) => {
+        const { drawn: current, fitted: fittedNow } = live.current;
+        const rect = container.current?.getBoundingClientRect();
+        const size = scaled(fittedNow, current.scale);
+        if (!rect || size.width <= 0 || size.height <= 0) return;
+
+        const offset = { x: clientX - rect.left - current.x, y: clientY - rect.top - current.y };
+        if (offset.x < 0 || offset.y < 0 || offset.x > size.width || offset.y > size.height) return;
+
+        return { x: imageFraction(offset.x, size.width), y: imageFraction(offset.y, size.height) };
+    };
+
+    const release = (event: PointerEvent<HTMLDivElement>) => {
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId);
         }
 
         grab.current = undefined;
         setDragging(false);
+    };
+
+    const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+        release(event);
+
+        // A click, not a drag: the pointer never strayed past the slop since it went down. The mode is left only by a
+        // click that lands on the photograph; one in the margin, or a drag, leaves it armed.
+        const pressed = press.current;
+        press.current = undefined;
+        if (!armed || !pressed || pressed.dragged || !onPick) return;
+
+        const at = photographAt(event.clientX, event.clientY);
+        if (at) onPick(at.x, at.y);
+    };
+
+    // A press the system took away is no click.
+    const onPointerCancel = (event: PointerEvent<HTMLDivElement>) => {
+        press.current = undefined;
+        release(event);
     };
 
     /*
@@ -398,11 +471,11 @@ const Pane = ({
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
+            onPointerCancel={onPointerCancel}
             style={style}
             className={cn(
                 "relative min-w-0 flex-1 touch-none overflow-hidden",
-                dragging ? "cursor-grabbing" : "cursor-grab",
+                dragging ? "cursor-grabbing" : armed ? "cursor-crosshair" : "cursor-grab",
                 className,
             )}
             data-slot="preview-pane"
@@ -445,6 +518,16 @@ const Pane = ({
                     willChange: "transform",
                 }}
                 className="block max-w-none select-none"
+            />
+
+            {/*
+             * The ring over the focus point, in the box the photograph is drawn in: the pane's own position and size
+             * of it, not the picture's transform, so the ring keeps one size at every zoom.
+             */}
+            <FocusPick
+                armed={armed}
+                {...(focus && { focus })}
+                box={{ x: drawn.x, y: drawn.y, width: fitted.width * drawn.scale, height: fitted.height * drawn.scale }}
             />
 
             {/*
@@ -548,6 +631,63 @@ export const PreviewImage = () => {
     const [divider, setDivider] = useState(DIVIDER_START);
     const handle = useRef<HTMLDivElement>(null);
 
+    /*
+     * The focus pick: whether the next click sets the lens blur's focus point, and the lens blur it would set it on.
+     *
+     * Armed is for one photograph - the one the Set focus button was pressed over - so another photograph, or none,
+     * is never armed. The mode is left when the photograph changes, when the lens blur is taken off the stack, and by
+     * Escape; a click that lands leaves it in `onPick`.
+     */
+    const stack = useFileEnhancements(file?.path);
+    const lensBlur = stack.find((operation) => operation.family === "lens_blur");
+    const hasLensBlur = lensBlur !== undefined;
+    const armed = useIsArmed(file?.identity) && hasLensBlur;
+    const replaceEnhancement = useEnhancementStore((state) => state.replaceEnhancement);
+    const path = file?.path;
+    const identity = file?.identity;
+
+    useEffect(() => {
+        const { armed: waiting, imageId, disarm } = useFocusPickStore.getState();
+
+        // Another photograph than the one armed for, or one whose lens blur has gone: nothing to click for.
+        if (waiting && (imageId !== identity || !hasLensBlur)) disarm();
+    }, [identity, hasLensBlur]);
+
+    useEffect(() => {
+        if (!armed) return;
+
+        // An Escape that something else has taken - a dialog or a menu closing on it - is not this mode's: the dialog's
+        // own layer marks the event handled, and a surface still open over the photograph would be left by the same
+        // press that closed it.
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== "Escape" || event.defaultPrevented || document.querySelector(OPEN_LAYER)) return;
+
+            useFocusPickStore.getState().disarm();
+        };
+
+        window.addEventListener("keydown", onKeyDown);
+
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [armed]);
+
+    // The middle where the operation carries none, which is the catalogue's own default for both and what a new lens
+    // blur is built with; the canvas does not wait on the catalogue to draw a ring.
+    const focus = lensBlur && { x: lensBlur.parameters[FOCUS_X] ?? 0.5, y: lensBlur.parameters[FOCUS_Y] ?? 0.5 };
+
+    // Written to the stack as the panel writes the f-number, which is what starts the new run. Rounded to the
+    // thousandths the library keeps a focus point at, so the ring is drawn where the run will focus.
+    const onPick = (x: number, y: number) => {
+        if (!lensBlur || path === undefined) return;
+
+        const thousandths = (fraction: number) => Math.round(fraction * 1000) / 1000;
+
+        replaceEnhancement(
+            path,
+            withParameter(withParameter(lensBlur, FOCUS_X, thousandths(x)), FOCUS_Y, thousandths(y)),
+        );
+        useFocusPickStore.getState().picked();
+    };
+
     const moveDivider = (clientX: number) => {
         const rect = handle.current?.parentElement?.getBoundingClientRect();
         if (!rect || rect.width <= 0) return;
@@ -599,6 +739,9 @@ export const PreviewImage = () => {
                     label={t("preview.pane.original")}
                     chipClassName="left-2.5 text-foreground"
                     chipBottom={chipBottom}
+                    armed={armed}
+                    {...(focus && { focus })}
+                    onPick={onPick}
                 />
             )}
 
@@ -627,7 +770,12 @@ export const PreviewImage = () => {
                 {...(previewMode === "split" && { style: { clipPath: `inset(0 0 0 ${divider}%)` } })}
                 chipClassName="right-2.5 text-foreground"
                 chipBottom={chipBottom}
+                armed={armed}
+                {...(focus && { focus })}
+                onPick={onPick}
             />
+
+            {armed && <FocusHint />}
 
             {running && <ProgressBar fraction={fraction} {...(report && { report })} />}
 

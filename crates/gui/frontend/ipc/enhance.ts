@@ -22,10 +22,11 @@ export type Processor = "auto" | keyof SupportedProviders;
  *
  * Spelled in the catalogue's vocabulary (`family`, `codename`, `precision`, parameter names) so Rust can match
  * directly without a lookup table. Not a composed string like `up_kyoto_2x_fp32` — avoids a triple contract.
- * `detection` is excluded; faces are fetched via a separate command.
+ * `detection` and `depth` are excluded: faces are fetched via a separate command, and a depth map is estimated
+ * inside the run of the lens blur that needs it.
  */
 export type Operation = {
-    family: Exclude<Family, "detection">;
+    family: Exclude<Family, "detection" | "depth">;
     /** Model name, per `VariantEntry.codename`. */
     codename: string;
     /** Build variant, per `VariantEntry.precisions`. */

@@ -333,6 +333,18 @@
                 "osaka": "Use este modelo quando você quer a melhor qualidade de ampliação possível. Ele reconstrói o detalhe em vez de apenas realçá-lo, e é o que vai mais longe em fotos suaves ou muito comprimidas. No entanto, é lento e precisa de uma GPU potente para rodar bem."
             }
         },
+        "lensBlur": {
+            "name": "Desfoque de lente",
+            "models": {
+                "lisbon": "Use este modelo para desfocar uma foto como faria uma abertura de lente maior, mantendo nítido o ponto que você escolher. Ele estima a distância de cada parte da foto (MoGe-2 ViT-B, 324 MB). No primeiro uso, o modelo é compilado para o seu processador, o que leva cerca de um minuto em um Mac."
+            },
+            "fNumber": "Abertura",
+            "equivalent": "equivalente em formato completo",
+            "asTaken": "Original",
+            "assumed": "Esta foto não tem informações da lente; f/{{f}} assumido",
+            "setFocus": "Definir foco",
+            "focusHint": "Clique na foto onde deve ficar nítido. Esc para cancelar."
+        },
         "add": "Adicionar melhoria",
         "remove": "Remover melhoria",
         "modelSelector": "Modelo de IA",
@@ -356,7 +368,8 @@
             "button": "Selecionar rostos ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoLensBlur": "{{name}}, f/{{f}}"
     },
     "preview": {
         "empty": {
@@ -377,6 +390,7 @@
             "colorBalance": "Equi. de cores",
             "upscale": "Ampliação",
             "sharpen": "Nitidez",
+            "lensBlur": "Desfoque",
             "enhancing": "Melhorando"
         }
     },

@@ -325,6 +325,18 @@
                 "osaka": "利用できる中で最高の品質で拡大したいときに使用します。細部を単に鮮鋭化するのではなく再構築するため、甘い写真や圧縮の強い写真で最も大きな効果を発揮します。ただし低速で、十分な性能を出すには高性能な GPU が必要です。"
             }
         },
+        "lensBlur": {
+            "name": "レンズぼかし",
+            "models": {
+                "lisbon": "より開放絞りのレンズで撮ったように写真をぼかしたいときに使用します。選んだ点はシャープなままです。写真内の各部分までの距離を推定します（MoGe-2 ViT-B、324 MB）。初回使用時にお使いのプロセッサ向けにモデルをコンパイルします。Mac では約1分かかります。"
+            },
+            "fNumber": "絞り",
+            "equivalent": "35mm判換算",
+            "asTaken": "撮影時のまま",
+            "assumed": "レンズ情報がないため f/{{f}} と仮定",
+            "setFocus": "ピントを合わせる",
+            "focusHint": "シャープに写したい部分をクリックしてください。Esc でキャンセルします。"
+        },
         "add": "補正を追加",
         "remove": "補正を削除",
         "modelSelector": "AI モデル",
@@ -346,7 +358,8 @@
             "button": "顔を選択 ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoLensBlur": "{{name}}、f/{{f}}"
     },
     "preview": {
         "empty": {
@@ -367,6 +380,7 @@
             "colorBalance": "カラーバランス",
             "upscale": "アップスケール",
             "sharpen": "シャープ",
+            "lensBlur": "レンズぼかし",
             "enhancing": "補正中"
         }
     },

@@ -5,6 +5,7 @@ import type { CropInfo } from "@/ipc/crop";
 import { renditionFor } from "@/ipc/images";
 import { CROP_DIALOG_BOUND, MIN_CROP_SIZE } from "@/lib/constants";
 import { track } from "@/lib/faro";
+import { reframeLensBlur } from "@/lib/reframe";
 import { clampTo } from "@/lib/utils";
 import { useCropStore, useImageCrop } from "@/stores/crop";
 import { useCurrentFile } from "@/stores/files";
@@ -587,6 +588,11 @@ export const useCropController = (open: boolean, onClose: () => void) => {
         // application can know a shape changed, which is why it is this line's job.
         if (changed) setTransform(identity, FITTED);
 
+        // A lens blur's f-number is an absolute equivalent value and its focus a fraction of the frame, so a framing
+        // that changes moves both: see `reframeLensBlur`. After the framing is written, and not waited for: the
+        // lens it needs is asked of the backend, and the dialog does not stay open for it.
+        if (changed) void reframeLensBlur(file, recorded, unchanged ? undefined : info);
+
         // What cropping is used for, and only for an Apply that changed something: never where on the
         // photograph, or how large.
         if (changed) {
@@ -598,7 +604,19 @@ export const useCropController = (open: boolean, onClose: () => void) => {
         }
 
         onClose();
-    }, [baseRotation, fineRotation, identity, recorded, ratio, toSource, forgetCrop, setCrop, setTransform, onClose]);
+    }, [
+        baseRotation,
+        fineRotation,
+        file,
+        identity,
+        recorded,
+        ratio,
+        toSource,
+        forgetCrop,
+        setCrop,
+        setTransform,
+        onClose,
+    ]);
 
     return {
         cropper,

@@ -333,6 +333,18 @@
                 "osaka": "Use when you want the best possible quality upscale available. It rebuilds detail rather than just sharpening it, going furthest on photos that are soft or heavily compressed. It's slow, though, and needs a powerful GPU to run well."
             }
         },
+        "lensBlur": {
+            "name": "Lens Blur",
+            "models": {
+                "lisbon": "Use this model to blur a photograph as a wider lens aperture would, keeping the point you choose sharp. It estimates how far away everything is (MoGe-2 ViT-B, 324 MB). The first use compiles the model for your processor, which takes about a minute on a Mac."
+            },
+            "fNumber": "Aperture",
+            "equivalent": "full-frame equivalent",
+            "asTaken": "As taken",
+            "assumed": "This photograph has no lens information; f/{{f}} assumed",
+            "setFocus": "Set focus",
+            "focusHint": "Click the photograph where it should be sharp. Esc to cancel."
+        },
         "add": "Add enhancement",
         "remove": "Remove enhancement",
         "modelSelector": "AI Model",
@@ -356,7 +368,8 @@
             "button": "Select faces ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoLensBlur": "{{name}}, f/{{f}}"
     },
     "preview": {
         "empty": {
@@ -377,6 +390,7 @@
             "colorBalance": "Color Balance",
             "upscale": "Upscale",
             "sharpen": "Sharpen",
+            "lensBlur": "Lens Blur",
             "enhancing": "Enhancing"
         }
     },

@@ -333,6 +333,18 @@
                 "osaka": "Gebruik dit model wanneer je de best mogelijke opschaalkwaliteit wilt. Het bouwt detail opnieuw op in plaats van het alleen te verscherpen en gaat het verst bij zachte of sterk gecomprimeerde foto's. Het is wel traag en heeft een krachtige GPU nodig om goed te draaien."
             }
         },
+        "lensBlur": {
+            "name": "Lensvervaging",
+            "models": {
+                "lisbon": "Gebruik dit model om een foto te vervagen zoals een grotere lensopening zou doen, met het punt dat je kiest scherp. Het schat hoe ver alles op de foto weg is (MoGe-2 ViT-B, 324 MB). Bij het eerste gebruik wordt het model gecompileerd voor je processor, wat op een Mac ongeveer een minuut duurt."
+            },
+            "fNumber": "Diafragma",
+            "equivalent": "kleinbeeldequivalent",
+            "asTaken": "Zoals genomen",
+            "assumed": "Deze foto bevat geen lensinformatie; f/{{f}} aangenomen",
+            "setFocus": "Scherpstelling instellen",
+            "focusHint": "Klik op de foto waar het scherp moet zijn. Esc om te annuleren."
+        },
         "add": "Toevoegen",
         "remove": "Verbetering verwijderen",
         "modelSelector": "AI-model",
@@ -356,7 +368,8 @@
             "button": "Gezichten selecteren ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoLensBlur": "{{name}}, f/{{f}}"
     },
     "preview": {
         "empty": {
@@ -377,6 +390,7 @@
             "colorBalance": "Kleur",
             "upscale": "Opschalen",
             "sharpen": "Verscherpen",
+            "lensBlur": "Lensvervaging",
             "enhancing": "Verbeteren"
         }
     },

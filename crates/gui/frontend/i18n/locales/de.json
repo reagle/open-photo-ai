@@ -333,6 +333,18 @@
                 "osaka": "Verwenden Sie dieses Modell, wenn Sie die bestmögliche Hochskalierungsqualität wollen. Es baut Details neu auf, statt sie nur nachzuschärfen, und geht bei weichen oder stark komprimierten Fotos am weitesten. Es ist allerdings langsam und braucht eine leistungsstarke GPU, um gut zu laufen."
             }
         },
+        "lensBlur": {
+            "name": "Objektivunschärfe",
+            "models": {
+                "lisbon": "Verwenden Sie dieses Modell, um ein Foto so unscharf zu machen, wie es ein weiter geöffnetes Objektiv täte, während der von Ihnen gewählte Punkt scharf bleibt. Es schätzt dafür die Entfernung aller Bildteile (MoGe-2 ViT-B, 324 MB). Bei der ersten Verwendung wird das Modell für Ihren Prozessor kompiliert, was auf einem Mac etwa eine Minute dauert."
+            },
+            "fNumber": "Blende",
+            "equivalent": "Kleinbildäquivalent",
+            "asTaken": "Wie aufgenommen",
+            "assumed": "Dieses Foto enthält keine Objektivinformationen; f/{{f}} angenommen",
+            "setFocus": "Fokus setzen",
+            "focusHint": "Klicken Sie auf die Stelle des Fotos, die scharf sein soll. Esc zum Abbrechen."
+        },
         "add": "Hinzufügen",
         "remove": "Verbesserung entfernen",
         "modelSelector": "KI-Modell",
@@ -356,7 +368,8 @@
             "button": "Gesichter auswählen ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoLensBlur": "{{name}}, f/{{f}}"
     },
     "preview": {
         "empty": {
@@ -377,6 +390,7 @@
             "colorBalance": "Farbbalance",
             "upscale": "Hochskalieren",
             "sharpen": "Schärfen",
+            "lensBlur": "Unschärfe",
             "enhancing": "Wird verbessert"
         }
     },

@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { forgetCatalogue } from "@/ipc/catalogue";
+import { forgetLensInfo } from "@/ipc/lens";
 import { track } from "@/lib/faro";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useSettingsStore } from "@/stores/settings";
@@ -33,7 +34,17 @@ vi.mock("@/lib/faro", () => ({
 // and the tier behind it all come from what the library publishes. So is the scale a new upscale starts
 // at, which is the library's ladder - answered here as 2x, so the value visibly came from the backend.
 vi.mock("@tauri-apps/api/core", () => ({
-    invoke: vi.fn((command: string) => Promise.resolve(command === "suggested_scale" ? 2 : CATALOGUE)),
+    // A new lens blur's aperture is the photograph's own, which is `opai`'s to work out: here an f/6 equivalent, as the
+    // bonsai's EXIF gives.
+    invoke: vi.fn((command: string) =>
+        Promise.resolve(
+            command === "suggested_scale"
+                ? 2
+                : command === "lens_info"
+                  ? { ownFNumber: 6, focal35mm: 36, origin: "exif" }
+                  : CATALOGUE,
+        ),
+    ),
     convertFileSrc: vi.fn((identity: string) => `opai://localhost/${identity}`),
 }));
 
@@ -56,6 +67,7 @@ describe("adding an enhancement", () => {
     beforeEach(() => {
         localStorage.clear();
         forgetCatalogue();
+        forgetLensInfo();
         resetFileStore();
         resetCropStore();
         vi.mocked(invoke).mockClear();
@@ -83,7 +95,7 @@ describe("adding an enhancement", () => {
 
         open();
 
-        // All seven: every family the wire can carry is in `ENHANCEMENTS`, which the typecheck holds.
+        // All eight: every family the wire can carry is in `ENHANCEMENTS`, which the typecheck holds.
         expect(await upscale()).toBeInTheDocument();
 
         // Denoise first, then face recovery, colorization, light adjustment, colour balance and sharpen in
@@ -98,6 +110,7 @@ describe("adding an enhancement", () => {
             "Color Balance",
             "Sharpen",
             "Upscale",
+            "Lens Blur",
         ]);
     });
 
@@ -118,6 +131,47 @@ describe("adding an enhancement", () => {
         );
         expect(invoke).toHaveBeenCalledWith("suggested_scale", { width: 3000, height: 2000 });
         expect(track).toHaveBeenCalledExactlyOnceWith("enhancement_added", { family: "upscale", source: "manual" });
+    });
+
+    it("adds a lens blur at the photograph's own aperture, so it changes nothing until the slider is moved", async () => {
+        openFiles(HOLIDAY);
+        render(
+            <>
+                <AddEnhancement />
+                <EnhancementList />
+            </>,
+        );
+
+        open();
+        fireEvent.click(await screen.findByRole("menuitem", { name: "Lens Blur" }));
+
+        // The stop at or above f/6, which is where the library adds no blur; Lisbon, in the middle of the frame.
+        await waitFor(() =>
+            expect(stack()).toEqual([
+                {
+                    family: "lens_blur",
+                    codename: "lisbon",
+                    precision: "fp16",
+                    parameters: { f_number: 6.3, focus_x: 0.5, focus_y: 0.5 },
+                },
+            ]),
+        );
+        expect(invoke).toHaveBeenCalledWith("lens_info", { source: HOLIDAY.identity, crop: undefined });
+        expect(await screen.findByText("Lisbon, f/6.3")).toBeInTheDocument();
+        expect(document.querySelector("[data-slot='enhancement-options']")).toBeNull();
+        expect(track).toHaveBeenCalledExactlyOnceWith("enhancement_added", { family: "lens_blur", source: "manual" });
+    });
+
+    it("asks for a new lens blur's aperture as the photograph is framed", async () => {
+        openFiles(HOLIDAY);
+        frame(HOLIDAY);
+
+        render(<AddEnhancement />);
+        open();
+        fireEvent.click(await screen.findByRole("menuitem", { name: "Lens Blur" }));
+
+        await waitFor(() => expect(stack()).toHaveLength(1));
+        expect(invoke).toHaveBeenCalledWith("lens_info", { source: HOLIDAY.identity, crop: FRAMING });
     });
 
     it("asks for the scale of the photograph as it is framed, not as the file is", async () => {
@@ -257,6 +311,7 @@ describe("adding an enhancement", () => {
             "Color Balance",
             "Sharpen",
             "Upscale",
+            "Lens Blur",
         ]);
         expect(await upscale()).not.toHaveAttribute("data-disabled");
 
