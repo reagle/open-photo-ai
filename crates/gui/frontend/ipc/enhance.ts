@@ -22,11 +22,11 @@ export type Processor = "auto" | keyof SupportedProviders;
  *
  * Spelled in the catalogue's vocabulary (`family`, `codename`, `precision`, parameter names) so Rust can match
  * directly without a lookup table. Not a composed string like `up_kyoto_2x_fp32` — avoids a triple contract.
- * `detection` and `depth` are excluded: faces are fetched via a separate command, and a depth map is estimated
- * inside the run of the lens blur that needs it.
+ * `detection`, `depth` and `matting` are excluded: faces are fetched via a separate command, and a depth map and a
+ * matte are estimated inside the run of the lens blur that needs them.
  */
 export type Operation = {
-    family: Exclude<Family, "detection" | "depth">;
+    family: Exclude<Family, "detection" | "depth" | "matting">;
     /** Model name, per `VariantEntry.codename`. */
     codename: string;
     /** Build variant, per `VariantEntry.precisions`. */
@@ -86,6 +86,8 @@ export type Enhancement =
           faces?: Face[];
           /** Detection failure message (untranslated); recovery then restored nothing but the chain continued. */
           facesError?: string;
+          /** Matting failure message (untranslated); that lens blur then rendered from its depth alone. */
+          matteError?: string;
       }
     /** Stopped via {@link cancelEnhance} or superseded by a later run — including one that finished but was discarded. */
     | { outcome: "stopped" };

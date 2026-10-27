@@ -1730,7 +1730,13 @@ mod tests {
     async fn a_set_with_nothing_suggestible_reads_nothing_and_is_complete() {
         let source = picture_of(everything_wrong(512, 384));
 
-        for families in [&[][..], &[Family::Detection][..], &[Family::Depth][..], &[Family::LensBlur][..]] {
+        for families in [
+            &[][..],
+            &[Family::Detection][..],
+            &[Family::Depth][..],
+            &[Family::Matting][..],
+            &[Family::LensBlur][..],
+        ] {
             let (log, outcome) =
                 logging::records_of("debug", || suggest::<NoBackend>(&NoBackend, None, &source, Some(families), None))
                     .await;
@@ -1777,7 +1783,7 @@ mod tests {
         // Not detection or depth, which are never applied, and not lens blur, which an analysis never suggests.
         for family in Family::ALL
             .into_iter()
-            .filter(|family| !matches!(family, Family::Detection | Family::Depth | Family::LensBlur))
+            .filter(|family| !matches!(family, Family::Detection | Family::Depth | Family::Matting | Family::LensBlur))
         {
             let source = match family {
                 Family::Colorization => black_and_white(512, 384),

@@ -11,11 +11,12 @@ const CATALOGUE_COMMAND = "catalogue";
 // vocabulary, and a filter written here would be this application having an opinion about it.
 /**
  * One enhancement family, as Rust's `Family` serializes it. Every family the library names is
- * published, `detection`, `depth` and `colorization` included.
+ * published, `detection`, `depth`, `matting` and `colorization` included.
  */
 export type Family =
     | "detection"
     | "depth"
+    | "matting"
     | "denoise"
     | "face_recovery"
     | "light_adjustment"

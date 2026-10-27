@@ -434,6 +434,7 @@
         "autopilotFailed": "Si è verificato un problema. Impossibile eseguire l'Autopilota.",
         "enhanceFailed": "Si è verificato un problema. Impossibile migliorare l'immagine.",
         "faceDetectFailed": "Si è verificato un problema. Impossibile rilevare i volti.",
+        "matteFailed": "Si è verificato un problema. Impossibile scontornare il soggetto, quindi la sfocatura da obiettivo usa solo la profondità.",
         "showLogsFailed": "Impossibile aprire il file di log. Puoi trovarlo nella cartella di configurazione dell'app.",
         "revealFailed": "Impossibile aprire il file manager. Il file è comunque salvato nella posizione di esportazione.",
         "revealFileFailed": "Impossibile aprire il file manager.",

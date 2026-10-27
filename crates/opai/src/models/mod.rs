@@ -5,17 +5,18 @@
 //! later takes as a parameter — so they describe *what* to run and own no native resource, which is what lets one
 //! outlive and stay independent of any session built from it.
 //!
-//! All ten families are named here: [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`],
-//! [`Colorization`], [`Detection`], [`Depth`], [`FaceRecovery`] and [`LensBlur`]. Each is its own type, so no codename
-//! can be paired with the family it does not belong to.
+//! All eleven families are named here: [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`],
+//! [`Colorization`], [`Detection`], [`Depth`], [`Matting`], [`FaceRecovery`] and [`LensBlur`]. Each is its own type, so
+//! no codename can be paired with the family it does not belong to.
 //!
 //! [`Operation`] is where that match lives. It carries an operation of any of the eight image families, one arm per
-//! family holding that family's own type, and forwards the five questions they all answer; a detection or depth run is
-//! carried by [`Analysis`] instead.
+//! family holding that family's own type, and forwards the five questions they all answer; a detection, depth or
+//! matting run is carried by [`Analysis`] instead.
 //!
-//! Three of them break the mould the other six share. [`Detection`] and [`Depth`] are the two families whose result is
-//! not an image: a detection produces a [`DetectionOutput`], the set of [`Face`]s found, and a depth estimate a
-//! [`DepthMap`], the distance of every pixel from the camera. [`FaceRecovery`] is the one whose per-run input is
+//! Several of them break the mould the other six share. [`Detection`], [`Depth`] and [`Matting`] are the three
+//! families whose result is not an image: a detection produces a [`DetectionOutput`], the set of [`Face`]s found, a
+//! depth estimate a [`DepthMap`], the distance of every pixel from the camera, and a matting a [`Matte`], how much of
+//! each pixel a subject covers, from a trimap it is handed. [`FaceRecovery`] is the one whose per-run input is
 //! not a scalar: it carries the [`Faces`] it is to restore, supplied by a detection run rather than adjusted through
 //! a control, which is why it is `Clone` rather than `Copy`. [`LensBlur`] is driven by another family's result in the
 //! same way: a chain hands it the [`DepthMap`] of its input and the photograph's own [`Lens`], and it runs no graph.
@@ -24,7 +25,7 @@
 //!
 //! There is no operation-id string. An operation compares and hashes as a value, so it can be a lookup key directly,
 //! dispatch is an exhaustive match, and a display name is asked for rather than parsed back out of an id. The one
-//! string that survives is the cache tag — [`Upscale::cache_tag`] and its counterpart on each of the other nine —
+//! string that survives is the cache tag — [`Upscale::cache_tag`] and its counterpart on each of the other ten —
 //! because the run cache persists to disk and has to outlive the process.
 //!
 //! **Every field is in the identity.** Two operations are equal exactly when they name the same model at the same
@@ -121,8 +122,10 @@ pub(crate) mod face_recovery;
 pub(crate) mod fidelity;
 pub(crate) mod filter;
 pub(crate) mod fraction;
+pub(crate) mod handle;
 pub(crate) mod lens_blur;
 pub(crate) mod light_adjustment;
+pub(crate) mod matting;
 pub(crate) mod operation;
 pub(crate) mod precision;
 mod quantized;
@@ -149,8 +152,9 @@ pub use face::{Confidence, DetectionOutput, Face, Faces, Point, Rect};
 pub use face_recovery::{FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant};
 pub use fidelity::Fidelity;
 pub use fraction::Fraction;
-pub use lens_blur::{FOCUS_X, FOCUS_Y, Lens, LensBlur, LensBlurVariant, LensOrigin, OwnLens};
+pub use lens_blur::{FOCUS_X, FOCUS_Y, Lens, LensBlur, LensBlurEdges, LensBlurVariant, LensOrigin, OwnLens};
 pub use light_adjustment::{LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant};
+pub use matting::{Matte, Matting, MattingVariant};
 pub use operation::{Analysis, DataOperation, Operation};
 pub use precision::{FloatPrecision, Precision};
 pub use scale::{RangeError, Scale};

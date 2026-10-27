@@ -89,6 +89,10 @@
 //! [`Lens::resolve`]. Where the EXIF alone shows that every lens blur is opened no wider than the photograph's own
 //! aperture, no depth is estimated, and the chain returns the photograph as it is.
 //!
+//! A lens blur also mattes the subject in focus, where its blur is large enough to show the edge ([`LensBlurEdges`]):
+//! from the same depth, on the same input, through the run store. A matte that cannot be made does not fail the run;
+//! that blur renders from its depth alone, and [`Enhanced::matte`] says why ([`ChainMatte`]).
+//!
 //! The detection and the chain report on one bar that moves forward once: every operation owns an equal `1 / N` of it,
 //! and the detection takes the first fifth of the first operation's slot (none, when the store already knew the
 //! faces). A face recovery and an upscale are `0..0.5` and `0.5..1`, detection included.
@@ -228,7 +232,7 @@ pub use image::{
 };
 /// The inference vocabulary needed to ask for a run or read its report. The module stays private.
 pub use inference::depth::OutputDepth;
-pub use inference::depth_map::{fill_chain_depth, own_lens};
+pub use inference::depth_map::{ChainMatte, fill_chain_depth, own_lens};
 pub use inference::execute::{ExecuteOptions, Executed};
 pub use inference::faces::{
     ChainFaces, FaceSelection, FacedChain, SelectFaces, default_face_selection, fill_chain_faces,
@@ -242,10 +246,11 @@ pub use models::{
     ColorizationVariant, Confidence, DataOperation, Denoise, DenoiseParams, DenoiseVariant, Depth, DepthMap,
     DepthVariant, Detection, DetectionOutput, DetectionVariant, FNumber, FOCUS_X, FOCUS_Y, Face, FaceRecovery,
     FaceRecoveryParams, FaceRecoveryVariant, Faces, Family, FamilyEntry, Fidelity, FloatPrecision, Fraction, GraphRole,
-    GraphSet, Lens, LensBlur, LensBlurVariant, LensOrigin, LightAdjustment, LightAdjustmentParams,
-    LightAdjustmentVariant, Operation, OsakaPrecision, OwnLens, ParameterEntry, ParameterKind, ParameterValues, Pass,
-    Point, Precision, RangeError, Rect, Resolution, Scale, Sharpen, SharpenParams, SharpenVariant, Strength, Subject,
-    UnknownRole, Upscale, UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
+    GraphSet, Lens, LensBlur, LensBlurEdges, LensBlurVariant, LensOrigin, LightAdjustment, LightAdjustmentParams,
+    LightAdjustmentVariant, Matte, Matting, MattingVariant, Operation, OsakaPrecision, OwnLens, ParameterEntry,
+    ParameterKind, ParameterValues, Pass, Point, Precision, RangeError, Rect, Resolution, Scale, Sharpen,
+    SharpenParams, SharpenVariant, Strength, Subject, UnknownRole, Upscale, UpscaleParams, UpscaleVariant,
+    VariantEntry, catalogue,
 };
 pub use progress::{Dependency, OnPlan, OnProgress, Phase, PlannedDependency, Progress};
 pub use providers::{ExecutionProvider, SupportedProviders};
@@ -865,6 +870,34 @@ impl Opai {
         options: Option<ExecuteOptions>,
     ) -> Result<Executed<DepthMap>, InferenceError> {
         inference::execute::execute(self, self.inner.cache.handle().as_ref(), source, depth, options).await
+    }
+
+    /// Estimates how much of each pixel of `source` a subject covers, from the trimap `matting` was handed, and hands
+    /// it back beside what it ran on.
+    ///
+    /// [`execute`](Self::execute)'s sibling for the matting family, as [`estimate_depth`](Self::estimate_depth) is for
+    /// depth: the same driver, progress, cancellation and store. The model runs only over the 1024-pixel tiles that
+    /// hold an unknown pixel; a pixel the trimap marks as sure background or sure subject keeps that value exactly.
+    ///
+    /// The trimap is the library's own to hand: a lens blur builds one from its depth map around the plane of focus
+    /// and mattes it through [`process`](Self::process). Not public until a front end has a trimap of its own to hand;
+    /// the live tests run Porto through it.
+    ///
+    /// **Estimated once per photograph and trimap.** Served from the store on a repeat, under the picture's identity
+    /// and the trimap's signature.
+    ///
+    /// # Errors
+    ///
+    /// [`InferenceError`], and in every case **no matte at all** — including
+    /// [`Unsupported`](InferenceError::Unsupported) for a matting with no trimap.
+    #[cfg(test)]
+    pub(crate) async fn matte(
+        &self,
+        source: &Picture,
+        matting: &Matting,
+        options: Option<ExecuteOptions>,
+    ) -> Result<Executed<Matte>, InferenceError> {
+        inference::execute::execute(self, self.inner.cache.handle().as_ref(), source, matting, options).await
     }
 
     /// Analyses `source` and returns the enhancements that photograph calls for.

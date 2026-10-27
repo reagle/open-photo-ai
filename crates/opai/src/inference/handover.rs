@@ -1,7 +1,7 @@
 //! One bar over a chain's face detection and the chain that follows it.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::inference::progress::{InferenceProgress, OnInference, Stage};
 use crate::models::Operation;
@@ -35,11 +35,19 @@ const DETECTION_SHARE: f64 = 0.2;
 /// the run store, and reporting that would jump every re-run part of the way in for nothing. So the detection's own
 /// reports are forwarded only once one says it is fetching or running, and the chain is forwarded untouched unless one
 /// was.
+///
+/// **The head may hold several analyses**, one after another — a lens blur's depth, then a matte for each lens blur —
+/// each from [`next_analysis`](Self::next_analysis): each starts where the last left off and takes an equal share of
+/// what is left, and the chain starts where the last of them did, so one served or skipped leaves no jump and two
+/// mattes never send the bar back.
 pub(crate) struct Handover {
     /// Where every report goes in the end.
     inner: OnInference,
     /// Whether the detection reported any work, which decides the share the chain is mapped onto.
     detected: Arc<AtomicBool>,
+    /// The furthest the detection's reports reached, as a fraction of the head, in `f64` bits: never negative, so
+    /// the bits order as the values do.
+    reached: Arc<AtomicU64>,
     /// How much of the bar one operation owns: `1 / N`.
     slot: f64,
 }
@@ -54,7 +62,7 @@ impl Handover {
         #[allow(clippy::cast_precision_loss, reason = "a chain is a handful of operations")]
         let slot = 1.0 / operations.len().max(1) as f64;
 
-        Self { inner: Arc::clone(on_progress), detected: Arc::default(), slot }
+        Self { inner: Arc::clone(on_progress), detected: Arc::default(), reached: Arc::default(), slot }
     }
 
     /// The callback for the detection: its reports mapped onto the head of the first slot, and a detection served
@@ -62,6 +70,7 @@ impl Handover {
     pub(crate) fn detection(&self) -> OnInference {
         let inner = Arc::clone(&self.inner);
         let detected = Arc::clone(&self.detected);
+        let reached = Arc::clone(&self.reached);
         let head = self.slot * DETECTION_SHARE;
 
         Arc::new(move |report: &InferenceProgress| {
@@ -70,8 +79,27 @@ impl Handover {
             }
 
             detected.store(true, Ordering::Relaxed);
+            reached.fetch_max(report.chain_fraction.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
             inner(&InferenceProgress { chain_fraction: report.chain_fraction * head, ..report.clone() });
         })
+    }
+
+    /// The callback for the next of `remaining` analyses that report one after another into the head, as
+    /// [`detection`](Self::detection) does: its `0..1` mapped from where the last one's reports left off onto an equal
+    /// share of what is left.
+    ///
+    /// **Ask for it once the analysis before has ended**, which is when where it left off is known.
+    pub(crate) fn next_analysis(&self, remaining: usize) -> OnInference {
+        let from = self.reached();
+        #[allow(clippy::cast_precision_loss, reason = "a chain is a handful of operations")]
+        let to = from + (1.0 - from) / remaining.max(1) as f64;
+
+        shared(self.detection(), from, to)
+    }
+
+    /// The furthest the head's reports have reached, as a fraction of it.
+    fn reached(&self) -> f64 {
+        f64::from_bits(self.reached.load(Ordering::Relaxed))
     }
 
     /// The callback for the chain: the first slot's reports mapped onto what a detection that reported left of it, and
@@ -86,11 +114,14 @@ impl Handover {
 
         let inner = Arc::clone(&self.inner);
         let slot = self.slot;
+        // Where the head's reports left off: all of it after a detection, less where an analysis was served or skipped.
+        let start = slot * DETECTION_SHARE * self.reached();
 
         Arc::new(move |report: &InferenceProgress| {
-            // Continuous at the slot's end, where both arms give `slot`, so the bar does not jump into the second one.
+            // Continuous at the slot's end, where both arms give `slot`, so the bar does not jump into the second one;
+            // and at its start, where the first gives where the head left off.
             let chain_fraction = if report.chain_fraction < slot {
-                slot * DETECTION_SHARE + report.chain_fraction * (1.0 - DETECTION_SHARE)
+                start + report.chain_fraction * (slot - start) / slot
             } else {
                 report.chain_fraction
             };
@@ -98,6 +129,16 @@ impl Handover {
             inner(&InferenceProgress { chain_fraction, ..report.clone() });
         })
     }
+}
+
+/// `on_progress` with every report's chain fraction mapped from `0..1` onto `from..to`: one analysis's share of a head
+/// several report into, one after the other.
+fn shared(on_progress: OnInference, from: f64, to: f64) -> OnInference {
+    Arc::new(move |report: &InferenceProgress| {
+        let chain_fraction = from + (to - from) * report.chain_fraction;
+
+        on_progress(&InferenceProgress { chain_fraction, ..report.clone() });
+    })
 }
 
 impl std::fmt::Debug for Handover {
@@ -246,6 +287,64 @@ mod tests {
         let reports = handed_over(&[santorini(), denoise()], &[Stage::Running], 2);
 
         assert_eq!(percents(&reports), [10, 10, 30, 50, 50, 75, 100]);
+    }
+
+    /// The fractions a [`Handover`] over a denoise and an upscale forwarded: `analyses` one after another in its head —
+    /// each reporting `0`, `0.5` and `1` at its stage, or, where `None`, skipped and never run — then the chain.
+    fn analysed(analyses: &[Option<Stage>]) -> Vec<f64> {
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let collector = Arc::clone(&sent);
+        let inner: OnInference = Arc::new(move |report: &InferenceProgress| {
+            collector.lock().unwrap().push(report.chain_fraction);
+        });
+        let operations = [denoise(), kyoto()];
+        let handover = Handover::new(&inner, &operations);
+        let subject = Arc::new(Subject::Analysis(Detection::for_face_recovery()));
+
+        for (index, stage) in analyses.iter().enumerate() {
+            let analysis = handover.next_analysis(analyses.len() - index);
+            for fraction in stage.iter().flat_map(|stage| [0.0, 0.5, 1.0].map(|fraction| (stage, fraction))) {
+                analysis(&reported(&subject, fraction.0.clone(), fraction.1));
+            }
+        }
+
+        let chaining = handover.chain();
+        let subject = Arc::new(Subject::Enhancement(denoise()));
+        for chain in [0.0, 0.25, 0.5, 1.0] {
+            chaining(&reported(&subject, Stage::Running, chain));
+        }
+
+        sent.lock().unwrap().clone()
+    }
+
+    #[test]
+    fn analyses_in_the_head_take_what_is_left_in_turn_and_the_chain_starts_where_they_left_off() {
+        let close = |seen: &[f64], expected: &[f64]| {
+            seen.len() == expected.len() && seen.iter().zip(expected).all(|(a, b)| (a - b).abs() < 1e-12)
+        };
+        let head = 0.5 * DETECTION_SHARE;
+        // The chain's first report a quarter in: halfway through what the head left of the denoise's slot.
+        let quarter = |start: f64| start + (0.5 - start) / 2.0;
+
+        // A depth and two mattes, all run: a third of the head each, then the chain from the head's end.
+        let all = analysed(&[Some(Stage::Running), Some(Stage::Running), Some(Stage::Running)]);
+        let third = head / 3.0;
+        let expected = [0.0, third / 2.0, third, third, 1.5 * third, 2.0 * third, 2.0 * third, 2.5 * third, head];
+        assert!(close(&all[..9], &expected), "{all:?}");
+        assert!(close(&all[9..], &[head, quarter(head), 0.5, 1.0]), "{all:?}");
+
+        // The depth served: the first matte starts at nothing and takes half, and the second the rest.
+        let served = analysed(&[Some(Stage::Cached), Some(Stage::Running), Some(Stage::Running)]);
+        assert!(close(&served[..3], &[0.0, head / 4.0, head / 2.0]), "{served:?}");
+        assert!(close(&served[6..7], &[head]), "{served:?}");
+
+        // Both mattes skipped: the chain picks up where the depth left off, rather than jumping to the head's end.
+        let skipped = analysed(&[Some(Stage::Running), None, None]);
+        assert!(close(&skipped, &[0.0, third / 2.0, third, third, quarter(third), 0.5, 1.0][..]), "{skipped:?}");
+
+        for seen in [all, served, skipped] {
+            assert!(seen.windows(2).all(|pair| pair[1] >= pair[0]), "the bar went backwards: {seen:?}");
+        }
     }
 
     #[test]

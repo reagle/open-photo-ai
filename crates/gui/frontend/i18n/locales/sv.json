@@ -424,6 +424,7 @@
         "autopilotFailed": "Något gick fel. Kunde inte köra autopiloten.",
         "enhanceFailed": "Något gick fel. Kunde inte förbättra bilden.",
         "faceDetectFailed": "Något gick fel. Kunde inte hitta några ansikten.",
+        "matteFailed": "Något gick fel. Kunde inte frilägga motivet, så objektivoskärpan använder bara djupet.",
         "showLogsFailed": "Det gick inte att öppna loggfilen. Du hittar den i appens konfigurationsmapp.",
         "revealFailed": "Det gick inte att öppna filhanteraren. Filen finns kvar på sin exportplats.",
         "revealFileFailed": "Det gick inte att öppna filhanteraren.",

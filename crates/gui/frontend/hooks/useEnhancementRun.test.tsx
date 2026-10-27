@@ -489,6 +489,18 @@ describe("a chain that restores faces", () => {
         expect(answer.enhanced).toEqual({ identity: "abcdef0123456789", width: 6000, height: 4000 });
     });
 
+    it("tells the user when the lens blur's subject could not be matted, and keeps the result", async () => {
+        const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+        stack(HOLIDAY.path, upscale(2));
+        mount();
+
+        pending[0]?.settle(enhanced({ matteError: "Porto failed on tile 3" }));
+
+        await waitFor(() => expect(toast()).toHaveTextContent("Failed to matte the subject"));
+        expect(logged).toHaveBeenCalledWith("matting the lens blur's subject failed", "Porto failed on tile 3");
+        expect(answer.enhanced).toEqual({ identity: "abcdef0123456789", width: 6000, height: 4000 });
+    });
+
     it("holds nothing for a photograph that was closed before its run answered", async () => {
         stack(HOLIDAY.path, recovery());
         const view = mount();

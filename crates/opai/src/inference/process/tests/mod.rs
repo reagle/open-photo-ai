@@ -8,6 +8,7 @@ mod faces;
 mod gain_map;
 mod identity;
 mod log;
+mod matte;
 mod metadata;
 mod plan;
 mod report;
@@ -358,6 +359,10 @@ impl Backend for Fake {
         {
             let mut log = session.log.lock().unwrap();
             log.ran.push(session.artifact.clone());
+        }
+
+        if let Some(token) = &session.cancels {
+            token.cancel();
         }
 
         if session.fails {

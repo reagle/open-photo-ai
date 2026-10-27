@@ -38,6 +38,8 @@ use opai::image::Metadata;
 use opai::{
     FNumber, FOCUS_X, FOCUS_Y, Fraction, Lens, LensBlur, LensBlurVariant, LensExif, LensOrigin, fill_chain_depth,
 };
+// The matte a lens blur composites its subject with: the family, its one model, its result and what a chain reports.
+use opai::{ChainMatte, LensBlurEdges, Matte, Matting, MattingVariant};
 // The vocabulary a run is asked for and reports in, and — added by the cache slice — what a front end reads to find
 // out what is behind the store a run may use.
 use opai::{
@@ -454,10 +456,10 @@ fn the_two_face_families_are_reachable_from_the_crate_root() {
     );
 }
 
-/// The catalogue as a front end offering all ten families reads it: every chooser and every control configured
+/// The catalogue as a front end offering all eleven families reads it: every chooser and every control configured
 /// from this alone.
 #[test]
-fn the_catalogue_publishes_all_ten_families_to_the_crate_root() {
+fn the_catalogue_publishes_all_eleven_families_to_the_crate_root() {
     let families: &'static [FamilyEntry] = catalogue();
 
     assert_eq!(
@@ -473,6 +475,7 @@ fn the_catalogue_publishes_all_ten_families_to_the_crate_root() {
             Family::FaceRecovery,
             Family::Depth,
             Family::LensBlur,
+            Family::Matting,
         ]
     );
 
@@ -616,7 +619,7 @@ fn the_operation_seam_is_reachable_from_the_crate_root() {
     // The other carrier, for the other path. Both report the same five questions, which is what lets a consumer that
     // only reports on a run be written once over either — see `Subject`.
     let analysis: Analysis = Detection::newyork(FloatPrecision::Fp32);
-    let subject: Subject = Subject::Analysis(analysis);
+    let subject: Subject = Subject::Analysis(analysis.clone());
     assert_eq!(subject.family(), Family::Detection);
     assert_eq!(subject.display_name(), analysis.display_name());
     assert_eq!(subject.cache_tag(), analysis.cache_tag());
@@ -1376,8 +1379,60 @@ async fn a_non_image_operation_can_be_built_and_run_through_the_public_surface_a
     assert!(seen.lock().unwrap().is_empty(), "nothing ran, so nothing reported");
 }
 
-/// A depth estimate, named, carried and pinned through the public surface alone: the family, its one model, the entry
-/// point and the map it returns.
+/// A matting, named and carried through the public surface alone: the family, its one model and the matte it returns,
+/// which a lens blur in a chain is handed and a front end only hears of through [`Enhanced::matte`].
+#[test]
+fn a_matting_can_be_named_and_its_outcome_read_through_the_public_surface_alone() {
+    let matting: Matting = Matting::porto();
+    assert_eq!(matting.variant(), MattingVariant::Porto(FloatPrecision::Fp32));
+    assert_eq!(matting.display_name(), "Porto (FP32)");
+    assert_eq!(matting.cache_tag(), "mt-porto-fp32-t0");
+    assert_eq!(
+        matting.required_artifacts().iter().map(ArtifactId::as_str).collect::<Vec<_>>(),
+        vec!["mt_porto_fp32"]
+    );
+
+    let carried = Analysis::Matting(matting.clone());
+    assert_eq!(carried.family(), Family::Matting);
+    assert_eq!(Subject::Analysis(carried).display_name(), "Porto (FP32)");
+    assert_eq!(Family::Matting.applied_at(), None, "matting was placed in a chain's order");
+
+    fn result_of<O: DataOperation<Output = Matte>>(_operation: &O) {}
+    result_of(&matting);
+
+    // What the run store keeps, run-length coded, and reads back as it was.
+    let stored = r#"{"width":3,"height":1,"levels":[0,65535],"runs":[2,1]}"#;
+    let matte: Matte = serde_json::from_str(stored).expect("a matte deserializes");
+    assert_eq!(serde_json::to_string(&matte).expect("a matte serializes"), stored);
+
+    // What matting a chain's lens blurs came to, beside the result.
+    let unavailable = InferenceError::Unsupported {
+        operation: "Porto (FP32)".to_string(),
+        reason: opai::UnsupportedReason::Uninjected { missing: "a trimap" },
+    };
+    for outcome in [
+        ChainMatte::NotAsked,
+        ChainMatte::Matted,
+        ChainMatte::Skipped,
+        ChainMatte::Unavailable(unavailable.clone()),
+        ChainMatte::Failed(unavailable),
+    ] {
+        let said = match &outcome {
+            ChainMatte::NotAsked | ChainMatte::Matted | ChainMatte::Skipped | ChainMatte::Unavailable(_) => None,
+            ChainMatte::Failed(error) => Some(error.to_string()),
+        };
+        assert_eq!(said.is_some(), matches!(outcome, ChainMatte::Failed(_)));
+    }
+
+    // A lens blur mattes its subject's edges unless asked to leave them to the depth.
+    let Operation::LensBlur(blur) = LensBlur::lisbon(FNumber::new(1.4).unwrap(), Fraction::CENTRE, Fraction::CENTRE)
+    else {
+        panic!("Lisbon built another family");
+    };
+    assert_eq!(blur.edges(), LensBlurEdges::Matte);
+    assert_eq!(blur.clone().with_edges(LensBlurEdges::Depth).edges(), LensBlurEdges::Depth);
+}
+
 #[test]
 fn a_depth_estimate_can_be_named_and_read_through_the_public_surface_alone() {
     // The constructor returns the typed operation, which is what `estimate_depth` takes.
@@ -1471,7 +1526,12 @@ fn a_consumer_can_read_what_a_run_ran_on_and_release_every_session() {
         std::sync::Arc::new(image::DynamicImage::ImageRgb8(image::RgbImage::new(64, 48))),
         "cafebabecafebabe",
     );
-    let enhanced = Enhanced { picture, providers: downgraded.clone(), faces: opai::ChainFaces::NotAsked };
+    let enhanced = Enhanced {
+        picture,
+        providers: downgraded.clone(),
+        faces: opai::ChainFaces::NotAsked,
+        matte: ChainMatte::NotAsked,
+    };
 
     assert_eq!(enhanced.providers, downgraded);
     assert_eq!(enhanced.picture.dimensions(), (64, 48));

@@ -69,7 +69,7 @@ describe("the enhancements this application presents", () => {
         expect(ENHANCEMENTS.every(({ family }) => published.includes(family))).toBe(true);
     });
 
-    it("leaves detection and depth out", () => {
+    it("leaves detection, depth and matting out", () => {
         // Published by the library on purpose, drawn by nothing: neither is an enhancement a user
         // adds, and this is how they stay out without the catalogue being filtered on the wire.
         // Read through the wider `Enhancement` type: the list's own literal types already rule
@@ -78,6 +78,7 @@ describe("the enhancements this application presents", () => {
 
         expect(presented.some(({ family }) => family === "detection")).toBe(false);
         expect(presented.some(({ family }) => family === "depth")).toBe(false);
+        expect(presented.some(({ family }) => family === "matting")).toBe(false);
     });
 
     it("lists them in the order the menu offers them", () => {
@@ -245,6 +246,7 @@ describe("what the progress chip calls the family a report carries", () => {
     const EVERY_FAMILY: Record<Family, true> = {
         detection: true,
         depth: true,
+        matting: true,
         denoise: true,
         face_recovery: true,
         light_adjustment: true,
@@ -272,6 +274,11 @@ describe("what the progress chip calls the family a report carries", () => {
         // The same arrangement as the detection above: a depth map is estimated for a lens blur and nothing else.
         expect(progressLabelKey("depth")).toBe("preview.progress.lensBlur");
         expect(progressLabelKey("lens_blur")).toBe(progressLabelKey("depth"));
+    });
+
+    it("names a matte after the enhancement that asked for it", () => {
+        // A matte is estimated for a lens blur's subject and nothing else, as its depth is.
+        expect(progressLabelKey("matting")).toBe("preview.progress.lensBlur");
     });
 
     it("names every other family as itself", () => {
@@ -606,7 +613,7 @@ describe("how much larger a chain makes a photograph", () => {
 
 describe("the operation an Autopilot suggestion becomes", () => {
     // Each family's stored default, so "the user's model" is a choice rather than the catalogue's first entry.
-    const stored: Record<Exclude<Family, "detection" | "depth" | "lens_blur">, string> = {
+    const stored: Record<Exclude<Family, "detection" | "depth" | "matting" | "lens_blur">, string> = {
         denoise: "malmo_fp16",
         sharpen: "novgorod_fp32",
         light_adjustment: "lyon_fp16",

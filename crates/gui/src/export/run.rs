@@ -243,6 +243,7 @@ mod tests {
             picture: source.derive(pixels, identity),
             providers: no_providers(),
             faces: opai::ChainFaces::NotAsked,
+            matte: opai::ChainMatte::NotAsked,
         }
     }
 

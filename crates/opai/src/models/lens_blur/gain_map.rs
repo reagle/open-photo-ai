@@ -120,6 +120,25 @@ pub(crate) fn rewritten(
     let (width, height) = (map.width(), map.height());
     let render = |linear: &[f32]| defocus(linear, width, height, radius, keep_sharp, None, Defocus::DEFAULT, cancelled);
 
+    rewritten_with(map, sdr, blurred_sdr, params, &render)
+}
+
+/// [`rewritten`], with each rendition blurred by `render` (three values a pixel of `map` in, the same out, or `None`
+/// where it was stopped): a matted render's, which takes the subject out of each rendition and composites it over the
+/// blur, so the HDR rendition is blurred exactly as the photograph was.
+///
+/// # Panics
+///
+/// As [`rewritten`].
+pub(crate) fn rewritten_with(
+    map: &DynamicImage,
+    sdr: Vec<f32>,
+    blurred_sdr: Option<&[f32]>,
+    params: &GainMapParams,
+    render: &dyn Fn(&[f32]) -> Option<Vec<f32>>,
+) -> Option<DynamicImage> {
+    let (width, height) = (map.width(), map.height());
+
     match map {
         DynamicImage::ImageLuma8(stored) => {
             let channel = Channel::of(params, 0);
