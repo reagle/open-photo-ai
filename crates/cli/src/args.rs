@@ -14,7 +14,7 @@ use crate::autopilot::AutopilotModels;
 ///
 /// Each input is a photograph or a directory of them; a directory contributes the images directly inside it, or its
 /// whole tree with `--recursive`. The enhancements run in one order whatever order the flags are given in: denoise,
-/// face recovery, colorization, light adjustment, colour balance, sharpen, and then upscale.
+/// face recovery, colorization, light adjustment, colour balance, sharpen, upscale, and then lens blur.
 ///
 /// The output is a file when its extension names a format opai writes and it is not an existing directory; it then
 /// takes exactly one input photograph. Any other output is a directory, created if missing, that mirrors each
@@ -98,6 +98,12 @@ pub enum UpscaleModel {
     Osaka,
     Tokyo,
     Saitama,
+}
+
+/// The lens blur models, as the command line names them: each is named for the depth model it is driven by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum LensBlurModel {
+    Lisbon,
 }
 
 /// The face-recovery models, as the command line names them.
@@ -358,6 +364,36 @@ pub struct Selection {
     /// 1 MP, 2x up to 4 MP, and no upscale above that.
     #[arg(long, value_name = "FACTOR", value_parser = parse_scale, requires = "upscale")]
     pub scale: Option<Scale>,
+
+    /// Blur the photograph as a wider lens aperture would have, last, with the depth estimated by MODEL or Lisbon
+    /// where none is named.
+    #[arg(
+        long = "lens-blur",
+        visible_alias = "lb",
+        value_name = "MODEL",
+        num_args = 0..=1,
+        default_missing_value = "lisbon",
+        ignore_case = true
+    )]
+    pub lens_blur: Option<LensBlurModel>,
+
+    /// The f-number to simulate, in 35 mm full-frame-equivalent terms, from 1.0 to 32 (`1.4` or `f/1.4`); default
+    /// 2.8. At or above the photograph's own the photograph is left as it is.
+    #[arg(long = "lb-f", value_name = "F", value_parser = parse_f_number, requires = "lens_blur")]
+    pub lens_blur_f: Option<f64>,
+
+    /// The point to focus on, as fractions of the photograph's width and height from 0 to 1 (`0.5,0.3` is the middle
+    /// across and 30 percent down); default 0.5,0.5, the centre.
+    // Hyphen values allowed so that `-0.1,0.5`, which is no number clap would read as one, reaches `parse_focus` and is
+    // refused with the range rather than as an unexpected argument.
+    #[arg(
+        long = "lb-focus",
+        value_name = "X,Y",
+        value_parser = parse_focus,
+        requires = "lens_blur",
+        allow_hyphen_values = true
+    )]
+    pub lens_blur_focus: Option<(f64, f64)>,
 }
 
 impl Selection {
@@ -370,6 +406,7 @@ impl Selection {
             && self.color_balance.is_none()
             && self.sharpen.is_none()
             && self.upscale.is_none()
+            && self.lens_blur.is_none()
     }
 }
 
@@ -387,8 +424,8 @@ where
         return Err(Args::command().error(
             clap::error::ErrorKind::MissingRequiredArgument,
             "at least one enhancement is required: --denoise (--dn), --face-recovery (--fr), --colorization (--cl), \
-             --light-adjustment (--la), --color-balance (--cb), --sharpen (--sh), --upscale (--up) or \
-             --autopilot (--ap)",
+             --light-adjustment (--la), --color-balance (--cb), --sharpen (--sh), --upscale (--up), --lens-blur \
+             (--lb) or --autopilot (--ap)",
         ));
     }
 
@@ -418,6 +455,31 @@ fn parse_scale(text: &str) -> Result<Scale, String> {
 
     let value: f64 = text.trim().parse().map_err(|_| format!("{text:?} is not a number; {}", range()))?;
     Scale::new(value).map_err(|_| range())
+}
+
+/// A `--lb-f` value: a number, bare or after `f/`, from [`opai::FNumber::MIN`] to [`opai::FNumber::MAX`].
+fn parse_f_number(text: &str) -> Result<f64, String> {
+    let range = || format!("the f-number must be from {} to {}", opai::FNumber::MIN, opai::FNumber::MAX);
+    let bare = text.trim();
+    let bare = bare.strip_prefix("f/").or_else(|| bare.strip_prefix("F/")).unwrap_or(bare);
+
+    let value: f64 = bare.trim().parse().map_err(|_| format!("{text:?} is not a number; {}", range()))?;
+    opai::FNumber::new(value).map(opai::FNumber::get).map_err(|_| range())
+}
+
+/// A `--lb-focus` value: two fractions from 0 to 1, across and down, separated by a comma.
+fn parse_focus(text: &str) -> Result<(f64, f64), String> {
+    let wanted = || format!("{text:?} is not a point; give two fractions from 0 to 1 as X,Y, such as 0.5,0.3");
+    let (x, y) = text.split_once(',').ok_or_else(wanted)?;
+    let fraction = |part: &str, axis: &'static str| {
+        let value: f64 = part.trim().parse().map_err(|_| wanted())?;
+        // Named for the axis, which is what the library publishes it under, rather than for the type serving both.
+        opai::Fraction::new(value)
+            .map(opai::Fraction::get)
+            .map_err(|refused| format!("the focus point must be two fractions from 0 to 1; {}", refused.named(axis)))
+    };
+
+    Ok((fraction(x, opai::FOCUS_X)?, fraction(y, opai::FOCUS_Y)?))
 }
 
 /// The lowest `--dn-str` or `--sh-str`. Not the library's 0: a strength of 0 applies nothing, which on a command line is
@@ -564,6 +626,7 @@ mod tests {
             ("--color-balance", "--cb"),
             ("--sharpen", "--sh"),
             ("--upscale", "--up"),
+            ("--lens-blur", "--lb"),
             ("--autopilot", "--ap"),
         ] {
             assert!(message.contains(&format!("{flag} ({alias})")), "{flag} is not listed in: {message}");
@@ -603,6 +666,8 @@ mod tests {
             ("--sh-str 150", "--sh-str"),
             ("--la-bias 20", "--la-bias"),
             ("--cb-bias 20", "--cb-bias"),
+            ("--lb", "--lens-blur"),
+            ("--lb --lb-f 2", "--lens-blur"),
         ];
 
         for (flags, name) in cases {
@@ -731,6 +796,8 @@ mod tests {
             ("--dn --sh-str 150", "--sharpen"),
             ("--cb --la-bias 20", "--light-adjustment"),
             ("--la --cb-bias 20", "--color-balance"),
+            ("--up --lb-f 2", "--lens-blur"),
+            ("--up --lb-focus 0.3,0.6", "--lens-blur"),
         ] {
             let error = parse(&format!("opai photo.jpg {flags} -o out.png")).expect_err(flags);
 
@@ -820,6 +887,79 @@ mod tests {
         };
         let argument = command.get_arguments().find(|argument| argument.get_id() == id).expect(id);
         argument.get_help().expect("documented").to_string()
+    }
+
+    #[test]
+    fn a_bare_lens_blur_is_lisbon_at_its_defaults() {
+        let args = parse("opai photo.jpg --lb -o out.jpg").expect("parses");
+
+        assert_eq!(args.selection.lens_blur, Some(LensBlurModel::Lisbon));
+        assert_eq!((args.selection.lens_blur_f, args.selection.lens_blur_focus), (None, None));
+        assert!(!args.selection.is_empty(), "a lens blur alone is an enhancement");
+    }
+
+    #[test]
+    fn a_lens_blur_takes_its_f_number_bare_or_after_f_and_its_focus_as_two_fractions() {
+        let args =
+            parse("opai photo.jpg --lens-blur LISBON --lb-f f/1.4 --lb-focus 0.3,0.6 -o out.jpg").expect("parses");
+
+        assert_eq!(args.selection.lens_blur, Some(LensBlurModel::Lisbon));
+        assert_eq!(args.selection.lens_blur_f, Some(1.4));
+        assert_eq!(args.selection.lens_blur_focus, Some((0.3, 0.6)));
+
+        for (text, expected) in [("2", 2.0), ("F/2.8", 2.8), (" 32 ", 32.0), ("1", 1.0)] {
+            assert_eq!(parse_f_number(text), Ok(expected), "{text}");
+        }
+        assert_eq!(parse_focus("0, 1"), Ok((0.0, 1.0)));
+    }
+
+    #[test]
+    fn a_lens_blur_value_out_of_range_is_refused_stating_the_range() {
+        for (flags, expected) in [
+            ("--lb-f 0.5", "the f-number must be from 1 to 32"),
+            ("--lb-f 40", "the f-number must be from 1 to 32"),
+            ("--lb-f wide", "the f-number must be from 1 to 32"),
+            ("--lb-focus 1.2,0.5", "two fractions from 0 to 1"),
+            ("--lb-focus 0.5", "two fractions from 0 to 1"),
+            ("--lb-focus 0.5,-0.1", "two fractions from 0 to 1"),
+            // Leading with a hyphen is no reason to read it as another flag.
+            ("--lb-focus -0.1,0.5", "two fractions from 0 to 1"),
+        ] {
+            let error = parse(&format!("opai photo.jpg --lb {flags} -o out.jpg")).expect_err(flags);
+
+            assert_eq!(error.kind(), ErrorKind::ValueValidation, "{flags}: {error}");
+            assert!(error.to_string().contains(expected), "{flags}: {error}");
+        }
+    }
+
+    #[test]
+    fn a_refused_focus_names_the_axis_it_was_refused_for() {
+        assert!(parse_focus("1.2,0.5").expect_err("outside").contains("focus_x must be between 0 and 1"));
+        assert!(parse_focus("0.5,-0.1").expect_err("outside").contains("focus_y must be between 0 and 1"));
+    }
+
+    #[test]
+    fn the_lens_blur_flags_match_the_librarys_catalogue() {
+        use opai::{Family, ParameterKind};
+
+        let entry = opai::catalogue().iter().find(|entry| entry.family == Family::LensBlur).expect("published");
+        let published: Vec<_> = entry.variants.iter().map(|variant| variant.codename).collect();
+        let named: Vec<_> = LensBlurModel::value_variants()
+            .iter()
+            .map(|model| model.to_possible_value().expect("named").get_name().to_owned())
+            .collect();
+        assert_eq!(named, published);
+
+        // The defaults the help states, as the library publishes them.
+        let defaults: Vec<_> = entry.variants[0]
+            .parameters
+            .iter()
+            .map(|parameter| match parameter.kind {
+                ParameterKind::Range { min, max, default } => (parameter.name, min, max, default),
+                ParameterKind::Faces => panic!("{} is not a range", parameter.name),
+            })
+            .collect();
+        assert_eq!(defaults, [("f_number", 1.0, 32.0, 2.8), ("focus_x", 0.0, 1.0, 0.5), ("focus_y", 0.0, 1.0, 0.5)]);
     }
 
     #[test]

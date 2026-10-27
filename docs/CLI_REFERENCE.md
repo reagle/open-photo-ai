@@ -210,6 +210,7 @@ Default models are in **bold**.
 | Color Balance    | `--color-balance`    | `--cb` | **rio**, saopaulo                              | `--cb-bias` (-100 to 100)  |
 | Sharpen          | `--sharpen`          | `--sh` | **moscow**, petersburg, novgorod               | `--sh-str` (1 to 300)      |
 | Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, osaka, saitama               | `--scale` (1.0 to 8.0)     |
+| Lens Blur        | `--lens-blur`        | `--lb` | **lisbon**                                     | `--lb-f` (1.0 to 32), `--lb-focus` (X,Y) |
 
 The sections below explain each enhancement briefly. For more detail on when to pick each model, see the [Enhancements section of the README](../README.md#-enhancements).
 
@@ -342,6 +343,35 @@ Option: `--scale <FACTOR>`, the upscale factor, from `1.0` to `8.0`. Decimals ar
 > [!IMPORTANT]
 > If the image is larger than 4 MP and you don't pass `--scale`, the upscale step is **skipped**. The terminal doesn't warn about this; it's only recorded in the [log file](#log-file). Any other enhancements in the command still run, and the file is still written at the original resolution. To upscale a large image anyway, pass `--scale`.
 
+### Lens Blur: `--lens-blur [MODEL]`, `--lb [MODEL]`
+
+Gives the photo the shallow depth of field of a wider lens aperture: the point you focus on stays sharp, and everything nearer or farther is blurred as much as a real lens would blur it, with bright points spreading into discs. The model estimates how far from the camera every pixel is, and the blur follows that depth. Lens Blur always runs **last**, after any upscale.
+
+| Model      | Use it for                                                                                        |
+|------------|---------------------------------------------------------------------------------------------------|
+| `lisbon` (default) | Any photo. Lisbon is a depth model (MoGe-2 ViT-B), two graphs of 324 MB, one per orientation; on a Mac its first use compiles the graph for about a minute. It is published at FP16 only, so `-q hd` and `-q sd` both run it. |
+
+Options:
+
+- `--lb-f <F>`, the f-number to simulate, from `1.0` to `32`, written bare (`1.4`) or with its prefix (`f/1.4`); default `2.8`. Smaller is a wider aperture and more blur.
+- `--lb-focus <X,Y>`, the point to keep sharp, as two fractions of the photo's width and height from `0` to `1`: `0,0` is the top-left corner, `0.5,0.5` the centre (the default), `0.6,0.3` is 60% across and 30% down. To find one, hover over the subject in an image viewer that shows the cursor's pixel position and divide by the photo's width and height.
+
+**The f-number is the 35 mm full-frame equivalent**: the lens's own f-number times the camera's crop factor, so `--lb-f 1.4` gives the same look on a phone photo as on a camera's. A photo already has the blur of the aperture it was taken at, so only the difference is added: at or above the photo's own equivalent f-number (a phone photo is typically around f/6 to f/10 equivalent), the photo is **left unchanged**.
+
+How much blur, in one paragraph: a thin lens of the photo's 35 mm-equivalent focal length, focused at the depth found at the focus point, turns every other point into a disc whose size grows with its distance in front of or behind that depth (in `1/distance`), and shrinks as the f-number grows; the disc is measured against the full-frame diagonal, so it is the same fraction of the photo at any resolution. The blur the photo already has is subtracted in quadrature. The depth is sharpened along the photo's own edges so hair and leaves keep their outline.
+
+**The lens is read from the photo's EXIF**: the focal length, its 35 mm equivalent, the f-number and the sensor's focal-plane resolution. Where the focal length is missing, the depth model's own estimate of the field of view is used; where the f-number or the crop factor is missing, the photo is assumed to have been taken at **f/8 equivalent**. Which lens was used is recorded in the [log file](#log-file). EXIF is read from JPEG, TIFF, PNG, WebP, HEIF and the TIFF-based RAW formats (NEF, ARW, DNG, ORF, PEF and others); CR3 and RAF are not TIFF-based, so their lens is estimated or assumed.
+
+The depth is estimated once per photo (and per crop) and kept in the [run cache](#run-cache), so a second run with another `--lb-f` or `--lb-focus`, or with other enhancements before it, does not estimate it again. Where the EXIF alone shows that `--lb-f` is at or above the photo's own equivalent f-number, the photo is left unchanged without estimating the depth at all.
+
+```bash
+# Blur the background behind a subject 60% across and 30% down, at f/1.4
+opai portrait.jpg --lb --lb-f f/1.4 --lb-focus 0.6,0.3 -o portrait-f1.4.jpg
+
+# Denoise, upscale 2x, then blur at f/2.8 focused on the centre
+opai photo.jpg --dn --up --scale 2 --lb -o photo-blurred.png
+```
+
 ## Autopilot
 
 `--autopilot` (alias `--ap`) runs the same analysis as the GUI's Autopilot on each image, once it's loaded, and applies the enhancements that image calls for: denoise for visible grain, face recovery when there are faces to restore, colorization for a black & white photo, light adjustment for a badly exposed one, color balance for a color cast, sharpen for a blurred one, and an upscale for a small one. Different images in one batch can get different enhancements. They still run in the [fixed order](#processing-order).
@@ -350,7 +380,7 @@ Option: `--scale <FACTOR>`, the upscale factor, from `1.0` to `8.0`. Decimals ar
 opai photos --ap -o enhanced
 ```
 
-- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
+- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--lb`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--lb-f`, `--lb-focus`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
 - **Each enhancement uses its default strength or bias**: strength `100` for denoise and sharpen, bias `50` for light adjustment and color balance. An upscale runs at the factor the image's size calls for (see [Upscale](#upscale---upscale-model---up-model)); an image above 4 MP is not upscaled.
 - **An image that needs nothing is still written**, unchanged, in the format asked for. Its row ends with `Enhancements applied to` as any other.
 - **If face detection can't run** (for example, its model can't be downloaded), the image still gets the other enhancements, without face recovery, and the [log file](#log-file) records a warning.
@@ -394,7 +424,7 @@ OPAI_AP_SHARPEN=off OPAI_AP_FACE=off OPAI_AP_DENOISE=malmo opai photos --ap -o o
 The enhancements always run in this order, no matter what order you type the flags in:
 
 ```
-Denoise → Face Recovery → Colorization → Light Adjustment → Color Balance → Sharpen → Upscale
+Denoise → Face Recovery → Colorization → Light Adjustment → Color Balance → Sharpen → Upscale → Lens Blur
 ```
 
 So these two commands do exactly the same thing:
@@ -404,7 +434,7 @@ opai photo.jpg --up --dn -o out.png
 opai photo.jpg --dn --up -o out.png
 ```
 
-The order is designed so that every step works on the cleanest image possible. For example, noise is removed before faces are restored, and the image is upscaled last so the other models work at the original resolution.
+The order is designed so that every step works on the cleanest image possible. For example, noise is removed before faces are restored, and the image is upscaled after the corrections so they work at the original resolution. Lens Blur comes last of all: it is a creative choice rather than a correction, so every other step works on the sharp photo, and nothing after it sharpens or denoises the blur.
 
 ## Supported formats
 
@@ -523,7 +553,7 @@ And once the run ends, the view stays as it was last drawn, with the summary und
   - `🧨 [ 42%] Failed to enhance <path>` once it has failed;
   - `🧨 [ 42%] Stopped enhancing <path>` when you [stopped the run](#stopping-a-run) while it was being worked on.
 
-  `<enhancement>` is the enhancement's name as the GUI shows it: `Denoise`, `Face Recovery`, `Colorize`, `Light Adjust`, `Color Balance`, `Sharpen` or `Upscale`.
+  `<enhancement>` is the enhancement's name as the GUI shows it: `Denoise`, `Face Recovery`, `Colorize`, `Light Adjust`, `Color Balance`, `Sharpen`, `Upscale` or `Lens Blur` (which is also what the depth estimate it starts with is called).
 - **The summary** starts with a success line when at least one image was written. For exactly one image it names the file written, so a numbered name is visible: `✨ Image enhanced successfully; file saved at out_1.png`. For more, it names the output directory: `✨ 7 images enhanced successfully; files saved under out`. Then a `🧨` line gives the reason for each image that failed, in the order they ran, since a failure can have scrolled out of the list. Last comes the run's closing `🧨` line, if it didn't succeed (see [Exit codes](#exit-codes)).
 
 In color, the dependency's name and its percentage are bold white, the spinner magenta and the `✓` green. In the processor line, the processor is green and the quality yellow. The bar is drawn in a color gradient. In a `🖼️` row, the percentage (with its `%`) is blue, the enhancement's name (or the word `Enhancements`) magenta and the path cyan and underlined; a `🧨` row is red throughout. The success line is bold yellow.
@@ -606,8 +636,10 @@ What's in it that the terminal doesn't show:
 | `error: invalid value 'foo' for '--upscale [<MODEL>]'` followed by `[possible values: …]` | Unknown model name. Pick one from the list shown. |
 | `error: invalid value 'photo.jpg' for '--upscale [<MODEL>]'`                   | An input was placed after a flag. Put the `INPUT`s first. |
 | `error: invalid value '9' for '--scale <FACTOR>': the scale must be from 1.0 to 8.0` | `--scale` out of range or not a number. |
+| `error: invalid value '0.5' for '--lb-f <F>': the f-number must be from 1 to 32` | `--lb-f` out of range or not a number. |
+| `error: invalid value '1.2,0.5' for '--lb-focus <X,Y>': the focus point must be two fractions from 0 to 1; focus_x must be between 0 and 1 inclusive, but 1.2 was supplied` | Each of the two numbers must be from 0 to 1, separated by a comma, with no space after it unless quoted; the message names `focus_x` (across) or `focus_y` (down), whichever was refused, and a negative one is refused the same way. |
 | `error: invalid value '0.5' for '--la-bias <BIAS>': the bias must be a whole number from -100 to 100` | Strength/bias must be a whole number within range. |
-| `error: the following required arguments were not provided: --denoise [<MODEL>]` | A strength/bias/scale option was used without its enhancement flag (e.g. `--dn-str` without `--dn`, or `--scale` without `--up`). |
+| `error: the following required arguments were not provided: --denoise [<MODEL>]` | A strength/bias/scale option was used without its enhancement flag (e.g. `--dn-str` without `--dn`, `--scale` without `--up`, or `--lb-f` without `--lb`). |
 | `error: invalid value 'raw' for '--format <FORMAT>': "raw" is not a format; use preserve, …` | Unknown `--format`. Pick one from the list shown. |
 | `error: invalid value 'cuda' for '--processor <PROCESSOR>'` followed by `[possible values: …]` | That processor doesn't exist for your operating system (`coreml` exists only on macOS; `cuda` and `tensorrt` never on macOS). Pick one from the list shown. |
 | `🧨 cannot read missing.jpg: No such file or directory …`                      | A named input doesn't exist or can't be read. If it's a wildcard, it matched nothing. |
