@@ -49,7 +49,16 @@ pub(crate) fn descriptor_at(
     //
     // The base URL is an argument rather than a constant so the suite can point a real install at a local server,
     // exactly as `Dependency::from_release_at` takes one.
-    let files = listing.files_for(id.as_str());
+    let mut files = listing.files_for(id.as_str());
+
+    // Fork-only: an artifact the published listing does not name may be one this fork exports itself. See
+    // `manifest::FORK_NAME`.
+    let fork;
+    if files.is_empty() {
+        fork = Listing::read_fork(&app_dir.join(MODELS_DIR));
+        files = fork.as_ref().map(|fork| fork.files_for(id.as_str())).unwrap_or_default();
+    }
+
     if files.is_empty() {
         return None;
     }
