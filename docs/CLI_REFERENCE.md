@@ -210,7 +210,7 @@ Default models are in **bold**.
 | Color Balance    | `--color-balance`    | `--cb` | **rio**, saopaulo                              | `--cb-bias` (-100 to 100)  |
 | Sharpen          | `--sharpen`          | `--sh` | **moscow**, petersburg, novgorod               | `--sh-str` (1 to 300)      |
 | Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, osaka, saitama               | `--scale` (1.0 to 8.0)     |
-| Lens Blur        | `--lens-blur`        | `--lb` | **lisbon**                                     | `--lb-f` (1.0 to 32), `--lb-focus` (X,Y) |
+| Lens Blur        | `--lens-blur`        | `--lb` | **lisbon**                                     | `--lb-f` (1.0 to 32), `--lb-focus` (X,Y), `--lb-edges` (matte, depth) |
 
 The sections below explain each enhancement briefly. For more detail on when to pick each model, see the [Enhancements section of the README](../README.md#-enhancements).
 
@@ -355,6 +355,7 @@ Options:
 
 - `--lb-f <F>`, the f-number to simulate, from `1.0` to `32`, written bare (`1.4`) or with its prefix (`f/1.4`); default `2.8`. Smaller is a wider aperture and more blur.
 - `--lb-focus <X,Y>`, the point to keep sharp, as two fractions of the photo's width and height from `0` to `1`: `0,0` is the top-left corner, `0.5,0.5` the centre (the default), `0.6,0.3` is 60% across and 30% down. To find one, hover over the subject in an image viewer that shows the cursor's pixel position and divide by the photo's width and height.
+- `--lb-edges <EDGES>`, how the edge of the subject in focus is made: `matte` (the default) or `depth`. See below.
 
 **The f-number is the 35 mm full-frame equivalent**: the lens's own f-number times the camera's crop factor, so `--lb-f 1.4` gives the same look on a phone photo as on a camera's. A photo already has the blur of the aperture it was taken at, so only the difference is added: at or above the photo's own equivalent f-number (a phone photo is typically around f/6 to f/10 equivalent), the photo is **left unchanged**.
 
@@ -364,12 +365,19 @@ How much blur, in one paragraph: a thin lens of the photo's 35 mm-equivalent foc
 
 The depth is estimated once per photo (and per crop) and kept in the [run cache](#run-cache), so a second run with another `--lb-f` or `--lb-focus`, or with other enhancements before it, does not estimate it again. Where the EXIF alone shows that `--lb-f` is at or above the photo's own equivalent f-number, the photo is left unchanged without estimating the depth at all.
 
+**The subject's edges are matted** (`--lb-edges matte`, the default). A depth map cannot say that an edge pixel is half a strand of hair and half the street behind it, so on its own it either keeps such pixels sharp, background and all, or blurs the strand's colour into the background as a dark haze. Instead, the subject in focus (everything from a little nearer than the focus point to half as far again behind it) is matted by a second model, **Porto** (ViTMatte-S, 104 MB), over a band along its edge; the background is filled in behind the subject and blurred, and the subject is laid over it, so hair, fur and leaf edges stay sharp with the background between them blurred. Everything within that range of distances is kept sharp, as one subject. The matte costs about 15 s for a new focus point (a few seconds to load the model, then about 0.5 s per 1024-pixel tile on a Mac's GPU or 0.8 s on the CPU, 15 to 25 tiles on a 12 to 24 MP photo) and is kept in the run cache afterwards, so it is computed once per photo and focus point: focus points within about 2.5 percent of the same distance share one, another `--lb-f` reuses it, and another `--lb-focus` on something else mattes again. It is skipped where the blur is under 3 pixels everywhere. `--lb-edges depth` renders from the depth alone, as before matting existed, for comparison.
+
+Porto's graph is not yet published with the other models. Where it is not installed, the lens blur renders from the depth alone and the [log file](#log-file) notes it once; where it is installed and fails, the log file records a warning and that image's lens blur renders from the depth alone.
+
 ```bash
 # Blur the background behind a subject 60% across and 30% down, at f/1.4
 opai portrait.jpg --lb --lb-f f/1.4 --lb-focus 0.6,0.3 -o portrait-f1.4.jpg
 
 # Denoise, upscale 2x, then blur at f/2.8 focused on the centre
 opai photo.jpg --dn --up --scale 2 --lb -o photo-blurred.png
+
+# The same blur with the edges left to the depth alone, to compare
+opai portrait.jpg --lb --lb-f f/1.4 --lb-focus 0.6,0.3 --lb-edges depth -o portrait-f1.4-depth.jpg
 ```
 
 ## Autopilot
@@ -380,7 +388,7 @@ opai photo.jpg --dn --up --scale 2 --lb -o photo-blurred.png
 opai photos --ap -o enhanced
 ```
 
-- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--lb`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--lb-f`, `--lb-focus`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
+- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--lb`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--lb-f`, `--lb-focus`, `--lb-edges`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
 - **Each enhancement uses its default strength or bias**: strength `100` for denoise and sharpen, bias `50` for light adjustment and color balance. An upscale runs at the factor the image's size calls for (see [Upscale](#upscale---upscale-model---up-model)); an image above 4 MP is not upscaled.
 - **An image that needs nothing is still written**, unchanged, in the format asked for. Its row ends with `Enhancements applied to` as any other.
 - **If face detection can't run** (for example, its model can't be downloaded), the image still gets the other enhancements, without face recovery, and the [log file](#log-file) records a warning.
@@ -553,7 +561,7 @@ And once the run ends, the view stays as it was last drawn, with the summary und
   - `🧨 [ 42%] Failed to enhance <path>` once it has failed;
   - `🧨 [ 42%] Stopped enhancing <path>` when you [stopped the run](#stopping-a-run) while it was being worked on.
 
-  `<enhancement>` is the enhancement's name as the GUI shows it: `Denoise`, `Face Recovery`, `Colorize`, `Light Adjust`, `Color Balance`, `Sharpen`, `Upscale` or `Lens Blur` (which is also what the depth estimate it starts with is called).
+  `<enhancement>` is the enhancement's name as the GUI shows it: `Denoise`, `Face Recovery`, `Colorize`, `Light Adjust`, `Color Balance`, `Sharpen`, `Upscale` or `Lens Blur` (which is also what the depth estimate and the matte it starts with are called).
 - **The summary** starts with a success line when at least one image was written. For exactly one image it names the file written, so a numbered name is visible: `✨ Image enhanced successfully; file saved at out_1.png`. For more, it names the output directory: `✨ 7 images enhanced successfully; files saved under out`. Then a `🧨` line gives the reason for each image that failed, in the order they ran, since a failure can have scrolled out of the list. Last comes the run's closing `🧨` line, if it didn't succeed (see [Exit codes](#exit-codes)).
 
 In color, the dependency's name and its percentage are bold white, the spinner magenta and the `✓` green. In the processor line, the processor is green and the quality yellow. The bar is drawn in a color gradient. In a `🖼️` row, the percentage (with its `%`) is blue, the enhancement's name (or the word `Enhancements`) magenta and the path cyan and underlined; a `🧨` row is red throughout. The success line is bold yellow.
@@ -639,7 +647,7 @@ What's in it that the terminal doesn't show:
 | `error: invalid value '0.5' for '--lb-f <F>': the f-number must be from 1 to 32` | `--lb-f` out of range or not a number. |
 | `error: invalid value '1.2,0.5' for '--lb-focus <X,Y>': the focus point must be two fractions from 0 to 1; focus_x must be between 0 and 1 inclusive, but 1.2 was supplied` | Each of the two numbers must be from 0 to 1, separated by a comma, with no space after it unless quoted; the message names `focus_x` (across) or `focus_y` (down), whichever was refused, and a negative one is refused the same way. |
 | `error: invalid value '0.5' for '--la-bias <BIAS>': the bias must be a whole number from -100 to 100` | Strength/bias must be a whole number within range. |
-| `error: the following required arguments were not provided: --denoise [<MODEL>]` | A strength/bias/scale option was used without its enhancement flag (e.g. `--dn-str` without `--dn`, `--scale` without `--up`, or `--lb-f` without `--lb`). |
+| `error: the following required arguments were not provided: --denoise [<MODEL>]` | A strength/bias/scale option was used without its enhancement flag (e.g. `--dn-str` without `--dn`, `--scale` without `--up`, or `--lb-f` or `--lb-edges` without `--lb`). |
 | `error: invalid value 'raw' for '--format <FORMAT>': "raw" is not a format; use preserve, …` | Unknown `--format`. Pick one from the list shown. |
 | `error: invalid value 'cuda' for '--processor <PROCESSOR>'` followed by `[possible values: …]` | That processor doesn't exist for your operating system (`coreml` exists only on macOS; `cuda` and `tensorrt` never on macOS). Pick one from the list shown. |
 | `🧨 cannot read missing.jpg: No such file or directory …`                      | A named input doesn't exist or can't be read. If it's a wildcard, it matched nothing. |

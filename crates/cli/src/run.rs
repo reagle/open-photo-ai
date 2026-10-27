@@ -25,15 +25,16 @@
 //!                                  line where the view hid it
 //! ```
 //!
-//! A Ctrl-C stops the whole batch, keeping what was already written. The notes, the face report, what each image
-//! executed on and every path written go to the log, not to the terminal.
+//! A Ctrl-C stops the whole batch, keeping what was already written. The notes, the face and matte reports, what each
+//! image executed on and every path written go to the log, not to the terminal.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use opai::{
-    APP_NAME, CLI, CancellationToken, ChainFaces, Enhanced, ExecuteOptions, ExecutionProvider, FaceSelection,
-    InitOptions, OnInference, Opai, OutputDepth, Picture, ProcessOptions, ProviderVerdict, Suggestions,
+    APP_NAME, CLI, CancellationToken, ChainFaces, ChainMatte, Enhanced, ExecuteOptions, ExecutionProvider,
+    FaceSelection, InitOptions, OnInference, Opai, OutputDepth, Picture, ProcessOptions, ProviderVerdict, Suggestions,
     default_face_selection, image,
 };
 
@@ -408,8 +409,36 @@ async fn enhance(
             tracing::info!("{report}");
         }
     }
+    note_matte(&enhanced.matte, &MATTING_NOT_INSTALLED_NOTED);
 
     Ok(enhanced)
+}
+
+/// Whether this process has said that the matting model is not installed, which it says once however many images ask.
+static MATTING_NOT_INSTALLED_NOTED: AtomicBool = AtomicBool::new(false);
+
+/// Logs what matting the lens blurs' subjects came to: a failure as a warning, a model that is not installed once, as
+/// `noted` records, and quietly, since it is expected until the graph is published.
+fn note_matte(matte: &ChainMatte, noted: &AtomicBool) {
+    match matte_report(matte) {
+        Some(report) if matches!(matte, ChainMatte::Failed(_)) => tracing::warn!("{report}"),
+        Some(report) if !noted.swap(true, Ordering::Relaxed) => tracing::info!("{report}"),
+        _ => {}
+    }
+}
+
+/// What matting the lens blurs' subjects came to, as the log records it, or `None` where there is nothing to say: no
+/// lens blur asked, its subject was matted, or its blur was too small to need it.
+fn matte_report(matte: &ChainMatte) -> Option<String> {
+    match matte {
+        ChainMatte::NotAsked | ChainMatte::Matted | ChainMatte::Skipped => None,
+        ChainMatte::Unavailable(_) => Some(
+            "the matting model is not installed, so a lens blur's edges are rendered from the depth alone".to_string(),
+        ),
+        ChainMatte::Failed(error) => Some(format!(
+            "the lens blur's subject could not be matted, so its edges follow the depth alone: {error}"
+        )),
+    }
 }
 
 /// What the chain is asked for: `provider` at the source's depth, restoring the faces [`default_face_selection`] keeps,
@@ -533,6 +562,28 @@ mod tests {
 
         assert!(report.starts_with("face detection failed"), "{report}");
         assert!(report.ends_with(&expected), "{report}");
+    }
+
+    #[test]
+    fn a_failed_matte_warns_and_a_model_not_installed_is_noted_once() {
+        let failure = InferenceError::Shutdown;
+        let expected = failure.to_string();
+
+        let report = matte_report(&ChainMatte::Failed(failure)).expect("a failure is reported");
+        assert!(report.ends_with(&expected), "{report}");
+        for quiet in [ChainMatte::NotAsked, ChainMatte::Matted, ChainMatte::Skipped] {
+            assert_eq!(matte_report(&quiet), None, "{quiet:?}");
+        }
+
+        let noted = AtomicBool::new(false);
+        let (records, ()) = crate::test_support::recorded(|| {
+            for _ in 0..3 {
+                note_matte(&ChainMatte::Unavailable(InferenceError::Shutdown), &noted);
+            }
+            note_matte(&ChainMatte::Failed(InferenceError::Shutdown), &noted);
+        });
+        let levels: Vec<_> = records.events.iter().map(|record| record.level).collect();
+        assert_eq!(levels, [tracing::Level::INFO, tracing::Level::WARN]);
     }
 
     #[test]
