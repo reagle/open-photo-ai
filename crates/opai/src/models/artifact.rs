@@ -36,6 +36,8 @@ pub enum Family {
     Upscale,
     /// Generative restoration: a model that redraws detail rather than estimating it, optionally at a larger size.
     Restore,
+    /// A lens's depth of field, added to the photograph from a depth estimate.
+    LensBlur,
     /// A sensor's grain, put back where the chain smoothed the photograph's own away, or added on purpose.
     Grain,
 }
@@ -46,7 +48,7 @@ impl Family {
     /// The one list, so a family added later is covered by everything that iterates families rather than by whichever
     /// of them its author remembered to extend. Not the order the catalogue publishes — that one is a presentation
     /// decision and is pinned where it is made.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Detection,
         Self::Depth,
         Self::Remove,
@@ -58,10 +60,11 @@ impl Family {
         Self::Sharpen,
         Self::Upscale,
         Self::Restore,
+        Self::LensBlur,
         Self::Grain,
     ];
 
-    /// The ten families whose result is an image, in the order a chain applies them.
+    /// The eleven families whose result is an image, in the order a chain applies them.
     ///
     /// **The one order of a chain**, which [`Opai::process`](crate::Opai::process) puts every chain into before it
     /// runs and the catalogue publishes, so a front end draws a stack in the order it will actually run rather than
@@ -85,22 +88,26 @@ impl Family {
     ///   photograph's own resolution rather than at up to sixty-four times its pixels.
     /// - **Restore after everything faithful.** A generative restorer redraws detail, so everything faithful runs first
     ///   and hands it the best photograph there is to be conditioned on: denoised, with its faces, colour and light
-    ///   already corrected, and sharpened. What it draws is then the last word on detail, and no faithful model is asked
+    ///   already corrected, and sharpened. What it draws is then the last faithful word, and no faithful model is asked
     ///   to correct an invented texture. When it also enlarges, it resamples first and restores at the new size, so it
     ///   replaces an upscale rather than following one; a front end offers one or the other. At 1x it may follow an
     ///   upscale, and then restores the photograph at its final size.
-    /// - **Grain last of all**, a finishing step over the finished picture: it puts back the sensor noise every step
-    ///   before it may have smoothed away, measured against the photograph, so it must see what they made. Nothing after
-    ///   it would smooth the grain again, and it is drawn at the result's own pixels.
+    /// - **Lens blur after them.** It is a creative choice rather than a restoration: every faithful step runs on the
+    ///   sharp photograph, and nothing after it sharpens, denoises or restores the blur. Its radii are in output
+    ///   pixels, so it is as right after an upscale or an enlarging restore as without one.
+    /// - **Grain last of all**, a finishing step over the finished picture, the lens blur's included: a real
+    ///   photograph's blurred background still has its sensor's noise. It puts back the noise every step before it may
+    ///   have smoothed away, measured against the photograph, so it must see what they made; nothing after it would
+    ///   smooth the grain again, and it is drawn at the result's own pixels.
     ///
     /// The same order the application has always presented its enhancements in; it is [`Family::ALL`] without
     /// detection and depth, and derived from it so the two cannot drift apart.
-    pub const APPLY_ORDER: [Self; 10] = {
+    pub const APPLY_ORDER: [Self; 11] = {
         assert!(
             matches!(Self::ALL[0], Self::Detection) && matches!(Self::ALL[1], Self::Depth),
             "`ALL` must begin with the two families that are never applied"
         );
-        *Self::ALL.last_chunk::<10>().unwrap()
+        *Self::ALL.last_chunk::<11>().unwrap()
     };
 
     /// Where this family's operation sits in a chain — its index in [`Family::APPLY_ORDER`] — or `None` for detection
@@ -133,6 +140,7 @@ impl Family {
             Self::Sharpen => "sh",
             Self::Upscale => "up",
             Self::Restore => "rs",
+            Self::LensBlur => "lb",
             Self::Grain => "gr",
         }
     }
@@ -158,6 +166,7 @@ impl Family {
             Self::Sharpen => "Sharpen",
             Self::Upscale => "Upscale",
             Self::Restore => "Restore",
+            Self::LensBlur => "Lens Blur",
             Self::Grain => "Grain",
         }
     }
@@ -232,6 +241,7 @@ mod tests {
         assert_eq!(Family::Sharpen.prefix(), "sh");
         assert_eq!(Family::Upscale.prefix(), "up");
         assert_eq!(Family::Restore.prefix(), "rs");
+        assert_eq!(Family::LensBlur.prefix(), "lb");
         assert_eq!(Family::Grain.prefix(), "gr");
     }
 
@@ -247,14 +257,25 @@ mod tests {
     #[test]
     fn the_apply_order_restores_generatively_after_everything_faithful() {
         // A generative restorer is conditioned on what it is handed, so every faithful correction comes first, and
-        // nothing after it is asked to correct a texture it invented.
-        assert_eq!(Family::Restore.applied_at(), Some(Family::APPLY_ORDER.len() - 2));
-        assert_eq!(Family::Upscale.applied_at(), Some(Family::APPLY_ORDER.len() - 3));
+        // nothing faithful after it is asked to correct a texture it invented.
+        assert_eq!(Family::Restore.applied_at(), Some(Family::APPLY_ORDER.len() - 3));
+        assert_eq!(Family::Upscale.applied_at(), Some(Family::APPLY_ORDER.len() - 4));
+    }
+
+    #[test]
+    fn lens_blur_follows_upscale_and_restore_and_only_the_grain_follows_it() {
+        // A lens blur is a creative choice made on the finished photograph, so nothing faithful runs after it; its
+        // radii are in output pixels, so it follows an upscale or an enlarging restore rather than being enlarged by
+        // one.
+        assert_eq!(Family::LensBlur.applied_at(), Some(Family::APPLY_ORDER.len() - 2));
+        assert_eq!(Family::Restore.applied_at(), Some(Family::APPLY_ORDER.len() - 3));
+        assert_eq!(Family::Upscale.applied_at(), Some(Family::APPLY_ORDER.len() - 4));
     }
 
     #[test]
     fn the_apply_order_adds_grain_over_the_finished_picture() {
-        // Grain is measured against what every step before it made, and nothing after it would smooth it again.
+        // Grain is measured against what every step before it made, the lens blur's included, and nothing after it
+        // would smooth it again.
         assert_eq!(Family::APPLY_ORDER.last(), Some(&Family::Grain));
     }
 

@@ -89,6 +89,13 @@ pub enum SelectionError {
         /// The codename, as the catalogue spells it.
         codename: &'static str,
     },
+
+    /// An enhancement that runs no model of its own — a lens blur, driven by a depth estimate — named explicitly.
+    #[error("{codename} runs no model of its own, and this harness measures one model at a time")]
+    NoModel {
+        /// The codename, as the catalogue spells it.
+        codename: &'static str,
+    },
 }
 
 /// The models `options` selects.
@@ -133,8 +140,9 @@ fn every_published(options: &Options) -> Result<Vec<Selected>, SelectionError> {
     for entry in catalogue() {
         // Dropped for the same reason and on the same terms as an unpublished precision below: this harness measures
         // the enhancement chain, a caller who named nothing did not ask for a detection or a depth run, and naming one
-        // explicitly reports `SelectionError::NotAnEnhancement`.
-        if matches!(entry.family, Family::Detection | Family::Depth | Family::Remove) {
+        // explicitly reports `SelectionError::NotAnEnhancement`. A lens blur runs no model of its own: what it costs is
+        // its depth estimate, measured as depth, and a render. A removal needs a mask this harness has none of.
+        if matches!(entry.family, Family::Detection | Family::Depth | Family::LensBlur | Family::Remove) {
             continue;
         }
 
@@ -180,6 +188,10 @@ fn select(entry: &FamilyEntry, variant: &VariantEntry, options: &Options) -> Res
 
     if entry.family == Family::Remove {
         return Err(SelectionError::NeedsMask { codename: variant.codename });
+    }
+
+    if entry.family == Family::LensBlur {
+        return Err(SelectionError::NoModel { codename: variant.codename });
     }
 
     let operation = build(variant, precision, options)?
@@ -381,7 +393,7 @@ mod tests {
 
                 // Detection and depth are not enhancements and a removal needs a mask, so none reaches a selection at
                 // all, and there is no row of any to compare against.
-                if matches!(entry.family, Family::Detection | Family::Depth | Family::Remove) {
+                if matches!(entry.family, Family::Detection | Family::Depth | Family::LensBlur | Family::Remove) {
                     continue;
                 }
 
@@ -509,7 +521,9 @@ mod tests {
     fn published_at(precision: Precision) -> Vec<&'static str> {
         catalogue()
             .iter()
-            .filter(|entry| !matches!(entry.family, Family::Detection | Family::Depth | Family::Remove))
+            .filter(|entry| {
+                !matches!(entry.family, Family::Detection | Family::Depth | Family::LensBlur | Family::Remove)
+            })
             .flat_map(|entry| &entry.variants)
             .filter(|variant| variant.precisions.contains(&precision))
             .map(|variant| variant.codename)
@@ -581,9 +595,15 @@ mod tests {
 
     #[test]
     fn a_name_is_resolved_without_a_family_qualifier_and_case_and_space_insensitively() {
-        // No codename is published by two families, which is what makes the bare name unambiguous — asserted here
-        // rather than assumed.
-        let mut seen: Vec<&str> = catalogue().iter().flat_map(|entry| &entry.variants).map(|v| v.codename).collect();
+        // No codename is published by two families this harness measures, which is what makes the bare name
+        // unambiguous — asserted here rather than assumed. A lens blur is named for the depth model it is driven by,
+        // and is never measured.
+        let mut seen: Vec<&str> = catalogue()
+            .iter()
+            .filter(|entry| entry.family != Family::LensBlur)
+            .flat_map(|entry| &entry.variants)
+            .map(|v| v.codename)
+            .collect();
         let published = seen.len();
         seen.sort_unstable();
         seen.dedup();

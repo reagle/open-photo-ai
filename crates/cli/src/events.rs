@@ -112,6 +112,7 @@ fn family_name(family: Family) -> &'static str {
         Family::Sharpen => "sharpen",
         Family::Upscale => "upscale",
         Family::Restore => "restore",
+        Family::LensBlur => "lens_blur",
         Family::Grain => "grain",
     }
 }
@@ -202,6 +203,7 @@ mod tests {
             Family::Sharpen,
             Family::Upscale,
             Family::Restore,
+            Family::LensBlur,
             Family::Remove,
             Family::Grain,
         ]
@@ -221,6 +223,7 @@ mod tests {
                 "sharpen",
                 "upscale",
                 "restore",
+                "lens_blur",
                 "remove",
                 "grain"
             ]
