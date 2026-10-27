@@ -231,7 +231,7 @@ const MASK: VariantEntry["parameters"] = [{ name: "mask", kind: "mask" }];
  * starts at f/2.8 and the focus at the middle, which a new operation overrides with the photograph's own aperture.
  */
 const LENS_BLUR: VariantEntry["parameters"] = [
-    { name: "f_number", kind: "range", min: 1, max: 32, default: 2.8 },
+    { name: "f_number", kind: "range", min: 0.95, max: 32, default: 2.8 },
     { name: "focus_x", kind: "range", min: 0, max: 1, default: 0.5 },
     { name: "focus_y", kind: "range", min: 0, max: 1, default: 0.5 },
 ];
