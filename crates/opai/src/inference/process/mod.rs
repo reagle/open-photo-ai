@@ -42,7 +42,7 @@ use super::handover::Handover;
 use super::progress::{ChainProgress, OnInference};
 use crate::cache::RunCache;
 use crate::error::InferenceError;
-use crate::image::Picture;
+use crate::image::{GainMap, Picture};
 use crate::models::{Depth, DepthMap, Detection, Faces, Operation};
 use crate::pipeline::{Backend, Shared};
 use crate::providers::ExecutionProvider;
@@ -256,6 +256,7 @@ where
     let outcome = run(
         backend,
         source.shared_pixels(),
+        source.shared_gain_map(),
         &planned,
         options.provider,
         depth,
@@ -301,7 +302,7 @@ where
         },
     });
 
-    let (pixels, providers) = outcome.map_err(|failure| failure.error)?;
+    let (pixels, gain_map, providers) = outcome.map_err(|failure| failure.error)?;
 
     // The path is the source's: it says where the pixels came from, never where they are going, so a result carries
     // the photograph it was made from and writing it is still a destination the caller names.
@@ -313,8 +314,11 @@ where
     //
     // Built with `derive`, so the result keeps the source's metadata — its colour profile — whether the pixels were
     // computed just now or served from the run cache, which stores pixels only: the profile is re-attached here from
-    // the source on every path, and the source identity already covers its bytes.
-    let picture = source.derive(pixels, identity_after(source.identity(), operations, depth));
+    // the source on every path, and the source identity already covers its bytes. The gain map is the one the last step
+    // left: the source's own, shared, unless a step rewrote it, from the store or just now.
+    let picture = source
+        .derive(pixels, identity_after(source.identity(), operations, depth))
+        .with_shared_gain_map(gain_map);
 
     Ok(Enhanced { picture, providers, faces })
 }
@@ -344,7 +348,14 @@ impl From<InferenceError> for RunFailure {
 }
 
 /// Runs `source` through the `planned` chain in order, each operation over the result of the one before it, at
-/// `depth`.
+/// `depth`, and carries `gain_map`, the source's, through it.
+///
+/// **The gain map is handed back as each step leaves it**: shared and unchanged across a step that does not rewrite it
+/// ([`ImagePipeline::run_with_gain_map`](crate::pipeline::ImagePipeline::run_with_gain_map) answers `None`), and
+/// replaced by the one a step that does computed. A rewrite that fails drops the gain map from the result, with a
+/// warning, and the run goes on. Either is stored beside the step's pixels under `<step key>|gm` — the gain map's
+/// pixels, or the reason it was dropped — and a hit does as the run did; a step that changes gain maps whose pixels are
+/// stored without either is run again.
 ///
 /// `depth` is already resolved — [`process`] resolves it against the loaded image, once, and hands the answer both to
 /// this and to the identity the result carries.
@@ -375,17 +386,18 @@ impl From<InferenceError> for RunFailure {
 pub(crate) async fn run<B: Backend>(
     backend: &B,
     source: Arc<DynamicImage>,
+    gain_map: Option<Arc<GainMap>>,
     planned: &[Planned<B>],
     provider: ExecutionProvider,
     depth: ChannelDepth,
     on_progress: Option<OnInference>,
     cancel: &CancellationToken,
     cache: Option<&RunCache>,
-) -> Result<(Arc<DynamicImage>, ProviderReport), RunFailure> {
+) -> Result<(Arc<DynamicImage>, Option<Arc<GainMap>>, ProviderReport), RunFailure> {
     if planned.is_empty() {
         // No session, so nothing to report having run on — which is a different answer from "it ran on what was
         // asked for", and is exactly the distinction `ProviderReport::actual` exists to keep.
-        return Ok((source, ProviderReport::new(provider, [])));
+        return Ok((source, gain_map, ProviderReport::new(provider, [])));
     }
 
     let progress = ChainProgress::new(on_progress, planned.len());
@@ -398,6 +410,10 @@ pub(crate) async fn run<B: Backend>(
     // twice takes two handles on one entry, which is correct — the count goes up twice and down twice.
     let mut held: Vec<SessionHandle<B::Session>> = Vec::new();
     let mut current = source;
+    // The gain map as the steps so far left it, and as it stood where the run of hits being walked past began, which a
+    // rewind returns to.
+    let mut current_map = gain_map;
+    let mut map_before_skip = current_map.clone();
 
     // The bytes of the newest cached prefix walked past, not yet decoded, and the index the run of hits carrying them
     // began at. A hit supersedes the one before it — each stored entry is the whole picture at that point in the
@@ -440,7 +456,22 @@ pub(crate) async fn run<B: Backend>(
             let stored = spawn_blocking::<_, InferenceError, _>(move || reading.get_bytes(&wanted)).await?;
             metrics::cache_lookup(metrics::STEP, stored.is_some());
 
-            if let Some(bytes) = stored {
+            // A step that changes the gain map is served only with what it made of it: its pixels alone are half a
+            // result, and the gain map the step was handed would be untrue of them. Read and decoded on the way past,
+            // since the next step's question is asked of it.
+            let rewritten = match (&stored, &current_map) {
+                (Some(_), Some(map)) if operation.pipeline.rewrites_gain_map(map) => {
+                    let (reading, wanted, map) = (cache.clone(), gain_map_key(key), Arc::clone(map));
+                    let read = spawn_blocking::<_, InferenceError, _>(move || stored_gain_map(&reading, &wanted, &map))
+                        .await?;
+                    Some(read)
+                }
+                _ => None,
+            };
+
+            if let Some(bytes) = stored
+                && rewritten.as_ref().is_none_or(Option::is_some)
+            {
                 // `debug`, because it repeats once per operation and a user dragging a slider would otherwise fill
                 // their file with it. See this module's header for the rule.
                 tracing::debug!(operation = %operation.operation().cache_tag(), index, key, "step served from the store");
@@ -456,12 +487,36 @@ pub(crate) async fn run<B: Backend>(
 
                 if pending.is_none() {
                     skipped_from = index;
+                    map_before_skip.clone_from(&current_map);
+                }
+                match rewritten {
+                    Some(Some(StoredGainMap::Rewritten(map))) => current_map = Some(map),
+                    // Warned about again, as the run that stored it did: the result in hand has lost its gain map.
+                    Some(Some(StoredGainMap::Dropped(error))) => {
+                        tracing::warn!(
+                            operation = %operation.operation().cache_tag(),
+                            index,
+                            %error,
+                            "HDR gain map dropped: it could not be carried"
+                        );
+                        current_map = None;
+                    }
+                    _ => {}
                 }
                 // Replaces the previous prefix's bytes, which are dropped undecoded: they describe the same picture
                 // at an earlier point, and nothing between here and the next miss reads them.
                 pending = Some(bytes);
                 index += 1;
                 continue;
+            }
+
+            if matches!(rewritten, Some(None)) {
+                tracing::debug!(
+                    operation = %operation.operation().cache_tag(),
+                    index,
+                    key,
+                    "what a stored step made of the gain map is not stored beside it; running the step again"
+                );
             }
         }
 
@@ -487,6 +542,7 @@ pub(crate) async fn run<B: Backend>(
 
                     distrust_before = index;
                     index = skipped_from;
+                    current_map.clone_from(&map_before_skip);
                     continue;
                 }
             }
@@ -526,6 +582,7 @@ pub(crate) async fn run<B: Backend>(
                 let pipeline = Shared::clone(&operation.pipeline);
 
                 let input = Arc::clone(&current);
+                let map = current_map.clone();
                 let cancelled = cancel.clone();
                 let reported = Arc::clone(&reporter);
                 let wanted = progress.wanted();
@@ -549,9 +606,18 @@ pub(crate) async fn run<B: Backend>(
                     let report = wanted.then_some(&report as &dyn Fn(f64));
                     let stopped = || cancelled.is_cancelled();
 
-                    // One call, whatever the model is. Shared from here on, so the store's writer and the rest of the
-                    // chain hold one buffer rather than two.
-                    let produced = pipeline.run(&input, &sessions, depth, report, &stopped).map(Arc::new);
+                    // One call, whatever the model is, carrying the gain map where there is one. Shared from here on,
+                    // so the store's writer and the rest of the chain hold one buffer rather than two. A stop is the
+                    // step's wherever it came from; any other failure of the gain map is the gain map's alone, settled
+                    // below.
+                    let produced = match &map {
+                        Some(map) => pipeline.run_with_gain_map(&input, map, &sessions, depth, report, &stopped),
+                        None => pipeline.run(&input, &sessions, depth, report, &stopped).map(|image| (image, None)),
+                    };
+                    let produced = match produced {
+                        Ok((_, Some(Err(error)))) if error.stop_reason().is_some() => Err(error),
+                        produced => produced.map(|(image, rewritten)| (Arc::new(image), rewritten)),
+                    };
 
                     // Only what actually succeeded — a cancelled or failed operation arrives as an `Err`, so nothing
                     // needs to check the token a second time — and the result is handed back either way: a write that
@@ -563,8 +629,15 @@ pub(crate) async fn run<B: Backend>(
                     // milliseconds to seconds, and nothing in this run needs it done: the next step and the caller have
                     // the pixels. A later read of this key waits for the write rather than missing it — see
                     // `RunCache::put_later`.
-                    if let (Ok(image), Some((cache, key))) = (&produced, &writing) {
+                    if let (Ok((image, rewritten)), Some((cache, key))) = (&produced, &writing) {
                         cache.put_later(key, Arc::clone(image));
+                        match rewritten {
+                            Some(Ok(map)) => cache.put_later(&gain_map_key(key), map.shared_pixels()),
+                            // Stored too, as its reason, so a hit drops the gain map as this run did rather than
+                            // running the step again to fail again.
+                            Some(Err(error)) => cache.put_value(&gain_map_key(key), &error.to_string()),
+                            None => {}
+                        }
                     }
 
                     (sessions, produced)
@@ -576,7 +649,7 @@ pub(crate) async fn run<B: Backend>(
                     let (sessions, produced) = ran.await?;
                     let ran = running.elapsed();
 
-                    Ok((sessions, produced.map(|image| (image, ran))))
+                    Ok((sessions, produced.map(|(image, rewritten)| (image, rewritten, ran))))
                 }
             })
             .instrument(step.clone())
@@ -589,7 +662,7 @@ pub(crate) async fn run<B: Backend>(
         // Not recorded here: `process`'s closing record names the step, and a second record would be a second account
         // of one failure. Not the operations that had already succeeded either: a caller given a partial result has
         // no way to tell it from a finished enhancement and would show it to a user as one.
-        let (produced, ran) = produced.map_err(in_step)?;
+        let (produced, rewritten, ran) = produced.map_err(in_step)?;
 
         // The counterpart of the hit above, at the same level and with the same fields, so one `grep` over an
         // operation's id returns every step of every run that touched it and says which way each went.
@@ -601,6 +674,22 @@ pub(crate) async fn run<B: Backend>(
         metrics::STEP_DURATION.record_with_tags(ran.as_secs_f64(), &[("model", &model), ("provider", ran_on)]);
 
         current = produced;
+        match rewritten {
+            None => {}
+            Some(Ok(map)) => current_map = Some(Arc::new(map)),
+            // The wording an export uses for a gain map it could not write, since that is what the user meets next.
+            Some(Err(error)) => {
+                step.in_scope(|| {
+                    tracing::warn!(
+                        operation = %operation.operation().cache_tag(),
+                        index,
+                        %error,
+                        "HDR gain map dropped: it could not be carried"
+                    );
+                });
+                current_map = None;
+            }
+        }
         index += 1;
     }
 
@@ -612,7 +701,33 @@ pub(crate) async fn run<B: Backend>(
     // not only the first one whose provider differed from what was asked for.
     let report = ProviderReport::new(provider, held.iter().map(SessionHandle::provider));
 
-    Ok((current, report))
+    Ok((current, current_map, report))
+}
+
+/// What a step that changes the gain map made of it, as stored beside the step's pixels.
+enum StoredGainMap {
+    /// Rewritten: these pixels, under the parameters of the gain map the step was handed.
+    Rewritten(Arc<GainMap>),
+    /// Dropped, for this reason.
+    Dropped(String),
+}
+
+/// What is stored under `key` of the gain map `map`, as a step changed it, or `None` on any of the ways a read misses.
+///
+/// A drop is stored as its reason, in JSON, which no PNG reads as; anything else is the rewritten gain map's pixels.
+fn stored_gain_map(cache: &RunCache, key: &str, map: &GainMap) -> Option<StoredGainMap> {
+    let bytes = cache.get_bytes(key)?;
+    if let Ok(reason) = serde_json::from_slice::<String>(&bytes) {
+        return Some(StoredGainMap::Dropped(reason));
+    }
+    let pixels = RunCache::decode(&bytes)?;
+    Some(StoredGainMap::Rewritten(Arc::new(map.rewritten(pixels))))
+}
+
+/// The key what a step made of the gain map is stored under, beside its pixels' `key`. `|` is in no identity, which is
+/// lowercase hexadecimal, so it cannot name another step's entry.
+fn gain_map_key(key: &str) -> String {
+    format!("{key}|gm")
 }
 
 /// The provider a step's sessions ran on, as its duration is tagged: one provider, or `mixed` where its graphs were

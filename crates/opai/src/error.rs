@@ -472,6 +472,17 @@ pub enum InferenceError {
         scale: f64,
     },
 
+    // Never the run's failure: the chain drops the gain map it names, with a warning, and the photograph is still
+    // enhanced. A variant rather than a string in `Run`, so the record names the operation and the reason together.
+    /// An enhancement that moves light around the frame could not rewrite the HDR gain map the picture carries.
+    #[error("{operation} could not rewrite the HDR gain map: {reason}")]
+    GainMap {
+        /// The operation that could not rewrite it, as a user would see it named.
+        operation: String,
+        /// Why, worded to follow "could not rewrite the HDR gain map:".
+        reason: String,
+    },
+
     /// The caller asked the run to stop, and it stopped between tiles.
     ///
     /// **Not [`Shutdown`](Self::Shutdown).** One is somebody closing a dialog and the other is a process on its way
@@ -525,6 +536,7 @@ impl InferenceError {
             Self::ColourMapping { .. } => "colour_mapping",
             Self::Unmeasurable { .. } => "unmeasurable",
             Self::NoPasses { .. } => "no_passes",
+            Self::GainMap { .. } => "gain_map",
             Self::Cancelled => "cancelled",
             Self::Shutdown => "shutdown",
         }
@@ -938,6 +950,10 @@ mod tests {
             (InferenceError::ColourMapping { operation: "Rio".to_string(), column: 2 }, "colour_mapping"),
             (InferenceError::Unmeasurable { operation: "Lisbon".to_string(), valid: 3 }, "unmeasurable"),
             (InferenceError::NoPasses { operation: "Kyoto".to_string(), scale: 3.0 }, "no_passes"),
+            (
+                InferenceError::GainMap { operation: "Lens Blur".to_string(), reason: "why".to_string() },
+                "gain_map",
+            ),
             (InferenceError::Cancelled, "cancelled"),
             (InferenceError::Shutdown, "shutdown"),
         ];
@@ -963,6 +979,7 @@ mod tests {
             InferenceError::ColourMapping { operation: "Rio".to_string(), column: 2 },
             InferenceError::Unmeasurable { operation: "Lisbon".to_string(), valid: 3 },
             InferenceError::NoPasses { operation: "Kyoto".to_string(), scale: 3.0 },
+            InferenceError::GainMap { operation: "Lens Blur".to_string(), reason: "why".to_string() },
         ];
         for failure in failures {
             assert_eq!(failure.stop_reason(), None, "{failure:?} was read as a stop");
