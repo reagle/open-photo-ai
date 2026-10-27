@@ -33,7 +33,7 @@ use crate::inference::progress::{INSTALL_SHARE, InferenceProgress, Stage};
 use crate::inference::test_support::{assert_never_decreases, recording};
 use crate::logging::{self, field, records};
 use crate::models::ArtifactId;
-use crate::models::{FloatPrecision, OsakaPrecision, Scale, Upscale, UpscaleVariant};
+use crate::models::{FloatPrecision, OsakaPrecision, Restore, Scale, Strength, Upscale, UpscaleVariant};
 use crate::pipeline::session::GraphShape;
 use crate::progress::{Dependency, Phase, Progress};
 use crate::providers::profile::EpProfile;
@@ -538,6 +538,11 @@ async fn cached_enhancement(
 /// A Kyoto operation at `scale`, which is the one operation this slice serves.
 fn kyoto(scale: f64) -> Operation {
     Operation::Upscale(Upscale::new(UpscaleVariant::Kyoto(FloatPrecision::Fp16), Scale::new(scale).unwrap()))
+}
+
+/// Osaka at `precision`, restoring at `scale` and keeping all of its output.
+fn osaka(precision: OsakaPrecision, scale: f64) -> Operation {
+    Restore::osaka(precision, Scale::new(scale).unwrap(), Strength::clamped(1.0))
 }
 
 /// An upscale operation on `variant` at 4x, for the tests that vary the variant rather than the scale.

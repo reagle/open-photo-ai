@@ -14,6 +14,10 @@ import { EnhancementList } from "./EnhancementList";
 /** What `lens_info` answers, which a case sets before it opens the panel; absent, the question is left unanswered. */
 let lens: LensInfo | Error | undefined;
 
+// The real `platform()` reads a global the plugin's init script installs, which jsdom has none of - and
+// the shortcut hints ask it, to write their keys as this platform does.
+vi.mock("@/ipc/os", () => ({ isMacOs: vi.fn(() => false), isWindows: vi.fn(() => false) }));
+
 vi.mock("@tauri-apps/api/core", () => ({
     invoke: vi.fn((command: string) => {
         if (command !== "lens_info") return Promise.resolve(CATALOGUE);

@@ -35,6 +35,10 @@
             "export": {
                 "title": "Exportação",
                 "description": "Qualidade para os formatos com perdas. Valores menores geram arquivos menores; as escalas não são comparáveis entre formatos."
+            },
+            "keyboard": {
+                "title": "Teclado",
+                "description": "As teclas para aumentar o zoom, ajustar e mostrar o original. As alterações se aplicam ao clicar em Salvar."
             }
         },
         "app": {
@@ -109,7 +113,63 @@
             },
             "autopilotLabel": "Piloto automático: {{name}}"
         },
-        "reset": "Restaurar padrões"
+        "reset": "Restaurar padrões",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Aumentar zoom",
+                "zoomOut": "Reduzir zoom",
+                "fit": "Ajustar à janela",
+                "actualPixels": "Pixels reais (100%)",
+                "toggleZoom": "Alternar entre ajustado e pixels reais",
+                "panLeft": "Mover para a esquerda",
+                "panRight": "Mover para a direita",
+                "panUp": "Mover para cima",
+                "panDown": "Mover para baixo",
+                "showOriginal": "Mostrar original enquanto pressionado",
+                "cyclePreview": "Alternar visualização de comparação",
+                "toggleDrawer": "Mostrar ou ocultar imagens",
+                "previousImage": "Imagem anterior",
+                "nextImage": "Próxima imagem",
+                "revealImage": "Mostrar imagem no gerenciador de arquivos",
+                "toggleAutopilot": "Ativar ou desativar o piloto automático",
+                "addEnhancement": "Adicionar melhoria",
+                "removeEnhancement": "Remover a melhoria selecionada",
+                "openOptions1": "Opções da melhoria 1",
+                "openOptions2": "Opções da melhoria 2",
+                "openOptions3": "Opções da melhoria 3",
+                "openOptions4": "Opções da melhoria 4",
+                "openOptions5": "Opções da melhoria 5",
+                "openOptions6": "Opções da melhoria 6",
+                "openOptions7": "Opções da melhoria 7",
+                "openOptions8": "Opções da melhoria 8",
+                "cropRotate": "Recortar/Girar",
+                "showShortcuts": "Mostrar atalhos de teclado"
+            },
+            "add": "Adicionar atalho",
+            "addLabel": "Adicionar atalho para {{action}}",
+            "recording": "Pressione as teclas…",
+            "prompt": "Pressione as teclas para {{action}}, ou Escape para cancelar.",
+            "none": "Sem atalho",
+            "remove": "Remover {{binding}}, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} é reservado para navegar na janela.",
+                "system": "{{binding}} é usado pelo sistema.",
+                "application": "{{binding}} é usado pelo aplicativo."
+            },
+            "conflict": "{{binding}} já é usado por {{action}}.",
+            "useHere": "Usar aqui em vez disso",
+            "space": "Espaço",
+            "appActions": {
+                "open": "Abrir imagens",
+                "export": "Exportar imagens",
+                "settings": "Abrir Configurações",
+                "closeImage": "Fechar imagem",
+                "closeAll": "Fechar todas as imagens",
+                "quit": "Sair"
+            },
+            "application": "Aplicativo",
+            "applicationHint": "Estas teclas são fixas e não podem ser alteradas."
+        }
     },
     "navbar": {
         "about": "Sobre",
@@ -251,6 +311,7 @@
             "pipelineOrder": "na ordem de processamento",
             "queued": "Na fila",
             "analysing": "Analisando",
+            "preparing": "Carregando",
             "enhancing": "Melhorando",
             "writing": "Gravando",
             "done": "Concluído",
@@ -356,8 +417,8 @@
         "faceRecovery": {
             "name": "Recuperação de rostos",
             "models": {
-                "athens": "Use este modelo quando a fidelidade à identidade é o mais importante. Ele preserva a estrutura facial enquanto restaura detalhes, mesmo em rostos muito degradados. Melhor quando você quer restaurar sem mudar a pessoa.",
-                "santorini": "Use este modelo quando você quer uma melhoria agressiva e rápida e pode tolerar mudanças na identidade. Ele produz rostos nítidos e agradáveis em degradação moderada, mas pode inventar traços e alterar a identidade em imagens de qualidade muito baixa."
+                "athens": "Use este modelo quando a fidelidade à identidade é o mais importante. Ele preserva a estrutura facial enquanto restaura detalhes, mesmo em rostos muito degradados. Melhor quando você quer restaurar sem mudar a pessoa. Com Restauração, normalmente não é necessário.",
+                "santorini": "Use este modelo quando você quer uma melhoria agressiva e rápida e pode tolerar mudanças na identidade. Ele produz rostos nítidos e agradáveis em degradação moderada, mas pode inventar traços e alterar a identidade em imagens de qualidade muito baixa. Com Restauração, normalmente não é necessário."
             }
         },
         "colorization": {
@@ -395,8 +456,17 @@
             "models": {
                 "tokyo": "Use este modelo quando você quer uma ampliação natural, sem exageros. Ele foca em preservar a aparência original e as estruturas finas em vez de \"inventar\" novos detalhes, sendo ideal quando realismo e fidelidade importam mais do que nitidez.",
                 "kyoto": "Use este modelo em fotos do mundo real (pessoas, paisagens, produtos). Ele é excelente em restaurar detalhes enquanto lida com ruído, desfoque e artefatos de compressão. Ideal para uso prático, quando as imagens são imperfeitas e você quer resultados agradáveis e robustos rapidamente.",
-                "saitama": "Use este modelo para desenhos, arte de linha, quadrinhos e ilustrações digitais. Ele preserva linhas limpas, cores chapadas e sombreamento estilizado sem introduzir texturas fotográficas. Melhor quando bordas nítidas e consistência de estilo importam mais do que realismo.",
-                "osaka": "Use este modelo quando você quer a melhor qualidade de ampliação possível. Ele reconstrói o detalhe em vez de apenas realçá-lo, e é o que vai mais longe em fotos suaves ou muito comprimidas. No entanto, é lento e precisa de uma GPU potente para rodar bem."
+                "saitama": "Use este modelo para desenhos, arte de linha, quadrinhos e ilustrações digitais. Ele preserva linhas limpas, cores chapadas e sombreamento estilizado sem introduzir texturas fotográficas. Melhor quando bordas nítidas e consistência de estilo importam mais do que realismo."
+            },
+            "suspended": "A restauração está ampliando esta foto"
+        },
+        "restore": {
+            "name": "Restauração",
+            "size": "Tamanho",
+            "generative": "Generativo: redesenha os detalhes e pode alterar rostos, texturas e letras.",
+            "models": {
+                "kazan": "Use este modelo quando o desfoque é forte demais para Nitidez — p. ex., um rosto fora de foco ou uma foto de uma câmera antiga que nunca foi bem nítida. Ele redesenha detalhes plausíveis em vez de recuperá-los, então pode alterar rostos, texturas e textos pequenos; reduza a intensidade se o resultado parecer inventado. É lento e um download grande.",
+                "osaka": "Use este modelo quando você quer a restauração mais completa possível. Ele reconstrói o detalhe em vez de apenas realçá-lo, e é o que vai mais longe em fotos suaves ou muito comprimidas. No entanto, é lento e precisa de uma GPU potente para rodar bem."
             }
         },
         "lensBlur": {
@@ -437,6 +507,7 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
         "infoLensBlur": "{{name}}, desfoque {{amount}}"
     },
     "preview": {
@@ -451,16 +522,22 @@
         },
         "progress": {
             "downloading": "Baixando {{percent}}%",
-            "removal": "Remover",
-            "denoise": "Redução de ruído",
-            "faceRecovery": "Recup. de rostos",
-            "colorization": "Colorização",
-            "lightAdjustment": "Ajuste de luz",
-            "colorBalance": "Equi. de cores",
-            "upscale": "Ampliação",
-            "sharpen": "Nitidez",
-            "lensBlur": "Desfoque",
-            "enhancing": "Melhorando"
+            "removal": "Removendo",
+            "denoise": "Reduzindo ruído",
+            "faceRecovery": "Recuperando rostos",
+            "colorization": "Colorizando",
+            "lightAdjustment": "Ajustando luz",
+            "colorBalance": "Equilibrando cores",
+            "upscale": "Ampliando",
+            "sharpen": "Aumentando nitidez",
+            "restore": "Restaurando",
+            "lensBlur": "Desfocando",
+            "enhancing": "Melhorando",
+            "compiling": "Compilando o modelo {{model}}",
+            "loading": "Carregando o modelo {{model}}",
+            "firstUse": "Só no primeiro uso, pode levar alguns minutos",
+            "firstUseAbout_one": "Só no primeiro uso, pode levar cerca de {{count}} minuto",
+            "firstUseAbout_other": "Só no primeiro uso, pode levar cerca de {{count}} minutos"
         }
     },
     "menu": {
@@ -471,6 +548,34 @@
             "showIn": "Mostrar no gerenciador de arquivos",
             "showIn_darwin": "Mostrar no Finder",
             "showIn_windows": "Mostrar no Explorador de Arquivos"
+        },
+        "bar": {
+            "about": "Sobre {{name}}",
+            "services": "Serviços",
+            "hide": "Ocultar {{name}}",
+            "hideOthers": "Ocultar Outros",
+            "showAll": "Mostrar Tudo",
+            "quit": "Encerrar {{name}}",
+            "file": "Arquivo",
+            "open": "Abrir…",
+            "export": "Exportar…",
+            "closeImage": "Fechar imagem",
+            "closeAll": "Fechar todas as imagens",
+            "settings": "Configurações…",
+            "edit": "Editar",
+            "undo": "Desfazer",
+            "redo": "Refazer",
+            "cut": "Recortar",
+            "copy": "Copiar",
+            "paste": "Colar",
+            "selectAll": "Selecionar Tudo",
+            "view": "Visualizar",
+            "fullscreen": "Entrar em Tela Cheia",
+            "window": "Janela",
+            "minimize": "Minimizar",
+            "zoom": "Zoom",
+            "bringAllToFront": "Trazer Tudo para a Frente",
+            "help": "Ajuda"
         }
     },
     "errors": {
@@ -485,6 +590,25 @@
             "title": "Algo deu errado",
             "message": "O Open Photo AI encontrou um erro inesperado e não pode continuar. Recarregar normalmente resolve; suas configurações são mantidas, mas qualquer trabalho não salvo nesta sessão será perdido.",
             "reload": "Recarregar"
+        }
+    },
+    "shortcuts": {
+        "title": "Atalhos de teclado",
+        "description": "As teclas atribuídas agora a cada ação.",
+        "hint": "Altere-as em Configurações > Teclado.",
+        "tooltip": "{{name}} ({{key}})",
+        "tooltipCycle": "{{name}} ({{key}} alterna)",
+        "settingsHint": "Pressione {{key}} em qualquer lugar para ver estes atalhos.",
+        "sections": {
+            "view": "Visualização",
+            "images": "Imagens",
+            "enhancements": "Melhorias"
+        },
+        "rows": {
+            "zoom": "Aumentar zoom / Reduzir zoom",
+            "pan": "Mover",
+            "images": "Imagem anterior / Próxima imagem",
+            "options": "Opções da melhoria 1–8"
         }
     }
 }

@@ -1,7 +1,7 @@
 //! The values that carry an operation of any family, so that holding, storing, sending or dispatching on one does not
 //! mean knowing which family it is.
 //!
-//! **Two of them, one per run path.** [`Operation`] carries the eight families whose result is an image and is what
+//! **Two of them, one per run path.** [`Operation`] carries the nine families whose result is an image and is what
 //! [`Opai::process`](crate::Opai::process) takes; [`Analysis`] carries the two families whose result is not, and is
 //! what [`Opai::execute`](crate::Opai::execute) takes for a detection. Which of the two an operation is carried in
 //! follows from the model being named — every model's constructor returns the carrier for the path it runs on — so a
@@ -13,9 +13,9 @@
 // Neither pairing is a refusal reported at run time, which is the whole point — a system that decided this while the
 // model was already loaded would report as an error what was never a legitimate request.
 //
-// A file directly under `models/` because it belongs to no family: it is the seam over all nine. What neither
-// carrier is is a ninth shape. Each arm holds that family's own type, unchanged, so a family that later diverges grows
-// its own type rather than widening a shape the others share.
+// A file directly under `models/` because it belongs to no family: it is the seam over all twelve. What neither
+// carrier is is a thirteenth shape. Each arm holds that family's own type, unchanged, so a family that later diverges
+// grows its own type rather than widening a shape the others share.
 
 use serde::{Deserialize, Serialize};
 
@@ -32,6 +32,7 @@ use super::light_adjustment::LightAdjustment;
 use super::matting::{Matte, Matting, MattingVariant};
 use super::precision::Precision;
 use super::remove::Remove;
+use super::restore::Restore;
 use super::sharpen::Sharpen;
 use super::upscale::Upscale;
 
@@ -61,7 +62,7 @@ use crate::providers::profile::EpProfile;
 ///
 /// [`family`](Self::family), [`precision`](Self::precision), [`display_name`](Self::display_name),
 /// [`required_artifacts`](Self::required_artifacts) and [`cache_tag`](Self::cache_tag) — the five questions that
-/// mean the same thing for all eight families, each answered by the arm. [`Analysis`] answers the same five, so a
+/// mean the same thing for all nine families, each answered by the arm. [`Analysis`] answers the same five, so a
 /// consumer that only reports on a run can be written once over either. Anything only one family can answer stays
 /// on that family's type: [`Upscale::resolve`] and the per-family `params` are
 /// reached by matching this and asking the value inside.
@@ -93,6 +94,8 @@ pub enum Operation {
     Sharpen(Sharpen),
     /// An upscale run.
     Upscale(Upscale),
+    /// A generative restoration, which a chain runs after every other image family except a lens blur.
+    Restore(Restore),
     /// A lens blur, driven by the depth of the chain's input, which a chain runs last.
     LensBlur(LensBlur),
 }
@@ -115,6 +118,7 @@ macro_rules! forward {
             Self::Colorization(operation) => operation.$question(),
             Self::Sharpen(operation) => operation.$question(),
             Self::Upscale(operation) => operation.$question(),
+            Self::Restore(operation) => operation.$question(),
             Self::LensBlur(operation) => operation.$question(),
         }
     };
@@ -134,6 +138,7 @@ impl Operation {
             Self::Colorization(_) => Family::Colorization,
             Self::Sharpen(_) => Family::Sharpen,
             Self::Upscale(_) => Family::Upscale,
+            Self::Restore(_) => Family::Restore,
             Self::LensBlur(_) => Family::LensBlur,
         }
     }
@@ -158,7 +163,7 @@ impl Operation {
 
     /// The key the run cache stores this operation's result under.
     ///
-    /// Each family writes its own, and no two of them collide — the one namespace shared by all eight.
+    /// Each family writes its own, and no two of them collide — the one namespace shared by all nine.
     pub fn cache_tag(&self) -> String {
         forward!(self, cache_tag)
     }
@@ -211,7 +216,7 @@ impl Operation {
     ///
     /// Whatever the operation's own family seam refuses, as [`InferenceError::Unsupported`] naming the operation.
     /// Every family has a pipeline, and today no published variant is refused. The one refusal a seam can still make
-    /// is [`UnsupportedReason::IncompleteGraphSet`](crate::error::UnsupportedReason::IncompleteGraphSet), upscale's
+    /// is [`UnsupportedReason::IncompleteGraphSet`](crate::error::UnsupportedReason::IncompleteGraphSet), restore's
     /// guard against a diffusion variant declared without one of its graphs.
     pub(crate) fn pipeline<B: Backend>(&self) -> Result<Shared<B>, InferenceError> {
         // Not written through `forward!`, unlike the questions above, because the seams do not agree on a return
@@ -242,12 +247,15 @@ impl Operation {
             // Wrapped for light adjustment's reason: all three variants run through one pipeline, the two contracts
             // told apart as data on the variant, so there is nothing for this seam to refuse.
             Self::Colorization(colorization) => Ok(colorization.pipeline::<B>()),
-            // One variant and one contract, and a mask that marks nothing is answered with the photograph rather than
-            // refused, so there is nothing for this seam to refuse.
-            Self::Remove(removal) => Ok(removal.pipeline::<B>()),
+            // Kept as a `Result`, as upscale's is: the family's contracts are not all one, and a multi-graph restorer
+            // is refused where its graph set is incomplete.
+            Self::Restore(restore) => restore.pipeline::<B>(),
             // Kept as a `Result` for a real guard: a lens blur runs only once a chain has handed it the depth map and
             // the lens it is driven by, and one planned by hand without them is refused before anything is installed.
             Self::LensBlur(blur) => blur.pipeline::<B>(),
+            // One variant and one contract, and a mask that marks nothing is answered with the photograph rather than
+            // refused, so there is nothing for this seam to refuse.
+            Self::Remove(removal) => Ok(removal.pipeline::<B>()),
         }
     }
 }
@@ -585,12 +593,14 @@ pub(crate) mod tests {
     use crate::models::fidelity::Fidelity;
     use crate::models::light_adjustment::LightAdjustmentVariant;
     use crate::models::precision::FloatPrecision;
+    use crate::models::restore::RestoreVariant;
+    use crate::models::restore::osaka::graph::PUBLISHED_UNDER;
+    use crate::models::restore::osaka::precision::OsakaPrecision;
     use crate::models::scale::Scale;
     use crate::models::sharpen::SharpenVariant;
     use crate::models::strength::Strength;
     use crate::models::test_support::{every_analysis, every_operation};
     use crate::models::upscale::UpscaleVariant;
-    use crate::models::upscale::osaka::precision::OsakaPrecision;
     use crate::pipeline::test_support::NoBackend;
     use crate::providers::profile::PROVIDER_OPTION_LIMIT;
 
@@ -750,10 +760,10 @@ pub(crate) mod tests {
         Fidelity::new(Fidelity::MAX).expect("the maximum is in range")
     }
 
-    /// One operation of each of the nine families this carrier holds, paired with the family it belongs to.
+    /// One operation of each of the eight families this carrier holds, paired with the family it belongs to.
     ///
-    /// Nine rather than twelve: detection, depth and matting are carried in [`Analysis`], and the tests that need all
-    /// twelve say so by reaching across both carriers — see `every_family_can_be_carried_by_the_carrier_for_its_own_path`.
+    /// Ten rather than thirteen: detection, depth and matting are carried in [`Analysis`], and the tests that need all
+    /// thirteen say so by reaching across both carriers — see `every_family_can_be_carried_by_the_carrier_for_its_own_path`.
     fn one_of_each() -> Vec<(Operation, Family)> {
         let strength = Strength::new(0.5).expect("the test supplied a strength in range");
         let bias = Bias::new(-0.5).expect("the test supplied a bias in range");
@@ -785,11 +795,15 @@ pub(crate) mod tests {
                 Family::Sharpen,
             ),
             (
-                Operation::Upscale(Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Int8), scale)),
+                Operation::Upscale(Upscale::new(UpscaleVariant::Kyoto(FloatPrecision::Fp16), scale)),
                 Family::Upscale,
             ),
-            (super::super::remove::Remove::lima(super::super::remove::tests::dot(0.5, 0.5)), Family::Remove),
+            (
+                Operation::Restore(Restore::new(RestoreVariant::Osaka(OsakaPrecision::Int8), scale, strength)),
+                Family::Restore,
+            ),
             (Operation::LensBlur(crate::models::lens_blur::tests::injected(1.4)), Family::LensBlur),
+            (super::super::remove::Remove::lima(super::super::remove::tests::dot(0.5, 0.5)), Family::Remove),
         ]
     }
 
@@ -799,7 +813,7 @@ pub(crate) mod tests {
             assert_eq!(operation.family(), family, "{operation:?} reported a family it does not belong to");
         }
 
-        // Every family, and each of them once, **across both carriers**: the eight whose result is an image and the
+        // Every family, and each of them once, **across both carriers**: the nine whose result is an image and the
         // two whose result is not. A list that had drifted or repeated an arm would pass the per-operation check
         // above and still leave a family uncarried.
         let mut analysed: Vec<Family> = every_analysis().iter().map(Analysis::family).collect();
@@ -830,7 +844,8 @@ pub(crate) mod tests {
         let colour = ColorBalance::new(ColorBalanceVariant::SaoPaulo(FloatPrecision::Fp16), bias);
         let colorization = Colorization::new(ColorizationVariant::Delhi(FloatPrecision::Fp32));
         let sharpen = Sharpen::new(SharpenVariant::Moscow(FloatPrecision::Fp32), strength);
-        let upscale = Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Int8), scale);
+        let upscale = Upscale::new(UpscaleVariant::Kyoto(FloatPrecision::Fp16), scale);
+        let restore = Restore::new(RestoreVariant::Osaka(OsakaPrecision::Int8), scale, strength);
         let blur = crate::models::lens_blur::tests::injected(1.4);
 
         macro_rules! forwards {
@@ -856,15 +871,30 @@ pub(crate) mod tests {
         forwards!(colorization, Operation::Colorization(colorization));
         forwards!(sharpen, Operation::Sharpen(sharpen));
         forwards!(upscale, Operation::Upscale(upscale));
+        forwards!(restore, Operation::Restore(restore));
         forwards!(blur, Operation::LensBlur(blur.clone()));
+    }
+
+    /// The prefix `operation`'s artifacts are named with: its family's, except Osaka's, which keep the `up_` they were
+    /// published under — see `osaka::graph::PUBLISHED_UNDER`.
+    fn artifact_prefix(operation: &Operation) -> &'static str {
+        match operation {
+            Operation::Restore(restore) if matches!(restore.variant(), RestoreVariant::Osaka(_)) => {
+                PUBLISHED_UNDER.prefix()
+            }
+            _ => operation.family().prefix(),
+        }
     }
 
     #[test]
     fn what_a_carried_operation_reports_is_named_for_the_family_it_reports() {
         // The cross-family property the forwarding makes checkable at all: the artifacts and the cache tag of an
         // operation are spelled with its own family's prefix, so no arm can be wired to the wrong family's value.
+        // The one exception is a published name older than the family that runs it, and is stated rather than
+        // skipped.
         for (operation, _) in one_of_each() {
             let prefix = operation.family().prefix();
+            let published = artifact_prefix(&operation);
 
             assert!(
                 operation.cache_tag().starts_with(&format!("{prefix}-")),
@@ -873,14 +903,14 @@ pub(crate) mod tests {
             );
 
             // A lens blur runs no graph of its own: what it needs on disk is the depth model it is driven by.
-            let prefix = match operation.family() {
+            let published = match operation.family() {
                 Family::LensBlur => Family::Depth.prefix(),
-                _ => prefix,
+                _ => published,
             };
 
             for artifact in operation.required_artifacts() {
                 assert!(
-                    artifact.as_str().starts_with(&format!("{prefix}_")),
+                    artifact.as_str().starts_with(&format!("{published}_")),
                     "{operation:?} required {artifact}, which is named for another family"
                 );
             }
@@ -909,9 +939,12 @@ pub(crate) mod tests {
 
         // Osaka, whose precision contract is its own: the row publishes INT8, and the constructor takes the type
         // that can express it.
-        let variant = UpscaleVariant::from_codename("osaka", Precision::Int8).expect("Osaka is published at INT8");
+        let variant = RestoreVariant::from_codename("osaka", Precision::Int8).expect("Osaka is published at INT8");
         let scale = Scale::new(2.5).expect("in range");
-        assert_eq!(Upscale::osaka(OsakaPrecision::Int8, scale), Operation::Upscale(Upscale::new(variant, scale)));
+        assert_eq!(
+            Restore::osaka(OsakaPrecision::Int8, scale, strength),
+            Operation::Restore(Restore::new(variant, scale, strength))
+        );
     }
 
     #[test]
@@ -1018,7 +1051,9 @@ pub(crate) mod tests {
         // The guarantee the typed families give, still holding after a trip through a process boundary: the tag
         // chooses the arm, and the arm's own variant refuses what it is not published in.
         for json in [
-            r#"{"family":"upscale","variant":{"codename":"osaka","precision":"fp32"},"scale":2.5}"#,
+            r#"{"family":"restore","variant":{"codename":"osaka","precision":"fp32"},"scale":2.5,"strength":1.0}"#,
+            // Osaka is a restore model, and an upscale naming it names nothing: the arm's own variant refuses it.
+            r#"{"family":"upscale","variant":{"codename":"osaka","precision":"fp16"},"scale":2.5}"#,
             r#"{"family":"denoise","variant":{"codename":"stockholm","precision":"int8"},"strength":0.5}"#,
             r#"{"family":"denoise","variant":{"codename":"stockholm","precision":"fp32"},"strength":4.0}"#,
             r#"{"family":"denoise","variant":{"codename":"moscow","precision":"fp32"},"strength":0.5}"#,
@@ -1048,7 +1083,7 @@ pub(crate) mod tests {
             }
         }
 
-        // The other carrier, so the spread is over all eight families rather than the seven one of them holds.
+        // The other carrier, so the spread is over all nine families rather than the eight one of them holds.
         for analysis in every_analysis() {
             let _ = analysis.profile();
 
@@ -1057,7 +1092,7 @@ pub(crate) mod tests {
             }
         }
 
-        assert_eq!(families.len(), 12, "the spread did not reach all twelve families: {families:?}");
+        assert_eq!(families.len(), 13, "the spread did not reach all thirteen families: {families:?}");
     }
 
     #[test]
@@ -1110,8 +1145,6 @@ pub(crate) mod tests {
             UpscaleVariant::Tokyo(FloatPrecision::Fp32),
             UpscaleVariant::Kyoto(FloatPrecision::Fp16),
             UpscaleVariant::Saitama(FloatPrecision::Fp16),
-            UpscaleVariant::Osaka(OsakaPrecision::Fp16),
-            UpscaleVariant::Osaka(OsakaPrecision::Int8),
         ];
 
         // New York is measured at **both** precisions, unlike every upscale arm below — which is the whole of what
@@ -1188,6 +1221,12 @@ pub(crate) mod tests {
                         precision == FloatPrecision::Fp16
                     }
                 },
+                // Kazan at FP16, declared off the Neural Engine for the reason Moscow is; see `kazan`. Osaka at both of
+                // its precisions, from the reference's own measurements; see `osaka::profile`.
+                Operation::Restore(restore) => match restore.variant() {
+                    RestoreVariant::Kazan(precision) => precision == FloatPrecision::Fp16,
+                    RestoreVariant::Osaka(_) => true,
+                },
                 // All three at FP16 only, ported from the reference. Delhi's is the reference's declaration beside
                 // Mumbai's rather than a measurement of its own graph; see `delhi`.
                 Operation::Colorization(colorization) => colorization.precision() == Precision::Fp16,
@@ -1225,8 +1264,8 @@ pub(crate) mod tests {
         assert_eq!(gentle.model_tag(), "dn_stockholm_fp32");
         assert_eq!(strong.model_tag(), gentle.model_tag());
 
-        // One set of Osaka weights serves every scale, so the scale is a parameter and stays out.
-        let osaka = |value| Upscale::osaka(OsakaPrecision::Fp16, scale(value)).model_tag();
+        // One set of Osaka weights serves every size, so the size is a parameter and stays out.
+        let osaka = |value| Restore::osaka(OsakaPrecision::Fp16, scale(value), strength(1.0)).model_tag();
         assert_eq!(osaka(2.0), osaka(3.5));
         assert!(!osaka(2.0).contains('x'), "{}", osaka(2.0));
 
@@ -1241,7 +1280,7 @@ pub(crate) mod tests {
     fn every_operation_has_a_model_tag() {
         for operation in every_operation() {
             let tag = operation.model_tag();
-            assert!(tag.starts_with(operation.family().prefix()), "{operation:?} is tagged {tag:?}");
+            assert!(tag.starts_with(artifact_prefix(&operation)), "{operation:?} is tagged {tag:?}");
         }
     }
 }

@@ -5,6 +5,10 @@
 //! someone double-clicked the icon while the application was already running, which is not a mistake
 //! and not a question. It is a request for their window, so the second process hands the first one a
 //! message and exits successfully, and the first one raises what the user was asking for.
+//!
+//! The message is the second launch's arguments and directory. Files among them are opened in the running instance,
+//! through `crate::opened` - on Windows and Linux that is how a file opened from the file manager reaches an
+//! application already running. Every other argument is ignored.
 
 use std::path::Path;
 
@@ -28,9 +32,10 @@ pub(crate) fn raise_main_window<R: Runtime>(app: &impl Manager<R>) {
     // not planned - show-before-focus is the caller's job, not something a later version fixes.
     //
     // `unmaximize` is deliberately never called, and this is the part most likely to be "simplified"
-    // later by reaching for the obvious restore verb. The window ships `maximized: true`, so
-    // un-maximising it would shrink the window of nearly every user who triggers this. Someone who
-    // launched the app a second time asked to *see* it, not to resize it.
+    // later by reaching for the obvious restore verb. The window reopens maximised whenever the user
+    // left it that way (the window-state plugin restores it), so un-maximising it would shrink a
+    // window the user chose to fill the screen. Someone who launched the app a second time asked to
+    // *see* it, not to resize it.
     //
     // Errors are discarded because the callback returns `()` and the process that asked for the raise
     // is gone, so there is nobody to propagate to; a window that refuses to show costs the user one

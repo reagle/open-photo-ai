@@ -5,21 +5,15 @@
 // list. Reordering a list silently exchanges the encoder and the decoder, which compiles, runs, and returns a wrong
 // image with nothing downstream able to catch it.
 //
-// `resolve` is what the family's `Upscale::resolve` reaches for this contract, through this row's
-// `UpscaleModel::resolve`. It lives here, with the types it builds, so that composing this model's artifact names out
-// of this model's row under this model's pinning rules is this model's code — a family-tier file that built a
-// `GraphSet` would be the coupling this layout exists to remove, spelled as a constructor instead of as a match.
+// `resolve` is what the family's `Restore::pipeline` and `Restore::required_artifacts` reach for this contract. It
+// lives here, with the types it builds, so that composing this model's artifact names out of this model's row under
+// this model's pinning rules is this model's code — a family-tier file that built a `GraphSet` would be the coupling
+// this layout exists to remove, spelled as a constructor instead of as a match.
 
 use serde::{Deserialize, Serialize};
 
-use super::precision::OsakaPrecision;
 use crate::models::artifact::{ArtifactId, Family};
-use crate::models::catalogue::{ParameterEntry, SCALE_PARAMETER};
 use crate::models::precision::Precision;
-use crate::models::scale::Scale;
-use crate::models::upscale::conv::PassShape;
-use crate::models::upscale::resolve::Resolution;
-use crate::models::upscale::variant::{UpscaleModel, UpscaleVariant};
 use crate::providers::profile::EpProfile;
 
 /// How the pipeline asks a diffusion variant for one of its graphs.
@@ -91,7 +85,10 @@ impl Graph {
         // session, which for this family means a multi-gigabyte download.
         let precision = self.pinned.unwrap_or(requested);
 
-        ArtifactId::suffixed(Family::Upscale, codename, self.suffix, precision)
+        // `up_`, the family Osaka was published under, rather than the one it runs in: the names are fixed by the files
+        // already on the remote and on every user's disk, and renaming them would download seven gigabytes again for
+        // the same weights. See `PUBLISHED_UNDER`.
+        ArtifactId::suffixed(PUBLISHED_UNDER, codename, self.suffix, precision)
     }
 
     /// The settings this graph is configured with, given the `variant`'s own declaration.
@@ -118,15 +115,21 @@ pub struct UnknownRole {
     pub variant: &'static str,
 }
 
-/// One diffusion upscale variant, as data.
+/// The family whose prefix Osaka's artifacts are published under: `up`, from when it was an upscaler.
+///
+/// Osaka is a Restore model — it redraws detail rather than estimating it — but its graphs were published as
+/// `up_osaka_*` while it was offered as an upscaler, and an artifact's name is what keys the download, the install on
+/// disk and the compiled-engine cache. So the name keeps the family it was published under, and only this prefix says
+/// so; nothing else about the model is the upscale family's.
+pub(crate) const PUBLISHED_UNDER: Family = Family::Upscale;
+
+/// One diffusion restore variant, as data.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct DiffusionVariant {
     // A separate shape from `ConvVariant` rather than a set of optional fields on it, so that the two contracts stay
     // legible side by side: this one holds a fixed set of graphs run as one pass and carries no scale table at all.
     /// The developer-facing identifier; see [`ConvVariant::codename`](crate::models::upscale::conv::ConvVariant#structfield.codename).
     pub(crate) codename: &'static str,
-    /// The display text a user sees; see [`ConvVariant::label`](crate::models::upscale::conv::ConvVariant#structfield.label).
-    pub(crate) label: &'static str,
     /// The stages loaded together for one pass, addressed by role.
     pub(crate) graphs: &'static [Graph],
     // A function of the precision for the reason `ConvVariant::profile` gives, and with no wrapper either.
@@ -190,12 +193,6 @@ impl GraphSet {
         self.graphs.iter()
     }
 
-    /// Every role this set declares, in the order the variant lists them.
-    #[cfg(test)]
-    pub(crate) fn roles(&self) -> impl Iterator<Item = GraphRole> + '_ {
-        self.graphs.iter().map(|graph| graph.role)
-    }
-
     /// Every artifact this set needs, in the order the variant lists them.
     pub fn artifacts(&self) -> impl Iterator<Item = &ArtifactId> {
         self.graphs.iter().map(|graph| &graph.artifact)
@@ -221,45 +218,10 @@ pub(crate) fn resolve(row: &DiffusionVariant, precision: Precision) -> GraphSet 
     GraphSet { variant: row.codename, graphs }
 }
 
-impl UpscaleModel for DiffusionVariant {
-    fn codename(&self) -> &'static str {
-        self.codename
-    }
-
-    fn label(&self) -> &'static str {
-        self.label
-    }
-
-    fn precisions(&self) -> &'static [Precision] {
-        &OsakaPrecision::PRECISIONS
-    }
-
-    fn parameters(&self) -> &'static [ParameterEntry] {
-        &SCALE_PARAMETER
-    }
-
-    fn profile(&self, precision: Precision) -> EpProfile {
-        (self.profile)(precision)
-    }
-
-    /// `None`: this contract runs graphs, at the geometry and range `latent.rs` declares for them.
-    fn pass_shape(&self) -> Option<PassShape> {
-        None
-    }
-
-    fn variant(&self, precision: Precision) -> Option<UpscaleVariant> {
-        OsakaPrecision::narrow(precision).map(UpscaleVariant::Osaka)
-    }
-
-    /// The graphs, whatever the scale — which is the contract. The scale travels per run instead.
-    fn resolve(&self, precision: Precision, _scale: Scale) -> Resolution {
-        Resolution::Graphs(resolve(self, precision))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::OSAKA;
+    use super::super::precision::OsakaPrecision;
     use super::*;
 
     #[test]
@@ -267,8 +229,11 @@ mod tests {
         let roles: Vec<GraphRole> = OSAKA.graphs.iter().map(|graph| graph.role()).collect();
 
         assert_eq!(roles, vec![GraphRole::Encoder, GraphRole::Transformer, GraphRole::Decoder]);
-        assert_eq!(OSAKA.codename, "osaka");
-        assert_eq!(OSAKA.label, "Osaka");
+        assert_eq!(
+            OSAKA.codename,
+            super::super::super::variant::OSAKA.row.codename,
+            "the row and the graphs disagree"
+        );
     }
 
     #[test]
@@ -294,6 +259,61 @@ mod tests {
     }
 
     #[test]
+    fn each_osaka_graph_carries_the_settings_measured_for_it_rather_than_the_variants_alone() {
+        // The per-graph contract, checked from **one** operation rather than by resolving three times: what would go
+        // wrong without it is that a graph opens under another graph's configuration, and that is only visible when
+        // the three are looked at side by side.
+        for precision in [OsakaPrecision::Fp16, OsakaPrecision::Int8] {
+            let resolved = resolve(&OSAKA, precision.into());
+            let of = |role| resolved.resolved(role).expect("Osaka declares this role").profile.clone();
+
+            // The two convolutional halves take the variant's layout: cuDNN has FP16 tensor-core kernels for NHWC at
+            // these shapes, worth -8.0% and -9.4%.
+            assert!(of(GraphRole::Encoder).cuda_prefer_nhwc, "the encoder lost the layout measured for it");
+            assert!(of(GraphRole::Decoder).cuda_prefer_nhwc, "the decoder lost the layout measured for it");
+            // And the transformer does not: no `Conv` in 12,940 nodes, so all NHWC buys there is its own transform.
+            assert!(
+                !of(GraphRole::Transformer).cuda_prefer_nhwc,
+                "the transformer was given the VAE halves' layout, which costs it 1.3%"
+            );
+
+            // The override names one setting and leaves the rest of the variant's declaration alone — otherwise a
+            // graph that deviates on one figure would quietly lose the four it does not.
+            let variant = (OSAKA.profile)(precision.into());
+            for role in [GraphRole::Encoder, GraphRole::Transformer, GraphRole::Decoder] {
+                let profile = of(role);
+
+                assert_eq!(profile.execution_mode, variant.execution_mode, "{role} at {precision:?}");
+                assert_eq!(profile.disable_mem_pattern, variant.disable_mem_pattern, "{role} at {precision:?}");
+                assert_eq!(
+                    profile.disabled_optimizers, variant.disabled_optimizers,
+                    "{role} at {precision:?}: without the second of these the transformer does not load at all"
+                );
+                assert_eq!(profile.coreml_compute_units, variant.coreml_compute_units, "{role} at {precision:?}");
+                assert_eq!(profile.trt_options, variant.trt_options, "{role} at {precision:?}");
+            }
+
+            // The two halves agree with each other and neither agrees with the transformer, which is the whole claim
+            // stated as one comparison rather than inferred from the three above.
+            assert_eq!(of(GraphRole::Encoder), of(GraphRole::Decoder));
+            assert_ne!(of(GraphRole::Encoder), of(GraphRole::Transformer));
+        }
+    }
+
+    #[test]
+    fn a_graph_naming_no_deviation_carries_the_variants_declaration_unchanged() {
+        // The other half of the requirement, and the one a later variant depends on: a graph that names nothing is
+        // one nobody measured separately, so it must follow the variant wherever the variant goes.
+        let resolved = resolve(&OSAKA, Precision::Fp16);
+
+        assert_eq!(
+            resolved.resolved(GraphRole::Encoder).expect("Osaka declares an encoder").profile,
+            (OSAKA.profile)(Precision::Fp16),
+            "the graph that declares no deviation did not carry the variant's own settings"
+        );
+    }
+
+    #[test]
     fn every_role_renders_the_name_an_error_would_report() {
         assert_eq!(GraphRole::Encoder.to_string(), "encoder");
         assert_eq!(GraphRole::Transformer.to_string(), "transformer");
@@ -313,7 +333,7 @@ mod tests {
         // the failure into a session that was never opened.
         let stage = |role, name| ResolvedGraph {
             role,
-            artifact: ArtifactId::new(Family::Upscale, name, None, Precision::Fp16),
+            artifact: ArtifactId::new(PUBLISHED_UNDER, name, None, Precision::Fp16),
             profile: EpProfile::default(),
         };
         let two_staged = GraphSet {

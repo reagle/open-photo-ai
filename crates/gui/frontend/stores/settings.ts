@@ -6,6 +6,7 @@ import type { ExportFormat } from "@/ipc/export";
 import type { SupportedProviders } from "@/ipc/setup";
 import { familiesWhere } from "@/lib/enhancements";
 import { isFormatChoice } from "@/lib/export";
+import { repairShortcuts, type StoredShortcuts } from "@/lib/shortcuts";
 import { clampTo } from "@/lib/utils";
 
 // `"auto"` plus the wire's own field names rather than a list of five strings written out here: the
@@ -113,6 +114,15 @@ export type SettingsData = {
      */
     autopilotExcluded: Family[];
     quality: QualityChoices;
+    // Only the actions the user changed, for the reason `quality` and `models` hold only choices: an
+    // action never touched reads its defaults as *this build* has them, so a default changed or an action
+    // added later reaches everyone who did not choose otherwise. `[]` is a choice - no binding - not an
+    // absence. Platform-free: `Mod` already means the right modifier on each platform.
+    /**
+     * The keyboard bindings the user changed. Read through `resolveShortcuts` in `lib/shortcuts.ts`,
+     * which fills in the defaults and keeps any one key press from being claimed twice.
+     */
+    shortcuts: StoredShortcuts;
 };
 
 // Beside the preferences rather than among them: `SettingsData` is what the settings dialog drafts,
@@ -148,7 +158,17 @@ export const settingsData = ({
     models,
     autopilotExcluded,
     quality,
-}: SettingsData): SettingsData => ({ language, background, analytics, processor, models, autopilotExcluded, quality });
+    shortcuts,
+}: SettingsData): SettingsData => ({
+    language,
+    background,
+    analytics,
+    processor,
+    models,
+    autopilotExcluded,
+    quality,
+    shortcuts,
+});
 
 // A function rather than a constant for two reasons: the language is detected, and a record handed
 // to two drafts must not be one object both of them hold.
@@ -168,6 +188,8 @@ export const settingsDefaults = (): SettingsData => ({
     autopilotExcluded: [],
     // No choice for any format: each is written at the default Rust publishes for it.
     quality: {},
+    // No choice for any action: each is bound to its defaults.
+    shortcuts: {},
 });
 
 /**
@@ -201,13 +223,28 @@ const repairQuality = (value: unknown): QualityChoices => {
     );
 };
 
-/** A stored model record, kept only where it names something - the shape, not the models themselves. */
+/**
+ * A stored model record, kept only where it names something - the shape, not the models themselves - and with a
+ * default that names a model which moved family carried to the family it moved to.
+ *
+ * **One move so far: Osaka, from upscale to restore.** A user who chose it as their default upscaler chose it for
+ * what it does, which is now a restore; leaving the choice under upscale would silently fall back to Tokyo there and
+ * lose it, while the restore row started at Kazan. Carried only where the user has not chosen a restore default of
+ * their own, and taken off upscale either way.
+ */
 const repairModels = (value: unknown): ModelChoices => {
     if (value === null || typeof value !== "object") return {};
 
-    return Object.fromEntries(
+    const models = Object.fromEntries(
         Object.entries(value as Record<string, unknown>).filter(([, selection]) => typeof selection === "string"),
     ) as ModelChoices;
+
+    if (models.upscale?.startsWith("osaka_")) {
+        models.restore ??= models.upscale;
+        delete models.upscale;
+    }
+
+    return models;
 };
 
 /**
@@ -306,7 +343,7 @@ export const useSettingsStore = create<SettingsStore>()(
              * wrong on a user's machine and right here: a language catalogue is dropped, a graphics
              * driver is removed, a model stops being published.
              *
-             * All eight are repaired on rehydrate below, against something already present at that
+             * All nine are repaired on rehydrate below, against something already present at that
              * moment - the models in shape only. Whether a stored model is still published, and so
              * which model a family defaults to, is resolved where it is drawn, for the reason
              * `ModelChoices` gives. The processor's second repair is the same
@@ -349,6 +386,10 @@ export const useSettingsStore = create<SettingsStore>()(
                     // every family allowed - the stated default, not a migration.
                     autopilotExcluded: repairExcluded(stored.autopilotExcluded),
                     quality: repairQuality(stored.quality),
+                    // Absent for every user who saved before bindings could be changed, which reads
+                    // as every action at its defaults. Repaired without the platform, which is not
+                    // known at import; what this platform refuses is dropped where it is resolved.
+                    shortcuts: repairShortcuts(stored.shortcuts),
                     // Answered here, or answered in the Wails application, which stored `false` once
                     // it had been - so a user upgrading is not asked a second time. Anything else,
                     // including nothing at all, is a question not yet asked.

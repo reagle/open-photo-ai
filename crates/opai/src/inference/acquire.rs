@@ -43,7 +43,7 @@ pub(crate) async fn acquire<B: Backend>(
     let installing = reporter.installing(model.required());
 
     // What this run brings to each install: its reports, and its stop. See `sessions::Interest`.
-    let interest = Interest { on_progress: installing, cancel: cancel.clone() };
+    let interest = Interest { on_progress: installing, on_preparing: reporter.preparing(), cancel: cancel.clone() };
 
     let needed = model.sessions();
     let mut sessions = Vec::with_capacity(needed.len());

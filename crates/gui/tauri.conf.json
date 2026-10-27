@@ -14,11 +14,11 @@
             {
                 "label": "main",
                 "title": "Open Photo AI",
-                "width": 1280,
-                "height": 720,
+                "width": 1440,
+                "height": 900,
                 "minWidth": 1280,
                 "minHeight": 720,
-                "maximized": true,
+                "center": true,
                 "visible": false,
                 "backgroundColor": "#09090b",
                 "titleBarStyle": "Overlay",
@@ -62,6 +62,119 @@
             "icons/icon.icns",
             "icons/Assets.car",
             "icons/icon.ico"
+        ],
+        "fileAssociations": [
+            {
+                "name": "JPEG image",
+                "ext": ["jpg", "jpeg"],
+                "contentTypes": ["public.jpeg"],
+                "mimeType": "image/jpeg",
+                "description": "JPEG image",
+                "role": "Editor",
+                "rank": "Alternate"
+            },
+            {
+                "name": "PNG image",
+                "ext": ["png"],
+                "contentTypes": ["public.png"],
+                "mimeType": "image/png",
+                "description": "PNG image",
+                "role": "Editor",
+                "rank": "Alternate"
+            },
+            {
+                "name": "TIFF image",
+                "ext": ["tiff", "tif"],
+                "contentTypes": ["public.tiff"],
+                "mimeType": "image/tiff",
+                "description": "TIFF image",
+                "role": "Editor",
+                "rank": "Alternate"
+            },
+            {
+                "name": "WebP image",
+                "ext": ["webp"],
+                "contentTypes": ["org.webmproject.webp"],
+                "mimeType": "image/webp",
+                "description": "WebP image",
+                "role": "Editor",
+                "rank": "Alternate"
+            },
+            {
+                "name": "AVIF image",
+                "ext": ["avif"],
+                "contentTypes": ["public.avif"],
+                "mimeType": "image/avif",
+                "description": "AVIF image",
+                "role": "Editor",
+                "rank": "Alternate"
+            },
+            {
+                "name": "HEIF image",
+                "ext": ["heif", "heic"],
+                "contentTypes": ["public.heif", "public.heic"],
+                "mimeType": "image/heif",
+                "description": "HEIF image",
+                "role": "Editor",
+                "rank": "Alternate"
+            },
+            {
+                "name": "BMP image",
+                "ext": ["bmp"],
+                "contentTypes": ["com.microsoft.bmp"],
+                "mimeType": "image/bmp",
+                "description": "BMP image",
+                "role": "Editor",
+                "rank": "Alternate"
+            },
+            {
+                "name": "GIF image",
+                "ext": ["gif"],
+                "contentTypes": ["com.compuserve.gif"],
+                "mimeType": "image/gif",
+                "description": "GIF image",
+                "role": "Editor",
+                "rank": "Alternate"
+            },
+            {
+                "name": "Camera RAW image",
+                "ext": [
+                    "crw",
+                    "cr2",
+                    "cr3",
+                    "crm",
+                    "nef",
+                    "nrw",
+                    "arw",
+                    "raf",
+                    "orf",
+                    "ori",
+                    "rw2",
+                    "raw",
+                    "rwl",
+                    "pef",
+                    "dng",
+                    "srw",
+                    "x3f",
+                    "3fr",
+                    "fff",
+                    "iiq",
+                    "dcr",
+                    "kdc",
+                    "dcs",
+                    "mos",
+                    "mef",
+                    "mrw",
+                    "erf",
+                    "ari",
+                    "qtk"
+                ],
+                "contentTypes": ["public.camera-raw-image", "com.adobe.raw-image"],
+                "mimeType": "image/x-dcraw",
+                "description": "Camera RAW image",
+                "role": "Editor",
+                "rank": "Alternate"
+            }
         ]
     }
 }

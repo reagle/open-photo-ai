@@ -1,18 +1,27 @@
 //! One build in progress, shared by every request waiting on it, and the install inside it that answers to them.
 
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
 use tracing::{Id, Span};
 
 use crate::progress::OnProgress;
+use crate::providers::ExecutionProvider;
 use crate::task::lock;
 
 use super::resident::Resident;
 
-/// What one request brings to the build it is waiting on: where its install's progress goes, and how long it wants
-/// that install to happen at all.
+/// Told that a build has put its model on disk and is opening a session on this provider — which, the first time, can
+/// be minutes of compiling it — and how long that is expected to take, where a slow open of it has been seen before.
+///
+/// A callback of its own beside [`OnProgress`] rather than a phase of an install's report: an install's report is about
+/// bytes and names a dependency, and this moves none and is about a session. `Arc<dyn Fn>` for the reason that one is.
+pub(crate) type OnPreparing = Arc<dyn Fn(ExecutionProvider, Option<Duration>) + Send + Sync>;
+
+/// What one request brings to the build it is waiting on: where its install's progress goes, where the news that the
+/// session is being opened goes, and how long it wants that install to happen at all.
 ///
 /// The token is the **run's**, handed down from [`ProcessOptions::cancel`](crate::ProcessOptions::cancel) through
 /// every layer between. What it does here is not to fail the request — a request that stops waiting stops *wanting*,
@@ -22,6 +31,8 @@ use super::resident::Resident;
 pub(crate) struct Interest {
     /// Where this request's install reports go, or `None` for a caller that asked for none.
     pub(crate) on_progress: Option<OnProgress>,
+    /// Where this request is told the session is being opened, or `None` for a caller that asked for none.
+    pub(crate) on_preparing: Option<OnPreparing>,
     /// The run's own token.
     pub(crate) cancel: CancellationToken,
 }
@@ -113,8 +124,30 @@ impl<S, E> Flight<S, E> {
     }
 
     /// Adds `interest` to the audience for as long as the guard lives.
+    ///
+    /// A request joining a build that is already opening its session is told so at once, rather than waiting through
+    /// the rest of a compile it was never told about: the request that joins is typically the same photograph asked
+    /// for again with a slider moved, and it would otherwise read as a run that had stopped saying anything.
     pub(super) fn join(&self, interest: &Interest) -> Waiting {
-        lock(&self.audience).join(&self.audience, interest.on_progress.clone())
+        let (waiting, preparing) = {
+            let mut audience = lock(&self.audience);
+            let preparing = audience.preparing;
+
+            (audience.join(&self.audience, interest), preparing)
+        };
+
+        // Outside the lock, as every report is, and only while the build has not ended: one that has is about to hand
+        // this request its session, and there is nothing being prepared to tell it about.
+        //
+        // With what is left of the estimate rather than all of it: the request joins a compile that is already under
+        // way, and an estimate counted again from zero would hold its bar back behind a compile that is partway done.
+        if let (Some(opening), Some(on_preparing)) = (preparing, &interest.on_preparing)
+            && !self.cell.initialized()
+        {
+            on_preparing(opening.provider, opening.remaining());
+        }
+
+        waiting
     }
 
     /// The install side of this flight: what its transfer reports to, and what stops it.
@@ -146,7 +179,10 @@ pub(super) struct Audience {
     /// remove its own.
     next: u64,
     /// Who is waiting: the place each holds, and where that request's reports go where it asked for any.
-    pub(super) waiting: Vec<(u64, Option<OnProgress>)>,
+    pub(super) waiting: Vec<(u64, Listener)>,
+    /// The session the build is opening, once its install is done; `None` before then. Kept so a request that joins
+    /// afterwards can be told, which a report sent once could not do.
+    preparing: Option<Opening>,
     /// Cancelled when the last request withdraws, and replaced when one joins again.
     ///
     /// Replaced rather than reset, because a [`CancellationToken`] is one-shot — and the thing that has to be
@@ -163,7 +199,7 @@ impl Audience {
     /// is a method here rather than on [`Flight`] so that the list, the token and the places are edited in one type
     /// — which is what makes "the transfer stops exactly when the last request goes" a rule one file states and one
     /// file keeps.
-    fn join(&mut self, held: &Arc<Mutex<Self>>, on_progress: Option<OnProgress>) -> Waiting {
+    fn join(&mut self, held: &Arc<Mutex<Self>>, interest: &Interest) -> Waiting {
         if self.waiting.is_empty() && self.cancel.is_cancelled() {
             self.cancel = CancellationToken::new();
         }
@@ -172,10 +208,37 @@ impl Audience {
         // place — which would have the first to leave remove the second's.
         self.next += 1;
         let place = self.next;
-        self.waiting.push((place, on_progress));
+        let listener =
+            Listener { on_progress: interest.on_progress.clone(), on_preparing: interest.on_preparing.clone() };
+        self.waiting.push((place, listener));
 
         Waiting { audience: Arc::clone(held), place: Some(place) }
     }
+}
+
+/// A session a build has begun opening: on what, how long that was expected to take, and since when.
+#[derive(Debug, Clone, Copy)]
+struct Opening {
+    /// The provider of the rung being opened.
+    provider: ExecutionProvider,
+    /// How long the last slow open of this model on it took, where one has been seen.
+    expected: Option<Duration>,
+    /// When the build said it was opening it.
+    since: Instant,
+}
+
+impl Opening {
+    /// What is left of the estimate now, and nothing once it has run out rather than a negative wait.
+    fn remaining(&self) -> Option<Duration> {
+        self.expected.map(|expected| expected.saturating_sub(self.since.elapsed()))
+    }
+}
+
+/// Where one waiting request's reports go: the two halves of its [`Interest`] that are about reporting.
+#[derive(Clone)]
+pub(super) struct Listener {
+    on_progress: Option<OnProgress>,
+    on_preparing: Option<OnPreparing>,
 }
 
 /// One request's place in a flight's audience, held for as long as that request is waiting on it.
@@ -237,6 +300,25 @@ impl Install {
         crate::deps::Installing { on_progress: Some(self.reporting()), cancel: lock(&self.audience).cancel.clone() }
     }
 
+    /// Tells every waiting request — and every one that joins from now on — that the model is on disk and its session
+    /// is being opened on `provider`, expected to take `expected` where a slow open of it has been seen before.
+    ///
+    /// Called by the build between its install and the open, which is the one point that knows both that nothing is
+    /// left to transfer and which rung of the ladder it is on.
+    pub(super) fn preparing(&self, provider: ExecutionProvider, expected: Option<Duration>) {
+        // Cloned out from under the lock and called after it, for the reason `reporting` gives.
+        let listening: Vec<OnPreparing> = {
+            let mut audience = lock(&self.audience);
+            audience.preparing = Some(Opening { provider, expected, since: Instant::now() });
+
+            audience.waiting.iter().filter_map(|(_, listener)| listener.on_preparing.clone()).collect()
+        };
+
+        for on_preparing in listening {
+            on_preparing(provider, expected);
+        }
+    }
+
     /// Whether anything is still waiting, and therefore whether a stopped transfer is worth resuming.
     pub(super) fn wanted(&self) -> bool {
         !lock(&self.audience).waiting.is_empty()
@@ -255,8 +337,11 @@ impl Install {
             // Cloned out from under the lock, which is then released before any callback runs: a front end that
             // reaches back into this layer from inside its own reporting would otherwise deadlock, and the clones
             // are a handful of `Arc`s per report.
-            let listening: Vec<OnProgress> =
-                lock(&audience).waiting.iter().filter_map(|(_, on_progress)| on_progress.clone()).collect();
+            let listening: Vec<OnProgress> = lock(&audience)
+                .waiting
+                .iter()
+                .filter_map(|(_, listener)| listener.on_progress.clone())
+                .collect();
 
             for on_progress in listening {
                 on_progress(progress);

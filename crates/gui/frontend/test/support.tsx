@@ -208,6 +208,15 @@ const FACES: VariantEntry["parameters"] = [{ name: "faces", kind: "faces" }];
 const MASK: VariantEntry["parameters"] = [{ name: "mask", kind: "mask" }];
 
 /**
+ * What every restore model publishes: a size up to `Restore::MAX_SCALE` and a strength up to
+ * `Restore::MAX_STRENGTH`, narrower than their types', starting at 1x and at the model's own output.
+ */
+const RESTORE: VariantEntry["parameters"] = [
+    { name: "scale", kind: "range", min: 1, max: 4, default: 1 },
+    { name: "strength", kind: "range", min: 0, max: 1, default: 1 },
+];
+
+/**
  * What Lisbon's lens blur publishes: the equivalent f-number with the bounds `FNumber::MIN` and `FNumber::MAX` enforce,
  * and the two halves of the focus point with the bounds `Fraction::MIN` and `Fraction::MAX` enforce. The aperture
  * starts at f/2.8 and the focus at the middle, which a new operation overrides with the photograph's own aperture.
@@ -228,7 +237,8 @@ const ORDER: Partial<Record<Family, number>> = {
     color_balance: 5,
     sharpen: 6,
     upscale: 7,
-    lens_blur: 8,
+    restore: 8,
+    lens_blur: 9,
 };
 
 const family = (name: Family, variants: VariantEntry[]): FamilyEntry => {
@@ -278,9 +288,6 @@ export const CATALOGUE: FamilyEntry[] = [
         variant("tokyo", "Tokyo", ["fp32", "fp16"], SCALE),
         variant("kyoto", "Kyoto", ["fp32", "fp16"], SCALE),
         variant("saitama", "Saitama", ["fp32", "fp16"], SCALE),
-        // The one variant that does not publish the two float precisions: no fp32 build of its
-        // diffusion transformer was ever released, and it is now also published quantised to int8.
-        variant("osaka", "Osaka", ["fp16", "int8"], SCALE),
     ]),
     // Published, and drawn by nothing: "which model detects faces" is model vocabulary the library
     // declines to leave a front end to restate, but it is not an enhancement a user adds.
@@ -290,6 +297,12 @@ export const CATALOGUE: FamilyEntry[] = [
     family("face_recovery", [
         variant("athens", "Athens", ["fp32", "fp16"], FACES_AND_FIDELITY),
         variant("santorini", "Santorini", ["fp32", "fp16"], FACES),
+    ]),
+    family("restore", [
+        variant("kazan", "Kazan", ["fp32", "fp16"], RESTORE),
+        // The one variant that does not publish the two float precisions: no fp32 build of its
+        // diffusion transformer was ever released, and it is now also published quantised to int8.
+        variant("osaka", "Osaka", ["fp16", "int8"], RESTORE),
     ]),
     // Last, as the library publishes it: it runs after everything else, and is the one model published at FP16 alone.
     family("lens_blur", [variant("lisbon", "Lisbon", ["fp16"], LENS_BLUR)]),

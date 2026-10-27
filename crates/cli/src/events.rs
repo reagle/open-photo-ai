@@ -112,6 +112,7 @@ fn family_name(family: Family) -> &'static str {
         Family::ColorBalance => "color_balance",
         Family::Sharpen => "sharpen",
         Family::Upscale => "upscale",
+        Family::Restore => "restore",
         Family::LensBlur => "lens_blur",
     }
 }
@@ -201,6 +202,7 @@ mod tests {
             Family::Colorization,
             Family::Sharpen,
             Family::Upscale,
+            Family::Restore,
             Family::LensBlur,
             Family::Remove,
         ]
@@ -219,6 +221,7 @@ mod tests {
                 "colorization",
                 "sharpen",
                 "upscale",
+                "restore",
                 "lens_blur",
                 "remove"
             ]

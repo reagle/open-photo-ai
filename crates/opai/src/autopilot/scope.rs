@@ -91,10 +91,20 @@ fn bit(family: Family) -> u16 {
 mod tests {
     use super::*;
 
-    /// Every family some signal can suggest.
+    /// Every family some signal can suggest: not detection or depth, which are never applied, and not restore or lens
+    /// blur, which an analysis never suggests — a generative redraw or a depth of field is a user's choice, never an
+    /// automatic one.
     fn suggestible() -> impl Iterator<Item = Family> {
         Family::ALL.into_iter().filter(|family| {
-            !matches!(family, Family::Detection | Family::Depth | Family::Matting | Family::LensBlur | Family::Remove)
+            !matches!(
+                family,
+                Family::Detection
+                    | Family::Depth
+                    | Family::Matting
+                    | Family::Remove
+                    | Family::Restore
+                    | Family::LensBlur
+            )
         })
     }
 
@@ -148,14 +158,7 @@ mod tests {
             );
             assert_eq!(scope.needs_blocks(), matches!(family, Family::Denoise | Family::Sharpen), "{family:?}");
             assert_eq!(scope.needs_face(), family == Family::FaceRecovery, "{family:?}");
-            assert_eq!(
-                scope.needs_anything(),
-                !matches!(
-                    family,
-                    Family::Detection | Family::Depth | Family::Matting | Family::LensBlur | Family::Remove
-                ),
-                "{family:?}"
-            );
+            assert_eq!(scope.needs_anything(), suggestible().any(|candidate| candidate == family), "{family:?}");
         }
     }
 

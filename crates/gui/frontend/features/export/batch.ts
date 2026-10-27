@@ -8,6 +8,7 @@ import {
     exportImage,
     exportNames,
 } from "@/ipc/export";
+import { runnable } from "@/lib/enhancements";
 import { describeExportError, type ExportFailure, qualityFor } from "@/lib/export";
 import { withChoice } from "@/lib/faces";
 import { track } from "@/lib/faro";
@@ -83,7 +84,8 @@ const exportOne = async (
         }
     }
 
-    const operations = stackOf() ?? [];
+    // What runs, as the preview runs it: an upscale an enlarging restore has taken out of the chain is not exported.
+    const operations = runnable(stackOf() ?? []);
     const { processor } = useSettingsStore.getState();
 
     /*
@@ -220,6 +222,13 @@ export const routeProgress = (report: ExportProgress) => {
 
     setStage(
         current.path,
-        report.phase === "writing" ? { stage: "writing" } : { stage: "enhancing", fraction: report.chainFraction },
+        report.phase === "writing"
+            ? { stage: "writing" }
+            : {
+                  stage: "enhancing",
+                  fraction: report.chainFraction,
+                  family: report.family,
+                  ...(report.stage === "preparing" && { preparing: true }),
+              },
     );
 };

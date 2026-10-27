@@ -8,6 +8,10 @@ import { CATALOGUE, HOLIDAY, openFiles, render, resetFileStore } from "@/test/su
 import { EnhancementList } from "./EnhancementList";
 import { ScaleControl } from "./ScaleControl";
 
+// The real `platform()` reads a global the plugin's init script installs, which jsdom has none of - and
+// the shortcut hints ask it, to write their keys as this platform does.
+vi.mock("@/ipc/os", () => ({ isMacOs: vi.fn(() => false), isWindows: vi.fn(() => false) }));
+
 vi.mock("@tauri-apps/api/core", () => ({
     invoke: vi.fn(() => Promise.resolve(CATALOGUE)),
     convertFileSrc: vi.fn((identity: string) => `opai://localhost/${identity}`),
@@ -87,11 +91,11 @@ describe("the model tray", () => {
         await mount();
         await open();
 
-        // Four upscale models: three at two float precisions, Osaka at fp16 and int8 - which is
-        // what reading the tiers positionally gives, rather than a table of per-model overrides.
-        expect(models()).toHaveLength(8);
+        // Three upscale models at two float precisions each. Osaka, which was the fourth, is a
+        // restore model now and is not offered here.
+        expect(models()).toHaveLength(6);
         expect(screen.getByRole("radio", { name: "Kyoto HD" })).toBeInTheDocument();
-        expect(screen.getByRole("radio", { name: "Osaka SD" })).toBeInTheDocument();
+        expect(screen.queryByRole("radio", { name: "Osaka SD" })).not.toBeInTheDocument();
     });
 
     it("shows the model in use as chosen", async () => {
@@ -108,11 +112,9 @@ describe("the model tray", () => {
         await mount();
         await open();
 
-        fireEvent.click(screen.getByRole("radio", { name: "Osaka SD" }));
+        fireEvent.click(screen.getByRole("radio", { name: "Saitama SD" }));
 
-        // Osaka's SD build is int8, not fp16: the tier is a statement about quality rather than
-        // about a number of bits, and the two disagree for that model.
-        await waitFor(() => expect(stack()).toEqual([upscale("osaka", "int8", 2)]));
+        await waitFor(() => expect(stack()).toEqual([upscale("saitama", "fp16", 2)]));
     });
 
     it("carries each model's description once, on its first precision", async () => {
@@ -123,8 +125,8 @@ describe("the model tray", () => {
         // it would put two of them on every row of the tray.
         const marked = models().filter((item) => item.querySelector("svg"));
 
-        expect(marked).toHaveLength(4);
-        expect(marked.map((item) => item.textContent)).toEqual(["Tokyo HD", "Kyoto HD", "Saitama HD", "Osaka HD"]);
+        expect(marked).toHaveLength(3);
+        expect(marked.map((item) => item.textContent)).toEqual(["Tokyo HD", "Kyoto HD", "Saitama HD"]);
     });
 
     /**

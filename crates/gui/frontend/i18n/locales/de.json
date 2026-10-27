@@ -35,6 +35,10 @@
             "export": {
                 "title": "Export",
                 "description": "Qualität für die verlustbehafteten Formate. Niedrigere Werte ergeben kleinere Dateien; die Skalen sind zwischen den Formaten nicht vergleichbar."
+            },
+            "keyboard": {
+                "title": "Tastatur",
+                "description": "Die Tasten zum Zoomen, Einpassen und Anzeigen des Originals. Änderungen gelten nach Speichern."
             }
         },
         "app": {
@@ -109,7 +113,63 @@
             },
             "autopilotLabel": "Autopilot: {{name}}"
         },
-        "reset": "Auf Standard zurücksetzen"
+        "reset": "Auf Standard zurücksetzen",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Vergrößern",
+                "zoomOut": "Verkleinern",
+                "fit": "An Fenster anpassen",
+                "actualPixels": "Originalpixel (100 %)",
+                "toggleZoom": "Zwischen Einpassen und Originalpixeln wechseln",
+                "panLeft": "Nach links schwenken",
+                "panRight": "Nach rechts schwenken",
+                "panUp": "Nach oben schwenken",
+                "panDown": "Nach unten schwenken",
+                "showOriginal": "Original anzeigen, solange gedrückt",
+                "cyclePreview": "Vergleichsansicht wechseln",
+                "toggleDrawer": "Bilder ein- oder ausblenden",
+                "previousImage": "Vorheriges Bild",
+                "nextImage": "Nächstes Bild",
+                "revealImage": "Bild im Dateimanager anzeigen",
+                "toggleAutopilot": "Autopilot ein- oder ausschalten",
+                "addEnhancement": "Verbesserung hinzufügen",
+                "removeEnhancement": "Ausgewählte Verbesserung entfernen",
+                "openOptions1": "Optionen von Verbesserung 1",
+                "openOptions2": "Optionen von Verbesserung 2",
+                "openOptions3": "Optionen von Verbesserung 3",
+                "openOptions4": "Optionen von Verbesserung 4",
+                "openOptions5": "Optionen von Verbesserung 5",
+                "openOptions6": "Optionen von Verbesserung 6",
+                "openOptions7": "Optionen von Verbesserung 7",
+                "openOptions8": "Optionen von Verbesserung 8",
+                "cropRotate": "Zuschneiden/Drehen",
+                "showShortcuts": "Tastaturkürzel anzeigen"
+            },
+            "add": "Kürzel hinzufügen",
+            "addLabel": "Kürzel hinzufügen für {{action}}",
+            "recording": "Tasten drücken…",
+            "prompt": "Drücken Sie die Tasten für {{action}} oder Escape zum Abbrechen.",
+            "none": "Kein Kürzel",
+            "remove": "{{binding}} entfernen, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} ist für die Navigation im Fenster reserviert.",
+                "system": "{{binding}} wird vom System verwendet.",
+                "application": "{{binding}} wird von der Anwendung verwendet."
+            },
+            "conflict": "{{binding}} wird bereits von {{action}} verwendet.",
+            "useHere": "Stattdessen hier verwenden",
+            "space": "Leertaste",
+            "appActions": {
+                "open": "Bilder öffnen",
+                "export": "Bilder exportieren",
+                "settings": "Einstellungen öffnen",
+                "closeImage": "Bild schließen",
+                "closeAll": "Alle Bilder schließen",
+                "quit": "Beenden"
+            },
+            "application": "Anwendung",
+            "applicationHint": "Diese Tasten sind fest und können nicht geändert werden."
+        }
     },
     "navbar": {
         "about": "Über",
@@ -251,6 +311,7 @@
             "pipelineOrder": "in Pipeline-Reihenfolge",
             "queued": "Wartend",
             "analysing": "Analyse",
+            "preparing": "Wird geladen",
             "enhancing": "Verbessern",
             "writing": "Schreiben",
             "done": "Fertig",
@@ -356,8 +417,8 @@
         "faceRecovery": {
             "name": "Gesichtswiederherstellung",
             "models": {
-                "athens": "Verwenden Sie dieses Modell, wenn Identitätstreue am wichtigsten ist. Es bewahrt die Gesichtsstruktur, während Details wiederhergestellt werden, selbst bei stark beschädigten Gesichtern. Am besten geeignet, wenn Sie restaurieren möchten, ohne die Person zu verändern.",
-                "santorini": "Verwenden Sie dieses Modell, wenn Sie eine aggressive, schnelle Verbesserung wollen und eine Veränderung der Identität in Kauf nehmen. Es liefert scharfe, ansprechende Gesichter bei mäßiger Degradation, kann aber bei sehr schlechter Qualität Merkmale erfinden und die Identität verändern."
+                "athens": "Verwenden Sie dieses Modell, wenn Identitätstreue am wichtigsten ist. Es bewahrt die Gesichtsstruktur, während Details wiederhergestellt werden, selbst bei stark beschädigten Gesichtern. Am besten geeignet, wenn Sie restaurieren möchten, ohne die Person zu verändern. Mit der Restaurierung ist das meist nicht nötig.",
+                "santorini": "Verwenden Sie dieses Modell, wenn Sie eine aggressive, schnelle Verbesserung wollen und eine Veränderung der Identität in Kauf nehmen. Es liefert scharfe, ansprechende Gesichter bei mäßiger Degradation, kann aber bei sehr schlechter Qualität Merkmale erfinden und die Identität verändern. Mit der Restaurierung ist das meist nicht nötig."
             }
         },
         "colorization": {
@@ -395,8 +456,17 @@
             "models": {
                 "tokyo": "Verwenden Sie dieses Modell, wenn Sie eine natürliche Hochskalierung ohne Übertreibung wollen. Es bewahrt den ursprünglichen Look und feine Strukturen, statt neue Details zu „erfinden“, und ist damit ideal, wenn Realismus und Originaltreue wichtiger sind als Schärfe.",
                 "kyoto": "Verwenden Sie dieses Modell für reale Fotos (Menschen, Landschaften, Produkte). Es stellt Details hervorragend wieder her und bewältigt dabei Rauschen, Unschärfe und Kompressionsartefakte. Ideal für den Praxiseinsatz mit unperfekten Bildern, wenn Sie schnell ansprechende, robuste Ergebnisse wollen.",
-                "saitama": "Verwenden Sie dieses Modell für Cartoons, Zeichnungen, Strichgrafiken und digitale Illustrationen. Es bewahrt saubere Linien, flache Farben und stilisierte Schattierungen, ohne fotoähnliche Texturen einzuführen. Am besten geeignet, wenn scharfe Kanten und stilistische Konsistenz wichtiger sind als Realismus.",
-                "osaka": "Verwenden Sie dieses Modell, wenn Sie die bestmögliche Hochskalierungsqualität wollen. Es baut Details neu auf, statt sie nur nachzuschärfen, und geht bei weichen oder stark komprimierten Fotos am weitesten. Es ist allerdings langsam und braucht eine leistungsstarke GPU, um gut zu laufen."
+                "saitama": "Verwenden Sie dieses Modell für Cartoons, Zeichnungen, Strichgrafiken und digitale Illustrationen. Es bewahrt saubere Linien, flache Farben und stilisierte Schattierungen, ohne fotoähnliche Texturen einzuführen. Am besten geeignet, wenn scharfe Kanten und stilistische Konsistenz wichtiger sind als Realismus."
+            },
+            "suspended": "Die Restaurierung vergrößert dieses Foto"
+        },
+        "restore": {
+            "name": "Restaurierung",
+            "size": "Größe",
+            "generative": "Generativ: zeichnet Details neu und kann Gesichter, Texturen und Schrift verändern.",
+            "models": {
+                "kazan": "Verwende dieses Modell, wenn die Unschärfe für „Schärfen“ zu stark ist — z. B. ein unscharfes Gesicht oder ein Foto aus einer alten Kamera, das nie ganz scharf war. Es zeichnet plausible Details neu, statt sie wiederherzustellen, und kann daher Gesichter, Texturen und kleinen Text verändern; verringere die Stärke, wenn das Ergebnis erfunden wirkt. Es ist langsam und ein großer Download.",
+                "osaka": "Verwenden Sie dieses Modell, wenn Sie die gründlichste verfügbare Restaurierung wollen. Es baut Details neu auf, statt sie nur nachzuschärfen, und geht bei weichen oder stark komprimierten Fotos am weitesten. Es ist allerdings langsam und braucht eine leistungsstarke GPU, um gut zu laufen."
             }
         },
         "lensBlur": {
@@ -437,6 +507,7 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
         "infoLensBlur": "{{name}}, Unschärfe {{amount}}"
     },
     "preview": {
@@ -451,16 +522,22 @@
         },
         "progress": {
             "downloading": "Herunterladen {{percent}}%",
-            "removal": "Entfernen",
-            "denoise": "Entrauschen",
-            "faceRecovery": "Gesichter",
-            "colorization": "Kolorierung",
-            "lightAdjustment": "Lichtanpassung",
-            "colorBalance": "Farbbalance",
-            "upscale": "Hochskalieren",
-            "sharpen": "Schärfen",
-            "lensBlur": "Unschärfe",
-            "enhancing": "Wird verbessert"
+            "removal": "Wird entfernt",
+            "denoise": "Wird entrauscht",
+            "faceRecovery": "Gesichter restaurieren",
+            "colorization": "Wird koloriert",
+            "lightAdjustment": "Licht anpassen",
+            "colorBalance": "Farben ausgleichen",
+            "upscale": "Wird hochskaliert",
+            "sharpen": "Wird geschärft",
+            "restore": "Wird restauriert",
+            "lensBlur": "Wird weichgezeichnet",
+            "enhancing": "Wird verbessert",
+            "compiling": "Modell {{model}} wird kompiliert",
+            "loading": "Modell {{model}} wird geladen",
+            "firstUse": "Nur beim ersten Mal, kann einige Minuten dauern",
+            "firstUseAbout_one": "Nur beim ersten Mal, kann etwa {{count}} Minute dauern",
+            "firstUseAbout_other": "Nur beim ersten Mal, kann etwa {{count}} Minuten dauern"
         }
     },
     "menu": {
@@ -471,6 +548,34 @@
             "showIn": "Im Dateimanager anzeigen",
             "showIn_darwin": "Im Finder anzeigen",
             "showIn_windows": "Im Explorer anzeigen"
+        },
+        "bar": {
+            "about": "Über {{name}}",
+            "services": "Dienste",
+            "hide": "{{name}} ausblenden",
+            "hideOthers": "Andere ausblenden",
+            "showAll": "Alle einblenden",
+            "quit": "{{name}} beenden",
+            "file": "Ablage",
+            "open": "Öffnen …",
+            "export": "Exportieren …",
+            "closeImage": "Bild schließen",
+            "closeAll": "Alle Bilder schließen",
+            "settings": "Einstellungen …",
+            "edit": "Bearbeiten",
+            "undo": "Widerrufen",
+            "redo": "Wiederholen",
+            "cut": "Ausschneiden",
+            "copy": "Kopieren",
+            "paste": "Einsetzen",
+            "selectAll": "Alles auswählen",
+            "view": "Darstellung",
+            "fullscreen": "Vollbildmodus aktivieren",
+            "window": "Fenster",
+            "minimize": "Im Dock ablegen",
+            "zoom": "Zoomen",
+            "bringAllToFront": "Alle nach vorne bringen",
+            "help": "Hilfe"
         }
     },
     "errors": {
@@ -485,6 +590,25 @@
             "title": "Etwas ist schiefgelaufen",
             "message": "Open Photo AI ist auf einen unerwarteten Fehler gestoßen und kann nicht fortfahren. Ein Neuladen behebt das meist; Ihre Einstellungen bleiben erhalten, nicht gespeicherte Arbeit aus der aktuellen Sitzung geht jedoch verloren.",
             "reload": "Neu laden"
+        }
+    },
+    "shortcuts": {
+        "title": "Tastaturkürzel",
+        "description": "Die Tasten, die jeder Aktion derzeit zugewiesen sind.",
+        "hint": "Ändern Sie sie unter Einstellungen > Tastatur.",
+        "tooltip": "{{name}} ({{key}})",
+        "tooltipCycle": "{{name}} ({{key}} wechselt)",
+        "settingsHint": "Drücken Sie überall {{key}}, um diese Kürzel zu sehen.",
+        "sections": {
+            "view": "Ansicht",
+            "images": "Bilder",
+            "enhancements": "Verbesserungen"
+        },
+        "rows": {
+            "zoom": "Vergrößern / Verkleinern",
+            "pan": "Schwenken",
+            "images": "Vorheriges Bild / Nächstes Bild",
+            "options": "Optionen von Verbesserung 1–8"
         }
     }
 }

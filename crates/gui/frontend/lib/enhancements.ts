@@ -7,6 +7,7 @@ import {
     Paintbrush,
     Palette,
     ScanFace,
+    Sparkles,
     Sun,
     Triangle,
     Waves,
@@ -23,20 +24,25 @@ import { report } from "@/lib/report";
 /**
  * One enhancement this application presents, and what it is called.
  *
- * Two name keys rather than one, because they are different sentences in different places: the
- * name is the enhancement's own, shared with the add menu, the sidebar and the settings dialog; the
- * short name belongs to the chip drawn over a running preview, which is 148px wide.
+ * Two keys rather than one, because they are different sentences in different places: the name is
+ * the enhancement's own, shared with the add menu, the sidebar and the settings dialog; the activity
+ * is what the chip drawn over a running preview says while the enhancement runs - *Upscaling*,
+ * *Restoring faces* - and what an export's row says in its place of a generic *Enhancing*.
  *
- * **The short name is a key of its own rather than a truncation of the full one.** Several
- * languages need a different word rather than fewer characters of the same one - the reference
- * records Russian shortening "Восстановление лиц" to "Лица" - and the catalogues have carried both
- * since `add-gui-1-foundation` ported them whole.
+ * **The activity is a sentence of its own rather than the name with a suffix.** A chain runs
+ * several operations under one bar, and a bar that says *Enhancing* through all of them - or through
+ * the minutes a model can take to load - says nothing about which one is slow. Several languages say
+ * an activity with a different construction rather than an inflection of the name (Japanese adds 中,
+ * Hindi says the work is ongoing), so each catalogue spells it out.
  */
 export type Enhancement = {
     family: Family;
     nameKey: ParseKeys;
-    /** The name the progress chip draws, in the language the rest of the window is speaking. */
-    shortNameKey: ParseKeys;
+    /**
+     * What the progress chip says while this enhancement runs - *Upscaling* - in the language the
+     * rest of the window is speaking.
+     */
+    activityKey: ParseKeys;
     /**
      * The glyph a menu entry and a sidebar row are drawn with.
      *
@@ -46,22 +52,22 @@ export type Enhancement = {
      */
     icon: LucideIcon;
     /**
+     * Present, and `true`, for an enhancement Autopilot never suggests: a generative redraw or a lens
+     * blur is the user's choice about a photograph, never an automatic one, and the library's analysis
+     * has no signal for it. Its settings row draws its Autopilot switch off and unavailable.
+     */
+    manual?: true;
+    /**
      * Set for an enhancement whose model takes a painted region rather than settings - Remove. Adding it opens the
      * brush rather than a panel of options, and it is in neither the settings dialog's table nor what Autopilot may
      * be asked to suggest: it publishes one model, so there is no default to choose, and what it removes is the user's
      * choice to paint, never an analysis's. Absent for the others.
      */
     painted?: true;
-    /**
-     * Present, and `true`, for an enhancement Autopilot never suggests: it is the user's choice about a
-     * photograph, never an automatic one, and the library's analysis has no signal for it. Its settings
-     * row draws its Autopilot switch off and unavailable.
-     */
-    manual?: true;
 };
 
 /**
- * The eight enhancements, in the order the add menu offers them.
+ * The ten enhancements, in the order the add menu offers them.
  *
  * **This is the frontend's only list of domain names, and it is not model vocabulary.** It is which
  * enhancements this application presents and in what order - a presentation decision, which is why
@@ -83,56 +89,63 @@ export const ENHANCEMENTS = [
         // First, as the library runs it: everything after a removal treats the fill as photograph.
         family: "remove",
         nameKey: "enhancements.removal.name",
-        shortNameKey: "preview.progress.removal",
+        activityKey: "preview.progress.removal",
         icon: Bandage,
         painted: true,
     },
     {
         family: "denoise",
         nameKey: "enhancements.denoise.name",
-        shortNameKey: "preview.progress.denoise",
+        activityKey: "preview.progress.denoise",
         icon: Waves,
     },
     {
         family: "face_recovery",
         nameKey: "enhancements.faceRecovery.name",
-        shortNameKey: "preview.progress.faceRecovery",
+        activityKey: "preview.progress.faceRecovery",
         icon: ScanFace,
     },
     {
         family: "colorization",
         nameKey: "enhancements.colorization.name",
-        shortNameKey: "preview.progress.colorization",
+        activityKey: "preview.progress.colorization",
         icon: Paintbrush,
     },
     {
         family: "light_adjustment",
         nameKey: "enhancements.lightAdjustment.name",
-        shortNameKey: "preview.progress.lightAdjustment",
+        activityKey: "preview.progress.lightAdjustment",
         icon: Sun,
     },
     {
         family: "color_balance",
         nameKey: "enhancements.colorBalance.name",
-        shortNameKey: "preview.progress.colorBalance",
+        activityKey: "preview.progress.colorBalance",
         icon: Palette,
     },
     {
         family: "sharpen",
         nameKey: "enhancements.sharpen.name",
-        shortNameKey: "preview.progress.sharpen",
+        activityKey: "preview.progress.sharpen",
         icon: Triangle,
     },
     {
         family: "upscale",
         nameKey: "enhancements.upscale.name",
-        shortNameKey: "preview.progress.upscale",
+        activityKey: "preview.progress.upscale",
         icon: Maximize2,
+    },
+    {
+        family: "restore",
+        nameKey: "enhancements.restore.name",
+        activityKey: "preview.progress.restore",
+        icon: Sparkles,
+        manual: true,
     },
     {
         family: "lens_blur",
         nameKey: "enhancements.lensBlur.name",
-        shortNameKey: "preview.progress.lensBlur",
+        activityKey: "preview.progress.lensBlur",
         icon: Aperture,
         manual: true,
     },
@@ -175,9 +188,11 @@ export const familiesWhere = (keep: (family: Family) => boolean): Family[] =>
 export const isPainted = (family: Family): boolean =>
     ENHANCEMENTS.some((entry: Enhancement) => entry.family === family && entry.painted === true);
 
-/** Whether Autopilot may ever suggest `family` - every enhancement but the ones marked `manual`. */
+/** Whether Autopilot may ever suggest `family` - every enhancement but the ones marked `manual` or `painted`. */
 export const isSuggestible = (family: Family): boolean =>
-    ENHANCEMENTS.some((entry) => entry.family === family && !("manual" in entry && entry.manual));
+    ENHANCEMENTS.some(
+        (entry) => entry.family === family && !("manual" in entry && entry.manual) && !("painted" in entry),
+    );
 
 /**
  * Nothing, or the compile error that the wire carries a family {@link ENHANCEMENTS} forgot.
@@ -483,7 +498,7 @@ const REPORTED_AS: Partial<Record<Family, Operation["family"]>> = {
  * What the progress chip calls the family a report carries, or `undefined` where this application has
  * no name for it.
  *
- * Derived from {@link ENHANCEMENTS} rather than a second table of short names: the seven that are
+ * Derived from {@link ENHANCEMENTS} rather than a second table of activities: the seven that are
  * enhancements answer their own, and {@link REPORTED_AS} redirects the one that is not.
  *
  * `undefined` is the honest answer for a family the catalogue publishes and `ENHANCEMENTS` does not
@@ -495,7 +510,37 @@ export const progressLabelKey = (family: Family | undefined): ParseKeys | undefi
 
     const reported = REPORTED_AS[family] ?? family;
 
-    return ENHANCEMENTS.find((entry) => entry.family === reported)?.shortNameKey;
+    return ENHANCEMENTS.find((entry) => entry.family === reported)?.activityKey;
+};
+
+/**
+ * The name of the model a chain runs for the family a report carries, as the catalogue publishes it - *Kazan* - for
+ * the chip to say which model is being prepared.
+ *
+ * Read off the chain rather than the report: a report names its family and not its model, and the chain holds at most
+ * one operation per family. Where it holds none - a detection, which no menu offers - or the catalogue has not
+ * arrived or no longer publishes the model, the answer is the enhancement's own name (*Face Recovery*), or its
+ * codename, rather than nothing.
+ */
+export const preparingName = (
+    t: TFunction,
+    families: FamilyEntry[],
+    operations: readonly Operation[],
+    family: Family | undefined,
+): string | undefined => {
+    if (!family) return undefined;
+
+    const operation = operations.find((candidate) => candidate.family === family);
+    if (operation) {
+        const entry = families.find((published) => published.family === operation.family);
+
+        return variantOf(entry, operation.codename)?.label ?? operation.codename;
+    }
+
+    const reported = REPORTED_AS[family] ?? family;
+    const nameKey = ENHANCEMENTS.find((entry) => entry.family === reported)?.nameKey;
+
+    return nameKey && t(nameKey);
 };
 
 /**
@@ -534,6 +579,55 @@ export const startingScale = async (file: ImageRecord | undefined, crop: CropInf
         return 1;
     }
 };
+
+/**
+ * The scale `family`'s enhancement in `operations` carries, or 1 where the stack holds none.
+ *
+ * The **first** one rather than the product of several: the sidebar offers one enhancement per
+ * family, so a stack holds at most one. A scale at or below zero is read as 1, which is the
+ * reference's own guard: the control is bounded to the catalogue's range, so such a value can only
+ * arrive through a fault - and a navbar reading "0 x 0" is a worse answer to a fault than the
+ * photograph's own size.
+ */
+const scaleOf = (operations: readonly Operation[], family: Operation["family"]): number => {
+    const scale = operations.find((operation) => operation.family === family)?.parameters[SCALE];
+
+    return scale !== undefined && Number.isFinite(scale) && scale > 0 ? scale : 1;
+};
+
+/**
+ * Whether the stack's restore enlarges the photograph - a size above 1x - which is what takes the
+ * upscale out of the chain.
+ *
+ * An enlarging restore resamples to its size and redraws at it, so it does an upscale's job and
+ * replaces it: two enlargements in one chain would hand the generative model an upscale's output at
+ * up to sixteen times the photograph's pixels. At 1x the restore follows an upscale and restores the
+ * photograph at its final size. The command line refuses the same pairing.
+ */
+export const restoreEnlarges = (operations: readonly Operation[]): boolean => scaleOf(operations, "restore") > 1;
+
+/**
+ * Why `family`'s enhancement in `operations` is held out of the chain, as the key of the sentence a
+ * row and its panel say it in - or `undefined` where it runs.
+ *
+ * One case: an upscale, while the restore enlarges. **Held out rather than removed**, so a user who
+ * takes the restore back to 1x finds the upscale where they left it; its row and its panel say why it
+ * is not running, and nothing about it is changed.
+ */
+export const suspendedBecause = (operations: readonly Operation[], family: Family): ParseKeys | undefined =>
+    family === "upscale" && restoreEnlarges(operations) ? "enhancements.upscale.suspended" : undefined;
+
+/**
+ * The operations of `operations` that run: every one {@link suspendedBecause} has no reason to hold
+ * out. What a preview run and an export send, and what the size a chain produces is read from.
+ *
+ * **The stack itself** where nothing is held out, so a caller holding it as an effect's dependency
+ * sees a new array only when the stack changed.
+ */
+export const runnable = (operations: readonly Operation[]): readonly Operation[] =>
+    operations.some((operation) => suspendedBecause(operations, operation.family))
+        ? operations.filter((operation) => !suspendedBecause(operations, operation.family))
+        : operations;
 
 /**
  * What the library calls a lens blur's aperture: its own `FNumber::NAME`, the name the catalogue publishes the range
@@ -579,26 +673,20 @@ export const startingFNumber = async (file: ImageRecord | undefined, crop: CropI
 };
 
 /**
- * How much larger a chain makes the photograph it runs over: the upscale's own scale, or 1 where the
- * stack holds none.
+ * How much larger a chain makes the photograph it runs over: the scale of the upscale that runs, times
+ * the size the restore runs at - 1 where the stack holds neither.
  *
  * Here rather than inline in the navbar, beside {@link startingScale} and the other derivations of
  * this shape, because it is the same question those answer - what the stack implies about the
  * photograph's size - and the navbar is the second region to depend on the stack's shape rather than
  * the owner of that dependency. The reference keeps the same function, in the same place.
  *
- * The **first** upscale rather than the product of every one of them: the sidebar offers one
- * enhancement per family, so a stack holds at most one. A second would be a chain this application
- * cannot build, and multiplying for it would be answering a question nobody can ask.
- *
- * A scale at or below zero is read as 1, which is the reference's own guard. The control is bounded
- * to the catalogue's range, so such a value can only arrive through a fault - and a navbar reading
- * "0 x 0" is a worse answer to a fault than the photograph's own size.
+ * **Of what runs**, so an upscale the restore has taken out of the chain does not count.
  */
-export const upscaleFactor = (operations: readonly Operation[]): number => {
-    const scale = operations.find((operation) => operation.family === "upscale")?.parameters[SCALE];
+export const enlargement = (operations: readonly Operation[]): number => {
+    const running = runnable(operations);
 
-    return scale !== undefined && Number.isFinite(scale) && scale > 0 ? scale : 1;
+    return scaleOf(running, "upscale") * scaleOf(running, "restore");
 };
 
 /**

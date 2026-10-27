@@ -25,6 +25,7 @@ export type Family =
     | "colorization"
     | "sharpen"
     | "upscale"
+    | "restore"
     | "lens_blur";
 
 /** The numeric precision one model artifact is published at, as Rust's `Precision` spells it. */

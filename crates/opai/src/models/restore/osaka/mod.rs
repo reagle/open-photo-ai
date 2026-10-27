@@ -1,4 +1,5 @@
-//! The diffusion upscaler: resample to the target size, restore detail at that size, and put the colour back.
+//! The diffusion restorer: resample to the target size, restore detail at that size, put the colour back, and blend
+//! by the strength.
 //!
 //! Osaka is not a scaling model. The network is resolution-preserving throughout — the VAE compresses 8x and expands
 //! 8x and the transformer between them does not change the token grid — so the image is resampled to its target size
@@ -16,13 +17,16 @@
 //! 5. **Correct** the colour once, on the assembled image, against the resampled image the model was conditioned on —
 //!    see [`colorfix`].
 //! 6. **Reduce** to the caller's channel depth, once, and crop the extension off.
+//! 7. **Blend** towards the resampled image by the run's strength, where it is below the model's own output — the
+//!    image the model was conditioned on, as Kazan's strength blends towards its own; see
+//!    [`resample`](super::resample).
 //!
 //! # This directory is the whole of Osaka
 //!
 //! The row [`OSAKA`] and the two session constants behind it, the profile measured for it and the prose recording how
 //! ([`profile`]), the precisions it is published in ([`precision`]), the vocabulary its three-graph contract needs
 //! ([`graph`]), this driver, the helpers under it, and the tests for all of it. Deleting the model is deleting this
-//! directory plus the arms in [`UpscaleVariant`](super::UpscaleVariant) that name it. Nothing else here belongs to
+//! directory plus the arms in [`RestoreVariant`](super::RestoreVariant) that name it. Nothing else here belongs to
 //! any other model, and nothing here reaches into one — see [`crate::models`] for the rule, and [`imaging`] and
 //! [`crate::pipeline`] for what is shared instead.
 //!
@@ -108,19 +112,21 @@ use region::{RegionError, RegionGraphs, RegionScratch, restore_region};
 
 use crate::error::{InferenceError, UnsupportedReason};
 use crate::models::precision::Precision;
-use crate::models::{ArtifactId, GraphRole, ResolvedGraph, Scale};
+use crate::models::{ArtifactId, GraphRole, ResolvedGraph, Scale, Strength};
 use crate::pipeline::Backend;
 use crate::pipeline::{ImagePipeline, Model, reporter};
 use crate::providers::options::TRT_BUILDER_OPTIMIZATION_LEVEL;
 use crate::providers::profile::{CoreMlComputeUnits, EpProfile, ExecutionMode};
 use crate::sessions::SessionHandle;
 use imaging::grid::{Tile, TileGrid};
+use imaging::mix::blended;
 use imaging::tensor::{Channel, Normalisation, Sampler, chw_to_image, padded_to_chw};
 use imaging::{ChannelDepth, TilingError};
 
-/// What one diffusion upscale operation runs: its three graphs, and the scale the image is resampled to first.
+/// What one diffusion restore operation runs: its three graphs, the scale the image is resampled to first, and how much
+/// of the restoration is kept.
 ///
-/// Built by [`Upscale::pipeline`](crate::models::Upscale::pipeline) — the family's contract seam — which is the only
+/// Built by [`Restore::pipeline`](crate::models::Restore::pipeline) — the family's contract seam — which is the only
 /// thing that names it. The chain driver holds it as an [`ImagePipeline`] and never learns that a diffusion contract
 /// exists.
 ///
@@ -141,6 +147,8 @@ pub(crate) struct Diffusion {
     /// The scale the image is resampled to before anything runs. The network is resolution-preserving, so this is
     /// what decides the size detail is restored at rather than something a pass overshoots.
     requested: Scale,
+    /// How far the result is moved from the resampled image towards the restoration: 1 is the model's own output.
+    strength: f32,
     /// Where the encoder, the transformer and the decoder sit in the order [`sessions`](Model::sessions) acquires
     /// them. Resolved once, here, rather than per run.
     ///
@@ -149,7 +157,8 @@ pub(crate) struct Diffusion {
 }
 
 impl Diffusion {
-    /// The pipeline running `graphs` for the operation named `name` at `requested`, with `required` on disk first.
+    /// The pipeline running `graphs` for the operation named `name` at `requested` and `strength`, with `required` on
+    /// disk first.
     ///
     /// The role-to-position mapping is resolved here rather than per region, which is also where the refusal below
     /// belongs: a variant that does not declare all three roles cannot be run at all, and finding that out before the
@@ -166,6 +175,7 @@ impl Diffusion {
         graphs: Vec<ResolvedGraph>,
         required: Vec<ArtifactId>,
         requested: Scale,
+        strength: Strength,
     ) -> Result<Self, InferenceError> {
         let position = |role| graphs.iter().position(|graph| graph.role == role);
         let roles = [GraphRole::Encoder, GraphRole::Transformer, GraphRole::Decoder].map(position);
@@ -185,7 +195,14 @@ impl Diffusion {
             });
         };
 
-        Ok(Self { name, graphs, required, requested, roles: [encoder, transformer, decoder] })
+        Ok(Self {
+            name,
+            graphs,
+            required,
+            requested,
+            strength: strength.as_f32(),
+            roles: [encoder, transformer, decoder],
+        })
     }
 }
 
@@ -226,7 +243,7 @@ impl<B: Backend> ImagePipeline<B> for Diffusion {
             decoder: &sessions[decoder],
         };
 
-        restore_image::<B>(input, &graphs, self.requested, depth, progress, cancelled)
+        restore_image::<B>(input, &graphs, self.requested, self.strength, depth, progress, cancelled)
             .map_err(|error| InferenceError::from_tiling(&self.name, error))
     }
 }
@@ -238,7 +255,8 @@ impl<B: Backend> ImagePipeline<B> for Diffusion {
 /// with no area, `Cancelled` where the caller stopped it, `Tile` naming the region that failed.
 type Restored<B> = Result<DynamicImage, TilingError<RegionError<<B as Backend>::Error>>>;
 
-/// Runs `source` through the diffusion upscaler at `requested`, returning the result at `depth`.
+/// Runs `source` through the diffusion restorer at `requested`, keeping `strength` of the restoration, and returns the
+/// result at `depth`.
 ///
 /// `graphs` are the three sessions the chain acquired before any of them ran and holds for the whole call. They are
 /// held across **every** region rather than across one, which makes the operation longer but not different in kind —
@@ -257,6 +275,7 @@ pub(crate) fn restore_image<B: Backend>(
     source: &DynamicImage,
     graphs: &RegionGraphs<'_, B>,
     requested: Scale,
+    strength: f32,
     depth: ChannelDepth,
     progress: Option<&dyn Fn(f64)>,
     cancelled: &dyn Fn() -> bool,
@@ -264,9 +283,11 @@ pub(crate) fn restore_image<B: Backend>(
     // Dispatched once at the top, as `run_tiled` dispatches it, so the body below is written once and monomorphised
     // for `u8` and `u16` rather than branching per pixel over a nine-figure buffer.
     match depth {
-        ChannelDepth::Eight => restored::<u8, B>(source, graphs, requested, progress, cancelled).map(u8::into_dynamic),
+        ChannelDepth::Eight => {
+            restored::<u8, B>(source, graphs, requested, strength, progress, cancelled).map(u8::into_dynamic)
+        }
         ChannelDepth::Sixteen => {
-            restored::<u16, B>(source, graphs, requested, progress, cancelled).map(u16::into_dynamic)
+            restored::<u16, B>(source, graphs, requested, strength, progress, cancelled).map(u16::into_dynamic)
         }
     }
 }
@@ -279,6 +300,7 @@ fn restored<T: Channel, B: Backend>(
     source: &DynamicImage,
     graphs: &RegionGraphs<'_, B>,
     requested: Scale,
+    strength: f32,
     progress: Option<&dyn Fn(f64)>,
     cancelled: &dyn Fn() -> bool,
 ) -> RestoredAt<T, B>
@@ -402,12 +424,20 @@ where
     // full-extent buffers are never resident together.
     drop(assembled);
 
-    if (padded_width, padded_height) == (target_width, target_height) {
+    // The alignment extension off, leaving the dimensions the request asked for.
+    let picture = if (padded_width, padded_height) == (target_width, target_height) {
+        picture
+    } else {
+        image::imageops::crop_imm(&picture, 0, 0, target_width, target_height).to_image()
+    };
+
+    // Towards the image the model was conditioned on, which is the one of the same size there is: at 1 the loop would
+    // hand back the restoration exactly, and it is skipped there rather than run as a pass that changes nothing.
+    if strength >= 1.0 {
         return Ok(picture);
     }
 
-    // The alignment extension off, leaving the dimensions the request asked for.
-    Ok(image::imageops::crop_imm(&picture, 0, 0, target_width, target_height).to_image())
+    Ok(blended(&sampler, picture, strength))
 }
 
 /// The ONNX Runtime graph transformers that miscompile Osaka's diffusion transformer.
@@ -446,7 +476,7 @@ where
 /// being swept — so every multi-name case in it was one unrecognised name, which the runtime ignores in silence, and
 /// therefore failed exactly as naming nothing does. The table was consistent with a wrong separator and was read as a
 /// runtime limitation. The separator is a semicolon; see [`DISABLED_OPTIMIZER_SEPARATOR`] and, for the measurement,
-/// `models::upscale::osaka::live`.
+/// `models::restore::osaka::live`.
 ///
 /// An unrecognised name is ignored by the runtime rather than reported, so a typo here is silent and the only sign
 /// the setting took effect is that the model loads at all. That is what made one wrong character survive three
@@ -462,7 +492,6 @@ const BROKEN_OPTIMIZERS: [&str; 2] = ["ReshapeFusion", "SimplifiedLayerNormFusio
 /// are always loaded together — which is why the variant has no scale table.
 pub(crate) static OSAKA: DiffusionVariant = DiffusionVariant {
     codename: "osaka",
-    label: "Osaka",
     profile,
     graphs: &[
         Graph {
@@ -709,10 +738,27 @@ mod tests {
         let handles = held(&shapes, 0.0, None);
         let graphs = RegionGraphs::<Fake> { encoder: &handles[0], transformer: &handles[1], decoder: &handles[2] };
 
-        let produced = restore_image::<Fake>(source, &graphs, scale(factor), depth, None, &|| false)
+        let produced = restore_image::<Fake>(source, &graphs, scale(factor), 1.0, depth, None, &|| false)
             .unwrap_or_else(|error| panic!("the pipeline refused a {factor}x run: {error}"));
 
         (produced, shapes)
+    }
+
+    #[test]
+    fn a_restoration_at_no_strength_is_the_image_the_model_was_conditioned_on() {
+        // The strength blends towards the resampled image, which at 1x is the source itself. A decode of a level far
+        // from the source's makes the restoration differ from it, so a blend that did nothing would show.
+        let source = gradient(300, 200);
+        let shapes: Shapes = Arc::default();
+        let handles = held(&shapes, -0.8, None);
+        let graphs = RegionGraphs::<Fake> { encoder: &handles[0], transformer: &handles[1], decoder: &handles[2] };
+        let at = |strength| {
+            restore_image::<Fake>(&source, &graphs, scale(1.0), strength, ChannelDepth::Eight, None, &|| false)
+                .expect("the pipeline restores")
+        };
+
+        assert_eq!(at(0.0).as_rgb8(), source.as_rgb8(), "no strength kept some of the restoration");
+        assert_ne!(at(1.0).as_rgb8(), source.as_rgb8(), "the restoration was the source, so this proved nothing");
     }
 
     /// The shapes the published FP16 exports declare, which every region must arrive at whatever the image was.
@@ -774,7 +820,8 @@ mod tests {
             let graphs = RegionGraphs::<Fake> { encoder: &handles[0], transformer: &handles[1], decoder: &handles[2] };
 
             let source = DynamicImage::ImageRgb8(ImageBuffer::new(width, height));
-            let outcome = restore_image::<Fake>(&source, &graphs, scale(2.0), ChannelDepth::Eight, None, &|| false);
+            let outcome =
+                restore_image::<Fake>(&source, &graphs, scale(2.0), 1.0, ChannelDepth::Eight, None, &|| false);
 
             assert!(
                 matches!(outcome, Err(TilingError::Untileable { width: w, height: h }) if (w, h) == (width, height)),
@@ -831,6 +878,7 @@ mod tests {
             &gradient(1000, 500),
             &graphs,
             scale(1.0),
+            1.0,
             ChannelDepth::Eight,
             Some(&|fraction| reported.borrow_mut().push(fraction)),
             &|| false,
@@ -864,6 +912,7 @@ mod tests {
             &gradient(1000, 500),
             &graphs,
             scale(1.0),
+            1.0,
             ChannelDepth::Eight,
             None,
             &stop_after_one,
@@ -880,8 +929,15 @@ mod tests {
             let handles = held(&shapes, 0.0, Some(failing));
             let graphs = RegionGraphs::<Fake> { encoder: &handles[0], transformer: &handles[1], decoder: &handles[2] };
 
-            let outcome =
-                restore_image::<Fake>(&gradient(1000, 500), &graphs, scale(1.0), ChannelDepth::Eight, None, &|| false);
+            let outcome = restore_image::<Fake>(
+                &gradient(1000, 500),
+                &graphs,
+                scale(1.0),
+                1.0,
+                ChannelDepth::Eight,
+                None,
+                &|| false,
+            );
 
             let Err(TilingError::Tile { index, source }) = outcome else {
                 panic!("a failing region produced {outcome:?}");
@@ -902,7 +958,7 @@ mod tests {
     fn graph(role: GraphRole) -> ResolvedGraph {
         ResolvedGraph {
             role,
-            artifact: ArtifactId::new(crate::models::Family::Upscale, "osaka", None, Precision::Fp16),
+            artifact: ArtifactId::new(graph::PUBLISHED_UNDER, "osaka", None, Precision::Fp16),
             profile: EpProfile::default(),
         }
     }
@@ -925,6 +981,7 @@ mod tests {
                 declared,
                 Vec::new(),
                 Scale::new(2.0).expect("the test supplied a scale in range"),
+                Strength::clamped(1.0),
             );
 
             let Err(InferenceError::Unsupported { operation, .. }) = outcome else {
@@ -947,6 +1004,7 @@ mod tests {
             reversed,
             Vec::new(),
             Scale::new(2.0).expect("the test supplied a scale in range"),
+            Strength::clamped(1.0),
         )
         .expect("a set declaring all three roles");
 

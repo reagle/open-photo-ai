@@ -19,6 +19,7 @@ use crate::models::filter;
 use crate::pipeline::Backend;
 use crate::pipeline::Shared;
 use crate::providers::profile::EpProfile;
+use imaging::TileGeometry;
 use imaging::tensor::Normalisation;
 
 pub(crate) use variant::ALL;
@@ -118,6 +119,7 @@ impl Denoise {
             RANGE,
             self.params().strength,
             self.variant.guard(),
+            TileGeometry::DEFAULT,
         )
     }
 

@@ -37,6 +37,8 @@ pub enum Family {
     Sharpen,
     /// Upscaling.
     Upscale,
+    /// Generative restoration: a model that redraws detail rather than estimating it, optionally at a larger size.
+    Restore,
     /// A lens's depth of field, added to the photograph from a depth estimate.
     LensBlur,
 }
@@ -47,7 +49,7 @@ impl Family {
     /// The one list, so a family added later is covered by everything that iterates families rather than by whichever
     /// of them its author remembered to extend. Not the order the catalogue publishes — that one is a presentation
     /// decision and is pinned where it is made.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Detection,
         Self::Depth,
         Self::Matting,
@@ -59,10 +61,11 @@ impl Family {
         Self::ColorBalance,
         Self::Sharpen,
         Self::Upscale,
+        Self::Restore,
         Self::LensBlur,
     ];
 
-    /// The nine families whose result is an image, in the order a chain applies them.
+    /// The ten families whose result is an image, in the order a chain applies them.
     ///
     /// **The one order of a chain**, which [`Opai::process`](crate::Opai::process) puts every chain into before it
     /// runs and the catalogue publishes, so a front end draws a stack in the order it will actually run rather than
@@ -84,20 +87,26 @@ impl Family {
     ///   then correct the photograph as a whole, colour cast last so it is fitted to the exposure it will be seen at.
     /// - **Sharpen late**, over the corrected picture, and **upscale after it**, so every model before it runs at the
     ///   photograph's own resolution rather than at up to sixty-four times its pixels.
+    /// - **Restore after everything faithful.** A generative restorer redraws detail, so everything faithful runs first
+    ///   and hands it the best photograph there is to be conditioned on: denoised, with its faces, colour and light
+    ///   already corrected, and sharpened. What it draws is then the last faithful word, and no faithful model is asked
+    ///   to correct an invented texture. When it also enlarges, it resamples first and restores at the new size, so it
+    ///   replaces an upscale rather than following one; a front end offers one or the other. At 1x it may follow an
+    ///   upscale, and then restores the photograph at its final size.
     /// - **Lens blur last of all.** It is a creative choice rather than a restoration: every faithful step runs on the
-    ///   sharp photograph, and nothing after it sharpens or denoises the blur. Its radii are in output pixels, so it
-    ///   is as right after an upscale as without one.
+    ///   sharp photograph, and nothing after it sharpens, denoises or restores the blur. Its radii are in output
+    ///   pixels, so it is as right after an upscale or an enlarging restore as without one.
     ///
     /// The same order the application has always presented its enhancements in; it is [`Family::ALL`] without
     /// detection, depth and matting, and derived from it so the two cannot drift apart.
-    pub const APPLY_ORDER: [Self; 9] = {
+    pub const APPLY_ORDER: [Self; 10] = {
         assert!(
             matches!(Self::ALL[0], Self::Detection)
                 && matches!(Self::ALL[1], Self::Depth)
                 && matches!(Self::ALL[2], Self::Matting),
             "`ALL` must begin with the three families that are never applied"
         );
-        *Self::ALL.last_chunk::<9>().unwrap()
+        *Self::ALL.last_chunk::<10>().unwrap()
     };
 
     /// Where this family's operation sits in a chain — its index in [`Family::APPLY_ORDER`] — or `None` for detection,
@@ -130,6 +139,7 @@ impl Family {
             Self::Colorization => "cl",
             Self::Sharpen => "sh",
             Self::Upscale => "up",
+            Self::Restore => "rs",
             Self::LensBlur => "lb",
         }
     }
@@ -155,6 +165,7 @@ impl Family {
             Self::Colorization => "Colorization",
             Self::Sharpen => "Sharpen",
             Self::Upscale => "Upscale",
+            Self::Restore => "Restore",
             Self::LensBlur => "Lens Blur",
         }
     }
@@ -229,6 +240,7 @@ mod tests {
         assert_eq!(Family::Colorization.prefix(), "cl");
         assert_eq!(Family::Sharpen.prefix(), "sh");
         assert_eq!(Family::Upscale.prefix(), "up");
+        assert_eq!(Family::Restore.prefix(), "rs");
         assert_eq!(Family::LensBlur.prefix(), "lb");
     }
 
@@ -243,11 +255,21 @@ mod tests {
     }
 
     #[test]
-    fn lens_blur_is_last_and_upscale_just_before_it() {
+    fn the_apply_order_restores_generatively_after_everything_faithful() {
+        // A generative restorer is conditioned on what it is handed, so every faithful correction comes first, and
+        // nothing faithful after it is asked to correct a texture it invented.
+        assert_eq!(Family::Restore.applied_at(), Some(Family::APPLY_ORDER.len() - 2));
+        assert_eq!(Family::Upscale.applied_at(), Some(Family::APPLY_ORDER.len() - 3));
+    }
+
+    #[test]
+    fn lens_blur_is_last_and_upscale_and_restore_just_before_it() {
         // A lens blur is a creative choice made on the finished photograph, so nothing faithful runs after it; its
-        // radii are in output pixels, so it follows an upscale rather than being enlarged by one.
+        // radii are in output pixels, so it follows an upscale or an enlarging restore rather than being enlarged by
+        // one.
         assert_eq!(Family::LensBlur.applied_at(), Some(Family::APPLY_ORDER.len() - 1));
-        assert_eq!(Family::Upscale.applied_at(), Some(Family::APPLY_ORDER.len() - 2));
+        assert_eq!(Family::Restore.applied_at(), Some(Family::APPLY_ORDER.len() - 2));
+        assert_eq!(Family::Upscale.applied_at(), Some(Family::APPLY_ORDER.len() - 3));
     }
 
     #[test]

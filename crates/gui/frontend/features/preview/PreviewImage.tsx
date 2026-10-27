@@ -9,8 +9,9 @@ import { useResizeObserver } from "@/hooks/useResizeObserver";
 import { useSettledFile } from "@/hooks/useSettledFile";
 import { framedDimensions } from "@/ipc/crop";
 import { renditionFor } from "@/ipc/images";
-import { DRAWER_HEIGHT, ZOOM_WHEEL_STEP } from "@/lib/constants";
+import { DRAWER_HEIGHT, PAN_KEY_STEP, ZOOM_MIN, ZOOM_WHEEL_STEP } from "@/lib/constants";
 import { FOCUS_X, FOCUS_Y, withParameter } from "@/lib/enhancements";
+import { OPEN_LAYER } from "@/lib/layers";
 import { onMac, radiusOf } from "@/lib/mask";
 import { cn } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
@@ -18,8 +19,16 @@ import { useDrawerStore } from "@/stores/drawer";
 import { useEnhancementStore, useFileEnhancements } from "@/stores/enhancements";
 import { useFocusPickStore, useIsArmed } from "@/stores/focusPick";
 import { useIsEditing, useMaskStore } from "@/stores/mask";
+import { usePeekStore } from "@/stores/peek";
 import { usePreviewStore } from "@/stores/preview";
-import { clampScale, type ImageTransform, useImageTransform, useTransformStore } from "@/stores/transform";
+import {
+    clampScale,
+    type ImageTransform,
+    type PanDirection,
+    registerPanner,
+    useImageTransform,
+    useTransformStore,
+} from "@/stores/transform";
 import { CLICK_SLOP, FocusHint, FocusPick } from "./FocusPick";
 import { constrain, constrainPosition, fitInside, imageFraction, type Size } from "./geometry";
 import { ProgressBar } from "./ProgressBar";
@@ -44,14 +53,6 @@ type Paint = {
     /** The press was taken away by the system: no stroke. */
     onCancel: () => void;
 };
-
-/**
- * What is open over the photograph and has an Escape of its own: a dialog or alert dialog (a popover's panel is one), a
- * menu or a listbox, and not one that is closing. The focus pick leaves on an Escape nothing else wanted.
- */
-const OPEN_LAYER = ['[role="dialog"]', '[role="alertdialog"]', '[role="menu"]', '[role="listbox"]']
-    .map((layer) => `${layer}:not([data-state="closed"])`)
-    .join(",");
 
 type PaneProps = {
     // Handed down rather than read from the store here, so that both panes draw the same photograph on
@@ -96,6 +97,14 @@ type PaneProps = {
     // which is why this is stated rather than inferred.
     /** Which photograph's transform this pane reads and writes. Absent, the pane draws the fitted one. */
     transformKey?: string;
+    // The three of them are the focus pick's, and are the same for both panes of a comparison: whether the next click
+    // sets a lens blur's focus point, where it is now, and what to do with the one that lands.
+    /** Whether the preview is waiting for a click that sets a lens blur's focus point. */
+    armed?: boolean;
+    /** The lens blur's focus as fractions of the framed photograph, where the stack has one. */
+    focus?: { x: number; y: number };
+    /** Called with the click's place in the framed photograph, as fractions across and down. */
+    onPick?: (x: number, y: number) => void;
     // The two of them are the mask's, and are the same for both panes of a comparison, except that only the enhanced
     // pane shows the tint: the original is what the mask is *not* applied to.
     /** What a press does while the mask is painted, or absent where a press pans. */
@@ -107,14 +116,6 @@ type PaneProps = {
     // the canvas instead, which nothing clips.
     /** The canvas to draw the brush's ring in, over both panes, or absent to draw it inside this pane. */
     ringIn?: HTMLElement | null;
-    // The three of them are the focus pick's, and are the same for both panes of a comparison: whether the next click
-    // sets a lens blur's focus point, where it is now, and what to do with the one that lands.
-    /** Whether the preview is waiting for a click that sets a lens blur's focus point. */
-    armed?: boolean;
-    /** The lens blur's focus as fractions of the framed photograph, where the stack has one. */
-    focus?: { x: number; y: number };
-    /** Called with the click's place in the framed photograph, as fractions across and down. */
-    onPick?: (x: number, y: number) => void;
 };
 
 /** The gap between a pane's chip and whatever is beneath it. */
@@ -196,12 +197,12 @@ const Pane = ({
     publishViewport,
     transformKey,
     published,
-    paint,
-    maskPath,
-    ringIn,
     armed = false,
     focus,
     onPick,
+    paint,
+    maskPath,
+    ringIn,
 }: PaneProps) => {
     const container = useRef<HTMLDivElement>(null);
 
@@ -212,6 +213,7 @@ const Pane = ({
     const transform = useImageTransform(identity);
     const setTransform = useTransformStore((state) => state.setTransform);
     const setViewport = useTransformStore((state) => state.setViewport);
+    const setFit = useTransformStore((state) => state.setFit);
 
     const [measured, setMeasured] = useState<Size>(UNMEASURED);
     const [natural, setNatural] = useState<Size>(UNMEASURED);
@@ -299,6 +301,10 @@ const Pane = ({
 
         if (!publishViewport) return;
 
+        // What one photograph pixel measures at 1x in this pane, which is what actual pixels is
+        // computed from - in the photograph's own pixels, so a smaller rendition does not change it.
+        if (identity && fitted.width > 0 && imageWidth > 0) setFit({ identity, ratio: fitted.width / imageWidth });
+
         // The portion of the photograph inside this pane, as fractions of the whole of it. The
         // container is this pane's own box, so it is already half-width in side by side.
         const size = scaled(fitted, next.scale);
@@ -318,7 +324,7 @@ const Pane = ({
             width: Math.max(0, right - left) / size.width,
             height: Math.max(0, bottom - top) / size.height,
         });
-    }, [transform, fitted, measured, identity, publishViewport, setViewport]);
+    }, [transform, fitted, measured, identity, imageWidth, publishViewport, setViewport, setFit]);
 
     /*
      * The wheel, and the trackpad pinch the webview delivers as one.
@@ -396,6 +402,13 @@ const Pane = ({
     const [dragging, setDragging] = useState(false);
 
     /*
+     * A press that may turn out to be the click that sets the focus: where it went down, and whether it has been
+     * dragged since. Only while armed, and only the primary button. A drag still pans - the pick is decided when the
+     * pointer comes up.
+     */
+    const press = useRef<{ x: number; y: number; dragged: boolean }>(undefined);
+
+    /*
      * The stroke this pane has under the pointer, as the handlers it began with: kept so that a stroke goes on to its
      * end however `paint` has changed since - Space pressed half way through does not strand it.
      */
@@ -420,13 +433,6 @@ const Pane = ({
             inside: offset.x >= 0 && offset.y >= 0 && offset.x <= size.width && offset.y <= size.height,
         };
     };
-
-    /*
-     * A press that may turn out to be the click that sets the focus: where it went down, and whether it has been
-     * dragged since. Only while armed, and only the primary button. A drag still pans - the pick is decided when the
-     * pointer comes up.
-     */
-    const press = useRef<{ x: number; y: number; dragged: boolean }>(undefined);
 
     const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
         if (identity === undefined) return;
@@ -460,6 +466,11 @@ const Pane = ({
     };
 
     const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+        const pressed = press.current;
+        if (pressed && Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) > CLICK_SLOP) {
+            pressed.dragged = true;
+        }
+
         if (stroking.current) {
             const moved = fractionsAt(event.clientX, event.clientY);
             if (moved) {
@@ -468,11 +479,6 @@ const Pane = ({
             }
 
             return;
-        }
-
-        const pressed = press.current;
-        if (pressed && Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) > CLICK_SLOP) {
-            pressed.dragged = true;
         }
 
         const start = grab.current;
@@ -584,6 +590,52 @@ const Pane = ({
         [setTransform],
     );
 
+    /*
+     * The pan keys (`Mod` with an arrow by default), answered by the pane that publishes the viewport -
+     * one pane, since in side by side both draw the same part of the photograph. Moved from where the
+     * photograph is *drawn*, as a drag is, and held inside the pane the same way; a step is a share of
+     * the pane, `PAN_KEY_STEP`. Nothing moves while the photograph is drawn whole.
+     */
+    const panned = useRef<ImageTransform>(undefined);
+
+    useEffect(() => {
+        if (!publishViewport) return;
+
+        return registerPanner((direction: PanDirection) => {
+            const { drawn: shown, fitted: fittedNow, measured: measuredNow, identity: id } = live.current;
+            if (id === undefined || shown.scale <= ZOOM_MIN) return false;
+
+            // A press that lands before the last one has been drawn moves on from where that one put the
+            // photograph rather than undoing it - the store still holds exactly what it wrote. Anything
+            // else in the store since (a zoom, a drag) is resolved by now, so what is drawn is the answer.
+            const stored = useTransformStore.getState().transforms.get(id);
+            const last = panned.current;
+            const current =
+                stored && last && stored.scale === last.scale && stored.x === last.x && stored.y === last.y
+                    ? last
+                    : shown;
+
+            const step = { x: measuredNow.width * PAN_KEY_STEP, y: measuredNow.height * PAN_KEY_STEP };
+            // The photograph moves against the arrow, so the view moves with it.
+            const delta = {
+                left: { x: step.x, y: 0 },
+                right: { x: -step.x, y: 0 },
+                up: { x: 0, y: step.y },
+                down: { x: 0, y: -step.y },
+            }[direction];
+
+            const position = constrainPosition(
+                { x: current.x + delta.x, y: current.y + delta.y },
+                scaled(fittedNow, current.scale),
+                measuredNow,
+            );
+            panned.current = { scale: current.scale, ...position };
+            setTransform(id, panned.current);
+
+            return true;
+        });
+    }, [publishViewport, setTransform]);
+
     const ring = paint && (
         <BrushCursor
             container={container}
@@ -652,6 +704,16 @@ const Pane = ({
             />
 
             {/*
+             * The ring over the focus point, in the box the photograph is drawn in: the pane's own position and size
+             * of it, not the picture's transform, so the ring keeps one size at every zoom.
+             */}
+            <FocusPick
+                armed={armed}
+                {...(focus && { focus })}
+                box={{ x: drawn.x, y: drawn.y, width: fitted.width * drawn.scale, height: fitted.height * drawn.scale }}
+            />
+
+            {/*
              * The mask's tint, in the box the photograph is drawn in: the pane's own position and size of it, not the
              * picture's transform, so it is the same shape at every zoom - as the faces' boxes are.
              */}
@@ -669,16 +731,6 @@ const Pane = ({
 
             {paint && ringIn === undefined && ring}
             {paint && ringIn && createPortal(ring, ringIn)}
-
-            {/*
-             * The ring over the focus point, in the box the photograph is drawn in: the pane's own position and size
-             * of it, not the picture's transform, so the ring keeps one size at every zoom.
-             */}
-            <FocusPick
-                armed={armed}
-                {...(focus && { focus })}
-                box={{ x: drawn.x, y: drawn.y, width: fitted.width * drawn.scale, height: fitted.height * drawn.scale }}
-            />
 
             {/*
              * The offset is a style rather than a class pair, for the reason the drawer's own fold is:
@@ -713,6 +765,8 @@ const DIVIDER_STEP = 2;
  *   *Original*.
  * - The right-hand chip turns to *Enhanced* exactly when the pane stops drawing the source. A previous
  *   result is held while a new run works, so the chip doesn't flicker back.
+ * - While the show-original key is held (`stores/peek.ts`), the enhanced pane draws the source and its
+ *   chip reads *Original*, as if there were no result.
  * - The URL carries no size bound; the canvas asks for the photograph at its own size.
  * - Both panes share one transform, so zooming or panning either moves both.
  * - It draws the settled image rather than the current one (`hooks/useSettledFile.ts`).
@@ -740,7 +794,21 @@ export const PreviewImage = () => {
      * canvas keys off: a run started for a photograph that is not drawn yet would land a result on
      * the one still on screen.
      */
-    const { enhanced, report, running, fraction } = useEnhancementRun(file, crop);
+    const { enhanced: result, report, running, fraction } = useEnhancementRun(file, crop);
+
+    /*
+     * While the show-original key is held the result is set aside for this render, and everything
+     * below - the URL, the dimensions, the chip - reads as it does before a result has landed: the
+     * enhanced pane draws the source and calls it the original, in all three comparisons. Nothing
+     * else is touched, so the transform, the divider and a running enhancement carry on underneath.
+     */
+    const showingOriginal = usePeekStore((state) => state.showingOriginal);
+    const enhanced = showingOriginal ? undefined : result;
+    /*
+     * The chain this file runs, for the bar to name the model a slow session is being opened for - *Compiling Kazan
+     * model* - since a report names its family and not its model.
+     */
+    const operations = useFileEnhancements(file?.path);
 
     /*
      * One URL for both panes and for all three modes, so switching modes re-points an `<img>` rather
@@ -804,8 +872,7 @@ export const PreviewImage = () => {
      * is never armed. The mode is left when the photograph changes, when the lens blur is taken off the stack, and by
      * Escape; a click that lands leaves it in `onPick`.
      */
-    const stack = useFileEnhancements(file?.path);
-    const lensBlur = stack.find((operation) => operation.family === "lens_blur");
+    const lensBlur = operations.find((operation) => operation.family === "lens_blur");
     const hasLensBlur = lensBlur !== undefined;
     const armed = useIsArmed(file?.identity) && hasLensBlur;
     const replaceEnhancement = useEnhancementStore((state) => state.replaceEnhancement);
@@ -930,11 +997,11 @@ export const PreviewImage = () => {
                     label={t("preview.pane.original")}
                     chipClassName="left-2.5 text-foreground"
                     chipBottom={chipBottom}
-                    {...(paint && { paint })}
-                    {...(previewMode === "split" && { ringIn: canvas })}
                     armed={armed}
                     {...(focus && { focus })}
                     onPick={onPick}
+                    {...(paint && { paint })}
+                    {...(previewMode === "split" && { ringIn: canvas })}
                 />
             )}
 
@@ -963,17 +1030,17 @@ export const PreviewImage = () => {
                 {...(previewMode === "split" && { style: { clipPath: `inset(0 0 0 ${divider}%)` } })}
                 chipClassName="right-2.5 text-foreground"
                 chipBottom={chipBottom}
-                {...(paint && { paint })}
-                {...(maskPath !== undefined && { maskPath })}
-                {...(previewMode === "split" && { ringIn: canvas })}
                 armed={armed}
                 {...(focus && { focus })}
                 onPick={onPick}
+                {...(paint && { paint })}
+                {...(maskPath !== undefined && { maskPath })}
+                {...(previewMode === "split" && { ringIn: canvas })}
             />
 
             {armed && <FocusHint />}
 
-            {running && <ProgressBar fraction={fraction} {...(report && { report })} />}
+            {running && <ProgressBar fraction={fraction} {...(report && { report })} operations={operations} />}
 
             {previewMode === "split" && (
                 /*

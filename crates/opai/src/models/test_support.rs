@@ -11,9 +11,9 @@
 
 use super::{
     Analysis, Bias, ColorBalance, Colorization, Denoise, Depth, Detection, FNumber, FOCUS_X, FOCUS_Y, FaceRecovery,
-    Faces, Fidelity, Fraction, LightAdjustment, Matting, Operation, ParameterValues, Scale, Sharpen, Strength, Upscale,
-    catalogue, color_balance, colorization, denoise, depth, detection, face, lens_blur, light_adjustment, matting,
-    remove, sharpen, upscale,
+    Faces, Fidelity, Fraction, LightAdjustment, Matting, Operation, ParameterValues, Restore, Scale, Sharpen, Strength,
+    Upscale, catalogue, color_balance, colorization, denoise, depth, detection, face, lens_blur, light_adjustment,
+    matting, remove, restore, sharpen, upscale,
 };
 
 /// The values a front end would hand back for the controls one published row told it to draw.
@@ -93,8 +93,8 @@ pub(crate) fn every_selection() -> Vec<Faces> {
 /// still written out once here, because the spread of parameter values is this helper's own choice — what the seam
 /// removes is the second listing of what each family reports.
 ///
-/// **Seven families, not eight.** Detection is carried in [`Analysis`] and is [`every_analysis`]'s to spread. A
-/// caller that has to reach all eight — a cache-tag collision is only visible in a set holding every family — uses
+/// **Eight families, not nine.** Detection is carried in [`Analysis`] and is [`every_analysis`]'s to spread. A
+/// caller that has to reach all nine — a cache-tag collision is only visible in a set holding every family — uses
 /// [`every_cache_tag`] or [`every_artifact_name`], which cross both carriers.
 pub(crate) fn every_operation() -> Vec<Operation> {
     let strengths = [0.0, 0.5, 1.0, 2.5, 3.0];
@@ -150,14 +150,13 @@ pub(crate) fn every_operation() -> Vec<Operation> {
         }
     }
 
-    // Spread over regions, empty included, since the mask's signature is the tag's only variable segment.
-    for mask in [
-        std::sync::Arc::new(crate::Mask::default()),
-        remove::tests::dot(0.2, 0.3),
-        remove::tests::dot(0.8, 0.3),
-    ] {
-        for variant in remove::variant::tests::every_variant() {
-            operations.push(Operation::Remove(remove::Remove::new(variant, std::sync::Arc::clone(&mask))));
+    // The family's own sizes and strengths, crossed: both reach its tag, and the strengths past 1 that the other
+    // strength families spread over are brought down to 1 here, which would only repeat operations.
+    for size in [1.0, 2.0, 4.0] {
+        for value in [0.0, 0.5, 1.0] {
+            for variant in restore::variant::tests::every_variant() {
+                operations.push(Operation::Restore(Restore::new(variant, scale(size), strength(value))));
+            }
         }
     }
 
@@ -181,12 +180,23 @@ pub(crate) fn every_operation() -> Vec<Operation> {
         }
     }
 
+    // Spread over regions, empty included, since the mask's signature is the tag's only variable segment.
+    for mask in [
+        std::sync::Arc::new(crate::Mask::default()),
+        remove::tests::dot(0.2, 0.3),
+        remove::tests::dot(0.8, 0.3),
+    ] {
+        for variant in remove::variant::tests::every_variant() {
+            operations.push(Operation::Remove(remove::Remove::new(variant, std::sync::Arc::clone(&mask))));
+        }
+    }
+
     operations
 }
 
 /// Every operation whose result is not an image, carried as [`Analysis`].
 ///
-/// [`every_operation`]'s counterpart on the other run path, and the other half of "all eleven families" for the
+/// [`every_operation`]'s counterpart on the other run path, and the other half of "all twelve families" for the
 /// checks that need it. Three families and no per-run parameter, so the spread is their published precisions; a
 /// matting's trimap is injected rather than chosen, so it is spread without one.
 pub(crate) fn every_analysis() -> Vec<Analysis> {
@@ -218,7 +228,7 @@ pub(crate) fn every_carried_family() -> Vec<super::Family> {
         .collect()
 }
 
-/// Every run cache tag the library can report, across both carriers and therefore all eight families.
+/// Every run cache tag the library can report, across both carriers and therefore all nine families.
 ///
 /// The run cache is one namespace shared by every family, so a collision between two of them is only visible in a
 /// set that holds both — which is why this crosses the carriers rather than being asked of either.
@@ -230,7 +240,7 @@ pub(crate) fn every_cache_tag() -> Vec<String> {
         .collect()
 }
 
-/// Every artifact name the catalogue can produce, across all eight families.
+/// Every artifact name the catalogue can produce, across all nine families.
 ///
 /// The set the manifest compiled into the binary is checked against: an entry naming an artifact absent from this is
 /// one no build can ask for, which is either a stale checked-in file or a variant renamed out from under it. The
@@ -253,6 +263,15 @@ pub(crate) fn every_artifact_name() -> std::collections::BTreeSet<String> {
 /// obtain one" is four things to keep agreeing about a type whose whole point is that it cannot be written by hand.
 pub(crate) fn artifacts(variant: upscale::UpscaleVariant, scale: f64) -> Vec<super::ArtifactId> {
     Upscale::new(variant, Scale::new(scale).expect("the test supplied a scale in range")).required_artifacts()
+}
+
+/// The artifacts one Osaka operation requires at `precision`: its three graphs, whatever the size.
+///
+/// Beside [`artifacts`] because Osaka is a restore model now, and its graphs are the multi-artifact case the session
+/// cache, the install and the descriptor are tested against.
+pub(crate) fn osaka_artifacts(precision: super::OsakaPrecision) -> Vec<super::ArtifactId> {
+    Restore::new(restore::RestoreVariant::Osaka(precision), Scale::clamped(2.0), Strength::clamped(1.0))
+        .required_artifacts()
 }
 
 /// The one artifact `variant` needs at `scale`.

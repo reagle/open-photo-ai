@@ -35,6 +35,10 @@
             "export": {
                 "title": "Exporteren",
                 "description": "Kwaliteit voor de lossy formaten. Lagere waarden geven kleinere bestanden; de schalen zijn niet vergelijkbaar tussen formaten."
+            },
+            "keyboard": {
+                "title": "Toetsenbord",
+                "description": "De toetsen om te zoomen, passend te maken en het origineel te tonen. Wijzigingen gelden na Opslaan."
             }
         },
         "app": {
@@ -109,7 +113,63 @@
             },
             "autopilotLabel": "Autopilot: {{name}}"
         },
-        "reset": "Standaardwaarden herstellen"
+        "reset": "Standaardwaarden herstellen",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Inzoomen",
+                "zoomOut": "Uitzoomen",
+                "fit": "Passend in venster",
+                "actualPixels": "Werkelijke pixels (100%)",
+                "toggleZoom": "Wisselen tussen passend en werkelijke pixels",
+                "panLeft": "Naar links schuiven",
+                "panRight": "Naar rechts schuiven",
+                "panUp": "Omhoog schuiven",
+                "panDown": "Omlaag schuiven",
+                "showOriginal": "Origineel tonen zolang ingedrukt",
+                "cyclePreview": "Vergelijkingsweergave wisselen",
+                "toggleDrawer": "Afbeeldingen tonen of verbergen",
+                "previousImage": "Vorige afbeelding",
+                "nextImage": "Volgende afbeelding",
+                "revealImage": "Afbeelding tonen in bestandsbeheer",
+                "toggleAutopilot": "Autopilot aan- of uitzetten",
+                "addEnhancement": "Verbetering toevoegen",
+                "removeEnhancement": "Geselecteerde verbetering verwijderen",
+                "openOptions1": "Opties van verbetering 1",
+                "openOptions2": "Opties van verbetering 2",
+                "openOptions3": "Opties van verbetering 3",
+                "openOptions4": "Opties van verbetering 4",
+                "openOptions5": "Opties van verbetering 5",
+                "openOptions6": "Opties van verbetering 6",
+                "openOptions7": "Opties van verbetering 7",
+                "openOptions8": "Opties van verbetering 8",
+                "cropRotate": "Bijsnijden/Draaien",
+                "showShortcuts": "Sneltoetsen tonen"
+            },
+            "add": "Sneltoets toevoegen",
+            "addLabel": "Sneltoets toevoegen voor {{action}}",
+            "recording": "Druk op toetsen…",
+            "prompt": "Druk op de toetsen voor {{action}}, of Escape om te annuleren.",
+            "none": "Geen sneltoets",
+            "remove": "{{binding}} verwijderen, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} is gereserveerd voor navigatie in het venster.",
+                "system": "{{binding}} wordt door het systeem gebruikt.",
+                "application": "{{binding}} wordt door de applicatie gebruikt."
+            },
+            "conflict": "{{binding}} wordt al gebruikt door {{action}}.",
+            "useHere": "Hier gebruiken",
+            "space": "Spatie",
+            "appActions": {
+                "open": "Afbeeldingen openen",
+                "export": "Afbeeldingen exporteren",
+                "settings": "Instellingen openen",
+                "closeImage": "Afbeelding sluiten",
+                "closeAll": "Alle afbeeldingen sluiten",
+                "quit": "Afsluiten"
+            },
+            "application": "Applicatie",
+            "applicationHint": "Deze toetsen liggen vast en kunnen niet worden gewijzigd."
+        }
     },
     "navbar": {
         "about": "Over",
@@ -251,6 +311,7 @@
             "pipelineOrder": "in pijplijnvolgorde",
             "queued": "In wachtrij",
             "analysing": "Analyseren",
+            "preparing": "Laden",
             "enhancing": "Verbeteren",
             "writing": "Schrijven",
             "done": "Klaar",
@@ -356,8 +417,8 @@
         "faceRecovery": {
             "name": "Gezichtsherstel",
             "models": {
-                "athens": "Gebruik dit model wanneer het behoud van de identiteit het belangrijkst is. Het bewaart de gezichtsstructuur terwijl details worden hersteld, zelfs bij zwaar aangetaste gezichten. Het beste wanneer je wilt restaureren zonder de persoon te veranderen.",
-                "santorini": "Gebruik dit model wanneer je een agressieve, snelle verbetering wilt en wat identiteitsverschuiving acceptabel is. Het levert scherpe, aantrekkelijke gezichten bij matige degradatie, maar kan bij invoer van zeer lage kwaliteit kenmerken verzinnen en de identiteit veranderen."
+                "athens": "Gebruik dit model wanneer het behoud van de identiteit het belangrijkst is. Het bewaart de gezichtsstructuur terwijl details worden hersteld, zelfs bij zwaar aangetaste gezichten. Het beste wanneer je wilt restaureren zonder de persoon te veranderen. Met Restauratie is dit meestal niet nodig.",
+                "santorini": "Gebruik dit model wanneer je een agressieve, snelle verbetering wilt en wat identiteitsverschuiving acceptabel is. Het levert scherpe, aantrekkelijke gezichten bij matige degradatie, maar kan bij invoer van zeer lage kwaliteit kenmerken verzinnen en de identiteit veranderen. Met Restauratie is dit meestal niet nodig."
             }
         },
         "colorization": {
@@ -395,8 +456,17 @@
             "models": {
                 "tokyo": "Gebruik dit model wanneer je een natuurlijke opschaling zonder overdrijving wilt. Het richt zich op het behouden van de oorspronkelijke look en fijne structuren in plaats van nieuwe details te \"verzinnen\", ideaal wanneer realisme en trouw aan het origineel belangrijker zijn dan scherpte.",
                 "kyoto": "Gebruik dit model voor echte foto's (mensen, landschappen, producten). Het herstelt details uitstekend en gaat tegelijk om met ruis, onscherpte en compressieartefacten. Ideaal voor praktijksituaties waarin afbeeldingen niet perfect zijn en je snel aantrekkelijke, robuuste resultaten wilt.",
-                "saitama": "Gebruik dit model voor cartoons, tekeningen, lijntekeningen en digitale illustraties. Het behoudt schone lijnen, vlakke kleuren en gestileerde schaduwen zonder fotoachtige texturen toe te voegen. Het beste wanneer scherpe randen en stilistische consistentie belangrijker zijn dan realisme.",
-                "osaka": "Gebruik dit model wanneer je de best mogelijke opschaalkwaliteit wilt. Het bouwt detail opnieuw op in plaats van het alleen te verscherpen en gaat het verst bij zachte of sterk gecomprimeerde foto's. Het is wel traag en heeft een krachtige GPU nodig om goed te draaien."
+                "saitama": "Gebruik dit model voor cartoons, tekeningen, lijntekeningen en digitale illustraties. Het behoudt schone lijnen, vlakke kleuren en gestileerde schaduwen zonder fotoachtige texturen toe te voegen. Het beste wanneer scherpe randen en stilistische consistentie belangrijker zijn dan realisme."
+            },
+            "suspended": "Restauratie vergroot deze foto"
+        },
+        "restore": {
+            "name": "Restauratie",
+            "size": "Grootte",
+            "generative": "Generatief: tekent details opnieuw en kan gezichten, texturen en letters veranderen.",
+            "models": {
+                "kazan": "Gebruik dit model wanneer de onscherpte te sterk is voor Verscherpen — bijv. een onscherp gezicht, of een foto van een oude camera die nooit echt scherp was. Het tekent aannemelijke details opnieuw in plaats van ze te herstellen, dus het kan gezichten, texturen en kleine tekst veranderen; verlaag de sterkte als het resultaat verzonnen lijkt. Het is traag en een grote download.",
+                "osaka": "Gebruik dit model wanneer je de grondigste restauratie wilt die er is. Het bouwt detail opnieuw op in plaats van het alleen te verscherpen en gaat het verst bij zachte of sterk gecomprimeerde foto's. Het is wel traag en heeft een krachtige GPU nodig om goed te draaien."
             }
         },
         "lensBlur": {
@@ -437,6 +507,7 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
         "infoLensBlur": "{{name}}, vervaging {{amount}}"
     },
     "preview": {
@@ -452,15 +523,21 @@
         "progress": {
             "downloading": "Downloaden {{percent}}%",
             "removal": "Verwijderen",
-            "denoise": "Ruis",
-            "faceRecovery": "Gezichten",
+            "denoise": "Ruis verwijderen",
+            "faceRecovery": "Gezichten herstellen",
             "colorization": "Inkleuren",
-            "lightAdjustment": "Licht",
-            "colorBalance": "Kleur",
+            "lightAdjustment": "Licht aanpassen",
+            "colorBalance": "Kleuren balanceren",
             "upscale": "Opschalen",
             "sharpen": "Verscherpen",
-            "lensBlur": "Lensvervaging",
-            "enhancing": "Verbeteren"
+            "restore": "Restaureren",
+            "lensBlur": "Vervagen",
+            "enhancing": "Verbeteren",
+            "compiling": "Model {{model}} compileren",
+            "loading": "Model {{model}} laden",
+            "firstUse": "Alleen de eerste keer, kan enkele minuten duren",
+            "firstUseAbout_one": "Alleen de eerste keer, kan ongeveer {{count}} minuut duren",
+            "firstUseAbout_other": "Alleen de eerste keer, kan ongeveer {{count}} minuten duren"
         }
     },
     "menu": {
@@ -471,6 +548,34 @@
             "showIn": "Tonen in bestandsbeheer",
             "showIn_darwin": "Tonen in Finder",
             "showIn_windows": "Tonen in Verkenner"
+        },
+        "bar": {
+            "about": "Over {{name}}",
+            "services": "Voorzieningen",
+            "hide": "Verberg {{name}}",
+            "hideOthers": "Verberg andere",
+            "showAll": "Toon alles",
+            "quit": "Stop {{name}}",
+            "file": "Archief",
+            "open": "Open…",
+            "export": "Exporteren…",
+            "closeImage": "Afbeelding sluiten",
+            "closeAll": "Alle afbeeldingen sluiten",
+            "settings": "Instellingen…",
+            "edit": "Wijzig",
+            "undo": "Herstel",
+            "redo": "Opnieuw",
+            "cut": "Knip",
+            "copy": "Kopieer",
+            "paste": "Plak",
+            "selectAll": "Selecteer alles",
+            "view": "Weergave",
+            "fullscreen": "Ga naar schermvullende weergave",
+            "window": "Venster",
+            "minimize": "Minimaliseer",
+            "zoom": "Zoom",
+            "bringAllToFront": "Alles naar voorgrond",
+            "help": "Help"
         }
     },
     "errors": {
@@ -485,6 +590,25 @@
             "title": "Er is iets misgegaan",
             "message": "Open Photo AI liep tegen een onverwachte fout aan en kan niet verder. Opnieuw laden lost het meestal op; je instellingen blijven behouden, maar niet-opgeslagen werk in de huidige sessie gaat verloren.",
             "reload": "Opnieuw laden"
+        }
+    },
+    "shortcuts": {
+        "title": "Sneltoetsen",
+        "description": "De toetsen die nu aan elke actie zijn gekoppeld.",
+        "hint": "Wijzig ze in Instellingen > Toetsenbord.",
+        "tooltip": "{{name}} ({{key}})",
+        "tooltipCycle": "{{name}} ({{key}} wisselt)",
+        "settingsHint": "Druk overal op {{key}} om deze sneltoetsen te zien.",
+        "sections": {
+            "view": "Weergave",
+            "images": "Afbeeldingen",
+            "enhancements": "Verbeteringen"
+        },
+        "rows": {
+            "zoom": "Inzoomen / Uitzoomen",
+            "pan": "Schuiven",
+            "images": "Vorige afbeelding / Volgende afbeelding",
+            "options": "Opties van verbetering 1–8"
         }
     }
 }

@@ -371,3 +371,21 @@
         background-position: 0% 0%;
     }
 }
+
+/*
+ * The sweep of an indeterminate progress bar, for `components/ui/progress.tsx`: an indicator a third of the track wide,
+ * carried from just off its left edge to just off its right. The percentages are of the indicator's own width, so
+ * `300%` is the far side of a track three times as wide.
+ */
+@theme {
+    --animate-progress-sweep: progress-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes progress-sweep {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(300%);
+    }
+}

@@ -109,13 +109,13 @@ describe("the per-image enhancement stack", () => {
         const { addEnhancement, replaceEnhancement } = useEnhancementStore.getState();
 
         addEnhancement(HOLIDAY.path, upscale("kyoto", 2), APPLY_ORDER);
-        replaceEnhancement(HOLIDAY.path, upscale("osaka", 4));
+        replaceEnhancement(HOLIDAY.path, upscale("saitama", 4));
 
-        expect(stackOf(HOLIDAY.path)).toEqual([upscale("osaka", 4)]);
+        expect(stackOf(HOLIDAY.path)).toEqual([upscale("saitama", 4)]);
     });
 
     it("leaves an image with no stack alone when one is replaced on it", () => {
-        useEnhancementStore.getState().replaceEnhancement(HOLIDAY.path, upscale("osaka", 4));
+        useEnhancementStore.getState().replaceEnhancement(HOLIDAY.path, upscale("saitama", 4));
 
         expect(stackOf(HOLIDAY.path)).toBeUndefined();
     });

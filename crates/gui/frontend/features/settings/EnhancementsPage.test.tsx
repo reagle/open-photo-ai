@@ -74,7 +74,7 @@ describe("the enhancements table", () => {
 
         // Published by the library and drawn by nothing: it is not an enhancement a user adds.
         expect(screen.queryByRole("combobox", { name: "Detection" })).not.toBeInTheDocument();
-        expect(screen.getAllByRole("combobox")).toHaveLength(8);
+        expect(screen.getAllByRole("combobox")).toHaveLength(9);
     });
 
     it("fetches the catalogue once for all eight", async () => {
@@ -128,11 +128,17 @@ describe("the enhancements table", () => {
     it("rules off a model that publishes a different number of precisions", async () => {
         await mount();
 
-        fireEvent.keyDown(screen.getByRole("combobox", { name: "Upscale" }), { key: "Enter" });
+        fireEvent.keyDown(screen.getByRole("combobox", { name: "Restore" }), { key: "Enter" });
 
-        // Four models - Osaka's pair is fp16/int8 rather than the float convention - so three rules,
+        // Two models - Osaka's pair is fp16/int8 rather than Kazan's float convention - so one rule,
         // which is what driving the break off the codename rather than a count buys.
-        expect(screen.getByRole("listbox").querySelectorAll("[data-slot='select-separator']")).toHaveLength(3);
+        expect(screen.getByRole("listbox").querySelectorAll("[data-slot='select-separator']")).toHaveLength(1);
+        expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+            "Kazan HD",
+            "Kazan SD",
+            "Osaka HD",
+            "Osaka SD",
+        ]);
     });
 
     it("reads a family never chosen for as the catalogue's first model", async () => {
@@ -202,7 +208,15 @@ describe("the Autopilot switches", () => {
         for (const name of [...NAMES, "Lens Blur"]) {
             expect(screen.getByRole("switch", { name: `Autopilot: ${name}` })).toBeInTheDocument();
         }
-        expect(screen.getAllByRole("switch")).toHaveLength(8);
+        expect(screen.getAllByRole("switch")).toHaveLength(9);
+    });
+
+    it("are off and unavailable for restore, which Autopilot never suggests", async () => {
+        await mount();
+
+        const restore = screen.getByRole("switch", { name: "Autopilot: Restore" });
+        expect(restore).not.toBeChecked();
+        expect(restore).toBeDisabled();
     });
 
     it("are off and unavailable for lens blur, which Autopilot never suggests", async () => {

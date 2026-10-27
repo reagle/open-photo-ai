@@ -334,6 +334,6 @@ fn no_two_operations_resolving_to_one_artifact_declare_different_profiles() {
         }
     }
 
-    assert_eq!(families.len(), 12, "the traversal did not reach all twelve families: {families:?}");
+    assert_eq!(families.len(), 13, "the traversal did not reach all thirteen families: {families:?}");
     assert!(!declared.is_empty(), "the traversal named no artifacts at all");
 }

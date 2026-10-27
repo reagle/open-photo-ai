@@ -5,7 +5,7 @@
 
 use std::sync::Mutex;
 
-use opai::Family;
+use opai::{ExecutionProvider, Family};
 use serde::Serialize;
 
 use crate::sync::lock;
@@ -59,15 +59,33 @@ pub(crate) struct RunProgress {
     /// during a multi-gigabyte download — this is what makes that visible rather than looking like a stall.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) install_fraction: Option<f64>,
+    /// What the session is being opened on, while [`Stage::Preparing`] — `"CoreML"`, `"TensorRT"`, `"CPU"` — spelled
+    /// as the settings spell a processor.
+    ///
+    /// Sent rather than inferred from the processor the window asked for, because under Auto it is the library that
+    /// picks, and a model a provider would not open is prepared again on the CPU: what the window says ("for this
+    /// Mac") has to be about the provider actually doing the work.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) provider: Option<ExecutionProvider>,
+    /// How long opening the session is expected to take, in milliseconds, while [`Stage::Preparing`] and where the
+    /// library has seen a slow open of this model on this provider before: what the last one took.
+    ///
+    /// Milliseconds rather than a rounded figure, because the window does two things with it: says *about M minutes*,
+    /// and fills its bar against the time that has passed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) expected_ms: Option<u64>,
 }
 
-/// What a report says is happening to an operation. Two arms, not three: a cached operation is reported by the
+/// What a report says is happening to an operation. Three arms, not four: a cached operation is reported by the
 /// **absence** of this — see [`RunProgress::stage`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum Stage {
     /// The operation's model is not on the machine and is being fetched.
     Installing,
+    /// The model is on the machine and a session is being opened on it, which the first time on an execution provider
+    /// that compiles it can take minutes with nothing to measure. See [`RunProgress::provider`].
+    Preparing,
     /// The model is on the machine and is being run over the image.
     Running,
 }
@@ -222,13 +240,14 @@ impl std::fmt::Debug for Reporting {
 
 /// One of `opai`'s reports as the window reads it, beside what the thinning needs to judge it by.
 fn describe(run: &str, report: &opai::InferenceProgress) -> (RunProgress, Which, Option<u8>) {
-    let (stage, install_fraction) = match &report.stage {
-        opai::Stage::Installing(progress) => (Some(Stage::Installing), Some(progress.fraction)),
-        opai::Stage::Running => (Some(Stage::Running), None),
-        opai::Stage::Cached => (None, None),
+    let (stage, install_fraction, provider, expected) = match &report.stage {
+        opai::Stage::Installing(progress) => (Some(Stage::Installing), Some(progress.fraction), None, None),
+        opai::Stage::Preparing { provider, expected } => (Some(Stage::Preparing), None, Some(*provider), *expected),
+        opai::Stage::Running => (Some(Stage::Running), None, None, None),
+        opai::Stage::Cached => (None, None, None, None),
         // A stage this crate doesn't know (the library's enum is `#[non_exhaustive]`): advance the chain and
         // claim no label, same as `Cached`, rather than guess at `Running`.
-        _ => (None, None),
+        _ => (None, None, None, None),
     };
 
     let wire = RunProgress {
@@ -238,6 +257,8 @@ fn describe(run: &str, report: &opai::InferenceProgress) -> (RunProgress, Which,
         stage,
         chain_fraction: report.chain_fraction,
         install_fraction,
+        provider,
+        expected_ms: expected.map(|expected| u64::try_from(expected.as_millis()).unwrap_or(u64::MAX)),
     };
     let which = Which { subject: std::sync::Arc::clone(&report.subject), stage };
 
@@ -348,6 +369,47 @@ mod tests {
         assert_eq!(sent[0].stage, Some(Stage::Running));
         assert_eq!(sent[0].install_fraction, None, "a run that fetched nothing claimed a fetch figure");
         assert_eq!(sent[0].family, Family::Upscale);
+    }
+
+    #[test]
+    fn a_session_being_prepared_names_its_provider_and_hands_over_to_the_run() {
+        let (reporting, sent) = collecting("run-1");
+        let subject = subject();
+
+        // A first CoreML compile: minutes at one position, and then the first tile at the same position.
+        let preparing = opai::Stage::Preparing { provider: ExecutionProvider::CoreMl, expected: None };
+        (reporting.on_progress)(&reported(&subject, preparing, 0.0));
+        (reporting.on_progress)(&reported(&subject, opai::Stage::Running, 0.0));
+
+        let sent = sent.lock().expect("unpoisoned");
+        assert_eq!(sent.len(), 2, "the handover from preparing to running was thinned away");
+        assert_eq!(sent[0].stage, Some(Stage::Preparing));
+        assert_eq!(sent[0].provider, Some(ExecutionProvider::CoreMl));
+        assert_eq!(sent[1].stage, Some(Stage::Running));
+        assert_eq!(sent[1].provider, None, "a running report claimed a provider being prepared");
+
+        let wire = serde_json::to_value(&sent[0]).expect("a report serializes");
+        assert_eq!(wire["stage"], serde_json::json!("preparing"));
+        assert_eq!(wire["provider"], serde_json::json!("CoreML"));
+        assert!(serde_json::to_value(&sent[1]).expect("a report serializes").get("provider").is_none());
+        assert!(wire.get("expectedMs").is_none(), "a model never compiled before was sent an estimate");
+    }
+
+    #[test]
+    fn a_session_whose_last_compile_was_seen_is_sent_with_how_long_that_took() {
+        let (reporting, sent) = collecting("run-1");
+        let expected = Some(std::time::Duration::from_millis(186_400));
+
+        (reporting.on_progress)(&reported(
+            &subject(),
+            opai::Stage::Preparing { provider: ExecutionProvider::CoreMl, expected },
+            0.0,
+        ));
+
+        let sent = sent.lock().expect("unpoisoned");
+        assert_eq!(sent[0].expected_ms, Some(186_400));
+        let wire = serde_json::to_value(&sent[0]).expect("a report serializes");
+        assert_eq!(wire["expectedMs"], serde_json::json!(186_400));
     }
 
     #[test]

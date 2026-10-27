@@ -40,6 +40,7 @@ use super::light_adjustment::{LightAdjustment, LightAdjustmentVariant};
 use super::matting::{Matting, MattingVariant};
 use super::precision::Precision;
 use super::remove::{Remove, RemoveVariant};
+use super::restore::{Restore, RestoreVariant};
 use super::scale::Scale;
 use super::sharpen::{Sharpen, SharpenVariant};
 use super::strength::Strength;
@@ -97,9 +98,9 @@ pub enum BuildError {
 /// build to refuse.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParameterValues {
-    /// What an upscale enlarges by.
+    /// What an upscale enlarges by, and the size a restore runs at.
     scale: Scale,
-    /// What denoise and sharpen are applied at.
+    /// What denoise, sharpen and restore are applied at.
     strength: Strength,
     /// Which way light adjustment and colour balance lean.
     bias: Bias,
@@ -107,14 +108,14 @@ pub struct ParameterValues {
     fidelity: Fidelity,
     /// The faces a face-recovery run restores, as a detection run found them.
     faces: Faces,
-    /// What a removal takes out.
-    mask: Arc<Mask>,
     /// The equivalent f-number a lens blur opens the lens to.
     f_number: FNumber,
     /// Where a lens blur focuses, across the frame.
     focus_x: Fraction,
     /// And down it.
     focus_y: Fraction,
+    /// What a removal takes out.
+    mask: Arc<Mask>,
 }
 
 impl ParameterValues {
@@ -134,10 +135,10 @@ impl ParameterValues {
             bias: Bias::clamped(0.0),
             fidelity: Fidelity::MAXIMUM,
             faces: Faces::empty(),
-            mask: Arc::new(Mask::default()),
             f_number: FNumber::clamped(FNumber::MAX),
             focus_x: Fraction::CENTRE,
             focus_y: Fraction::CENTRE,
+            mask: Arc::new(Mask::default()),
         }
     }
 
@@ -294,8 +295,8 @@ impl VariantEntry {
     /// row is what *knows*: the precisions it is published at and the parameters it takes are fields of it, so the
     /// check and the construction read the same data and there is nothing for a second table to disagree with.
     ///
-    /// A [`Subject`] rather than an [`Operation`](super::Operation), because the nine families are carried in two
-    /// values — the seven whose result is an image and the two whose result is not — and a caller walking the
+    /// A [`Subject`] rather than an [`Operation`](super::Operation), because the twelve families are carried in two
+    /// values — the nine whose result is an image and the three whose result is not — and a caller walking the
     /// catalogue crosses both. A caller that knows it asked an enhancement family matches
     /// [`Subject::Enhancement`] and has the operation [`Opai::process`](crate::Opai::process) takes.
     ///
@@ -398,7 +399,13 @@ impl VariantEntry {
                 UpscaleVariant::Tokyo(precision) => Upscale::tokyo(precision, values.scale),
                 UpscaleVariant::Kyoto(precision) => Upscale::kyoto(precision, values.scale),
                 UpscaleVariant::Saitama(precision) => Upscale::saitama(precision, values.scale),
-                UpscaleVariant::Osaka(precision) => Upscale::osaka(precision, values.scale),
+            },
+            // The one family reading two of the values: the size it restores at, under the name upscale's factor is
+            // published with, and the strength. Each is brought inside the family's own narrower bounds by the
+            // constructor.
+            Family::Restore => match RestoreVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
+                RestoreVariant::Kazan(precision) => Restore::kazan(precision, values.scale, values.strength),
+                RestoreVariant::Osaka(precision) => Restore::osaka(precision, values.scale, values.strength),
             },
             // Built with nothing injected: the chain it runs in hands it the depth map and the lens.
             Family::LensBlur => match LensBlurVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
@@ -443,6 +450,13 @@ mod tests {
     fn a_codename_no_family_publishes_is_refused_by_name() {
         let refused = VariantEntry::published(Family::Upscale, "berlin").expect_err("Berlin is not a model");
 
+        // Nor is Osaka an upscaler any more: it is published by restore, and asking upscale for it is refused the
+        // same way, naming the family that was asked.
+        assert_eq!(
+            VariantEntry::published(Family::Upscale, "osaka").expect_err("Osaka restores"),
+            BuildError::UnknownModel { family: Family::Upscale, codename: "osaka".to_string() }
+        );
+
         assert_eq!(refused, BuildError::UnknownModel { family: Family::Upscale, codename: "berlin".to_string() });
         assert_eq!(refused.to_string(), "Upscale publishes no model called `berlin`");
     }
@@ -460,7 +474,7 @@ mod tests {
 
     #[test]
     fn every_upscale_variant_builds_at_every_precision_it_publishes() {
-        // Driven from the catalogue rather than from a list of the four models, which is the property this seam
+        // Driven from the catalogue rather than from a list of the three models, which is the property this seam
         // exists for: a fifth upscale model is covered here by being published.
         for variant in &family_entry(Family::Upscale).variants {
             for &precision in variant.precisions {
@@ -560,7 +574,7 @@ mod tests {
     fn osaka_refuses_fp32_through_its_own_published_precisions() {
         // D3: the "no FP32 build" special case is gone. What refuses this is the same `precisions.contains` every
         // other variant is checked by, reading the list the row publishes — so the fact lives in one place.
-        let osaka = upscale("osaka");
+        let osaka = VariantEntry::published(Family::Restore, "osaka").expect("restore publishes Osaka");
 
         assert!(!osaka.precisions.contains(&Precision::Fp32), "the row stopped stating the fact this rests on");
         assert_eq!(

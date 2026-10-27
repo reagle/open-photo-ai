@@ -1368,10 +1368,10 @@ mod tests {
         //
         // `['dn', 'fr', 'cl', 'la', 'cb', 'sh', 'up']` in the reference's
         // `cmd/gui/frontend/src/utils/enhancement.ts`, transcribed as families. Detection is absent from it because
-        // it is not an enhancement a user adds, which is also why the apply order leaves it out. Lens blur is absent
-        // because the reference has no such family, and appended to this order because an analysis never suggests it.
-        // Remove is absent because the reference has no such family, and put before this order because it runs on the
-        // photograph's own pixels.
+        // it is not an enhancement a user adds, which is also why the apply order leaves it out. Restore and lens blur
+        // are absent because the reference has no such families, and appended to this order because an analysis never
+        // suggests them. Remove is absent because the reference has no such family, and put before this order because
+        // it runs on the photograph's own pixels.
         const REFERENCE: [Family; 7] = [
             Family::Denoise,
             Family::FaceRecovery,
@@ -1383,8 +1383,10 @@ mod tests {
         ];
 
         assert_eq!(
-            Family::APPLY_ORDER.split_first().and_then(|(first, rest)| Some((first, rest.split_last()?))),
-            Some((&Family::Remove, (&Family::LensBlur, &REFERENCE[..]))),
+            Family::APPLY_ORDER
+                .split_first()
+                .and_then(|(first, rest)| Some((first, rest.split_last_chunk::<2>()?))),
+            Some((&Family::Remove, (&REFERENCE[..], &[Family::Restore, Family::LensBlur]))),
             "the order suggestions come back in disagrees with the reference's"
         );
     }
@@ -1783,10 +1785,19 @@ mod tests {
     /// analysis can suggest is still suggested when it is the only one asked for, on a photograph that calls for it.
     #[tokio::test]
     async fn every_suggestible_family_is_suggested_when_it_is_asked_for_alone() {
-        // Not detection or depth, which are never applied, not lens blur, which an analysis never suggests, and not
-        // remove, whose region is the user's to paint: no analysis of a photograph suggests what to take out of it.
+        // Not detection or depth, which are never applied, not restore or lens blur, which an analysis never
+        // suggests, and not remove, whose region is the user's to paint: no analysis of a photograph suggests what to
+        // take out of it.
         for family in Family::ALL.into_iter().filter(|family| {
-            !matches!(family, Family::Detection | Family::Depth | Family::Matting | Family::Remove | Family::LensBlur)
+            !matches!(
+                family,
+                Family::Detection
+                    | Family::Depth
+                    | Family::Matting
+                    | Family::Remove
+                    | Family::Restore
+                    | Family::LensBlur
+            )
         }) {
             let source = match family {
                 Family::Colorization => black_and_white(512, 384),

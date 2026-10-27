@@ -1,16 +1,19 @@
 //! `opai` — the terminal front end for Open Photo AI.
 //!
-//! Photographs and directories of them in, each enhanced by the same chain, written to one file or under a directory:
+//! Photographs and directories of them in, each enhanced by the same chain, written to one file, under a directory,
+//! or without `-o` beside each source:
 //!
 //! ```text
 //! opai <input>... <enhancement flags> [-r] [--format F] [--prefix P] [--suffix S] [--overwrite] [-q hd|sd]
-//!      [-p PROCESSOR] -o <output>
+//!      [-p PROCESSOR] [-o <output>]
 //! ```
+//!
+//! or, with `--gui`, handed to Open Photo AI's window instead (`opai --gui <input>... [-r]`).
 //!
 //! Everything the run does is the library's, naming each result included (`opai::export`). What lives here is the
 //! terminal's own vocabulary — the flags, the mapping from them to `opai` constructors, expanding the inputs, reading
-//! `-o` as a file or a directory and mirroring directory inputs under it, the lines, the rows and the bar the terminal
-//! shows, and the exit status.
+//! `-o` as a file or a directory and mirroring directory inputs under it (or, without it, the `_opai` default suffix),
+//! the lines, the rows and the bar the terminal shows, and the exit status.
 //!
 //! # Where the output goes
 //!
@@ -43,6 +46,12 @@
 //! The notes, the face report, what the run executed on and every failure in full go to the log file, `opai.log`.
 //! clap's own `--help`, `--version` and argument errors are printed as clap prints them.
 //!
+//! # `--gui`
+//!
+//! `opai --gui <INPUT>...` expands the inputs as a run does and hands the images to Open Photo AI's window, warning
+//! about any other option given, which the window's own settings replace (see `gui`). It ends before telemetry starts
+//! and before the library is initialized.
+//!
 //! # Telemetry
 //!
 //! As the GUI does, a run sends what the log file receives to the project's collector, beside the usage events in
@@ -55,11 +64,13 @@ mod autopilot;
 mod chain;
 mod error;
 mod events;
+mod gui;
 mod inputs;
 mod look;
 mod output;
 mod progress;
 mod run;
+mod settings;
 #[cfg(test)]
 mod test_support;
 mod update;
@@ -91,6 +102,20 @@ fn main() -> ExitCode {
     // A usage error, `--help` and `--version` all end here, with clap's own message and exit status, and before
     // anything is initialized.
     let args = args::parse();
+
+    // Before telemetry and before the library: a handover is not a run, and the GUI it hands to holds the
+    // single-instance claim a run would be refused by.
+    if args.gui {
+        let look = look::Look::for_stderr();
+        return match gui::open(&args, look) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                tracing::error!("{}", full(&error));
+                eprintln!("{}", look::failure(&error, look.color));
+                ExitCode::from(error.exit_code())
+            }
+        };
+    }
 
     // Only once the arguments have parsed, so `--help`, `--version` and a usage error never open a connection.
     let enabled = analytics::enabled(args.no_analytics, std::env::var_os(analytics::ENV).as_deref());

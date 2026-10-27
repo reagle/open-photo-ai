@@ -90,12 +90,13 @@
 
 pub(crate) mod build;
 pub(crate) mod caches;
+mod compile_times;
 mod flight;
 #[cfg(test)]
 mod live;
 mod resident;
 
-pub(crate) use flight::{Install, Interest};
+pub(crate) use flight::{Install, Interest, OnPreparing};
 use resident::spawn_sweeper;
 pub(crate) use resident::{SessionCache, SessionHandle};
 
@@ -103,6 +104,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::deps::ModelTrust;
 use crate::deps::model;
@@ -411,12 +413,23 @@ impl<S: Send + 'static> Sessions<S> {
                     // The graph is the artifact's own name, the same rule the descriptor composes a model's version from;
                     // a model too large for the protobuf limit keeps its weights in a sibling the runtime opens itself.
                     let model = dir.join(format!("{artifact}.onnx"));
+                    // Reported here, after the install and before the open, because this is where the wait changes
+                    // kind: nothing more will transfer, and what follows can be a compile of minutes with nothing to
+                    // measure. On the rung's provider, so a fallback to the CPU reports itself as such — and with how
+                    // long the last slow open of this model on it took, which is the one measure there is.
+                    installing.preparing(resolved, compile_times::expected(&self.app_dir, artifact, resolved));
 
                     // Not stopped once it is under way, and that is deliberate: opening a model is a compile that can run
                     // to minutes, it is what a later run would have to pay all over again, and there is nothing to
                     // interrupt it at. What a stop saves is the transfer, which is where the gigabytes and the minutes
                     // of waiting actually are.
-                    self.open(BuildRequest { artifact: artifact.clone(), plan, paths, model }).await.map(Some)
+                    let opening = Instant::now();
+                    let session = self.open(BuildRequest { artifact: artifact.clone(), plan, paths, model }).await?;
+                    // Only an open that succeeded: one that failed after minutes is a fallback to the next rung, and
+                    // how long it took to fail says nothing about how long the compile takes.
+                    compile_times::record(&self.app_dir, artifact, resolved, opening.elapsed());
+
+                    Ok(Some(session))
                 })
             })
             .await

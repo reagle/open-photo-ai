@@ -73,7 +73,7 @@ pub(crate) struct Requested {
 
 /// Why an operation the window named cannot be run.
 ///
-/// Three cases: an unpublished codename, a precision the model was never released at (e.g. `up_osaka_fp32`), or a
+/// Three cases: an unpublished codename, a precision the model was never released at (e.g. Osaka at FP32), or a
 /// parameter name nothing publishes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, thiserror::Error)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -348,12 +348,19 @@ mod tests {
     #[test]
     fn a_precision_the_model_is_not_published_at_is_refused() {
         // No FP32 build of the diffusion transformer exists.
-        let refused = parse(upscale("osaka", "fp32", 2.0)).resolve().expect_err("Osaka has no FP32 build");
+        let osaka = json(Family::Restore, "osaka", "fp32", &[("scale", 2.0), ("strength", 1.0)]);
+        let refused = parse(osaka).resolve().expect_err("Osaka has no FP32 build");
 
         assert_eq!(
             refused,
             UnknownOperation::Precision { codename: "osaka".to_string(), precision: Precision::Fp32 }
         );
+
+        // And Osaka is a restore model, so an upscale naming it names nothing the library publishes. Nothing in the
+        // window keeps a stack across launches, so nothing older than this build can send one.
+        let refused = parse(upscale("osaka", "fp16", 2.0)).resolve().expect_err("Osaka is not an upscaler");
+
+        assert_eq!(refused, UnknownOperation::Model { family: Family::Upscale, codename: "osaka".to_string() });
 
         // The mirror: no INT8 build of Kyoto either.
         let refused = parse(upscale("kyoto", "int8", 2.0)).resolve().expect_err("Kyoto has no INT8 build");

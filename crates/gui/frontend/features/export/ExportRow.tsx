@@ -8,7 +8,7 @@ import { showInLabel } from "@/features/files/FileOptionsMenu";
 import { framedDimensions } from "@/ipc/crop";
 import { type ExportName, type Loss, revealExport } from "@/ipc/export";
 import { renditionFor } from "@/ipc/images";
-import { upscaleFactor } from "@/lib/enhancements";
+import { enlargement, progressLabelKey } from "@/lib/enhancements";
 import { formatLoss } from "@/lib/export";
 import { report } from "@/lib/report";
 import { cn, formatBytes, formatDimensions } from "@/lib/utils";
@@ -84,18 +84,25 @@ const FailedPill = ({ reason }: { reason: string }) => {
     );
 };
 
-/** What a row's pill reads, by stage. */
+/**
+ * What a row's pill reads, by stage - and while it is enhancing, what the enhancement it is on is doing, in the words
+ * the preview's chip uses: *Upscaling* rather than *Enhancing* for every operation of the chain. *Enhancing* is what it
+ * reads until the first report names one, and *Loading* while that enhancement's session is being opened.
+ */
 const StagePill = ({ row }: { row: Row }) => {
     const { t } = useTranslation();
 
     if (row.stage === "failed") return <FailedPill reason={row.reason} />;
+
+    const activity =
+        row.stage !== "enhancing" ? undefined : row.preparing ? "export.queue.preparing" : progressLabelKey(row.family);
 
     return (
         <span
             data-slot="export-stage"
             className={cn("flex h-5 items-center rounded-full px-2 text-xs", STAGE_PILL[row.stage])}
         >
-            {t(`export.queue.${row.stage}`)}
+            {activity ? t(activity) : t(`export.queue.${row.stage}`)}
         </span>
     );
 };
@@ -194,7 +201,7 @@ export const ExportRow = ({
     if (!file || !name) return;
 
     const { width, height } = framedDimensions(file, crop);
-    const scale = upscaleFactor(stack);
+    const scale = enlargement(stack);
     const types = `${file.extension.toUpperCase()} → ${name.extension.toUpperCase()}`;
     const fraction = row.stage === "enhancing" ? row.fraction : row.stage === "writing" ? 1 : 0;
     // What was written, once it was; until then, what will be. A failed row wrote nothing to warn about.

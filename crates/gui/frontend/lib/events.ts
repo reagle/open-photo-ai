@@ -25,7 +25,7 @@ export type EventParams = {
     /** Once per load, when setup succeeds: what people run with, counting every user rather than those who changed something. */
     app_ready: { processor: Processor; language: Language; background: Background; autopilot: boolean };
     /** Images admitted: how many, how they came in, and their types. */
-    files_added: { count: number; source: "browse" | "empty" | "drop"; formats: FormatList };
+    files_added: { count: number; source: "browse" | "empty" | "drop" | "menu" | "open_with"; formats: FormatList };
     /** A drop that held files this application cannot open. */
     files_refused: { count: number; formats: FormatList };
     /** An enhancement added to an image, by the user or by Autopilot. */

@@ -1,6 +1,6 @@
 # CLI Reference
 
-`opai` is the command-line version of **Open Photo AI**. It runs the same AI models as the GUI. One command can enhance a single image or a whole batch: any mix of files, wildcards and directories, written to one file or into an output directory.
+`opai` is the command-line version of **Open Photo AI**. It runs the same AI models as the GUI. One command can enhance a single image or a whole batch: any mix of files, wildcards and directories, written to one file, into an output directory, or beside each source.
 
 - [Synopsis](#synopsis)
 - [Quick start](#quick-start)
@@ -10,6 +10,7 @@
 - [Masks](#masks)
 - [Remove](#remove)
 - [Autopilot](#autopilot)
+- [GUI settings](#gui-settings)
 - [Processing order](#processing-order)
 - [Supported formats](#supported-formats)
 - [What happens during a run](#what-happens-during-a-run)
@@ -22,7 +23,8 @@
 ## Synopsis
 
 ```bash
-opai <INPUT>... <ENHANCEMENT FLAGS...> [OPTIONS] --output <OUTPUT>
+opai <INPUT>... <ENHANCEMENT FLAGS...> [OPTIONS] [--output <OUTPUT>]
+opai --gui <INPUT>... [-r]
 ```
 
 | Command          | What it does                                            |
@@ -34,21 +36,25 @@ The rules in short:
 
 - The `INPUT`s come **first**, before any flag. Each one is an image or a directory of images.
 - You need **at least one** enhancement flag, or [`--autopilot`](#autopilot) to let `opai` choose them per image.
-- `--output` / `-o` is **required**. It's a [file or a directory](#where-the-results-go).
+- `--output` / `-o` is **optional**. It's a [file or a directory](#where-the-results-go); without it, each result is written [beside its source](#no--o-beside-each-source), named `<name>_opai.<ext>`.
+- With [`--gui`](#--gui), the images are opened in the GUI instead, and no enhancement is needed.
 - The order of the enhancement flags doesn't matter. The enhancements always run in a [fixed order](#processing-order).
 - An existing file is **never overwritten** unless you pass `--overwrite`. The result is [numbered](#numbering-and---overwrite) instead.
 
 ## Quick start
 
 ```bash
+# Let autopilot enhance a photo, writing photo_opai.jpg beside it
+opai photo.jpg --ap
+
 # Upscale with the default model (Tokyo), at the scale the photo needs
 opai photo.jpg --up -o photo-large.png
 
 # Restore faces with the default model (Athens), then upscale 2x with Kyoto, and save as WebP
 opai portrait.jpg --fr --up kyoto --scale 2 -o portrait.webp
 
-# Upscale with Osaka at SD quality
-opai scan.png --up osaka -q sd -o scan.avif
+# Restore with Osaka at SD quality, enlarging to twice the size
+opai scan.png --rs osaka --rs-scale 2 -q sd -o scan.avif
 
 # Denoise at twice the normal strength with Gothenburg, then adjust light with Paris
 opai night.jpg --dn gothenburg --dn-str 200 --la --la-bias -20 -o night-clean.jpg
@@ -71,6 +77,9 @@ opai photo.jpg --up -p cpu -o photo-large.png
 # Let autopilot choose each photo's enhancements, as the GUI's Autopilot does
 opai photos --ap -o enhanced
 
+# Open a whole tree of photos in the GUI instead, to enhance them there
+opai photos -r --gui
+
 # Remove what a mask marks in white (a sign, a passer-by), then sharpen
 opai street.jpg --rm passer-by.png --sh -o street-clean.jpg
 ```
@@ -91,12 +100,35 @@ The inputs must come **before** the enhancement flags. Enhancement flags can tak
 
 ```
 error: invalid value 'photo.jpg' for '--upscale [<MODEL>]'
-  [possible values: kyoto, osaka, tokyo, saitama]
+  [possible values: kyoto, tokyo, saitama]
 ```
 
-### `-o, --output <OUTPUT>` (required)
+### `-o, --output <OUTPUT>`
 
-Where the results go: one file, or a directory. See [Where the results go](#where-the-results-go).
+Where the results go: one file, or a directory. Without it, each result is written beside its source. See [Where the results go](#where-the-results-go).
+
+### `--gui`
+
+Opens the images in the GUI instead of processing them, and ignores every other option. The inputs are expanded exactly as for a run, `-r` included, and every image found is added to the GUI's open images. If the GUI is already open, they are added to that window; if not, it is started first.
+
+```
+$ opai photos -r --gui
+🖼️ Opening 12 images in Open Photo AI
+```
+
+Any other option you give is ignored, with a warning that names it, because the GUI uses its own settings. Set them there:
+
+```
+$ opai beach.jpg --up osaka -q sd -o out --gui
+⚠️ --upscale, --quality and --output are ignored with --gui; set them in Open Photo AI instead
+🖼️ Opening 1 image in Open Photo AI
+```
+
+`--no-gui-settings` is ignored with a warning too, since the GUI always uses its own [settings](#gui-settings). `--verbose` is accepted without a warning and changes nothing.
+
+`--gui` works while the GUI is open, unlike a normal run (see [One instance at a time](#one-instance-at-a-time)), and it sends no usage data. Options that can't be combined (such as `--ap` with an enhancement flag) are still refused, as they would be in a run.
+
+On macOS the images are handed to the GUI with `open -b io.vinicius.opai`, so it must be installed where macOS can find it, for example in Applications. On Windows and Linux, `opai` starts the GUI's program (`OpenPhotoAI`), found beside `opai` or on your `PATH`.
 
 ### `-r, --recursive`
 
@@ -104,7 +136,7 @@ A directory input contributes its **whole tree**, not only the images directly i
 
 ### `--format <FORMAT>` (default: `preserve`)
 
-The format every result is written in. Only accepted when the output is a **directory**; with an output file, its extension chooses the format.
+The format every result is written in. Not accepted with an output **file**, whose extension chooses the format.
 
 | Value | Result |
 |-------|--------|
@@ -115,30 +147,38 @@ The value is case-insensitive, and `jpg`, `tif` and `heif` are accepted for `jpe
 
 ### `--prefix <TEXT>`, `--suffix <TEXT>`
 
-Text added before and after each image's name, before the extension: `--prefix new- --suffix -opai` turns `beach.jpg` into `new-beach-opai.jpg`. Only accepted when the output is a **directory**. Both are empty by default.
+Text added before and after each image's name, before the extension: `--prefix new- --suffix -opai` turns `beach.jpg` into `new-beach-opai.jpg`. Not accepted with an output **file**. Both are empty by default, except that [without `-o`](#no--o-beside-each-source) the suffix is `_opai` unless either one is given.
 
 ### `--overwrite`
 
 Replaces a file that already exists at a destination instead of [numbering](#numbering-and---overwrite) the result.
 
+### `--verbose`
+
+Names, on each written image's line, the enhancements it received: each model, its strength, bias or upscale factor, and whether the [run cache](#run-cache) served them, as in `🖼️ [100%] Enhancements applied to photo.jpg: Denoise Stockholm strength 100, Upscale Tokyo 2x`. Without it, the line ends with the path. It has no short form: `-v` prints the version. See [Terminal output](#terminal-output).
+
+### `--no-gui-settings`
+
+Ignores the [GUI's saved settings](#gui-settings) for this run: every setting you don't give on the command line is the built-in default.
+
 ### `--autopilot`, `--ap`
 
 Analyses each image and applies the enhancements it calls for, instead of the ones you name. It can't be combined with the enhancement flags or their options. See [Autopilot](#autopilot).
 
-### `-q, --quality <hd|sd>` (default: `hd`)
+### `-q, --quality <hd|sd>` (default: `hd`, or the GUI's)
 
-Picks which build of each model to run. It applies to **every** enhancement in the command.
+Picks which build of each model to run. It applies to **every** enhancement in the command. Without it, each enhancement runs at the quality of the model chosen for it in the [GUI's settings](#gui-settings), and at `hd` where none was chosen, so one run can mix `hd` and `sd`; the processor line then reads `quality mixed`.
 
-| Quality      | Most models | Osaka (upscale) | Trade-off                                     |
+| Quality      | Most models | Osaka (restore) | Trade-off                                     |
 |--------------|-------------|-----------------|-----------------------------------------------|
 | `hd` (default) | FP32      | FP16            | Highest quality. Slower, uses more memory.    |
 | `sd`         | FP16        | INT8            | Lighter and usually faster. Slightly lower quality. |
 
 The value is case-insensitive (`-q SD` works).
 
-### `-p, --processor <PROCESSOR>` (default: `auto`)
+### `-p, --processor <PROCESSOR>` (default: `auto`, or the GUI's)
 
-Picks the hardware every model of the run is asked to run on, face detection included. Which values exist depends on the operating system `opai` was built for:
+Picks the hardware every model of the run is asked to run on, face detection included. Without it, the processor chosen in the [GUI's settings](#gui-settings) is used, or `auto`. Which values exist depends on the operating system `opai` was built for:
 
 | Processor        | Runs on                                                                              | macOS | Windows / Linux |
 |------------------|--------------------------------------------------------------------------------------|:-----:|:---------------:|
@@ -151,7 +191,7 @@ Picks the hardware every model of the run is asked to run on, face detection inc
 
 The value is case-insensitive (`-p CPU` and `--processor WebGPU` work). `opai --help` lists only the values your build accepts, and any other value is refused straight away, before anything is installed.
 
-A value your build accepts is then checked against what **this machine** offers, once [dependencies are installed](#what-happens-during-a-run). This is the same check the GUI uses to build its list of processors: CUDA needs a supported NVIDIA GPU and driver, TensorRT also needs a GPU that can run it, CoreML needs macOS 12 or newer, and WebGPU needs a GPU the runtime can reach. If the machine doesn't offer the processor, the run stops with one line naming the processors it does offer, for example `🧨 the processor webgpu is not available on this machine; use auto, cpu or coreml`, and exits with [code 2](#exit-codes). No image is loaded and nothing is written.
+A value your build accepts is then checked against what **this machine** offers, once [dependencies are installed](#what-happens-during-a-run). This is the same check the GUI uses to build its list of processors: CUDA needs a supported NVIDIA GPU and driver, TensorRT also needs a GPU that can run it, CoreML needs macOS 12 or newer, and WebGPU needs a GPU the runtime can reach. If the machine doesn't offer the processor, the run stops with one line naming the processors it does offer, for example `🧨 the processor webgpu is not available on this machine; use auto, cpu or coreml`, and exits with [code 2](#exit-codes). No image is loaded and nothing is written. A processor that comes from the [GUI's settings](#gui-settings) is never refused: if this build or this machine doesn't offer it, the run uses `auto` and the [log file](#log-file) records a warning.
 
 ## Where the results go
 
@@ -163,7 +203,7 @@ A value your build accepts is then checked against what **this machine** offers,
 2. **A path whose extension** (any case: `.png`, `.PNG`) is one `opai` [writes](#output-formats) is a **file**, saved in that format.
 3. **Anything else** is a **directory**. It's created, with any missing parents, when the first result is written into it. `-o out` and `-o out.xyz` are both directories.
 
-An output **file** takes exactly **one input file**: more than one input, or a directory input, fails with exit code `2`. So do `--format`, `--prefix` and `--suffix`, which need an output directory. The file's own directory must already exist.
+An output **file** takes exactly **one input file**: more than one input, or a directory input, fails with exit code `2`. So do `--format`, `--prefix` and `--suffix`, which are not accepted with an output file. The file's own directory must already exist.
 
 An output **directory** fails with exit code `2` if a file (not a directory) already exists at that path.
 
@@ -179,6 +219,31 @@ Under an output directory:
 - **In place:** with `-o` naming the input directory itself (`opai photos --dn -o photos`), each result lands beside its source.
 
 The file name is the same one the GUI's export would use: the prefix, the source's name, the suffix, and the extension of the [`--format`](#--format-format-default-preserve) chosen.
+
+### No `-o`: beside each source
+
+Without `-o`, each result is written into the directory that holds its source, and no directory is created:
+
+- **A file named as an input** gets its result beside it. `opai photo.jpg --ap` writes `photo_opai.jpg` in the current directory; `opai pictures/beach.jpg --dn` writes `pictures/beach_opai.jpg` and nothing in the current directory.
+- **An image found in a directory input**, with or without `-r`, gets its result beside itself in that tree. `opai photos -r --up` writes `photos/a_opai.jpg` and `photos/2024/b_opai.jpg`.
+
+The name follows the same [export rule](#--format-format-default-preserve) as under an output directory, with one difference: when neither `--prefix` nor `--suffix` is given, the suffix is **`_opai`**, because the result's name is the only thing that tells it from its source. Giving either one replaces that default, the other staying empty:
+
+| Command | Result for `photo.jpg` |
+|---------|------------------------|
+| `opai photo.jpg --up` | `photo_opai.jpg` |
+| `opai photo.jpg --up --suffix -big` | `photo-big.jpg` |
+| `opai photo.jpg --up --prefix new-` | `new-photo.jpg` |
+| `opai shot.nef --dn --format webp` | `shot_opai.webp` (for `shot.nef`) |
+| `opai photo.jpg --dn --suffix "" --overwrite` | `photo.jpg`, replaced in place |
+
+[Numbering](#numbering-and---overwrite) works as everywhere else: if `photo_opai.jpg` already exists, the result is `photo_opai_1.jpg`, and with `--overwrite` the earlier `photo_opai.jpg` is replaced. The source itself is only replaced when you ask for it twice: an empty `--suffix ""` (or a `--prefix`/`--suffix` that gives the source's own name) **and** `--overwrite`. `--overwrite` never replaces **another input** of the run: with `opai a.jpg a_opai.jpg --dn --overwrite`, `a.jpg`'s result would be `a_opai.jpg`, which you also gave, so it's kept and the result is numbered (`a_opai_1.jpg`) instead, with a warning in the [log file](#log-file). The same holds when a re-run over a directory finds its earlier `_opai` results.
+
+A later run over the same directory sees the earlier `_opai` results as inputs too, just as it would with `-o` naming that directory, so `opai photos --ap` run twice also enhances `photos/a_opai.jpg` (into `photos/a_opai_opai.jpg`). Use `-o` to keep results apart.
+
+A source directory that can't be written to (a read-only card or share) fails that image with a line naming the destination, and the run goes on with the next one; use `-o` to write elsewhere.
+
+For more than one image, the summary line reads `✨ <count> images enhanced successfully; files saved beside their sources`. For one, it names the file written, as with `-o`.
 
 ### Numbering and `--overwrite`
 
@@ -198,7 +263,7 @@ opai photo.jpg --up kyoto -o out.png   # upscale with Kyoto
 ```
 
 - Every flag has a long name and a short alias; they do the same thing (`--upscale` = `--up`).
-- Model names are case-insensitive (`--up OSAKA` = `--up osaka`).
+- Model names are case-insensitive (`--up KYOTO` = `--up kyoto`).
 - Use plain ASCII for model names: `malmo` (not `malmö`), `petersburg` (not `st-petersburg`), `saopaulo` (not `sao-paulo` or `são-paulo`).
 - You can combine any number of enhancements in one command, but each one only once.
 
@@ -214,7 +279,8 @@ Default models are in **bold**.
 | Light Adjustment | `--light-adjustment` | `--la` | **paris**, lyon                                | `--la-bias` (-100 to 100)  |
 | Color Balance    | `--color-balance`    | `--cb` | **rio**, saopaulo                              | `--cb-bias` (-100 to 100)  |
 | Sharpen          | `--sharpen`          | `--sh` | **moscow**, petersburg, novgorod               | `--sh-str` (1 to 300)      |
-| Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, osaka, saitama               | `--scale` (1.0 to 8.0)     |
+| Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, saitama                      | `--scale` (1.0 to 8.0)     |
+| Restore          | `--restore`          | `--rs` | **kazan**, osaka                               | `--rs-scale` (1, 2 or 4), `--rs-str` (1 to 100) |
 | Lens Blur        | `--lens-blur`        | `--lb` | **lisbon**                                     | `--lb-f` (1.0 to 32) or `--lb-amount` (0 to 100), `--lb-focus` (X,Y), `--lb-edges` (matte, depth) |
 
 `--mask <FILE>` limits whichever enhancements are asked for (or chosen by `--ap`) to part of the photograph, and under a lens blur keeps that part in focus; `--mask-use` narrows it to one of the two. See [Masks](#masks).
@@ -234,7 +300,7 @@ error: the following required arguments were not provided:
 
 There are two kinds:
 
-**Strength** (`--dn-str`, `--sh-str`): how much of the model's effect to apply.
+**Strength** (`--dn-str`, `--sh-str`, `--rs-str`): how much of the model's effect to apply. Restore's stops at `100`: a generative result is only ever blended back towards the image, never pushed past what the model drew.
 
 | Value          | Effect                                                          |
 |----------------|-----------------------------------------------------------------|
@@ -337,7 +403,8 @@ Increases the image's resolution.
 | `tokyo` (default) | A natural upscale that stays faithful to the original and doesn't invent detail.           |
 | `kyoto`    | Real-world photos with noise, blur or compression. Fast, robust results.                          |
 | `saitama`  | Cartoons, drawings, line art and digital illustrations.                                           |
-| `osaka`    | The best quality available. Slow; needs a powerful GPU. Its builds are FP16 (`hd`) and INT8 (`sd`). |
+
+Osaka was an upscale model and is now a [Restore](#restore---restore-model---rs-model) model: `--up osaka` fails with `error: Osaka is a restore model now: use --restore osaka (--rs osaka) …`. Use `--rs osaka --rs-scale 2` (or `4`) for what `--up osaka --scale 2` did.
 
 Option: `--scale <FACTOR>`, the upscale factor, from `1.0` to `8.0`. Decimals are allowed (e.g. `2.5`).
 
@@ -352,9 +419,29 @@ Option: `--scale <FACTOR>`, the upscale factor, from `1.0` to `8.0`. Decimals ar
 > [!IMPORTANT]
 > If the image is larger than 4 MP and you don't pass `--scale`, the upscale step is **skipped**. The terminal doesn't warn about this; it's only recorded in the [log file](#log-file). Any other enhancements in the command still run, and the file is still written at the original resolution. To upscale a large image anyway, pass `--scale`.
 
+### Restore: `--restore [MODEL]`, `--rs [MODEL]`
+
+Restores detail generatively: the model **redraws** plausible detail where the photo lost it, rather than recovering what was there. Use it when the faithful models can't do enough, such as an out-of-focus face or a photo from an old camera that was never sharp. It can change faces, textures and lettering, so lower `--rs-str` if the result looks invented. Restore runs **after every other enhancement but Lens Blur**.
+
+| Model      | Use it for                                                                                        |
+|------------|---------------------------------------------------------------------------------------------------|
+| `kazan` (default) | Soft, blurred or low-detail photos. PiSA-SR on Stable Diffusion 2.1; slow and a large download. Its builds are FP32 (`hd`) and FP16 (`sd`). |
+| `osaka`    | The furthest-reaching restoration, on photos that are soft or heavily compressed. SeedVR2; slow, and needs a powerful GPU and a lot of memory (see the README). Its builds are FP16 (`hd`) and INT8 (`sd`). |
+
+Options:
+
+- `--rs-scale <FACTOR>`, the size to restore at: `1` (the photo's own size, the default), `2` or `4`. Above `1` the photo is enlarged first and restored at the new size, so it **cannot be combined with `--up`**: use one or the other. At `1` it can follow an upscale, and then restores the upscaled image.
+- `--rs-str <STRENGTH>`, a whole number from 1 to 100 (default 100). See [Strength and bias](#strength-and-bias).
+
+```bash
+# Restore a soft photo at its own size, then at twice the size with a little less of the model's redraw
+opai soft.jpg --rs -o soft-restored.png
+opai soft.jpg --rs --rs-scale 2 --rs-str 70 -o soft-2x.png
+```
+
 ### Lens Blur: `--lens-blur [MODEL]`, `--lb [MODEL]`
 
-Gives the photo the shallow depth of field of a wider lens aperture: the point you focus on stays sharp, and everything nearer or farther is blurred as much as a real lens would blur it, with bright points spreading into discs. The model estimates how far from the camera every pixel is, and the blur follows that depth. Lens Blur always runs **last**, after any upscale.
+Gives the photo the shallow depth of field of a wider lens aperture: the point you focus on stays sharp, and everything nearer or farther is blurred as much as a real lens would blur it, with bright points spreading into discs. The model estimates how far from the camera every pixel is, and the blur follows that depth. Lens Blur always runs **last**, after any upscale or restore.
 
 | Model      | Use it for                                                                                        |
 |------------|---------------------------------------------------------------------------------------------------|
@@ -412,7 +499,7 @@ opai photos --dn --mask sky.png -o enhanced
 - **It needs an enhancement**, or `--ap`, which it then limits to the mask.
 - **The models still run over the whole photograph**; the mask decides afterwards how much of their result each pixel shows. So a mask adds a quick blend to a run (and, under an upscale, an enlargement of the photograph), but changes neither how long the models take nor what the [run cache](#run-cache) stores, and running the same enhancements again with a different mask runs no model.
 - **With an upscale**, the black part shows a plain (Lanczos) enlargement of the photograph, which is softer than the upscaled part. A strongly changed result, such as an upscale or a colorization, can show a visible seam at the mask's edge: a softer edge in the mask hides it.
-- **With a lens blur, the white part is the subject, kept in focus.** The lens blur holds it sharp, in proportion to the mask (a grey pixel's blur is scaled down by its grey), and blurs the rest as it would without a mask. The enhancements are blended with the photograph *before* the blur, so the black part is the photograph blurred, not the photograph as it was. Changing only the mask estimates no depth and runs no model again: the blend and the blur are redone. A hard-edged mask can show a thin halo of background at the subject's edge; a softer edge hides it. With a lens blur and no other enhancement, a mask no longer limits where the blur applies: it is only what stays sharp, so to blur only part of the photograph, mask the part to keep sharp.
+- **With a lens blur, the white part is the subject, kept in focus.** The lens blur holds it sharp, in proportion to the mask (a grey pixel's blur is scaled down by its grey), and blurs the rest as it would without a mask. The enhancements are blended with the photograph *before* the blur, so the black part is the photograph blurred, not the photograph as it was, and an Ultra HDR gain map is blurred with the photograph and kept sharp in the same place. Changing only the mask estimates no depth and runs no model again: the blend and the blur are redone. A hard-edged mask can show a thin halo of background at the subject's edge; a softer edge hides it. With a lens blur and no other enhancement, a mask no longer limits where the blur applies: it is only what stays sharp, so to blur only part of the photograph, mask the part to keep sharp.
 - **`--mask-use <USE>`** says which of the two the mask is for: `both` (the default), `enhancements` (limit the enhancements; the lens blur ignores the mask) or `lens-blur` (keep the mask in focus and apply every other enhancement to the whole photograph). `lens-blur` without `--lens-blur` is refused, since the mask would have no effect, and so is `--mask-use` without `--mask`.
 
 ```bash
@@ -449,15 +536,21 @@ opai street.jpg --rm passer-by.png --fr --sh -o street-clean.jpg
 opai photos --ap -o enhanced
 ```
 
-- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--lb`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--lb-f`, `--lb-amount`, `--lb-focus`, `--lb-edges`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `--mask`, `--mask-use`, `--remove`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
+- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--rs`, `--lb`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--rs-scale`, `--rs-str`, `--lb-f`, `--lb-amount`, `--lb-focus`, `--lb-edges`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `--mask`, `--mask-use`, `--remove`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
 - **Each enhancement uses its default strength or bias**: strength `100` for denoise and sharpen, bias `50` for light adjustment and color balance. An upscale runs at the factor the image's size calls for (see [Upscale](#upscale---upscale-model---up-model)); an image above 4 MP is not upscaled.
 - **An image that needs nothing is still written**, unchanged, in the format asked for. Its row ends with `Enhancements applied to` as any other.
 - **If face detection can't run** (for example, its model can't be downloaded), the image still gets the other enhancements, without face recovery, and the [log file](#log-file) records a warning.
-- **What was chosen for each image** is recorded in the [log file](#log-file). The terminal shows each enhancement in the image's row while it runs.
+- **What was chosen for each image** is recorded in the [log file](#log-file). The terminal shows each enhancement in the image's row while it runs, and with [`--verbose`](#--verbose) the image's line names them once it is written, with their models and parameters:
+
+  ```bash
+  opai photos --ap -o enhanced --verbose
+  # 🖼️ [100%] Enhancements applied to       photos/a.jpg: Denoise Stockholm strength 100, Upscale Tokyo 4x
+  # 🖼️ [100%] Enhancements applied to       photos/b.jpg: Color Balance Rio bias 50
+  ```
 
 ### Choosing the models
 
-Each enhancement runs with its default model unless an environment variable names another one:
+Each enhancement runs with its default model unless an environment variable names another one, or, where the variable isn't set, the [GUI's settings](#gui-settings) choose a model or switch the enhancement off for Autopilot:
 
 | Enhancement      | Environment variable    | Default model | Accepted values                       |
 |------------------|-------------------------|---------------|---------------------------------------|
@@ -467,33 +560,71 @@ Each enhancement runs with its default model unless an environment variable name
 | Light Adjustment | `OPAI_AP_LIGHT`         | Paris         | `paris`, `lyon`, `off`                |
 | Color Balance    | `OPAI_AP_COLOR`         | Rio           | `rio`, `saopaulo`, `off`              |
 | Sharpen          | `OPAI_AP_SHARPEN`       | Moscow        | `moscow`, `petersburg`, `novgorod`, `off` |
-| Upscale          | `OPAI_AP_UPSCALE`       | Tokyo         | `kyoto`, `osaka`, `tokyo`, `saitama`, `off` |
+| Upscale          | `OPAI_AP_UPSCALE`       | Tokyo         | `kyoto`, `tokyo`, `saitama`, `off` |
 
 ```bash
-# Upscale with Osaka whenever autopilot upscales
-OPAI_AP_UPSCALE=osaka opai photos --ap -o out
+# Upscale with Kyoto whenever autopilot upscales
+OPAI_AP_UPSCALE=kyoto opai photos --ap -o out
 
 # Never sharpen or restore faces, and use Malmo for denoise
 OPAI_AP_SHARPEN=off OPAI_AP_FACE=off OPAI_AP_DENOISE=malmo opai photos --ap -o out
 ```
 
-- Model names are spelled as the enhancement flags take them, in any case (`Osaka` = `osaka`).
+- Model names are spelled as the enhancement flags take them, in any case (`Kyoto` = `kyoto`).
 - **`off`** (any case) leaves that enhancement out entirely: it's never applied, and the analysis doesn't even look for it, so `OPAI_AP_FACE=off` skips face recovery.
 - An **empty** value is the same as not setting the variable.
 - An **invalid** value fails with exit code `2` before anything is downloaded, naming the variable and listing what it accepts:
 
   ```
   error: invalid value 'paris' for the environment variable OPAI_AP_UPSCALE
-    [possible values: kyoto, osaka, tokyo, saitama, off]
+    [possible values: kyoto, tokyo, saitama, off]
   ```
 - The variables are read **only with `--ap`**. Without it they're ignored and not checked: `OPAI_AP_UPSCALE=paris opai photo.jpg --up -o out.png` upscales with Tokyo. The GUI never reads them; its Autopilot uses the models chosen in its settings.
+
+## GUI settings
+
+`opai` follows the settings you saved in the GUI, for the settings it has a flag or variable for: the processor, the quality of each enhancement, and, with [`--ap`](#autopilot), each enhancement's model and whether Autopilot may suggest it. You don't need shell aliases or `OPAI_AP_*` variables to make the command line match the GUI.
+
+Every time the GUI starts, and every time you **Save** a change to one of these settings, it writes them to `gui-settings.json` in the application's configuration directory, beside its [log file](#log-file):
+
+| OS      | File                                                                 |
+|---------|----------------------------------------------------------------------|
+| macOS   | `~/Library/Application Support/io.vinicius.opai/gui-settings.json`   |
+| Windows | `%APPDATA%\io.vinicius.opai\gui-settings.json`                       |
+| Linux   | `~/.config/io.vinicius.opai/gui-settings.json`                       |
+
+`opai` reads it at startup. Each setting comes from the first of these that gives one:
+
+| Setting                         | 1. Flag            | 2. Variable  | 3. GUI settings                                               | 4. Default            |
+|---------------------------------|--------------------|--------------|---------------------------------------------------------------|-----------------------|
+| Processor                       | `-p`               |              | The GUI's processor                                           | `auto`                |
+| Quality of each enhancement     | `-q` (all of them) |              | The quality (HD or SD) of the model chosen for it             | `hd`                  |
+| Autopilot's model (with `--ap`) |                    | `OPAI_AP_*`  | The model chosen for it, or `off` where Autopilot may not suggest it | The [default model](#choosing-the-models) |
+
+```bash
+# The GUI has every model at SD and Color Balance and Colorization off for Autopilot:
+opai photos --ap -o out                        # SD, no colour balance, no colorization
+opai photos --ap -q hd -o out                  # HD instead
+OPAI_AP_COLOR=rio opai photos --ap -o out      # colour balance back on, with Rio
+opai photos --ap --no-gui-settings -o out      # the built-in defaults, as if the GUI had never run
+```
+
+- The bare enhancement flags keep their own default models: `--up` runs Tokyo whatever the GUI chose. Only the quality comes from the GUI for them.
+- With [`--verbose`](#--verbose), the processor line says where each value came from, and with `--ap` a second line lists each enhancement's model or `off` and its source:
+
+  ```
+  🧠 Running inference using the processor Auto (from GUI settings); quality SD (from GUI settings)
+  🤖 Autopilot models: Denoise Stockholm (from GUI settings), Face Recovery Athens (from GUI settings), Colorize off (from GUI settings), ...
+  ```
+- The file never stops a run. If it's missing, `opai` uses its defaults. If it can't be read, isn't a settings file, or comes from a newer version, it's ignored and the [log file](#log-file) records why. A single entry naming a model or processor that doesn't exist is ignored on its own.
+- `opai` never writes the file, and the GUI never reads it back: the GUI's own settings stay the source of truth. Export settings, language and background aren't shared.
 
 ## Processing order
 
 The enhancements always run in this order, no matter what order you type the flags in:
 
 ```
-Remove → Denoise → Face Recovery → Colorization → Light Adjustment → Color Balance → Sharpen → Upscale → Lens Blur
+Remove → Denoise → Face Recovery → Colorization → Light Adjustment → Color Balance → Sharpen → Upscale → Restore → Lens Blur
 ```
 
 So these two commands do exactly the same thing:
@@ -503,7 +634,7 @@ opai photo.jpg --up --dn -o out.png
 opai photo.jpg --dn --up -o out.png
 ```
 
-The order is designed so that every step works on the cleanest image possible. For example, noise is removed before faces are restored, and the image is upscaled after the corrections so they work at the original resolution. Lens Blur comes last of all: it is a creative choice rather than a correction, so every other step works on the sharp photo, and nothing after it sharpens or denoises the blur.
+The order is designed so that every step works on the cleanest image possible. For example, noise is removed before faces are restored, and the image is upscaled after the faithful corrections so they work at the original resolution. Restore comes after all of them: it redraws detail, so it is handed the best image the faithful models can make, and no faithful model after it corrects what it drew. Lens Blur comes last of all: it is a creative choice rather than a correction, so every other step works on the sharp photo, and nothing after it sharpens, denoises or restores the blur.
 
 ## Supported formats
 
@@ -593,11 +724,11 @@ By default (`-p auto`), the CLI uses the fastest hardware available, trying in t
 
 ### Run cache
 
-Every step's result is cached on disk for **24 hours**. If you run the same enhancements on the same image again within that time, the cached results are reused and the run finishes almost immediately. Changing anything (a model, strength, bias, scale or quality) creates a new cache entry from that step onwards.
+Every step's result is cached on disk for **24 hours**. If you run the same enhancements on the same image again within that time, the cached results are reused and the run finishes almost immediately. Changing anything (a model, strength, bias, scale or quality) creates a new cache entry from that step onwards. With [`--verbose`](#--verbose), a re-run's line ends `(cached)` when every step was reused, or `(2 of 3 cached)` when only some were.
 
 ### One instance at a time
 
-Only one Open Photo AI process can run at a time, and that includes the GUI. If another one is running, `opai` exits with [code 1](#exit-codes) and the error `Open Photo AI is already running (…); close it and try again`, naming the other process when it can (for example `gui, pid 4821`). Close it, or wait for it to finish, and try again. To process several images, give them all to one command (see [Scripting](#scripting-and-batch-processing)).
+Only one Open Photo AI process can run at a time, and that includes the GUI. If another one is running, `opai` exits with [code 1](#exit-codes) and the error `Open Photo AI is already running (…); close it and try again`, naming the other process when it can (for example `gui, pid 4821`). Close it, or wait for it to finish, and try again. To process several images, give them all to one command (see [Scripting](#scripting-and-batch-processing)). [`--gui`](#--gui) is the exception: it hands the images to the GUI that is already open.
 
 ## Terminal output
 
@@ -634,18 +765,19 @@ And once the run ends, the view stays as it was last drawn, with the summary und
   - `🖼️ [  0%] Choosing enhancements for <path>` with [`--autopilot`](#autopilot), while the image is analysed. On the first run, this includes downloading the face detection model, so it can stay at `0%` for a while;
   - `🖼️ [ 12%] Downloading <enhancement> for <path>` while a model is downloaded;
   - `🖼️ [ 42%] Applying <enhancement> to <path>` while an enhancement runs or is served from the [run cache](#run-cache);
-  - `🖼️ [100%] Enhancements applied to <path>` once its result is written;
+  - `🖼️ [100%] Enhancements applied to <path>` once its result is written, followed under [`--verbose`](#--verbose) by `: <applied>` (see below);
   - `🧨 [ 42%] Failed to enhance <path>` once it has failed;
   - `🧨 [ 42%] Stopped enhancing <path>` when you [stopped the run](#stopping-a-run) while it was being worked on.
 
-  `<enhancement>` is the enhancement's name as the GUI shows it: `Denoise`, `Face Recovery`, `Colorize`, `Light Adjust`, `Color Balance`, `Sharpen`, `Upscale` or `Lens Blur` (which is also what the depth estimate and the matte it starts with are called).
-- **The summary** starts with a success line when at least one image was written. For exactly one image it names the file written, so a numbered name is visible: `✨ Image enhanced successfully; file saved at out_1.png`. For more, it names the output directory: `✨ 7 images enhanced successfully; files saved under out`. Then a `🧨` line gives the reason for each image that failed, in the order they ran, since a failure can have scrolled out of the list. Last comes the run's closing `🧨` line, if it didn't succeed (see [Exit codes](#exit-codes)).
+  `<enhancement>` is the enhancement's name as the GUI shows it: `Denoise`, `Face Recovery`, `Colorize`, `Light Adjust`, `Color Balance`, `Sharpen`, `Upscale`, `Restore` or `Lens Blur` (which is also what the depth estimate and the matte it starts with are called).
+- **With `--verbose`**, a written image's row ends with `: <applied>`, what it received, in the order it ran: each enhancement's name, its model as the GUI names it (`Malmö`, `São Paulo`), and its parameter, `strength <n>` for denoise and sharpen, `bias <n>` for light adjustment and color balance, `<factor>x` for an upscale (`2x`, `1.5x`), `strength <n>` for a restore, after `<factor>x, ` where `--rs-scale` was given, `f/<n>, focus <x>,<y>` for a lens blur (then `, edges from the depth` under `--lb-edges depth`), none for face recovery and colorization. It ends with ` (cached)` when the [run cache](#run-cache) served every step, or ` (<k> of <n> cached)` when it served some. An image that needed nothing reads `no enhancement needed`. The text is drawn in the terminal's default color, and in the live view a row wider than the terminal is cut at its edge; the plain lines and the [log file](#log-file) carry it whole. Failed and stopped rows carry none. For example, `opai photo.jpg --dn --la --up --scale 2 -o out.png --verbose` ends with `🖼️ [100%] Enhancements applied to       photo.jpg: Denoise Stockholm strength 100, Light Adjust Paris bias 50, Upscale Tokyo 2x`.
+- **The summary** starts with a success line when at least one image was written. For exactly one image it names the file written, so a numbered name is visible: `✨ Image enhanced successfully; file saved at out_1.png`. For more, it names the output directory: `✨ 7 images enhanced successfully; files saved under out`, or, without `-o`, ends `files saved beside their sources`. Then a `🧨` line gives the reason for each image that failed, in the order they ran, since a failure can have scrolled out of the list. Last comes the run's closing `🧨` line, if it didn't succeed (see [Exit codes](#exit-codes)).
 
 In color, the dependency's name and its percentage are bold white, the spinner magenta and the `✓` green. In the processor line, the processor is green and the quality yellow. The bar is drawn in a color gradient. In a `🖼️` row, the percentage (with its `%`) is blue, the enhancement's name (or the word `Enhancements`) magenta and the path cyan and underlined; a `🧨` row is red throughout. The success line is bold yellow.
 
 With a single image, the view is three rows tall: the bar, a blank row and the image's row.
 
-When stderr is **not** a terminal (for example, when redirected to a file or run in CI), there's no dependency line, no view and no progress bar. The processor line comes first, followed by a blank line. Then each image prints one line, without colors, when it ends, with the words its row ends with, its percentage included; a failed image's line adds the reason. Then come the summary's success line and the closing line:
+When stderr is **not** a terminal (for example, when redirected to a file or run in CI), there's no dependency line, no view and no progress bar. The processor line comes first, followed by a blank line. Then each image prints one line, without colors, when it ends, with the words its row ends with, its percentage included; a failed image's line adds the reason, and under `--verbose` a written image's line adds what it received. Then come the summary's success line and the closing line:
 
 ```
 🧠 Running inference using the processor Auto; quality HD
@@ -680,8 +812,8 @@ A file that the stopped image would have replaced with `--overwrite`, including 
 
 | Code  | Meaning                                                                                                     |
 |-------|-------------------------------------------------------------------------------------------------------------|
-| `0`   | Success. Every image was written.                                                                          |
-| `1`   | The run failed: a setup error (including another instance running), or **any** image that failed to decode, enhance or be written. The other images in the batch were still processed. |
+| `0`   | Success. Every image was written, or with `--gui`, every image was handed to the GUI.                       |
+| `1`   | The run failed: a setup error (including another instance running), the GUI couldn't be started for `--gui`, or **any** image that failed to decode, enhance or be written. The other images in the batch were still processed. |
 | `2`   | Usage error: bad arguments, an unreadable or unsupported named input, an output that can't be used as asked, no image to enhance, or a [processor](#-p---processor-processor-default-auto) this machine doesn't offer. Nothing was written. |
 | `130` | Stopped with Ctrl-C. Results already written for earlier images are kept.                                  |
 
@@ -705,7 +837,7 @@ What's in it that the terminal doesn't show:
 - With [`--autopilot`](#autopilot), the enhancements chosen for each image, and a warning when part of the analysis (such as face detection) couldn't run.
 - A file found in a directory that was skipped because it couldn't be read, and why.
 - Face detection results, e.g. `found 3 faces, restoring 2`, or `no faces were found; none will be restored`.
-- Each file written, with its size and format, and the hardware it ran on, e.g. `ran on CoreML, CPU` or `served from cache`.
+- Each file written, with its size and format, the hardware it ran on, e.g. `ran on CoreML, CPU` or `served from cache`, and the enhancements it received, e.g. `applied Denoise Stockholm strength 100 (cached)`, with or without `--verbose`.
 - The full error behind any `🧨` line.
 
 **Please attach this file when [reporting a bug](https://github.com/vegidio/open-photo-ai/issues).**
@@ -717,10 +849,12 @@ What's in it that the terminal doesn't show:
 | `error: at least one enhancement is required: --remove (--rm), --denoise (--dn), …` | No enhancement flag was given. Add at least one, or `--ap`. |
 | `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`   | `--ap` chooses the enhancements itself. Drop `--ap`, or drop the enhancement flags and their options. |
 | `error: invalid value 'paris' for the environment variable OPAI_AP_UPSCALE` followed by `[possible values: …]` | An `OPAI_AP_*` variable names a model of another enhancement, or a misspelt one. Pick one from the list shown, `off`, or unset it. |
-| `error: the following required arguments were not provided: --output <OUTPUT>` | `-o`/`--output` is missing. |
 | `error: invalid value 'foo' for '--upscale [<MODEL>]'` followed by `[possible values: …]` | Unknown model name. Pick one from the list shown. |
 | `error: invalid value 'photo.jpg' for '--upscale [<MODEL>]'`                   | An input was placed after a flag. Put the `INPUT`s first. |
 | `error: invalid value '9' for '--scale <FACTOR>': the scale must be from 1.0 to 8.0` | `--scale` out of range or not a number. |
+| `error: --upscale (--up) cannot be used with --rs-scale 2: …`                  | An enlarging restore replaces the upscale. Leave out `--up`, or use `--rs-scale 1` to restore after the upscale. |
+| `error: invalid value '3' for '--rs-scale <FACTOR>': the restore size must be one of 1, 2, 4` | `--rs-scale` takes only 1, 2 or 4. |
+| `error: Osaka is a restore model now: use --restore osaka (--rs osaka) …`       | Osaka moved from Upscale to Restore. Use `--rs osaka`, with `--rs-scale 2` or `4` to enlarge. |
 | `error: invalid value '0.5' for '--lb-f <F>': the f-number must be from 1 to 32` | `--lb-f` out of range or not a number. |
 | `error: invalid value '101' for '--lb-amount <AMOUNT>': the blur amount must be from 0 to 100` | `--lb-amount` out of range or not a number. |
 | `error: the argument '--lb-amount <AMOUNT>' cannot be used with '--lb-f <F>'` | An aperture is asked for twice: choose one of `--lb-f` and `--lb-amount`. |
@@ -733,10 +867,13 @@ What's in it that the terminal doesn't show:
 | `🧨 the codec refused notes.txt: could not determine an image format …`        | A named file isn't an image `opai` can read, or its extension isn't a supported format. |
 | `🧨 cannot list photos: …`                                                     | Part of a directory input's tree can't be read. Fix its permissions, or leave it out. |
 | `🧨 no image to enhance in photos`                                             | The inputs hold no image `opai` can read. Add `-r` if the images are in subfolders. |
+| `⚠️ --upscale is ignored with --gui; set it in Open Photo AI instead`          | `--gui` opens the images in the GUI, which uses its own settings. Not an error: the images are still opened. |
+| `🧨 could not open Open Photo AI; is it installed? …`                          | `--gui` on macOS couldn't find or start the GUI. Install it in Applications and open it once. |
+| `🧨 could not find Open Photo AI: OpenPhotoAI is neither beside opai nor on PATH` | `--gui` on Windows or Linux couldn't find the GUI's program. Put its folder on your `PATH`. |
 | `🧨 an output file takes exactly one input file; …`                            | `-o` names a file, but there are several inputs or a directory input. Give a directory instead. |
-| `🧨 --suffix needs an output directory; …`                                     | `--format`, `--prefix` and `--suffix` only work when `-o` is a directory. |
+| `🧨 --suffix needs an output directory; …`                                     | `--format`, `--prefix` and `--suffix` don't work when `-o` is a file. Name a directory, or leave `-o` out to write beside the source. |
 | `🧨 cannot write into out: it is a file, not a directory, …`                   | `-o` would be a directory, but a file already exists there. |
-| `🧨 cannot write out/a.png: …`                                                 | The result couldn't be written there: the directory is missing or not writable, or every numbered name up to `_999` is taken. |
+| `🧨 cannot write out/a.png: …`                                                 | The result couldn't be written there: the directory is missing or not writable, or every numbered name up to `_999` is taken. Without `-o`, this is the source's own directory; give `-o` to write elsewhere. |
 | `🧨 Open Photo AI is already running …; close it and try again`                | Another `opai` process or the GUI is running. Close it and try again. |
 | `🧨 the processor … is not available on this machine; use …`                   | This machine doesn't offer the processor given with `-p` (for example, no supported NVIDIA GPU for `cuda`). Use one of the processors listed, or leave `-p` out. Exit code `2`. |
 | `🧨 the mask could not be read: …`                                             | The file given with `--mask` doesn't exist or isn't an image `opai` can read. Exit code `2`. |

@@ -166,8 +166,9 @@ pub(crate) fn pipeline<B: Backend>(
     range: Normalisation,
     strength: Strength,
     guard: Option<Guard>,
+    geometry: TileGeometry,
 ) -> Shared<B> {
-    Arc::new(Filter::new(name, artifact, profile, range, strength, guard))
+    Arc::new(Filter::new(name, artifact, profile, range, strength, guard, geometry))
 }
 
 /// One filter run: the graph it opens, the settings it opens it under, the range it feeds it, the guard its model
@@ -183,6 +184,8 @@ struct Filter {
     guard: Option<Guard>,
     /// How far the photograph is moved towards the tiled result: past it above 1.
     strength: f32,
+    /// The tile the graph accepts and how far tiles overlap: the shared default for every model exported at 256.
+    geometry: TileGeometry,
 }
 
 impl Filter {
@@ -193,6 +196,7 @@ impl Filter {
         range: Normalisation,
         strength: Strength,
         guard: Option<Guard>,
+        geometry: TileGeometry,
     ) -> Self {
         // A retry multiplies the tile, which brightens it about black only in `[0, 1]`.
         debug_assert!(
@@ -200,7 +204,13 @@ impl Filter {
             "a rescue was handed a model that does not read [0, 1]"
         );
 
-        Self { graph: SingleGraph::new(name, artifact, profile), range, guard, strength: strength.as_f32() }
+        Self {
+            graph: SingleGraph::new(name, artifact, profile),
+            range,
+            guard,
+            strength: strength.as_f32(),
+            geometry,
+        }
     }
 }
 
@@ -281,7 +291,7 @@ impl<B: Backend> ImagePipeline<B> for Filter {
 
         let produced = run_tiled(
             input,
-            TileGeometry::DEFAULT,
+            self.geometry,
             1,
             depth,
             self.range,
@@ -447,7 +457,15 @@ mod tests {
         let strength = Strength::new(strength).expect("the test supplied a strength in range");
         let artifact = ArtifactId::new(Family::Denoise, "fake", None, Precision::Fp32);
 
-        pipeline::<Fake>("Fake (FP32)".into(), artifact, EpProfile::default(), range, strength, guard)
+        pipeline::<Fake>(
+            "Fake (FP32)".into(),
+            artifact,
+            EpProfile::default(),
+            range,
+            strength,
+            guard,
+            TileGeometry::DEFAULT,
+        )
     }
 
     /// A filter over `[0, 1]` at `strength`, guarded by `guard`.

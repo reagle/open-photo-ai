@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useShortcuts } from "@/hooks/useShortcuts";
 import "@/i18n";
 import { type FamilyEntry, forgetCatalogue } from "@/ipc/catalogue";
 import type { Operation } from "@/ipc/enhance";
@@ -23,6 +24,10 @@ vi.mock("@/lib/faro", () => ({
 // What the `catalogue` command answers, held in a binding so a case about a model the real
 // catalogue does not publish can substitute one. The default is the library's own catalogue.
 let published: FamilyEntry[] = [];
+
+// The real `platform()` reads a global the plugin's init script installs, which jsdom has none of - and
+// the shortcut hints ask it, to write their keys as this platform does.
+vi.mock("@/ipc/os", () => ({ isMacOs: vi.fn(() => false), isWindows: vi.fn(() => false) }));
 
 vi.mock("@tauri-apps/api/core", () => ({
     invoke: vi.fn(() => Promise.resolve(published)),
@@ -429,6 +434,130 @@ describe("a photograph being analysed", () => {
     });
 });
 
+/** The list with the window's keys listening, as the shell mounts both. */
+const WithKeys = () => {
+    useShortcuts();
+
+    return <EnhancementList />;
+};
+
+/** Presses a key at `target`, bubbling to the window, and answers the dispatched event. */
+const press = (key: string, target: Element = document.body) => {
+    const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+    act(() => {
+        target.dispatchEvent(event);
+    });
+
+    return event;
+};
+
+/** Each row's own control, the one that opens its options, in the order the rows are drawn. */
+const triggers = () => [...document.querySelectorAll<HTMLElement>("[data-slot='enhancement-trigger']")];
+
+/** The options panel open now, if any. */
+const panel = () => document.querySelector("[data-slot='enhancement-options']");
+
+describe("the enhancements' keys", () => {
+    beforeEach(async () => {
+        vi.mocked(track).mockClear();
+        localStorage.clear();
+        forgetCatalogue();
+        resetFileStore();
+        useEnhancementStore.setState({ autopilot: true, enhancements: new Map() });
+        published = CATALOGUE;
+        openFiles(HOLIDAY);
+        stack(light("paris", "fp32", 0.5), denoise("rome", "fp32", 0.5), upscale("kyoto", "fp32", 2));
+        render(<WithKeys />);
+        await waitFor(() => expect(infoLines()[0]).toMatch(/,/));
+    });
+
+    it("opens the second row's options with 2, and gives the focus back to that row when they close", async () => {
+        const event = press("2");
+
+        await waitFor(() => expect(panel()).toBeInTheDocument());
+        expect(event.defaultPrevented).toBe(true);
+        expect(panel()).toHaveTextContent("Denoise");
+
+        fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+        await waitFor(() => expect(panel()).toBeNull());
+        expect(triggers()[1]).toHaveFocus();
+    });
+
+    it("does nothing for a digit past the end of the list, and leaves the key alone", () => {
+        const event = press("4");
+
+        expect(panel()).toBeNull();
+        expect(event.defaultPrevented).toBe(false);
+    });
+
+    it("removes the row with the focus on Delete, and moves the focus to the next row", async () => {
+        triggers()[0]?.focus();
+
+        const event = press("Delete", document.activeElement ?? document.body);
+
+        expect(event.defaultPrevented).toBe(true);
+        await waitFor(() => expect(triggers()).toHaveLength(2));
+        expect(
+            useEnhancementStore
+                .getState()
+                .enhancements.get(HOLIDAY.path)
+                ?.map((op) => op.family),
+        ).toEqual(["denoise", "upscale"]);
+        expect(track).toHaveBeenCalledExactlyOnceWith("enhancement_removed", { family: "light_adjustment" });
+        expect(triggers()[0]).toHaveFocus();
+    });
+
+    it("removes the last row on Backspace from its remove button, and moves the focus to the row before", async () => {
+        const remove = screen.getAllByRole("button", { name: "Remove enhancement" })[2];
+        remove?.focus();
+
+        press("Backspace", remove);
+
+        await waitFor(() => expect(triggers()).toHaveLength(2));
+        expect(triggers()[1]).toHaveFocus();
+    });
+
+    it("leaves Delete and Backspace alone with the focus outside the list", () => {
+        const deleted = press("Delete");
+        const backspace = press("Backspace");
+
+        expect(deleted.defaultPrevented).toBe(false);
+        expect(backspace.defaultPrevented).toBe(false);
+        expect(triggers()).toHaveLength(3);
+    });
+
+    it("removes one row for one press, however long Delete is held", async () => {
+        triggers()[0]?.focus();
+
+        press("Delete", document.activeElement ?? document.body);
+        await waitFor(() => expect(triggers()).toHaveLength(2));
+        act(() => {
+            document.activeElement?.dispatchEvent(
+                new KeyboardEvent("keydown", { key: "Delete", repeat: true, bubbles: true, cancelable: true }),
+            );
+        });
+
+        expect(triggers()).toHaveLength(2);
+    });
+
+    it("tells assistive technology the remove button's keys", () => {
+        expect(screen.getAllByRole("button", { name: "Remove enhancement" })[0]).toHaveAttribute(
+            "aria-keyshortcuts",
+            "Delete Backspace",
+        );
+    });
+
+    it("opens no options while Autopilot is analysing the image, when the list is not drawn", () => {
+        act(() => useAutopilotStore.getState().begin(HOLIDAY.path, "suggest-1", undefined));
+
+        const event = press("1");
+
+        expect(panel()).toBeNull();
+        expect(event.defaultPrevented).toBe(false);
+    });
+});
+
 describe("a Remove on the current image", () => {
     const remove: Operation = { family: "remove", codename: "lima", precision: "fp32", parameters: {} };
     const mask = () => useMaskStore.getState();
@@ -448,6 +577,8 @@ describe("a Remove on the current image", () => {
         forgetCatalogue();
         resetFileStore();
         useMaskStore.setState(useMaskStore.getInitialState(), true);
+        // The keys' last test leaves an analysis running, which hides the list.
+        useAutopilotStore.setState(useAutopilotStore.getInitialState(), true);
         useEnhancementStore.setState({ autopilot: true, enhancements: new Map() });
         published = CATALOGUE;
         openFiles(HOLIDAY);

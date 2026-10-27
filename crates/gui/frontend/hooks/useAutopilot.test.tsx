@@ -129,21 +129,27 @@ describe("an analysis", () => {
 
         void analyse(HOLIDAY, undefined);
 
-        // Never Remove: what it takes out is the user's to paint.
+        // And never restore or lens blur, which no analysis suggests, nor Remove: what it takes out is the user's to
+        // paint.
         expect(asking[0]?.families).toEqual(
             ENHANCEMENTS.map(({ family }) => family).filter(
                 (family) =>
-                    family !== "colorization" && family !== "denoise" && family !== "lens_blur" && family !== "remove",
+                    family !== "colorization" &&
+                    family !== "denoise" &&
+                    family !== "restore" &&
+                    family !== "lens_blur" &&
+                    family !== "remove",
             ),
         );
     });
 
-    it("never asks for a lens blur, which an analysis has no signal for", () => {
+    it("never asks for a removal, a restore or a lens blur, which an analysis has no signal for", () => {
         void analyse(HOLIDAY, undefined);
 
-        // Nor for Remove, whose region is the user's to paint.
+        expect(asking[0]?.families).not.toContain("remove");
+        expect(asking[0]?.families).not.toContain("restore");
         expect(asking[0]?.families).not.toContain("lens_blur");
-        expect(asking[0]?.families).toHaveLength(ENHANCEMENTS.length - 2);
+        expect(asking[0]?.families).toHaveLength(ENHANCEMENTS.length - 3);
     });
 
     it("is still asked for with every enhancement switched off, and answers nothing", async () => {

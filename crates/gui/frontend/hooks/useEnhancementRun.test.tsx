@@ -166,6 +166,31 @@ describe("running the current image's enhancements", () => {
         expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(4)], "auto", undefined, undefined);
     });
 
+    it("leaves out an upscale an enlarging restore has taken out of the chain, and runs it again at 1x", async () => {
+        const restore = (scale: number): Operation => ({
+            family: "restore",
+            codename: "kazan",
+            precision: "fp16",
+            parameters: { scale, strength: 1 },
+        });
+
+        stack(HOLIDAY.path, upscale(2), restore(2));
+        mount();
+
+        expect(asked).toHaveBeenCalledWith(HOLIDAY.identity, [restore(2)], "auto", undefined, undefined);
+
+        stack(HOLIDAY.path, upscale(2), restore(1));
+
+        await waitFor(() => expect(asked).toHaveBeenCalledTimes(2));
+        expect(asked).toHaveBeenLastCalledWith(
+            HOLIDAY.identity,
+            [upscale(2), restore(1)],
+            "auto",
+            undefined,
+            undefined,
+        );
+    });
+
     it("runs again when the processor changes", async () => {
         stack(HOLIDAY.path, upscale(2));
         mount();

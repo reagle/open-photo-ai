@@ -1,5 +1,5 @@
 //! What the terminal's lines say and how they are coloured: the update line, the dependency line, the processor line, the list's rows
-//! and their plain lines, the summary and the failure line. Pure text, so all of it is tested without a terminal.
+//! and their plain lines, the summary, the warning line and the failure line. Pure text, so all of it is tested without a terminal.
 //!
 //! Whether to draw live lines and whether to colour is decided once, in [`Look`], the way MediaSim decides it: a
 //! terminal, and `NO_COLOR` unset or empty.
@@ -14,8 +14,6 @@ use opai::{ExecutionProvider, Family};
 use ratatui::crossterm::style::{Color as TermColor, Stylize};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-
-use crate::args::Quality;
 
 /// The success line and the processor line's quality.
 pub const YELLOW: (u8, u8, u8) = (0xe5, 0xdb, 0x08);
@@ -65,6 +63,9 @@ pub enum Activity {
     Choosing,
     /// The model of an operation of this family is being fetched.
     Downloading(Family),
+    /// The model of an operation of this family is on disk and is being opened, which the first time on CoreML or
+    /// TensorRT is minutes of compiling it with nothing to count.
+    Loading(Family),
     /// An operation of this family runs, or is served from the run cache.
     Applying(Family),
 }
@@ -85,8 +86,8 @@ pub enum RowState {
 /// How an image ended, with a failure's reason for its plain line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImageEnd {
-    /// Its result is written.
-    Enhanced,
+    /// Its result is written, with the enhancements it received in words under `--verbose`, and `None` without.
+    Enhanced(Option<String>),
     /// It failed, for this reason. The reason need not name the image: the line already does.
     Failed(String),
     /// The run was stopped while working on it.
@@ -97,7 +98,7 @@ impl ImageEnd {
     /// The row this end leaves.
     pub const fn state(&self) -> RowState {
         match self {
-            Self::Enhanced => RowState::Applied,
+            Self::Enhanced(_) => RowState::Applied,
             Self::Failed(_) => RowState::Failed,
             Self::Stopped => RowState::Stopped,
         }
@@ -132,6 +133,7 @@ pub fn row(percent: u8, path: &str, state: RowState, color: bool) -> Line<'stati
         RowState::Working(Activity::Preparing) => ("🖼️", "Preparing to enhance", None, ""),
         RowState::Working(Activity::Choosing) => ("🖼️", "Choosing enhancements for", None, ""),
         RowState::Working(Activity::Downloading(family)) => ("🖼️", "Downloading ", Some(family_label(family)), " for"),
+        RowState::Working(Activity::Loading(family)) => ("🖼️", "Loading ", Some(family_label(family)), " for"),
         RowState::Working(Activity::Applying(family)) => ("🖼️", "Applying ", Some(family_label(family)), " to"),
         RowState::Applied => ("🖼️", "Enhancements applied to", None, ""),
         RowState::Failed => ("🧨", "Failed to enhance", None, ""),
@@ -154,32 +156,74 @@ pub fn row(percent: u8, path: &str, state: RowState, color: bool) -> Line<'stati
     Line::from(spans)
 }
 
+/// `line`, a written image's row, followed by `: <applied>` in the terminal's default colour where there is a text,
+/// so the path stays the row's most visible part. A row too wide for the terminal is cut at its edge when drawn.
+pub fn with_applied(mut line: Line<'static>, applied: Option<&str>) -> Line<'static> {
+    if let Some(applied) = applied {
+        line.spans.push(Span::raw(format!(": {applied}")));
+    }
+    line
+}
+
 /// The line an image prints when it ends and no live view is drawn: the words of its final [`row`] at `percent`, then
-/// `: <reason>` after a failure, coloured as the row is only when `color` is set.
+/// `: <reason>` after a failure or `: <applied>` after a written image under `--verbose`, coloured as the row is only
+/// when `color` is set.
 pub fn plain_row(percent: u8, path: &str, end: &ImageEnd, color: bool) -> String {
     let mut line = row(percent, path, end.state(), color);
-    if let ImageEnd::Failed(reason) = end {
-        let style = line.spans.first().map_or_else(Style::new, |span| span.style);
-        line.spans.push(Span::styled(format!(": {reason}"), style));
+    match end {
+        ImageEnd::Failed(reason) => {
+            let style = line.spans.first().map_or_else(Style::new, |span| span.style);
+            line.spans.push(Span::styled(format!(": {reason}"), style));
+        }
+        ImageEnd::Enhanced(applied) => line = with_applied(line, applied.as_deref()),
+        ImageEnd::Stopped => {}
     }
 
     line.spans.iter().map(|span| ansi(&span.content, span.style)).collect()
 }
 
-/// `🧠 Running inference using the processor <provider>; quality <HD|SD>`, with the processor green and the quality
-/// yellow. The processor is spelled as `opai` spells it, `Auto` included.
-pub fn processor_line(provider: ExecutionProvider, quality: Quality, color: bool) -> String {
+/// `🧠 Running inference using the processor <provider>; quality <HD|SD|mixed>`, with the processor green and the
+/// quality yellow. The processor is spelled as `opai` spells it, `Auto` included.
+///
+/// With `sources` (under `--verbose`), each value is followed by where it came from, uncoloured: `Auto (from GUI
+/// settings); quality SD (from -q)`.
+pub fn processor_line(
+    provider: ExecutionProvider,
+    quality: &str,
+    sources: Option<(&str, &str)>,
+    color: bool,
+) -> String {
     let fg = |rgb| fg(rgb, color);
+    let (processor_source, quality_source) = sources.map_or((String::new(), String::new()), |(processor, quality)| {
+        (format!(" {processor}"), format!(" {quality}"))
+    });
 
     [
         ("🧠 Running inference using the processor ", Style::new()),
         (provider.as_str(), fg(GREEN)),
+        (&processor_source, Style::new()),
         ("; quality ", Style::new()),
-        (quality.label(), fg(YELLOW)),
+        (quality, fg(YELLOW)),
+        (&quality_source, Style::new()),
     ]
     .iter()
     .map(|(text, style)| ansi(text, *style))
     .collect()
+}
+
+/// `🤖 Autopilot models: <family> <model|off> (<source>), …`, under `--verbose` and `--autopilot`: each family in
+/// `models`, in the order given, with its model's name or `off`, and where the choice came from. Uncoloured but for the
+/// models, which are yellow as the quality is.
+pub fn autopilot_line(models: &[(Family, Option<&str>, String)], color: bool) -> String {
+    let entries: Vec<String> = models
+        .iter()
+        .map(|(family, model, source)| {
+            let model = model.map_or_else(|| "off".to_owned(), |model| ansi(model, fg(YELLOW, color)));
+            format!("{} {model} ({source})", family_label(*family))
+        })
+        .collect();
+
+    format!("🤖 Autopilot models: {}", entries.join(", "))
 }
 
 /// Where a newer release is downloaded from, as the update line names it.
@@ -200,22 +244,30 @@ pub fn update_line(color: bool) -> String {
 }
 
 /// The summary's success line, uncoloured, or `None` when nothing was written: the file itself for one image, so a
-/// numbered name stays visible, and `output` as given for more.
-pub fn summary(written: &[PathBuf], output: &Path) -> Option<String> {
-    match written {
-        [] => None,
-        [file] => Some(format!("✨ Image enhanced successfully; file saved at {}", file.display())),
-        _ => Some(format!(
+/// numbered name stays visible, and for more `output` as given, or, without one, that each was saved beside its source.
+pub fn summary(written: &[PathBuf], output: Option<&Path>) -> Option<String> {
+    match (written, output) {
+        ([], _) => None,
+        ([file], _) => Some(format!("✨ Image enhanced successfully; file saved at {}", file.display())),
+        (_, Some(output)) => Some(format!(
             "✨ {} images enhanced successfully; files saved under {}",
             written.len(),
             output.display()
         )),
+        (_, None) => {
+            Some(format!("✨ {} images enhanced successfully; files saved beside their sources", written.len()))
+        }
     }
 }
 
 /// `line`, all in bold yellow: the summary's success line.
 pub fn success(line: impl Display, color: bool) -> String {
     paint_bold(line, YELLOW, color)
+}
+
+/// `⚠️ <text>`, all in yellow, not bold: something the user asked for that is not done, where the command still runs.
+pub fn warning(text: impl Display, color: bool) -> String {
+    ansi(&format!("⚠️ {text}"), fg(YELLOW, color))
 }
 
 /// `🧨 <error>`, all in bold red.
@@ -290,7 +342,7 @@ pub fn whole_percent(fraction: f64) -> u8 {
 /// The GUI's English chip label for `family`. Total, so a family added to the library fails to compile here until it
 /// is given one. A face detection reads as the face recovery it serves, as it does in the GUI, and a depth estimate and
 /// a matte as the lens blur they are made for, the one enhancement that asks for either.
-const fn family_label(family: Family) -> &'static str {
+pub(crate) const fn family_label(family: Family) -> &'static str {
     match family {
         Family::Detection | Family::FaceRecovery => "Face Recovery",
         Family::Remove => "Remove",
@@ -300,6 +352,7 @@ const fn family_label(family: Family) -> &'static str {
         Family::ColorBalance => "Color Balance",
         Family::Sharpen => "Sharpen",
         Family::Upscale => "Upscale",
+        Family::Restore => "Restore",
         Family::Depth | Family::Matting | Family::LensBlur => "Lens Blur",
     }
 }
@@ -328,6 +381,7 @@ fn paint_bold(text: impl Display, (r, g, b): (u8, u8, u8), color: bool) -> Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::args::Quality;
 
     fn hdr() -> Loss {
         let cause = opai::export::HdrCause::NotCarried;
@@ -394,6 +448,13 @@ mod tests {
     fn the_lines_without_colour_are_their_exact_text() {
         assert_eq!(success("✨ done", false), "✨ done");
         assert_eq!(failure("stopped: nothing more was written", false), "🧨 stopped: nothing more was written");
+        assert_eq!(warning("--up is ignored", false), "⚠️ --up is ignored");
+    }
+
+    #[test]
+    fn the_warning_line_is_yellow_and_not_bold() {
+        let (r, g, b) = YELLOW;
+        assert_eq!(warning("careful", true), "⚠️ careful".with(TermColor::Rgb { r, g, b }).to_string());
     }
 
     #[test]
@@ -414,6 +475,7 @@ mod tests {
         let texts = [
             row(0, path, RowState::Working(Activity::Preparing), false),
             row(12, path, RowState::Working(Activity::Downloading(Family::Upscale)), false),
+            row(20, path, RowState::Working(Activity::Loading(Family::Sharpen)), false),
             row(42, path, RowState::Working(Activity::Applying(Family::FaceRecovery)), false),
             row(42, path, APPLYING, false),
             row(100, path, RowState::Applied, false),
@@ -427,6 +489,7 @@ mod tests {
             [
                 "🖼️ [  0%] Preparing to enhance          photos/b.jpg",
                 "🖼️ [ 12%] Downloading Upscale for       photos/b.jpg",
+                "🖼️ [ 20%] Loading Sharpen for           photos/b.jpg",
                 "🖼️ [ 42%] Applying Face Recovery to     photos/b.jpg",
                 "🖼️ [ 42%] Applying Upscale to           photos/b.jpg",
                 "🖼️ [100%] Enhancements applied to       photos/b.jpg",
@@ -447,6 +510,7 @@ mod tests {
         ];
         for family in Family::ALL {
             states.push(RowState::Working(Activity::Downloading(family)));
+            states.push(RowState::Working(Activity::Loading(family)));
             states.push(RowState::Working(Activity::Applying(family)));
         }
 
@@ -559,7 +623,7 @@ mod tests {
 
     #[test]
     fn a_plain_row_is_the_final_rows_text_with_a_failures_reason() {
-        for end in [ImageEnd::Enhanced, ImageEnd::Failed("corrupt".into()), ImageEnd::Stopped] {
+        for end in [ImageEnd::Enhanced(None), ImageEnd::Failed("corrupt".into()), ImageEnd::Stopped] {
             let line = plain(&row(42, "c.jpg", end.state(), true));
             let reason = match &end {
                 ImageEnd::Failed(reason) => format!(": {reason}"),
@@ -574,8 +638,55 @@ mod tests {
             "🧨 [ 42%] Failed to enhance             c.jpg: corrupt"
         );
         assert_eq!(
-            plain_row(100, "c.jpg", &ImageEnd::Enhanced, false),
+            plain_row(100, "c.jpg", &ImageEnd::Enhanced(None), false),
             "🖼️ [100%] Enhancements applied to       c.jpg"
+        );
+    }
+
+    fn written(applied: &str) -> ImageEnd {
+        ImageEnd::Enhanced(Some(applied.to_owned()))
+    }
+
+    #[test]
+    fn a_written_images_plain_row_under_verbose_ends_with_what_it_received() {
+        assert_eq!(
+            plain_row(100, "photo.jpg", &written("Face Recovery Athens, Upscale Tokyo 2x"), false),
+            "🖼️ [100%] Enhancements applied to       photo.jpg: Face Recovery Athens, Upscale Tokyo 2x"
+        );
+        assert_eq!(
+            plain_row(100, "large.jpg", &written("no enhancement needed"), false),
+            "🖼️ [100%] Enhancements applied to       large.jpg: no enhancement needed"
+        );
+        assert_eq!(
+            plain_row(100, "a.jpg", &written("Denoise Stockholm strength 100 (cached)"), false),
+            "🖼️ [100%] Enhancements applied to       a.jpg: Denoise Stockholm strength 100 (cached)"
+        );
+    }
+
+    #[test]
+    fn the_applied_text_is_drawn_in_the_default_colour_after_the_coloured_path() {
+        let (r, g, b) = CYAN;
+        let line = plain_row(100, "c.jpg", &written("Sharpen Moscow strength 80"), true);
+
+        let path = "c.jpg".with(TermColor::Rgb { r, g, b }).underlined().to_string();
+        assert!(line.ends_with(&format!("{path}: Sharpen Moscow strength 80")), "{line:?}");
+
+        let row = with_applied(row(100, "c.jpg", RowState::Applied, true), Some("Sharpen Moscow strength 80"));
+        let last = row.spans.last().expect("a span");
+        assert_eq!((last.content.as_ref(), last.style), (": Sharpen Moscow strength 80", Style::new()));
+    }
+
+    #[test]
+    fn the_applied_text_leaves_every_path_in_its_column() {
+        let applied = plain(&with_applied(row(100, "x.jpg", RowState::Applied, false), Some("Upscale Tokyo 2x")));
+        let words = applied.split("] ").nth(1).and_then(|rest| rest.split_once("x.jpg")).expect("words").0;
+
+        // The same columns every other row's words take, as the alignment test above pins them.
+        assert_eq!(words.len(), WORDS_WIDTH + 1, "{applied:?}");
+        assert!(applied.ends_with("x.jpg: Upscale Tokyo 2x"), "{applied:?}");
+        assert_eq!(
+            with_applied(row(100, "x.jpg", RowState::Applied, false), None),
+            row(100, "x.jpg", RowState::Applied, false)
         );
     }
 
@@ -586,22 +697,23 @@ mod tests {
         assert!(failed.ends_with(&": corrupt".with(TermColor::Rgb { r, g, b }).to_string()), "{failed:?}");
 
         let (r, g, b) = CYAN;
-        let enhanced = plain_row(100, "c.jpg", &ImageEnd::Enhanced, true);
+        let enhanced = plain_row(100, "c.jpg", &ImageEnd::Enhanced(None), true);
         assert!(
             enhanced.ends_with(&"c.jpg".with(TermColor::Rgb { r, g, b }).underlined().to_string()),
             "{enhanced:?}"
         );
 
-        assert!(!plain_row(100, "c.jpg", &ImageEnd::Enhanced, false).contains('\x1b'));
+        assert!(!plain_row(100, "c.jpg", &ImageEnd::Enhanced(None), false).contains('\x1b'));
+        assert!(!plain_row(100, "c.jpg", &written("Colorize Delhi"), false).contains('\x1b'));
     }
 
     #[test]
     fn the_summary_names_the_file_for_one_image_and_the_output_for_more() {
-        let output = Path::new("out");
+        let output = Some(Path::new("out"));
 
         assert_eq!(summary(&[], output), None);
         assert_eq!(
-            summary(&["out_1.png".into()], Path::new("out.png")).as_deref(),
+            summary(&["out_1.png".into()], Some(Path::new("out.png"))).as_deref(),
             Some("✨ Image enhanced successfully; file saved at out_1.png")
         );
         assert_eq!(
@@ -611,15 +723,61 @@ mod tests {
     }
 
     #[test]
+    fn without_an_output_the_summary_names_the_file_for_one_image_and_says_beside_for_more() {
+        assert_eq!(summary(&[], None), None);
+        assert_eq!(
+            summary(&["photo_opai.jpg".into()], None).as_deref(),
+            Some("✨ Image enhanced successfully; file saved at photo_opai.jpg")
+        );
+        assert_eq!(
+            summary(&["photos/a_opai.jpg".into(), "photos/2024/b_opai.jpg".into()], None).as_deref(),
+            Some("✨ 2 images enhanced successfully; files saved beside their sources")
+        );
+    }
+
+    #[test]
     fn the_processor_line_names_what_was_asked_for() {
         assert_eq!(
-            processor_line(ExecutionProvider::Auto, Quality::Hd, false),
+            processor_line(ExecutionProvider::Auto, Quality::Hd.label(), None, false),
             "🧠 Running inference using the processor Auto; quality HD"
         );
         assert_eq!(
-            processor_line(ExecutionProvider::Cpu, Quality::Sd, false),
+            processor_line(ExecutionProvider::Cpu, Quality::Sd.label(), None, false),
             "🧠 Running inference using the processor CPU; quality SD"
         );
+        assert_eq!(
+            processor_line(ExecutionProvider::Cpu, "mixed", None, false),
+            "🧠 Running inference using the processor CPU; quality mixed"
+        );
+    }
+
+    #[test]
+    fn under_verbose_the_processor_line_names_where_each_value_came_from() {
+        assert_eq!(
+            processor_line(ExecutionProvider::Auto, "SD", Some(("(from GUI settings)", "(from GUI settings)")), false),
+            "🧠 Running inference using the processor Auto (from GUI settings); quality SD (from GUI settings)"
+        );
+        assert_eq!(
+            processor_line(ExecutionProvider::Cpu, "HD", Some(("(from -p)", "(from -q)")), false),
+            "🧠 Running inference using the processor CPU (from -p); quality HD (from -q)"
+        );
+    }
+
+    #[test]
+    fn the_autopilot_line_names_each_familys_model_or_off_and_its_source() {
+        let models = [
+            (Family::Denoise, Some("Stockholm"), "default".to_owned()),
+            (Family::Colorization, None, "from GUI settings".to_owned()),
+            (Family::ColorBalance, Some("São Paulo"), "from OPAI_AP_COLOR".to_owned()),
+        ];
+
+        assert_eq!(
+            autopilot_line(&models, false),
+            "🤖 Autopilot models: Denoise Stockholm (default), Colorize off (from GUI settings), \
+             Color Balance São Paulo (from OPAI_AP_COLOR)"
+        );
+        let (r, g, b) = YELLOW;
+        assert!(autopilot_line(&models, true).contains(&"Stockholm".with(TermColor::Rgb { r, g, b }).to_string()));
     }
 
     #[test]
@@ -631,7 +789,7 @@ mod tests {
             "HD".with(TermColor::Rgb { r: yr, g: yg, b: yb }),
         );
 
-        assert_eq!(processor_line(ExecutionProvider::Auto, Quality::Hd, true), expected);
+        assert_eq!(processor_line(ExecutionProvider::Auto, Quality::Hd.label(), None, true), expected);
     }
 
     #[test]
@@ -711,6 +869,7 @@ mod tests {
                 "Color Balance",
                 "Sharpen",
                 "Upscale",
+                "Restore",
                 "Lens Blur"
             ]
         );

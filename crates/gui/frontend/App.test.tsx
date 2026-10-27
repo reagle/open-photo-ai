@@ -1,6 +1,9 @@
+import { invoke } from "@tauri-apps/api/core";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import "@/i18n";
+import i18n from "@/i18n";
+import { isMacOs } from "@/ipc/os";
 import type { SetupEvent, SupportedProviders } from "@/ipc/setup";
 import { track } from "@/lib/faro";
 import { useSettingsStore } from "@/stores/settings";
@@ -164,6 +167,30 @@ describe("App", () => {
 
         expect(screen.getByRole("button", { name: "Show images" })).toBeEnabled();
         expect(screen.getByLabelText(/select all/i)).toBeEnabled();
+    });
+
+    it("zooms the current image from the keyboard, by the step the drawer's buttons take", () => {
+        render(<App />);
+
+        act(() => openFiles(HOLIDAY));
+        expect(screen.getByRole("slider", { name: "Zoom" })).toHaveAttribute("aria-valuenow", "1");
+
+        // Control on this platform: `isMacOs` is mocked to answer false above.
+        fireEvent.keyDown(document.body, { key: "=", code: "Equal", ctrlKey: true });
+
+        expect(screen.getByRole("slider", { name: "Zoom" })).toHaveAttribute("aria-valuenow", "1.5");
+    });
+
+    it("opens the keyboard shortcuts list with ?, and closes it with Escape", () => {
+        render(<App />);
+
+        fireEvent.keyDown(document.body, { key: "?", code: "Slash", shiftKey: true });
+
+        const list = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+        expect(list).toHaveTextContent("Ctrl+=");
+
+        fireEvent.keyDown(list, { key: "Escape" });
+        expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).not.toBeInTheDocument();
     });
 
     it("keeps Autopilot live, because it is not an action on an image", () => {
@@ -431,5 +458,44 @@ describe("App, on a machine that supports TensorRT", () => {
         fireEvent.click(screen.getByRole("button", { name: "Yes" }));
 
         expect(tracked).toHaveBeenCalledWith("tensorrt_prompt_answered", { accepted: true });
+    });
+
+    it("labels the macOS menu bar in the interface language, and says whether an image is open", async () => {
+        vi.mocked(isMacOs).mockReturnValue(true);
+        try {
+            render(<App />);
+            const configured = () =>
+                vi
+                    .mocked(invoke)
+                    .mock.calls.filter(([command]) => command === "configure_menu")
+                    .at(-1)?.[1];
+
+            expect(configured()).toEqual({
+                labels: expect.objectContaining({
+                    file: "File",
+                    closeImage: "Close Image",
+                    quit: "Quit Open Photo AI",
+                }),
+                hasFiles: false,
+                canExport: false,
+            });
+
+            act(() => openFiles(HOLIDAY));
+            expect(configured()).toEqual(expect.objectContaining({ hasFiles: true, canExport: true }));
+
+            await act(() => i18n.changeLanguage("de"));
+            expect(configured()).toEqual({
+                labels: expect.objectContaining({
+                    file: "Ablage",
+                    closeImage: "Bild schließen",
+                    export: "Exportieren …",
+                }),
+                hasFiles: true,
+                canExport: true,
+            });
+        } finally {
+            await act(() => i18n.changeLanguage("en"));
+            vi.mocked(isMacOs).mockReturnValue(false);
+        }
     });
 });

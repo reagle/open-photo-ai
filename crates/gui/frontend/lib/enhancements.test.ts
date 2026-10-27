@@ -1,5 +1,5 @@
 import { describe, expect, it, type Mock, vi } from "vitest";
-import { type Suggestion, suggestedScale } from "@/ipc/autopilot";
+import { suggestedScale } from "@/ipc/autopilot";
 import type { Family, FamilyEntry } from "@/ipc/catalogue";
 import type { CropInfo } from "@/ipc/crop";
 import type { Operation } from "@/ipc/enhance";
@@ -10,6 +10,7 @@ import {
     applyOrder,
     ENHANCEMENTS,
     type Enhancement,
+    enlargement,
     F_NUMBER,
     familiesWhere,
     isPainted,
@@ -19,11 +20,13 @@ import {
     parameterOf,
     progressLabelKey,
     publishedRange,
+    restoreEnlarges,
+    runnable,
     SETTABLE,
     startingFNumber,
     startingScale,
     suggestedOperation,
-    upscaleFactor,
+    suspendedBecause,
     withModel,
     withParameter,
 } from "./enhancements.ts";
@@ -60,8 +63,8 @@ describe("the order a chain runs in", () => {
 });
 
 describe("the enhancements this application presents", () => {
-    it("names nine", () => {
-        expect(ENHANCEMENTS).toHaveLength(9);
+    it("names ten", () => {
+        expect(ENHANCEMENTS).toHaveLength(10);
     });
 
     it("names only families the catalogue publishes", () => {
@@ -94,13 +97,17 @@ describe("the enhancements this application presents", () => {
             "color_balance",
             "sharpen",
             "upscale",
+            "restore",
             "lens_blur",
         ]);
     });
 
-    it("offers Autopilot's suggestions for every enhancement but the lens blur", () => {
-        // Where a photograph's focus should fall is the user's choice, and the analysis has no signal for it.
+    it("offers Autopilot's suggestions for every enhancement but the removal, the restore and the lens blur", () => {
+        // What to take out of a photograph, a generative redraw, and where a photograph's focus should fall, are the
+        // user's choice, and the analysis has no signal for any of them.
         expect(ENHANCEMENTS.filter(({ family }) => !isSuggestible(family)).map(({ family }) => family)).toEqual([
+            "remove",
+            "restore",
             "lens_blur",
         ]);
         expect(isSuggestible("upscale")).toBe(true);
@@ -147,12 +154,12 @@ describe("what a family offers", () => {
     });
 
     it("names the tiers positionally, off each variant's own precisions", () => {
-        const { options } = modelChoice(entry("upscale"), undefined);
+        const { options } = modelChoice(entry("restore"), undefined);
 
-        // Tokyo's pair is the float convention; Osaka's is its own, and reading the position gives
+        // Kazan's pair is the float convention; Osaka's is its own, and reading the position gives
         // each of them the right tier without a map of per-model overrides.
-        expect(options.find((option) => option.value === "tokyo_fp32")?.quality).toEqual({ kind: "tier", tier: "hd" });
-        expect(options.find((option) => option.value === "tokyo_fp16")?.quality).toEqual({ kind: "tier", tier: "md" });
+        expect(options.find((option) => option.value === "kazan_fp32")?.quality).toEqual({ kind: "tier", tier: "hd" });
+        expect(options.find((option) => option.value === "kazan_fp16")?.quality).toEqual({ kind: "tier", tier: "md" });
         expect(options.find((option) => option.value === "osaka_fp16")?.quality).toEqual({ kind: "tier", tier: "hd" });
         expect(options.find((option) => option.value === "osaka_int8")?.quality).toEqual({ kind: "tier", tier: "md" });
     });
@@ -223,7 +230,9 @@ describe("which model is selected", () => {
     it("replaces a precision a published model no longer offers", () => {
         // There is no fp32 Osaka and never was; a store written against one must not leave the
         // chooser on a value none of its items carries.
-        expect(modelChoice(entry("upscale"), "osaka_fp32").selected).toBe("tokyo_fp32");
+        expect(modelChoice(entry("restore"), "osaka_fp32").selected).toBe("kazan_fp32");
+        // And one naming a model that moved to another family: Osaka is a restore model now.
+        expect(modelChoice(entry("upscale"), "osaka_fp16").selected).toBe("tokyo_fp32");
     });
 
     it("offers nothing for a family the catalogue does not publish", () => {
@@ -240,11 +249,11 @@ describe("which model is selected", () => {
 });
 
 describe("what a row, a menu entry and a chip are drawn from", () => {
-    it("gives every enhancement a short name and a glyph", () => {
-        // Both are consumed without a fallback - `<entry.icon />` and `t(entry.shortNameKey)` - so an
+    it("gives every enhancement an activity and a glyph", () => {
+        // Both are consumed without a fallback - `<entry.icon />` and `t(entry.activityKey)` - so an
         // enhancement added to the list without one of them is a blank in the menu or on the chip.
-        for (const { family, shortNameKey, icon } of ENHANCEMENTS) {
-            expect(shortNameKey, family).toBeTruthy();
+        for (const { family, activityKey, icon } of ENHANCEMENTS) {
+            expect(activityKey, family).toBeTruthy();
             expect(icon, family).toBeTruthy();
         }
     });
@@ -257,10 +266,10 @@ describe("what a row, a menu entry and a chip are drawn from", () => {
         expect(new Set(icons).size).toBe(icons.length);
     });
 
-    it("gives each of them its own short name", () => {
+    it("gives each of them its own activity", () => {
         // The chip names one enhancement at a time, so two families sharing a key would draw the
         // same word for two different operations.
-        const keys = ENHANCEMENTS.map(({ shortNameKey }) => shortNameKey);
+        const keys = ENHANCEMENTS.map(({ activityKey }) => activityKey);
 
         expect(new Set(keys).size).toBe(keys.length);
     });
@@ -283,6 +292,7 @@ describe("what the progress chip calls the family a report carries", () => {
         colorization: true,
         sharpen: true,
         upscale: true,
+        restore: true,
         lens_blur: true,
     };
 
@@ -629,22 +639,80 @@ describe("how much larger a chain makes a photograph", () => {
     });
 
     it("is the upscale's own scale", () => {
-        expect(upscaleFactor([upscale(4)])).toBe(4);
+        expect(enlargement([upscale(4)])).toBe(4);
     });
 
     it("is one for a stack that enlarges nothing", () => {
         // Which is every stack without an upscale in it, and the empty one - the navbar then reports
         // the framing's size, or the file's, rather than a product.
-        expect(upscaleFactor([])).toBe(1);
+        expect(enlargement([])).toBe(1);
     });
 
     it("is one for a scale that could only have arrived through a fault", () => {
         // The control is bounded to the catalogue's range, so none of these is reachable by a user.
         // A navbar reading "0 x 0" is a worse answer to a fault than the photograph's own size.
-        expect(upscaleFactor([upscale(0)])).toBe(1);
-        expect(upscaleFactor([upscale(-2)])).toBe(1);
-        expect(upscaleFactor([upscale(Number.NaN)])).toBe(1);
-        expect(upscaleFactor([upscale(Number.POSITIVE_INFINITY)])).toBe(1);
+        expect(enlargement([upscale(0)])).toBe(1);
+        expect(enlargement([upscale(-2)])).toBe(1);
+        expect(enlargement([upscale(Number.NaN)])).toBe(1);
+        expect(enlargement([upscale(Number.POSITIVE_INFINITY)])).toBe(1);
+    });
+
+    const restore = (scale: number): Operation => ({
+        family: "restore",
+        codename: "kazan",
+        precision: "fp16",
+        parameters: { scale, strength: 1 },
+    });
+
+    it("is the restore's size, and an upscale's scale times a restore at 1x", () => {
+        expect(enlargement([restore(2)])).toBe(2);
+        expect(enlargement([upscale(4), restore(1)])).toBe(4);
+    });
+
+    it("leaves out an upscale an enlarging restore has taken out of the chain", () => {
+        // The restore replaces the upscale rather than following it, so the result is the restore's size alone.
+        expect(enlargement([upscale(4), restore(2)])).toBe(2);
+    });
+});
+
+describe("an upscale beside a restore", () => {
+    const upscale: Operation = { family: "upscale", codename: "kyoto", precision: "fp32", parameters: { scale: 4 } };
+    const sharpen: Operation = {
+        family: "sharpen",
+        codename: "moscow",
+        precision: "fp32",
+        parameters: { strength: 1 },
+    };
+    const restore = (scale: number): Operation => ({
+        family: "restore",
+        codename: "kazan",
+        precision: "fp16",
+        parameters: { scale, strength: 1 },
+    });
+
+    it("runs while the restore is at the photograph's own size", () => {
+        const stack = [sharpen, upscale, restore(1)];
+
+        expect(restoreEnlarges(stack)).toBe(false);
+        expect(suspendedBecause(stack, "upscale")).toBeUndefined();
+        // The stack itself, so an effect keyed on it sees no new array.
+        expect(runnable(stack)).toBe(stack);
+    });
+
+    it("is held out of the chain, and says why, while the restore enlarges", () => {
+        const stack = [sharpen, upscale, restore(2)];
+
+        expect(restoreEnlarges(stack)).toBe(true);
+        expect(suspendedBecause(stack, "upscale")).toBe("enhancements.upscale.suspended");
+        expect(suspendedBecause(stack, "restore")).toBeUndefined();
+        expect(runnable(stack)).toEqual([sharpen, restore(2)]);
+    });
+
+    it("leaves a stack with no restore alone", () => {
+        const stack = [sharpen, upscale];
+
+        expect(restoreEnlarges(stack)).toBe(false);
+        expect(runnable(stack)).toBe(stack);
     });
 });
 
@@ -659,18 +727,21 @@ describe("the operation an Autopilot suggestion becomes", () => {
         colorization: "mumbai_fp16",
         face_recovery: "santorini_fp32",
         upscale: "saitama_fp16",
+        restore: "kazan_fp16",
     };
 
-    // Not the lens blur, which no analysis suggests, and never a painted one - see `SETTABLE`.
+    // Not restore or the lens blur, which no analysis suggests, and never a painted one - see `SETTABLE`.
     it.each(
         SETTABLE.map(({ family }) => family).filter(
             (
                 family,
-            ): family is Exclude<Family, "detection" | "depth" | "matting" | "upscale" | "lens_blur" | "remove"> =>
-                family !== "upscale" && isSuggestible(family),
+            ): family is Exclude<
+                Family,
+                "detection" | "depth" | "matting" | "upscale" | "restore" | "lens_blur" | "remove"
+            > => family !== "upscale" && isSuggestible(family),
         ),
     )("is exactly what the add menu builds for %s, with the user's stored model", (family) => {
-        const built = suggestedOperation({ family } as Suggestion, entry(family), stored[family]);
+        const built = suggestedOperation({ family }, entry(family), stored[family]);
 
         expect(built).toEqual(newOperation(family, entry(family), stored[family]));
         expect(built?.codename).toBe(stored[family].split("_")[0]);

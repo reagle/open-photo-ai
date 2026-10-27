@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
+import type { ParseKeys } from "i18next";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { HintTooltip } from "@/components/HintTooltip";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger } from "@/components/ui/popover";
 import { SelectFacesDialog } from "@/features/faces/SelectFacesDialog";
 import { useLensInfo } from "@/hooks/useLensInfo";
+import { useShortcutHint } from "@/hooks/useShortcuts";
 import type { FamilyEntry } from "@/ipc/catalogue";
 import type { Operation } from "@/ipc/enhance";
 import { detectFaces } from "@/ipc/faces";
@@ -12,10 +15,12 @@ import { ASSUMED_LENS, shownAmount } from "@/lib/blurAmount";
 import { type Enhancement, modelValue, optionFor, parameterOf, qualityLabel } from "@/lib/enhancements";
 import { enabledFaces } from "@/lib/faces";
 import { report } from "@/lib/report";
-import { toPercent } from "@/lib/utils";
+import type { ShortcutAction } from "@/lib/shortcuts";
+import { cn, toPercent } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useFaceChoice, useFacesStore, useImageFaces } from "@/stores/faces";
 import { useHasMask, useIsEditing, useMaskStore } from "@/stores/mask";
+import { useOptionsPanelStore } from "@/stores/optionsPanel";
 import { useSettingsStore } from "@/stores/settings";
 import { ColorBalanceOptions } from "./ColorBalanceOptions";
 import { ColorizationOptions } from "./ColorizationOptions";
@@ -24,6 +29,7 @@ import { FaceRecoveryOptions } from "./FaceRecoveryOptions";
 import { LensBlurOptions } from "./LensBlurOptions";
 import { LightAdjustmentOptions } from "./LightAdjustmentOptions";
 import { OptionsPanel } from "./OptionsPanel";
+import { RestoreOptions } from "./RestoreOptions";
 import { SharpenOptions } from "./SharpenOptions";
 import { UpscaleOptions } from "./UpscaleOptions";
 
@@ -41,6 +47,16 @@ type EnhancementRowProps = {
      * reports no count and can only ever report none.
      */
     identity?: string;
+    /**
+     * Why this enhancement is held out of the chain while it stays on the stack, as the key of the sentence that
+     * says so - an upscale while the restore enlarges - or `undefined` where it runs. See `suspendedBecause`.
+     */
+    suspended?: ParseKeys | undefined;
+    /**
+     * This row's place in the list, counting from 1, which is what the digit keys open the options by. Absent
+     * for a row drawn outside the list, which then names no key.
+     */
+    place?: number;
     /** The photograph's path, which a removal's strokes are kept by. */
     path: string;
     /** Takes this enhancement off the image's stack. */
@@ -48,6 +64,18 @@ type EnhancementRowProps = {
     /** Puts a changed version of this enhancement back on the stack, which re-runs the preview. */
     onChange: (operation: Operation) => void;
 };
+
+/** The actions that open a row's options, by the row's place in the list: `1` to `8`. */
+const OPEN_OPTIONS: readonly ShortcutAction[] = [
+    "openOptions1",
+    "openOptions2",
+    "openOptions3",
+    "openOptions4",
+    "openOptions5",
+    "openOptions6",
+    "openOptions7",
+    "openOptions8",
+];
 
 // The reference's own `toFixed(3)`, and it is there to hide float noise rather than to round: a
 // value typed as 1.5 and carried through a parse can arrive as 1.4999999999999998, and three places
@@ -70,6 +98,8 @@ export const EnhancementRow = ({
     operation,
     entry,
     identity,
+    suspended,
+    place,
     path,
     onRemove,
     onChange,
@@ -119,7 +149,21 @@ export const EnhancementRow = ({
      * The panel is closed deliberately as the dialog opens, rather than left to Radix: the design
      * draws one thing on screen at a time, not a panel peeking out from behind a modal.
      */
-    const [panelOpen, setPanelOpen] = useState(false);
+    //
+    // A store's rather than this row's, so the window's keys (`1` to `8`) can open a row's panel by its
+    // place in the list.
+    const panelOpen = useOptionsPanelStore((state) => state.family === operation.family);
+    const setPanelOpen = (open: boolean) => {
+        const { openPanel, closePanel } = useOptionsPanelStore.getState();
+
+        if (open) openPanel(operation.family);
+        else closePanel(operation.family);
+    };
+
+    // Each control's key, from the user's bindings: the row's is its place in the list (`1` to `8`), and the
+    // remove button's is Delete - `⌫` on a Mac - which acts on the row with the focus.
+    const rowHint = useShortcutHint(place === undefined ? undefined : OPEN_OPTIONS[place - 1], t(enhancement.nameKey));
+    const removeHint = useShortcutHint("removeEnhancement", t("enhancements.remove"));
 
     /*
      * **The picker's own detection**: a face recovery's options opened over a photograph whose faces are
@@ -225,6 +269,10 @@ export const EnhancementRow = ({
                 return (
                     <UpscaleOptions enhancement={enhancement} operation={operation} entry={entry} onChange={onChange} />
                 );
+            case "restore":
+                return (
+                    <RestoreOptions enhancement={enhancement} operation={operation} entry={entry} onChange={onChange} />
+                );
             case "lens_blur":
                 return (
                     <LensBlurOptions
@@ -310,6 +358,14 @@ export const EnhancementRow = ({
                     // 1x where the scale is known to nobody: a factor that changes nothing.
                     scale: Number.parseFloat((parameterOf(operation, entry, "scale") ?? 1).toFixed(SCALE_PLACES)),
                 });
+            case "restore":
+                // Both of what a restore carries: the size, read as the upscale's is, and the strength.
+                return t("enhancements.infoRestore", {
+                    name,
+                    quality,
+                    scale: Number.parseFloat((parameterOf(operation, entry, "scale") ?? 1).toFixed(SCALE_PLACES)),
+                    intensity: toPercent(amount("strength")),
+                });
             case "lens_blur": {
                 // The model and the blur amount, with no quality: the model is published at one precision, which says
                 // nothing. The amount is the slider's, read against the photograph's own aperture.
@@ -331,10 +387,11 @@ export const EnhancementRow = ({
         <>
             <Icon className="size-5 flex-none" />
 
-            <span className="flex min-w-0 flex-col gap-px">
+            <span className={cn("flex min-w-0 flex-col gap-px", suspended && "opacity-60")}>
                 <span className="text-[13px]">{t(enhancement.nameKey)}</span>
                 <span className="text-xs text-foreground-dim italic" data-slot="enhancement-info">
-                    {info()}
+                    {/* What it is set to do says nothing while it does not run; why it does not, does. */}
+                    {suspended ? t(suspended) : info()}
                 </span>
             </span>
         </>
@@ -349,49 +406,81 @@ export const EnhancementRow = ({
     const brush = enhancement.painted === true;
 
     return (
-        <div className="group relative border-b border-border" data-slot="enhancement-row">
+        <div
+            className="group relative border-b border-border"
+            data-slot="enhancement-row"
+            data-family={operation.family}
+        >
             {brush ? (
-                <button
-                    type="button"
-                    aria-pressed={removalEditing}
-                    onClick={(event) => {
-                        const store = useMaskStore.getState();
+                <HintTooltip tip={rowHint.tooltip}>
+                    <button
+                        type="button"
+                        data-slot="enhancement-trigger"
+                        aria-pressed={removalEditing}
+                        aria-keyshortcuts={rowHint.ariaKeyShortcuts}
+                        onClick={(event) => {
+                            const store = useMaskStore.getState();
 
-                        if (removalEditing) store.stopEditing();
-                        else store.startEditing(path, "removal");
+                            if (removalEditing) store.stopEditing();
+                            else store.startEditing(path, "removal");
 
-                        // A mouse press lets go of the focus, as the panel's controls do: Space is the brush's pan,
-                        // and a focused row would take it as a press that closes the brush again.
-                        if (event.detail !== 0) event.currentTarget.blur();
-                    }}
-                    className="flex min-h-13 w-full items-center gap-3 py-2 pr-10 pl-4 text-left hover:bg-secondary aria-pressed:bg-secondary"
-                >
-                    {label}
-                </button>
+                            // A mouse press lets go of the focus, as the panel's controls do: Space is the brush's
+                            // pan, and a focused row would take it as a press that closes the brush again.
+                            if (event.detail !== 0) event.currentTarget.blur();
+                        }}
+                        className="flex min-h-13 w-full items-center gap-3 py-2 pr-10 pl-4 text-left hover:bg-secondary aria-pressed:bg-secondary"
+                    >
+                        {label}
+                    </button>
+                </HintTooltip>
             ) : (
                 <Popover open={panelOpen} onOpenChange={setPanelOpen}>
-                    <PopoverTrigger asChild>
-                        {/*
-                         * The whole row is the trigger, which is the reference's arrangement and the
-                         * design's (screen 14).
-                         *
-                         * `min-h` rather than a fixed height: the two lines are 13px and 12px in every
-                         * language, but a model name long enough to wrap has to be able to. The panel is
-                         * anchored against `ENHANCEMENT_ROW_HEIGHT`, which is this `min-h-13`.
-                         *
-                         * `data-[state=open]:bg-secondary` beside the hover, because the design paints an
-                         * open row exactly as it paints a hovered one (screen 11) - a row whose panel is
-                         * up with nothing marking it is a panel with no visible source.
-                         */}
-                        <button
-                            type="button"
-                            className="flex min-h-13 w-full items-center gap-3 py-2 pr-10 pl-4 text-left hover:bg-secondary data-[state=open]:bg-secondary"
-                        >
-                            {label}
-                        </button>
-                    </PopoverTrigger>
+                    <HintTooltip tip={rowHint.tooltip}>
+                        <PopoverTrigger asChild>
+                            {/*
+                             * The whole row is the trigger, which is the reference's arrangement and the
+                             * design's (screen 14).
+                             *
+                             * `min-h` rather than a fixed height: the two lines are 13px and 12px in every
+                             * language, but a model name long enough to wrap has to be able to. The panel is
+                             * anchored against `ENHANCEMENT_ROW_HEIGHT`, which is this `min-h-13`.
+                             *
+                             * `aria-expanded:bg-secondary` beside the hover, because the design paints an
+                             * open row exactly as it paints a hovered one (screen 11) - a row whose panel is
+                             * up with nothing marking it is a panel with no visible source. Not
+                             * `data-[state=open]`: the tooltip around the trigger writes its own `data-state`
+                             * over the popover's.
+                             */}
+                            <button
+                                type="button"
+                                data-slot="enhancement-trigger"
+                                aria-keyshortcuts={rowHint.ariaKeyShortcuts}
+                                className="flex min-h-13 w-full items-center gap-3 py-2 pr-10 pl-4 text-left hover:bg-secondary aria-expanded:bg-secondary"
+                            >
+                                {label}
+                            </button>
+                        </PopoverTrigger>
+                    </HintTooltip>
 
-                    <OptionsPanel title={t(enhancement.nameKey)}>{options()}</OptionsPanel>
+                    <OptionsPanel title={t(enhancement.nameKey)}>
+                        {suspended ? (
+                            <>
+                                <p className="text-muted-foreground text-xs" data-slot="enhancement-suspended">
+                                    {t(suspended)}
+                                </p>
+                                {/*
+                                 * Drawn as it is set, so the user sees what will run again once the reason goes, and
+                                 * unavailable: a disabled fieldset disables every control inside it, the model
+                                 * tray's and the scale's alike, with no control having to know.
+                                 */}
+                                <fieldset disabled className="flex min-w-0 flex-col gap-4 opacity-50">
+                                    {options()}
+                                </fieldset>
+                            </>
+                        ) : (
+                            options()
+                        )}
+                    </OptionsPanel>
                 </Popover>
             )}
 
@@ -404,20 +493,23 @@ export const EnhancementRow = ({
                 <SelectFacesDialog open={choosingFaces} onClose={() => setChoosingFaces(false)} />
             )}
 
-            <Button
-                variant="secondary"
-                size="icon-sm"
-                aria-label={t("enhancements.remove")}
-                onClick={onRemove}
-                // Hover alone is the design's rule and the reference's, and it is what keeps a list of
-                // several reading as a list rather than as a column of buttons - but hover is not
-                // reachable from a keyboard, so the control is in the tab order and shows itself when
-                // it is focused. Drawn at zero opacity rather than not drawn at all, which is what
-                // keeps it focusable in the first place.
-                className="absolute top-1/2 right-2 size-6.5 -translate-y-1/2 bg-input opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
-            >
-                <X className="size-4" />
-            </Button>
+            <HintTooltip tip={removeHint.tooltip}>
+                <Button
+                    variant="secondary"
+                    size="icon-sm"
+                    aria-label={t("enhancements.remove")}
+                    aria-keyshortcuts={removeHint.ariaKeyShortcuts}
+                    onClick={onRemove}
+                    // Hover alone is the design's rule and the reference's, and it is what keeps a list of
+                    // several reading as a list rather than as a column of buttons - but hover is not
+                    // reachable from a keyboard, so the control is in the tab order and shows itself when
+                    // it is focused. Drawn at zero opacity rather than not drawn at all, which is what
+                    // keeps it focusable in the first place.
+                    className="absolute top-1/2 right-2 size-6.5 -translate-y-1/2 bg-input opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+                >
+                    <X className="size-4" />
+                </Button>
+            </HintTooltip>
         </div>
     );
 };

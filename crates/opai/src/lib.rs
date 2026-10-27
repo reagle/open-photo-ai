@@ -14,9 +14,9 @@
 //! # Naming a model
 //!
 //! [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`], [`Colorization`], [`Detection`],
-//! [`FaceRecovery`], [`LensBlur`] and friends name a model, carry its parameters, and answer which files it needs —
-//! none of them run anything. [`fn@catalogue`] is what a front end reads instead of hard-coding a variant, precision
-//! or bound.
+//! [`FaceRecovery`], [`Restore`], [`LensBlur`] and friends name a model, carry its parameters, and answer which files
+//! it needs — none of them run anything. [`fn@catalogue`] is what a front end reads instead of hard-coding a variant,
+//! precision or bound.
 //!
 //! A per-run parameter ([`Scale`], [`Strength`], [`Bias`], [`Fidelity`], [`Faces`]) is validated on acceptance
 //! and is part of the operation's identity — two operations are equal exactly when they name the same model,
@@ -215,6 +215,7 @@ mod progress;
 mod providers;
 mod runtime;
 mod sessions;
+pub mod settings;
 mod setup;
 mod task;
 pub mod telemetry;
@@ -248,11 +249,11 @@ pub use models::{
     ColorizationVariant, Confidence, DataOperation, Denoise, DenoiseParams, DenoiseVariant, Depth, DepthMap,
     DepthVariant, Detection, DetectionOutput, DetectionVariant, FNumber, FOCUS_X, FOCUS_Y, Face, FaceRecovery,
     FaceRecoveryParams, FaceRecoveryVariant, Faces, Family, FamilyEntry, Fidelity, FloatPrecision, Fraction, GraphRole,
-    GraphSet, Lens, LensBlur, LensBlurEdges, LensBlurVariant, LensOrigin, LightAdjustment, LightAdjustmentParams,
+    Lens, LensBlur, LensBlurEdges, LensBlurVariant, LensOrigin, LightAdjustment, LightAdjustmentParams,
     LightAdjustmentVariant, Matte, Matting, MattingVariant, Operation, OsakaPrecision, OwnLens, ParameterEntry,
-    ParameterKind, ParameterValues, Pass, Point, Precision, RangeError, Rect, Remove, RemoveVariant, Resolution, Scale,
-    Sharpen, SharpenParams, SharpenVariant, Strength, Subject, UnknownRole, Upscale, UpscaleParams, UpscaleVariant,
-    VariantEntry, catalogue,
+    ParameterKind, ParameterValues, Pass, Point, Precision, RangeError, Rect, Remove, RemoveVariant, Resolution,
+    Restore, RestoreParams, RestoreVariant, Scale, Sharpen, SharpenParams, SharpenVariant, Strength, Subject,
+    UnknownRole, Upscale, UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
 };
 pub use progress::{Dependency, OnPlan, OnProgress, Phase, PlannedDependency, Progress};
 pub use providers::{ExecutionProvider, SupportedProviders};
@@ -764,9 +765,10 @@ impl Opai {
     /// run, composite through one contract), light adjustment (both models at a fixed square, applied as a
     /// gain), colour balance (both models at a fixed square, applied as a fitted colour mapping), denoise (all
     /// three models over a tile grid at the photograph's own resolution, then the strength), sharpen (all three
-    /// models over a tile grid at the photograph's own resolution, then the strength), and colorization (all
+    /// models over a tile grid at the photograph's own resolution, then the strength), colorization (all
     /// three models once over the whole photograph at a fixed square, the predicted colour put onto the
-    /// photograph's own lightness), and lens blur (no graph: the depth of `source`, estimated first, and the
+    /// photograph's own lightness), restore (Kazan over a tile grid at the requested size, after a Lanczos3
+    /// resample, then the strength), and lens blur (no graph: the depth of `source`, estimated first, and the
     /// photograph's lens from its EXIF, rendered as a layered depth of field). **Detection is not among them and never
     /// will be** — its result isn't an image, so it's carried in [`Analysis`] instead and can't be put in a chain.
     ///

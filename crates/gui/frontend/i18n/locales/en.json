@@ -35,6 +35,10 @@
             "export": {
                 "title": "Export",
                 "description": "Quality for the lossy formats. Lower values produce smaller files; the scales are not comparable between formats."
+            },
+            "keyboard": {
+                "title": "Keyboard",
+                "description": "The keys that zoom, fit and show the original. Changes apply when you click Save."
             }
         },
         "app": {
@@ -109,7 +113,63 @@
             },
             "autopilotLabel": "Autopilot: {{name}}"
         },
-        "reset": "Reset to defaults"
+        "reset": "Reset to defaults",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Zoom in",
+                "zoomOut": "Zoom out",
+                "fit": "Fit to window",
+                "actualPixels": "Actual pixels (100%)",
+                "toggleZoom": "Toggle fit and actual pixels",
+                "panLeft": "Pan left",
+                "panRight": "Pan right",
+                "panUp": "Pan up",
+                "panDown": "Pan down",
+                "showOriginal": "Show original while held",
+                "cyclePreview": "Cycle comparison view",
+                "toggleDrawer": "Show or hide images",
+                "previousImage": "Previous image",
+                "nextImage": "Next image",
+                "revealImage": "Show image in file manager",
+                "toggleAutopilot": "Turn Autopilot on or off",
+                "addEnhancement": "Add enhancement",
+                "removeEnhancement": "Remove focused enhancement",
+                "openOptions1": "Options of enhancement 1",
+                "openOptions2": "Options of enhancement 2",
+                "openOptions3": "Options of enhancement 3",
+                "openOptions4": "Options of enhancement 4",
+                "openOptions5": "Options of enhancement 5",
+                "openOptions6": "Options of enhancement 6",
+                "openOptions7": "Options of enhancement 7",
+                "openOptions8": "Options of enhancement 8",
+                "cropRotate": "Crop/Rotate",
+                "showShortcuts": "Show keyboard shortcuts"
+            },
+            "add": "Add shortcut",
+            "addLabel": "Add shortcut for {{action}}",
+            "recording": "Press keys…",
+            "prompt": "Press the keys for {{action}}, or Escape to cancel.",
+            "none": "No shortcut",
+            "remove": "Remove {{binding}}, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} is kept for moving around the window.",
+                "system": "{{binding}} is used by the system.",
+                "application": "{{binding}} is used by the application."
+            },
+            "conflict": "{{binding}} is already used by {{action}}.",
+            "useHere": "Use here instead",
+            "space": "Space",
+            "appActions": {
+                "open": "Open images",
+                "export": "Export images",
+                "settings": "Open Settings",
+                "closeImage": "Close image",
+                "closeAll": "Close all images",
+                "quit": "Quit"
+            },
+            "application": "Application",
+            "applicationHint": "These keys are fixed and cannot be changed."
+        }
     },
     "navbar": {
         "about": "About",
@@ -251,6 +311,7 @@
             "pipelineOrder": "in pipeline order",
             "queued": "Queued",
             "analysing": "Analysing",
+            "preparing": "Loading",
             "enhancing": "Enhancing",
             "writing": "Writing",
             "done": "Done",
@@ -356,8 +417,8 @@
         "faceRecovery": {
             "name": "Face Recovery",
             "models": {
-                "athens": "Use this model when identity fidelity matters most. It lets you preserve facial structure while restoring details, even on heavily degraded faces. Best when you want restoration without changing the person.",
-                "santorini": "Use this model when you want aggressive, fast enhancement and can tolerate identity drift. It produces sharp, visually pleasing faces on moderate degradation, but may hallucinate features and alter identity on very low-quality inputs."
+                "athens": "Use this model when identity fidelity matters most. It lets you preserve facial structure while restoring details, even on heavily degraded faces. Best when you want restoration without changing the person. With Restore, face recovery is usually unnecessary.",
+                "santorini": "Use this model when you want aggressive, fast enhancement and can tolerate identity drift. It produces sharp, visually pleasing faces on moderate degradation, but may hallucinate features and alter identity on very low-quality inputs. With Restore, face recovery is usually unnecessary."
             }
         },
         "colorization": {
@@ -395,8 +456,17 @@
             "models": {
                 "tokyo": "Use this model when you want a natural upscale without exaggeration. It focuses on preserving the original look and fine structures instead of \"inventing\" new details, making it ideal when realism and faithfulness matter more than sharpness.",
                 "kyoto": "Use this model for real-world photos (people, landscapes, products). It excels at restoring details while handling noise, blur, and compression artifacts. Ideal for practical applications where images are imperfect, and you want visually pleasing, robust results fast.",
-                "saitama": "Use this model for cartoon, drawings, line art, and digital illustrations. It preserves clean lines, flat colors, and stylized shading without introducing photo-like textures. Best when sharp edges and stylistic consistency matter more than realism.",
-                "osaka": "Use when you want the best possible quality upscale available. It rebuilds detail rather than just sharpening it, going furthest on photos that are soft or heavily compressed. It's slow, though, and needs a powerful GPU to run well."
+                "saitama": "Use this model for cartoon, drawings, line art, and digital illustrations. It preserves clean lines, flat colors, and stylized shading without introducing photo-like textures. Best when sharp edges and stylistic consistency matter more than realism."
+            },
+            "suspended": "Restore is enlarging this photograph"
+        },
+        "restore": {
+            "name": "Restore",
+            "size": "Size",
+            "generative": "Generative: redraws detail, and may change faces, textures and lettering.",
+            "models": {
+                "kazan": "Use this model when the blur is too strong for Sharpen — e.g. an out-of-focus face, or a photo from an old camera that was never quite sharp. It redraws plausible detail rather than recovering it, so it can change faces, textures and small text; lower the strength if the result looks invented. It is slow and a large download.",
+                "osaka": "Use this model when you want the most thorough restoration available. It rebuilds detail rather than just sharpening it, going furthest on photos that are soft or heavily compressed. It's slow, though, and needs a powerful GPU to run well."
             }
         },
         "lensBlur": {
@@ -437,6 +507,7 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
         "infoLensBlur": "{{name}}, blur {{amount}}"
     },
     "preview": {
@@ -451,16 +522,22 @@
         },
         "progress": {
             "downloading": "Downloading {{percent}}%",
-            "removal": "Remove",
-            "denoise": "Denoise",
-            "faceRecovery": "Face Recovery",
-            "colorization": "Colorize",
-            "lightAdjustment": "Light Adjust",
-            "colorBalance": "Color Balance",
-            "upscale": "Upscale",
-            "sharpen": "Sharpen",
-            "lensBlur": "Lens Blur",
-            "enhancing": "Enhancing"
+            "removal": "Removing",
+            "denoise": "Denoising",
+            "faceRecovery": "Restoring faces",
+            "colorization": "Colorizing",
+            "lightAdjustment": "Adjusting light",
+            "colorBalance": "Balancing color",
+            "upscale": "Upscaling",
+            "sharpen": "Sharpening",
+            "restore": "Restoring",
+            "lensBlur": "Blurring",
+            "enhancing": "Enhancing",
+            "compiling": "Compiling {{model}} model",
+            "loading": "Loading {{model}} model",
+            "firstUse": "First use only, may take a few minutes",
+            "firstUseAbout_one": "First use only, may take about {{count}} minute",
+            "firstUseAbout_other": "First use only, may take about {{count}} minutes"
         }
     },
     "menu": {
@@ -471,6 +548,34 @@
             "showIn": "Show in File Manager",
             "showIn_darwin": "Show in Finder",
             "showIn_windows": "Show in Explorer"
+        },
+        "bar": {
+            "about": "About {{name}}",
+            "services": "Services",
+            "hide": "Hide {{name}}",
+            "hideOthers": "Hide Others",
+            "showAll": "Show All",
+            "quit": "Quit {{name}}",
+            "file": "File",
+            "open": "Open…",
+            "export": "Export…",
+            "closeImage": "Close Image",
+            "closeAll": "Close All Images",
+            "settings": "Settings…",
+            "edit": "Edit",
+            "undo": "Undo",
+            "redo": "Redo",
+            "cut": "Cut",
+            "copy": "Copy",
+            "paste": "Paste",
+            "selectAll": "Select All",
+            "view": "View",
+            "fullscreen": "Enter Full Screen",
+            "window": "Window",
+            "minimize": "Minimize",
+            "zoom": "Zoom",
+            "bringAllToFront": "Bring All to Front",
+            "help": "Help"
         }
     },
     "errors": {
@@ -485,6 +590,25 @@
             "title": "Something went wrong",
             "message": "Open Photo AI hit an unexpected error and can't continue. Reloading usually fixes it; your settings are kept, but any unsaved work in the current session is lost.",
             "reload": "Reload"
+        }
+    },
+    "shortcuts": {
+        "title": "Keyboard shortcuts",
+        "description": "The keys bound to each action now.",
+        "hint": "Change them in Settings > Keyboard.",
+        "tooltip": "{{name}} ({{key}})",
+        "tooltipCycle": "{{name}} ({{key}} cycles)",
+        "settingsHint": "Press {{key}} anywhere to see these shortcuts.",
+        "sections": {
+            "view": "View",
+            "images": "Images",
+            "enhancements": "Enhancements"
+        },
+        "rows": {
+            "zoom": "Zoom in / Zoom out",
+            "pan": "Pan",
+            "images": "Previous image / Next image",
+            "options": "Options of enhancement 1–8"
         }
     }
 }

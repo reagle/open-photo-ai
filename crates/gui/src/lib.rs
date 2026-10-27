@@ -17,11 +17,14 @@ mod enhance;
 mod export;
 mod faces;
 mod frontend;
+mod gui_settings;
 mod images;
 mod lens;
 mod links;
 mod logs;
 mod mask;
+mod menu;
+mod opened;
 mod reveal;
 mod setup;
 mod single_instance;
@@ -86,15 +89,26 @@ pub fn run(prepared: Result<(), opai::InitError>) {
     // before the builder - otherwise a second GUI could take the single-instance claim first and be refused with
     // `InitError::AlreadyRunning`.
     //
-    // `_args`/`_cwd` are ignored: a second launch just means "show the window", nothing more.
+    // A second launch means "show the window", and also "open these" when it names files - which is how Windows and
+    // Linux hand a running application a file opened from the file manager. Anything else it says is ignored.
     if single_instance_is_supported() {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             tracing::info!("a second launch was refused; raising the window already open");
-            single_instance::raise_main_window(app);
+            let files = opened::paths_from_args(args.into_iter().skip(1), std::path::Path::new(&cwd));
+            if files.is_empty() {
+                single_instance::raise_main_window(app);
+            } else {
+                opened::deliver(app, files);
+            }
         }));
     }
 
     builder
+        // The window reopens where the user left it. After the single-instance plugin, so a refused second launch
+        // never reads or writes the saved frame, and before `setup`, so the frame is restored while the window is
+        // still hidden. See `window_state_flags` for what is restored. Registers no command the frontend may call, so
+        // no permission is granted.
+        .plugin(tauri_plugin_window_state::Builder::default().with_state_flags(window_state_flags()).build())
         // Backs the init script's `platform` value; registers no command of its own, so no permission is granted.
         .plugin(tauri_plugin_os::init())
         // Needed for the file picker (`DialogExt::dialog()` reads state this registers). Its own commands are left
@@ -123,6 +137,10 @@ pub fn run(prepared: Result<(), opai::InitError>) {
         .manage(export::Exports::default())
         // The files this session's exports wrote; the whole of what `reveal_export` may show.
         .manage(export::Written::default())
+        // The files the platform has asked the application to open and the window has not taken yet (see
+        // `src/opened.rs`); filled from the first launch's arguments below, a second launch's, and macOS's
+        // `RunEvent::Opened`.
+        .manage(opened::Inbox::default())
         // Serves opened images' pixels over a custom scheme instead of base64-over-IPC. Async, so large images decode
         // off the window thread. `images::SCHEME` is a constant, not a literal, because `tauri.conf.json`'s `img-src`
         // must list both its platform forms - see the drift guard test below.
@@ -139,16 +157,30 @@ pub fn run(prepared: Result<(), opai::InitError>) {
 
             window::reveal_when_late(app.handle());
 
+            // This application's own menu in place of Tauri's default, whose Command-W closed the window and so quit.
+            #[cfg(target_os = "macos")]
+            menu::install(app.handle())?;
+
+            // The files this launch was started to open. Windows and Linux name them on the command line; macOS
+            // sends `RunEvent::Opened` instead, but a path given to the binary directly is honoured there too.
+            if let Ok(cwd) = std::env::current_dir() {
+                opened::deliver(app.handle(), opened::paths_from_args(std::env::args_os().skip(1), &cwd));
+            }
+
             Ok(())
         })
+        // Forwards the menu's items of this application's own to the window, which acts on them (`src/menu.rs`).
+        .on_menu_event(menu::forward)
         .invoke_handler(tauri::generate_handler![
             version,
             telemetry_ids,
             analytics::set_analytics,
+            gui_settings::set_gui_settings,
             frontend::log,
             setup::initialize,
             setup::quit,
             logs::reveal_log,
+            menu::configure_menu,
             links::open_link,
             update::is_outdated,
             catalogue::catalogue,
@@ -173,12 +205,13 @@ pub fn run(prepared: Result<(), opai::InitError>) {
             images::files::describe_images,
             images::files::reveal_image,
             images::files::input_extensions,
+            opened::take_opened_files,
             window::window_ready
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Open Photo AI application")
-        .run(move |_, event| {
-            if let tauri::RunEvent::Exit = event {
+        .run(move |_app, event| match event {
+            tauri::RunEvent::Exit => {
                 // Before telemetry stops, so a write that had to be abandoned is still recorded. The handle in the
                 // setup state is never dropped on this path, so its own wait on drop does not run.
                 if !opai::settle_cache_writes(CACHE_SETTLE) {
@@ -187,6 +220,11 @@ pub fn run(prepared: Result<(), opai::InitError>) {
 
                 closing(began.elapsed(), opai::telemetry::stop);
             }
+            // Open With, a double-click in Finder, or a drop on the Dock icon - at launch as well as while running,
+            // since macOS hands a launch's files over this way and not on the command line.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Opened { urls } => opened::deliver(_app, opened::paths_from_urls(&urls)),
+            _ => {}
         });
 }
 
@@ -203,6 +241,16 @@ fn closing(uptime: std::time::Duration, stop: impl FnOnce()) {
     tracing::info!(target: "gui", ?uptime, "Open Photo AI is closing");
 
     stop();
+}
+
+/// What the window-state plugin saves and restores: the frame and whether it was maximised, and nothing else.
+///
+/// `VISIBLE` is left out on purpose: restoring it would show the window before React has painted, undoing the
+/// handshake in `src/window.rs`. `FULLSCREEN` too, since reopening into a full-screen Space is disorienting.
+fn window_state_flags() -> tauri_plugin_window_state::StateFlags {
+    use tauri_plugin_window_state::StateFlags;
+
+    StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED
 }
 
 /// Whether to register the single-instance plugin at all. See [`single_instance::session_bus_is_usable`] for the
@@ -407,6 +455,72 @@ mod tests {
             window["backgroundColor"].as_str(),
             Some(background),
             "the window's pre-paint colour has drifted from `--background` in frontend/style.css"
+        );
+    }
+
+    /// The window opens at its own size rather than filling the screen, so the frame the window-state plugin restores
+    /// is the user's, and a first launch with nothing saved is centred and not maximised. It still ships hidden:
+    /// neither flag may come back in a form that shows it before React paints (on Windows, `maximized` does).
+    #[test]
+    fn the_window_opens_at_its_own_size_and_still_hidden() {
+        let raw = include_str!("../tauri.conf.json");
+        let conf: serde_json::Value = serde_json::from_str(raw).expect("tauri.conf.json is not valid JSON");
+        let window = &conf["app"]["windows"][0];
+
+        for flag in ["maximized", "fullscreen"] {
+            assert_ne!(
+                window[flag],
+                serde_json::json!(true),
+                "the main window is `{flag}` again, which overrides the frame the window-state plugin restores"
+            );
+        }
+        assert_eq!(window["center"], serde_json::json!(true), "a first launch should open centred");
+        assert_eq!(window["visible"], serde_json::json!(false), "the main window no longer ships hidden");
+    }
+
+    /// The plugin restores the frame and the maximised state, never visibility (the window would show before React
+    /// paints) and never full screen.
+    #[test]
+    fn the_window_state_plugin_restores_the_frame_and_nothing_else() {
+        use tauri_plugin_window_state::StateFlags;
+
+        let flags = super::window_state_flags();
+
+        assert_eq!(flags.bits(), (StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED).bits());
+        assert!(
+            !flags.contains(StateFlags::VISIBLE),
+            "a restored visibility would show the window before it paints"
+        );
+    }
+
+    /// The file types the bundle declares (Open With on macOS, ProgIDs on Windows, `MimeType=` on Linux) are exactly
+    /// the extensions `opai` opens: one it opens and does not declare is missing from Open With, and one it declares
+    /// and does not open would be offered and then refused.
+    #[test]
+    fn tauri_conf_json_declares_exactly_the_extensions_opai_opens() {
+        let raw = include_str!("../tauri.conf.json");
+        let conf: serde_json::Value = serde_json::from_str(raw).expect("tauri.conf.json is not valid JSON");
+
+        let associations = conf["bundle"]["fileAssociations"].as_array().expect("the bundle declares file types");
+        let mut declared = BTreeSet::new();
+        for association in associations {
+            for extension in association["ext"].as_array().expect("each association lists its extensions") {
+                let extension = extension.as_str().expect("an extension is a string");
+                assert!(declared.insert(extension), "`{extension}` is declared by two associations");
+            }
+
+            // Offered beside the default application, never in its place.
+            assert_eq!(association["role"], "Editor", "{association}");
+            assert_eq!(association["rank"], "Alternate", "{association}");
+        }
+
+        let opened: BTreeSet<&str> = opai::image::input_extensions().into_iter().collect();
+        assert_eq!(
+            declared,
+            opened,
+            "declared but not opened: {:?}; opened but not declared: {:?}",
+            declared.difference(&opened).collect::<Vec<_>>(),
+            opened.difference(&declared).collect::<Vec<_>>()
         );
     }
 

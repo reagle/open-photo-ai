@@ -5,23 +5,23 @@
 //! later takes as a parameter — so they describe *what* to run and own no native resource, which is what lets one
 //! outlive and stay independent of any session built from it.
 //!
-//! All twelve families are named here: [`Remove`], [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`],
-//! [`ColorBalance`], [`Colorization`], [`Detection`], [`Depth`], [`Matting`], [`FaceRecovery`] and [`LensBlur`]. Each
-//! is its own type, so no codename can be paired with the family it does not belong to.
+//! All thirteen families are named here: [`Remove`], [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`],
+//! [`ColorBalance`], [`Colorization`], [`Detection`], [`Depth`], [`Matting`], [`FaceRecovery`], [`Restore`] and
+//! [`LensBlur`]. Each is its own type, so no codename can be paired with the family it does not belong to.
 //!
-//! [`Operation`] is where that match lives. It carries an operation of any of the nine image families, one arm per
+//! [`Operation`] is where that match lives. It carries an operation of any of the ten image families, one arm per
 //! family holding that family's own type, and forwards the five questions they all answer; a detection, depth or
 //! matting run is carried by [`Analysis`] instead.
 //!
-//! Several of them break the mould the other six share. [`Detection`], [`Depth`] and [`Matting`] are the three
+//! Several of them break the mould the others share. [`Detection`], [`Depth`] and [`Matting`] are the three
 //! families whose result is not an image: a detection produces a [`DetectionOutput`], the set of [`Face`]s found, a
 //! depth estimate a [`DepthMap`], the distance of every pixel from the camera, and a matting a [`Matte`], how much of
 //! each pixel a subject covers, from a trimap it is handed. [`FaceRecovery`] is the one whose per-run input is
 //! not a scalar: it carries the [`Faces`] it is to restore, supplied by a detection run rather than adjusted through
-//! a control, which is why it is `Clone` rather than `Copy`. [`Remove`] carries a painted region the same way, a
-//! [`Mask`](crate::Mask) a front end's brush or a mask file supplies. [`LensBlur`] is driven by another family's result
-//! in the same way: a chain hands it the [`DepthMap`] of its input and the photograph's own [`Lens`], and it runs no
-//! graph.
+//! a control, which is why it is `Clone` rather than `Copy`. [`LensBlur`] is driven by another family's result in the
+//! same way: a chain hands it the [`DepthMap`] of its input and the photograph's own [`Lens`], and it runs no graph.
+//! [`Remove`] carries a painted region the same way, a [`Mask`](crate::Mask) a front end's brush or a mask file
+//! supplies.
 //!
 //! # An operation is the request it describes
 //!
@@ -48,7 +48,7 @@
 //! A precision travels inside the variant, in the domain that variant is actually published in — so Osaka at FP32 is
 //! not a refused request but an unwritable one. A [`Scale`], a [`Strength`] and a [`Bias`] are each bounded and
 //! quantized on acceptance, so a value that exists is a value in range, and two requests that would have collided in
-//! the cache are one value before anything is rendered. [`fn@catalogue`] publishes both facts for all ten families,
+//! the cache are one value before anything is rendered. [`fn@catalogue`] publishes both facts for all twelve families,
 //! built from the same rows and constants that enforce them, so a control cannot offer what resolution would refuse.
 //! A [`Confidence`] is bounded the same way and for a related reason — a face that exists is a face whose confidence
 //! is meaningful — and quantized too, to two decimal places, because it travels inside the [`Faces`] a face recovery
@@ -57,7 +57,7 @@
 // Where a file belongs: three tiers, and the test for which one a file is at is who else could use it.
 //
 // - **One model** — `models/<family>/<model>/`, as `upscale/tokyo/`, `upscale/kyoto/`, `upscale/saitama/` and
-//   `upscale/osaka/` are. Its row, the execution-provider profile measured for it and the prose behind it, its
+//   `restore/osaka/` are. Its row, the execution-provider profile measured for it and the prose behind it, its
 //   pipeline, the vocabulary only its own contract needs, and its tests. Deleting a model is deleting its directory
 //   plus the arms that name it, and nothing else.
 // - **One family** — a file directly under `models/<family>/`, shared by two or more of that family's models and by
@@ -65,7 +65,7 @@
 //   all three are rows of.
 // - **Every family** (cross-family tier) — shared by two or more families, and by nothing that is not a model. Four
 //   homes, by what the thing is:
-//   - this module, for the vocabulary all ten speak — the carriers, `Subject`, the parameters, the catalogue;
+//   - this module, for the vocabulary all twelve speak — the carriers, `Subject`, the parameters, the catalogue;
 //   - a file directly under `models/`, for model code two families run — `filter.rs`, the tiled filter contract
 //     denoise and sharpen both run;
 //   - `crate::pipeline`, for the contract every model is written against — the pipeline traits, `Backend` and the
@@ -89,13 +89,15 @@
 // rewrite: none of them names a variant, and each takes the sizes and the inputs its caller's geometry would differ
 // in as parameters. The list is here so that whoever adds the second caller knows what to move before writing it.
 //
-// - `upscale/osaka/colorfix.rs` — the wavelet colour fix for one-step diffusion drift.
-// - `upscale/osaka/graph.rs` — role-addressed multi-graph resolution, which is a contract-level idea.
-// - `upscale/osaka/latent.rs` — VAE stride, patchify and the one-step scheduler.
-// - `upscale/osaka/noise.rs` — deterministic seeded per-region noise.
-// - `upscale/osaka/region.rs` — the three-graph region loop.
+// - `restore/osaka/colorfix.rs` — the wavelet colour fix for one-step diffusion drift.
+// - `restore/osaka/graph.rs` — role-addressed multi-graph resolution, which is a contract-level idea.
+// - `restore/osaka/latent.rs` — VAE stride, patchify and the one-step scheduler.
+// - `restore/osaka/noise.rs` — deterministic seeded per-region noise.
+// - `restore/osaka/region.rs` — the three-graph region loop.
 //
-// The second diffusion model in any family promotes Osaka's five, and does not reimplement them.
+// The second diffusion model in any family promotes Osaka's five, and does not reimplement them. Kazan, the restore
+// family's other generative model, is not one: its whole diffusion step is inside one exported graph per tile, and it
+// runs through the shared filter like any convolutional model.
 //
 // A family exposes its models through exactly two seams, and neither ever reaches the chain driver: one match from
 // the variant enum to that family's model, one arm per model; and one match from the resolved contract to a
@@ -132,6 +134,7 @@ pub(crate) mod operation;
 pub(crate) mod precision;
 mod quantized;
 pub(crate) mod remove;
+pub(crate) mod restore;
 pub(crate) mod scale;
 pub(crate) mod sharpen;
 pub(crate) mod simple;
@@ -161,13 +164,14 @@ pub use matting::{Matte, Matting, MattingVariant};
 pub use operation::{Analysis, DataOperation, Operation};
 pub use precision::{FloatPrecision, Precision};
 pub use remove::{Remove, RemoveVariant};
+pub(crate) use restore::osaka::graph::ResolvedGraph;
+pub use restore::osaka::graph::{GraphRole, UnknownRole};
+pub use restore::osaka::precision::OsakaPrecision;
+pub use restore::{Restore, RestoreParams, RestoreVariant};
 pub use scale::{RangeError, Scale};
 pub use sharpen::{Sharpen, SharpenParams, SharpenVariant};
 pub use strength::Strength;
 pub use subject::Subject;
-pub(crate) use upscale::osaka::graph::ResolvedGraph;
-pub use upscale::osaka::graph::{GraphRole, GraphSet, UnknownRole};
-pub use upscale::osaka::precision::OsakaPrecision;
 pub use upscale::resolve::{Pass, Resolution};
 pub use upscale::{Upscale, UpscaleParams, UpscaleVariant};
 
@@ -182,7 +186,7 @@ mod tests {
         // holds both. Asked of the operations themselves rather than counted, so a family left out of the spread
         // fails here by name instead of weakening the checks silently.
         //
-        // Across **both** carriers, which is what makes "every family" true: the eight whose result is an image and the
+        // Across **both** carriers, which is what makes "every family" true: the nine whose result is an image and the
         // two whose result is not.
         let carried: std::collections::HashSet<Family> = every_carried_family().into_iter().collect();
 

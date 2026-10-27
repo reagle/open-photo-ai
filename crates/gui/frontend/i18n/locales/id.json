@@ -35,6 +35,10 @@
             "export": {
                 "title": "Ekspor",
                 "description": "Kualitas untuk format lossy. Nilai lebih rendah menghasilkan file lebih kecil; skalanya tidak sebanding antarformat."
+            },
+            "keyboard": {
+                "title": "Papan ketik",
+                "description": "Tombol untuk memperbesar, menyesuaikan, dan menampilkan yang asli. Perubahan berlaku saat Anda mengeklik Simpan."
             }
         },
         "app": {
@@ -109,7 +113,63 @@
             },
             "autopilotLabel": "Autopilot: {{name}}"
         },
-        "reset": "Kembalikan ke bawaan"
+        "reset": "Kembalikan ke bawaan",
+        "keyboard": {
+            "actions": {
+                "zoomIn": "Perbesar",
+                "zoomOut": "Perkecil",
+                "fit": "Sesuaikan dengan jendela",
+                "actualPixels": "Piksel sebenarnya (100%)",
+                "toggleZoom": "Beralih antara pas dan piksel sebenarnya",
+                "panLeft": "Geser ke kiri",
+                "panRight": "Geser ke kanan",
+                "panUp": "Geser ke atas",
+                "panDown": "Geser ke bawah",
+                "showOriginal": "Tampilkan asli selama ditahan",
+                "cyclePreview": "Ganti tampilan perbandingan",
+                "toggleDrawer": "Tampilkan atau sembunyikan gambar",
+                "previousImage": "Gambar sebelumnya",
+                "nextImage": "Gambar berikutnya",
+                "revealImage": "Tampilkan gambar di Pengelola File",
+                "toggleAutopilot": "Nyalakan atau matikan Autopilot",
+                "addEnhancement": "Tambah peningkatan",
+                "removeEnhancement": "Hapus peningkatan yang dipilih",
+                "openOptions1": "Opsi peningkatan 1",
+                "openOptions2": "Opsi peningkatan 2",
+                "openOptions3": "Opsi peningkatan 3",
+                "openOptions4": "Opsi peningkatan 4",
+                "openOptions5": "Opsi peningkatan 5",
+                "openOptions6": "Opsi peningkatan 6",
+                "openOptions7": "Opsi peningkatan 7",
+                "openOptions8": "Opsi peningkatan 8",
+                "cropRotate": "Pangkas/Putar",
+                "showShortcuts": "Tampilkan pintasan papan ketik"
+            },
+            "add": "Tambah pintasan",
+            "addLabel": "Tambah pintasan untuk {{action}}",
+            "recording": "Tekan tombol…",
+            "prompt": "Tekan tombol untuk {{action}}, atau Escape untuk membatalkan.",
+            "none": "Tanpa pintasan",
+            "remove": "Hapus {{binding}}, {{action}}",
+            "refused": {
+                "navigation": "{{binding}} dicadangkan untuk berpindah di dalam jendela.",
+                "system": "{{binding}} digunakan oleh sistem.",
+                "application": "{{binding}} digunakan oleh aplikasi."
+            },
+            "conflict": "{{binding}} sudah digunakan oleh {{action}}.",
+            "useHere": "Gunakan di sini saja",
+            "space": "Spasi",
+            "appActions": {
+                "open": "Buka gambar",
+                "export": "Ekspor gambar",
+                "settings": "Buka Pengaturan",
+                "closeImage": "Tutup gambar",
+                "closeAll": "Tutup semua gambar",
+                "quit": "Keluar"
+            },
+            "application": "Aplikasi",
+            "applicationHint": "Tombol ini tetap dan tidak dapat diubah."
+        }
     },
     "navbar": {
         "about": "Tentang",
@@ -249,6 +309,7 @@
             "pipelineOrder": "dalam urutan pipeline",
             "queued": "Dalam antrean",
             "analysing": "Menganalisis",
+            "preparing": "Memuat",
             "enhancing": "Menyempurnakan",
             "writing": "Menulis",
             "done": "Selesai",
@@ -348,8 +409,8 @@
         "faceRecovery": {
             "name": "Pemulihan Wajah",
             "models": {
-                "athens": "Gunakan model ini saat kesetiaan pada identitas paling penting. Model ini mempertahankan struktur wajah sambil memulihkan detail, bahkan pada wajah yang rusak berat. Terbaik ketika Anda ingin memulihkan tanpa mengubah orangnya.",
-                "santorini": "Gunakan model ini saat Anda menginginkan peningkatan agresif dan cepat serta dapat menoleransi perubahan identitas. Model ini menghasilkan wajah yang tajam dan enak dipandang pada kerusakan sedang, tetapi dapat mengarang fitur dan mengubah identitas pada masukan berkualitas sangat rendah."
+                "athens": "Gunakan model ini saat kesetiaan pada identitas paling penting. Model ini mempertahankan struktur wajah sambil memulihkan detail, bahkan pada wajah yang rusak berat. Terbaik ketika Anda ingin memulihkan tanpa mengubah orangnya. Dengan Restorasi, ini biasanya tidak diperlukan.",
+                "santorini": "Gunakan model ini saat Anda menginginkan peningkatan agresif dan cepat serta dapat menoleransi perubahan identitas. Model ini menghasilkan wajah yang tajam dan enak dipandang pada kerusakan sedang, tetapi dapat mengarang fitur dan mengubah identitas pada masukan berkualitas sangat rendah. Dengan Restorasi, ini biasanya tidak diperlukan."
             }
         },
         "colorization": {
@@ -387,8 +448,17 @@
             "models": {
                 "tokyo": "Gunakan model ini saat Anda menginginkan perbesaran yang alami tanpa berlebihan. Model ini berfokus mempertahankan tampilan asli dan struktur halus alih-alih \"mengarang\" detail baru, sehingga ideal ketika realisme dan kesetiaan pada gambar asli lebih penting daripada ketajaman.",
                 "kyoto": "Gunakan model ini untuk foto dunia nyata (orang, lanskap, produk). Model ini unggul dalam memulihkan detail sekaligus menangani noise, blur, dan artefak kompresi. Ideal untuk penggunaan praktis dengan gambar yang tidak sempurna, ketika Anda menginginkan hasil yang enak dipandang dan andal secara cepat.",
-                "saitama": "Gunakan model ini untuk kartun, gambar tangan, line art, dan ilustrasi digital. Model ini mempertahankan garis yang bersih, warna datar, dan bayangan bergaya tanpa menambahkan tekstur seperti foto. Terbaik ketika tepi yang tajam dan konsistensi gaya lebih penting daripada realisme.",
-                "osaka": "Gunakan model ini saat Anda menginginkan kualitas perbesaran terbaik yang tersedia. Model ini membangun ulang detail alih-alih sekadar menajamkannya, dan hasilnya paling jauh pada foto yang lembut atau sangat terkompresi. Namun, model ini lambat dan membutuhkan GPU yang bertenaga agar berjalan dengan baik."
+                "saitama": "Gunakan model ini untuk kartun, gambar tangan, line art, dan ilustrasi digital. Model ini mempertahankan garis yang bersih, warna datar, dan bayangan bergaya tanpa menambahkan tekstur seperti foto. Terbaik ketika tepi yang tajam dan konsistensi gaya lebih penting daripada realisme."
+            },
+            "suspended": "Restorasi sedang memperbesar foto ini"
+        },
+        "restore": {
+            "name": "Restorasi",
+            "size": "Ukuran",
+            "generative": "Generatif: menggambar ulang detail, dan dapat mengubah wajah, tekstur, dan tulisan.",
+            "models": {
+                "kazan": "Gunakan model ini saat keburaman terlalu kuat untuk Penajaman — mis. wajah yang tidak fokus, atau foto dari kamera lama yang memang tidak pernah benar-benar tajam. Model ini menggambar ulang detail yang masuk akal alih-alih memulihkannya, sehingga dapat mengubah wajah, tekstur, dan teks kecil; turunkan kekuatannya jika hasilnya tampak dibuat-buat. Model ini lambat dan unduhannya besar.",
+                "osaka": "Gunakan model ini saat Anda menginginkan restorasi paling menyeluruh yang tersedia. Model ini membangun ulang detail alih-alih sekadar menajamkannya, dan hasilnya paling jauh pada foto yang lembut atau sangat terkompresi. Namun, model ini lambat dan membutuhkan GPU yang bertenaga agar berjalan dengan baik."
             }
         },
         "lensBlur": {
@@ -427,6 +497,7 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
         "infoLensBlur": "{{name}}, blur {{amount}}"
     },
     "preview": {
@@ -441,16 +512,21 @@
         },
         "progress": {
             "downloading": "Mengunduh {{percent}}%",
-            "removal": "Hapus",
-            "denoise": "Reduksi Noise",
-            "faceRecovery": "Wajah",
-            "colorization": "Pewarnaan",
-            "lightAdjustment": "Cahaya",
-            "colorBalance": "Warna",
-            "upscale": "Perbesaran",
-            "sharpen": "Penajaman",
-            "lensBlur": "Blur Lensa",
-            "enhancing": "Meningkatkan"
+            "removal": "Menghapus",
+            "denoise": "Mengurangi noise",
+            "faceRecovery": "Memulihkan wajah",
+            "colorization": "Mewarnai",
+            "lightAdjustment": "Menyesuaikan cahaya",
+            "colorBalance": "Menyeimbangkan warna",
+            "upscale": "Memperbesar",
+            "sharpen": "Mempertajam",
+            "restore": "Merestorasi",
+            "lensBlur": "Memburamkan",
+            "enhancing": "Meningkatkan",
+            "compiling": "Mengompilasi model {{model}}",
+            "loading": "Memuat model {{model}}",
+            "firstUse": "Hanya pada penggunaan pertama, bisa memakan beberapa menit",
+            "firstUseAbout_other": "Hanya pada penggunaan pertama, bisa memakan sekitar {{count}} menit"
         }
     },
     "menu": {
@@ -461,6 +537,34 @@
             "showIn": "Tampilkan di Pengelola File",
             "showIn_darwin": "Tampilkan di Finder",
             "showIn_windows": "Tampilkan di Explorer"
+        },
+        "bar": {
+            "about": "Tentang {{name}}",
+            "services": "Layanan",
+            "hide": "Sembunyikan {{name}}",
+            "hideOthers": "Sembunyikan Lainnya",
+            "showAll": "Tampilkan Semua",
+            "quit": "Keluar dari {{name}}",
+            "file": "File",
+            "open": "Buka…",
+            "export": "Ekspor…",
+            "closeImage": "Tutup gambar",
+            "closeAll": "Tutup semua gambar",
+            "settings": "Pengaturan…",
+            "edit": "Edit",
+            "undo": "Urungkan",
+            "redo": "Ulangi",
+            "cut": "Potong",
+            "copy": "Salin",
+            "paste": "Tempel",
+            "selectAll": "Pilih Semua",
+            "view": "Tampilan",
+            "fullscreen": "Masuk ke Layar Penuh",
+            "window": "Jendela",
+            "minimize": "Minimalkan",
+            "zoom": "Perbesar/Perkecil",
+            "bringAllToFront": "Bawa Semua ke Depan",
+            "help": "Bantuan"
         }
     },
     "errors": {
@@ -475,6 +579,25 @@
             "title": "Terjadi kesalahan",
             "message": "Open Photo AI mengalami kesalahan tak terduga dan tidak dapat melanjutkan. Memuat ulang biasanya memperbaikinya; pengaturan Anda tetap tersimpan, tetapi pekerjaan yang belum disimpan pada sesi saat ini akan hilang.",
             "reload": "Muat ulang"
+        }
+    },
+    "shortcuts": {
+        "title": "Pintasan papan ketik",
+        "description": "Tombol yang saat ini terikat ke setiap tindakan.",
+        "hint": "Ubah di Pengaturan > Papan ketik.",
+        "tooltip": "{{name}} ({{key}})",
+        "tooltipCycle": "{{name}} ({{key}} berganti)",
+        "settingsHint": "Tekan {{key}} di mana saja untuk melihat pintasan ini.",
+        "sections": {
+            "view": "Tampilan",
+            "images": "Gambar",
+            "enhancements": "Peningkatan"
+        },
+        "rows": {
+            "zoom": "Perbesar / Perkecil",
+            "pan": "Geser",
+            "images": "Gambar sebelumnya / Gambar berikutnya",
+            "options": "Opsi peningkatan 1–8"
         }
     }
 }

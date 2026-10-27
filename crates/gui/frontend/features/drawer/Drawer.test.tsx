@@ -1,12 +1,15 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { Preview } from "@/features/preview/Preview";
+import { useShortcuts } from "@/hooks/useShortcuts";
 import "@/i18n";
+import { isMacOs } from "@/ipc/os";
 import { ZOOM_BUTTON_STEP, ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
 import { track } from "@/lib/faro";
 import { useDrawerStore } from "@/stores/drawer";
 import { useFileStore } from "@/stores/files";
 import { usePreviewStore } from "@/stores/preview";
+import { useSettingsStore } from "@/stores/settings";
 import { useTransformStore } from "@/stores/transform";
 import { HOLIDAY, openFiles, render, resetFileStore, SUNSET, stubStripGeometry } from "@/test/support";
 import { Drawer } from "./Drawer";
@@ -98,6 +101,8 @@ beforeEach(() => {
     resetFileStore();
     useDrawerStore.setState(useDrawerStore.getInitialState(), true);
     usePreviewStore.setState({ previewMode: "side" });
+    localStorage.clear();
+    useSettingsStore.setState(useSettingsStore.getInitialState(), true);
 
     // The strip is windowed, and jsdom lays nothing out: without a measurable scroll element the
     // virtualizer mounts no thumbnails at all, so every case about what the body draws would fail on
@@ -364,15 +369,53 @@ describe("the fold itself", () => {
         expect(screen.getByRole("button", { name: "sunset over the harbour.nef" })).toBeInTheDocument();
     });
 
+    // The stand-ins below are appended to the body by hand, outside what Testing Library cleans up.
+    afterEach(() => {
+        for (const stray of document.querySelectorAll("[data-stray]")) stray.remove();
+    });
+
+    /** A stand-in for the preview canvas, which carries the `data-slot` the drawer looks for. */
+    const addCanvas = () => {
+        const canvas = document.createElement("div");
+        canvas.dataset.slot = "preview-canvas";
+        canvas.dataset.stray = "";
+        const inner = document.createElement("span");
+        canvas.append(inner);
+        document.body.append(canvas);
+        return inner;
+    };
+
     it("folds when the canvas outside it is clicked", () => {
         renderUnfolded();
         expect(useDrawerStore.getState().open).toBe(true);
 
         // `pointerDown` rather than `click`, which is the event the drawer listens for: a press that
-        // begins outside it is the honest answer to "did the user reach past the drawer".
-        fireEvent.pointerDown(document.body);
+        // begins on the canvas is the honest answer to "did the user reach past the drawer".
+        fireEvent.pointerDown(addCanvas());
 
         expect(useDrawerStore.getState().open).toBe(false);
+    });
+
+    it("stays unfolded when the sidebar, the navbar or a dialog is pressed", () => {
+        renderUnfolded();
+
+        for (const name of ["Add enhancement", "Export"]) {
+            const button = document.createElement("button");
+            button.textContent = name;
+            button.dataset.stray = "";
+            document.body.append(button);
+            fireEvent.pointerDown(button);
+            expect(useDrawerStore.getState().open).toBe(true);
+        }
+
+        const dialog = document.createElement("div");
+        dialog.setAttribute("role", "dialog");
+        dialog.dataset.stray = "";
+        document.body.append(dialog);
+        fireEvent.pointerDown(dialog);
+        fireEvent.pointerDown(document.body);
+
+        expect(useDrawerStore.getState().open).toBe(true);
     });
 
     it("stays unfolded when one of its own thumbnails is clicked", () => {
@@ -462,12 +505,12 @@ describe("the fold itself", () => {
     });
 
     it("still folds when the canvas is pressed with that menu open", () => {
-        // The other half of the rule: a menu the drawer opened is part of the drawer, and everything
-        // else is still outside it.
+        // The other half of the rule: a menu the drawer opened is part of the drawer, and the canvas is still
+        // outside it.
         renderUnfolded();
 
         fireEvent.keyDown(screen.getByRole("button", { name: "File options for holiday.png" }), { key: "Enter" });
-        fireEvent.pointerDown(document.body);
+        fireEvent.pointerDown(addCanvas());
 
         expect(useDrawerStore.getState().open).toBe(false);
     });
@@ -657,6 +700,57 @@ describe("the zoom control", () => {
         });
     });
 
+    it("states the keyboard shortcuts with Command on macOS", () => {
+        vi.mocked(isMacOs).mockReturnValue(true);
+        renderEmpty();
+
+        expect(zoomIn()).toHaveAttribute("aria-keyshortcuts", "Meta+=");
+        expect(zoomOut()).toHaveAttribute("aria-keyshortcuts", "Meta+-");
+    });
+
+    it("states the keyboard shortcuts with Control on Windows and Linux", () => {
+        vi.mocked(isMacOs).mockReturnValue(false);
+        renderEmpty();
+
+        expect(zoomIn()).toHaveAttribute("aria-keyshortcuts", "Control+=");
+        expect(zoomOut()).toHaveAttribute("aria-keyshortcuts", "Control+-");
+    });
+
+    it("names its first binding in its tooltip, as this platform writes it", async () => {
+        vi.mocked(isMacOs).mockReturnValue(true);
+        openFiles(HOLIDAY);
+        render(<Drawer />);
+
+        await act(async () => {
+            fireEvent.focus(zoomIn());
+        });
+
+        expect(await screen.findByRole("tooltip")).toHaveTextContent("Zoom in (⌘ =)");
+    });
+
+    it("names only itself in its tooltip when it has no binding", async () => {
+        vi.mocked(isMacOs).mockReturnValue(false);
+        useSettingsStore.getState().apply({ shortcuts: { zoomOut: [] } });
+        openFiles(HOLIDAY);
+        render(<Drawer />);
+
+        await act(async () => {
+            fireEvent.focus(zoomOut());
+        });
+
+        expect(await screen.findByRole("tooltip")).toHaveTextContent(/^Zoom out$/);
+    });
+
+    it("states the user's bindings once they are saved", () => {
+        vi.mocked(isMacOs).mockReturnValue(false);
+        useSettingsStore.getState().apply({ shortcuts: { zoomIn: ["Shift+z", "Mod+="], zoomOut: [] } });
+        renderEmpty();
+
+        expect(zoomIn()).toHaveAttribute("aria-keyshortcuts", "Shift+z Control+=");
+        // No binding is no shortcut to state, rather than an empty one.
+        expect(zoomOut()).not.toHaveAttribute("aria-keyshortcuts");
+    });
+
     it("stays unavailable while no image is open", () => {
         renderEmpty();
 
@@ -749,5 +843,191 @@ describe("the zoom control", () => {
 
             expect(bubble()).not.toBeInTheDocument();
         });
+    });
+});
+
+describe("the strip following the current image", () => {
+    it("scrolls an off-screen current image into view, and leaves a visible one where it is", async () => {
+        // jsdom has no `scrollTo` on elements at all, which the virtualizer calls only if present.
+        const scrollTo = vi.fn();
+        Element.prototype.scrollTo = scrollTo;
+        onTestFinished(() => {
+            delete (Element.prototype as Partial<Element>).scrollTo;
+        });
+        // And no layout, so nothing is wider than its box and every offset would clamp to 0.
+        vi.spyOn(Element.prototype, "scrollWidth", "get").mockReturnValue(10_000);
+        vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(640);
+        const many = Array.from({ length: 30 }, (_, index) => ({
+            ...HOLIDAY,
+            path: `/Users/someone/Pictures/photo-${index}.png`,
+            identity: String(index).padStart(16, "0"),
+        }));
+        openFiles(...many);
+        act(() => useFileStore.getState().setCurrentIndex(0));
+        render(<Drawer />);
+        scrollTo.mockClear();
+
+        // The second thumbnail is on screen in a 640px strip, so the strip stays where it is: the
+        // virtualizer may restate the offset it already has, never a new one.
+        await act(async () => useFileStore.getState().setCurrentIndex(1));
+        for (const [options] of scrollTo.mock.calls) expect(options).toMatchObject({ left: 0 });
+
+        scrollTo.mockClear();
+        await act(async () => useFileStore.getState().setCurrentIndex(25));
+        await waitFor(() => expect((scrollTo.mock.lastCall?.[0] as { left?: number })?.left).toBeGreaterThan(0));
+    });
+});
+
+/** The window's keys, listening as the shell mounts them. */
+const Keys = () => {
+    useShortcuts();
+
+    return null;
+};
+
+/** Presses a key on the page, bubbling to the window, and answers the dispatched event. */
+const press = (init: KeyboardEventInit) => {
+    const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+    act(() => {
+        document.body.dispatchEvent(event);
+    });
+
+    return event;
+};
+
+describe("the drawer's keys", () => {
+    beforeEach(() => {
+        vi.mocked(isMacOs).mockReturnValue(false);
+        vi.mocked(track).mockClear();
+    });
+
+    it("steps through the comparisons with V, full, side by side, split and round again", () => {
+        openFiles(HOLIDAY);
+        usePreviewStore.setState({ previewMode: "full" });
+        render(
+            <>
+                <Keys />
+                <Drawer />
+            </>,
+        );
+
+        const event = press({ key: "v" });
+        expect(event.defaultPrevented).toBe(true);
+        expect(mode("Side by Side")).toHaveAttribute("aria-checked", "true");
+
+        press({ key: "v" });
+        expect(mode("Split")).toHaveAttribute("aria-checked", "true");
+
+        press({ key: "v" });
+        expect(mode("Full")).toHaveAttribute("aria-checked", "true");
+        expect(track).toHaveBeenLastCalledWith("preview_mode_changed", { mode: "full" });
+    });
+
+    it("leaves the comparison as it is with no image open, as the group is unavailable", () => {
+        render(
+            <>
+                <Keys />
+                <Drawer />
+            </>,
+        );
+
+        const event = press({ key: "v" });
+
+        expect(usePreviewStore.getState().previewMode).toBe("side");
+        expect(event.defaultPrevented).toBe(false);
+    });
+
+    it("names the comparison's key on the group, for assistive technology", () => {
+        renderWithImage();
+
+        expect(mode("Full").parentElement).toHaveAttribute("aria-keyshortcuts", "v");
+    });
+
+    it.each([
+        ["Command-backslash on macOS", true, { metaKey: true }],
+        ["Ctrl+backslash elsewhere", false, { ctrlKey: true }],
+    ])("shows and hides the images with %s, as the fold toggle does", (_name, mac, mod) => {
+        vi.mocked(isMacOs).mockReturnValue(mac);
+        openFiles(HOLIDAY);
+        render(
+            <>
+                <Keys />
+                <Drawer />
+            </>,
+        );
+
+        const event = press({ key: "\\", code: "Backslash", ...mod });
+        expect(event.defaultPrevented).toBe(true);
+        expect(fold("Hide images")).toBeInTheDocument();
+
+        press({ key: "\\", code: "Backslash", ...mod });
+        expect(fold()).toBeInTheDocument();
+    });
+
+    it("leaves the drawer folded with no image open, as the fold toggle is unavailable", () => {
+        render(
+            <>
+                <Keys />
+                <Drawer />
+            </>,
+        );
+
+        press({ key: "\\", code: "Backslash", ctrlKey: true });
+
+        expect(useDrawerStore.getState().open).toBe(false);
+    });
+
+    it("names the fold's key in its tooltip and to assistive technology", async () => {
+        vi.mocked(isMacOs).mockReturnValue(true);
+        renderWithImage();
+
+        await act(async () => {
+            fireEvent.focus(fold());
+        });
+
+        expect(await screen.findByRole("tooltip")).toHaveTextContent("Show images (⌘ \\)");
+        expect(fold()).toHaveAttribute("aria-keyshortcuts", "Meta+\\");
+    });
+
+    /** Focuses a control and answers the tooltip it opens. */
+    const tooltipOf = async (control: HTMLElement) => {
+        await act(async () => {
+            fireEvent.focus(control);
+        });
+
+        return screen.findByRole("tooltip");
+    };
+
+    it("says each comparison's tooltip that the key cycles, as this platform writes it", async () => {
+        vi.mocked(isMacOs).mockReturnValue(false);
+        renderWithImage();
+
+        expect(await tooltipOf(mode("Side by Side"))).toHaveTextContent("Side by Side (V cycles)");
+    });
+
+    it("leaves the key out of a comparison's tooltip once the cycle is unbound", async () => {
+        useSettingsStore.getState().apply({ shortcuts: { cyclePreview: [] } });
+        renderWithImage();
+
+        expect(await tooltipOf(mode("Split"))).toHaveTextContent(/^Split$/);
+    });
+
+    it("follows a rebinding of the cycle key", async () => {
+        useSettingsStore.getState().apply({ shortcuts: { cyclePreview: ["Shift+c"] } });
+        renderWithImage();
+
+        expect(await tooltipOf(mode("Full"))).toHaveTextContent("Full (Shift+C cycles)");
+    });
+
+    it.each([
+        [true, "Add images (⌘ O)", "Meta+o"],
+        [false, "Add images (Ctrl+O)", "Control+o"],
+    ])("names Open's fixed key on Add images (mac: %s)", async (mac, tip, aria) => {
+        vi.mocked(isMacOs).mockReturnValue(mac);
+        renderWithImage();
+        const button = screen.getByRole("button", { name: "Add images" });
+
+        expect(await tooltipOf(button)).toHaveTextContent(tip);
+        expect(button).toHaveAttribute("aria-keyshortcuts", aria);
     });
 });
