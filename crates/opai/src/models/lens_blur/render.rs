@@ -254,12 +254,24 @@ impl Cutout {
         let mut colour = foreground(&image, &self.alpha, width, height, &self.radii);
         let filled_colour = filled(&image, 3, width, height, &self.known);
         let (coverage, kept) = (self.alpha.as_slice(), self.kept.as_slice());
+        // Filled only for the subject's share of a pixel: the photograph is `a F + (1 - a) B`, so what is left of it
+        // with the subject's own colour taken out is the background's own share, which is kept. Filled whole, a faint
+        // alpha in a gap between leaves or branches painted the background there with a colour from far away — a pale
+        // veil over a dark bush — that the blur then spread.
         let mut background = image;
-        for (index, (pixel, fill)) in
-            background.as_chunks_mut::<3>().0.iter_mut().zip(filled_colour.as_chunks::<3>().0).enumerate()
+        for (index, ((pixel, fill), own)) in background
+            .as_chunks_mut::<3>()
+            .0
+            .iter_mut()
+            .zip(filled_colour.as_chunks::<3>().0)
+            .zip(colour.as_chunks::<3>().0)
+            .enumerate()
         {
             if coverage[index] > COVERED && kept[index] < 0.5 {
-                pixel.copy_from_slice(fill);
+                let share = coverage[index].min(1.0);
+                for ((value, fill), own) in pixel.iter_mut().zip(fill).zip(own) {
+                    *value = (*value - share * own).max(0.0) + share * fill;
+                }
             }
         }
         drop(filled_colour);
@@ -939,6 +951,42 @@ mod tests {
         let strand = matted.to_rgb8();
         let strand = strand.get_pixel(INSIDE.0 - 2, 120);
         assert!(strand[0] > 90 && strand[0] < 200, "{strand:?}");
+    }
+
+    #[test]
+    fn a_faint_alpha_keeps_the_background_it_mostly_is() {
+        // A red subject with a wide gap in it, through which a dark bush shows, before a pale wall: the matte gives the
+        // gap a faint alpha, as a matting model does between leaves. The gap stays the bush's dark, not a veil of the
+        // wall's colour filled in from around the subject.
+        let (x0, y0, x1, y1) = INSIDE;
+        let gap = |x: u32, y: u32| (130..190).contains(&x) && (100..140).contains(&y);
+        let inside = |x: u32, y: u32| (x0..x1).contains(&x) && (y0..y1).contains(&y);
+        let picture = DynamicImage::ImageRgb8(RgbImage::from_fn(320, 240, |x, y| {
+            if gap(x, y) {
+                Rgb([20, 40, 30])
+            } else if inside(x, y) {
+                Rgb([200, 30, 30])
+            } else {
+                Rgb([210, 210, 200])
+            }
+        }));
+        let alpha: Vec<f32> = (0..240)
+            .flat_map(|y| (0..320).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                if gap(x, y) {
+                    0.05
+                } else if inside(x, y) {
+                    1.0
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+
+        let result = run(&matted_pipeline(Matte::new(320, 240, &alpha)), &picture).to_rgb8();
+        // Filled whole, the gap's middle reads [205, 205, 195]: the wall.
+        let middle = result.get_pixel(160, 120);
+        assert!(middle.0.iter().all(|&value| value < 90), "{middle:?}");
     }
 
     #[test]
