@@ -137,6 +137,27 @@ mod tests {
     }
 
     #[test]
+    fn a_rewritten_gain_map_is_encoded_from_its_new_pixels_with_its_own_metadata() {
+        let bytes = gain_map_jpeg((32, 24), 3);
+        let source = GainMap::read(&bytes, (32, 24), Orientation::NoTransforms).expect("readable");
+        let flat = DynamicImage::ImageRgb8(::image::RgbImage::from_pixel(32, 24, ::image::Rgb([200, 100, 50])));
+
+        let rewritten = source.rewritten(flat);
+        let encoded = prepare(&rewritten, (32, 24), 90).expect("prepared");
+
+        assert_ne!(encoded, bytes, "not the source's bytes");
+        let decoded = decode_bytes(&encoded).expect("decodable").to_rgb8();
+        assert!(
+            decoded
+                .pixels()
+                .all(|pixel| pixel.0.iter().zip([200, 100, 50]).all(|(a, b)| a.abs_diff(b) <= 2))
+        );
+        let read = metadata_bytes(&encoded);
+        assert_eq!(read.xmp.as_deref(), Some(HAWK_GAIN_MAP_XMP));
+        assert_eq!(read.iso_gain_map.as_deref(), Some(HAWK_GAIN_MAP_ISO));
+    }
+
+    #[test]
     fn the_gain_map_keeps_its_own_metadata_and_is_never_encoded_below_quality_90() {
         let source = encoded_anew((32, 24), (32, 24));
 

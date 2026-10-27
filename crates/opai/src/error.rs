@@ -515,7 +515,8 @@ pub enum InferenceError {
 
     // Never the run's failure: the chain drops the gain map it names, with a warning, and the photograph is still
     // enhanced. A variant rather than a string in `Run`, so the record names the operation and the reason together.
-    /// An enhancement that changes what the photograph shows could not rewrite the HDR gain map the picture carries.
+    /// An enhancement that moves light around the frame, or changes what the photograph shows, could not rewrite the
+    /// HDR gain map the picture carries.
     #[error("{operation} could not rewrite the HDR gain map: {reason}")]
     GainMap {
         /// The operation that could not rewrite it, as a user would see it named.
@@ -990,7 +991,7 @@ mod tests {
             (InferenceError::Unmeasurable { operation: "Lisbon".to_string(), valid: 3 }, "unmeasurable"),
             (InferenceError::NoPasses { operation: "Kyoto".to_string(), scale: 3.0 }, "no_passes"),
             (
-                InferenceError::GainMap { operation: "Remove".to_string(), reason: "why".to_string() },
+                InferenceError::GainMap { operation: "Lens Blur".to_string(), reason: "why".to_string() },
                 "gain_map",
             ),
             (
@@ -1022,6 +1023,7 @@ mod tests {
             InferenceError::ColourMapping { operation: "Rio".to_string(), column: 2 },
             InferenceError::Unmeasurable { operation: "Lisbon".to_string(), valid: 3 },
             InferenceError::NoPasses { operation: "Kyoto".to_string(), scale: 3.0 },
+            InferenceError::GainMap { operation: "Lens Blur".to_string(), reason: "why".to_string() },
             InferenceError::MaskShape { width: 21, height: 52, result_width: 57, result_height: 141 },
             InferenceError::GainMap { operation: "Remove".to_string(), reason: "why".to_string() },
         ];
