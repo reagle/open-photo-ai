@@ -438,6 +438,24 @@ pub enum InferenceError {
         scale: f64,
     },
 
+    // Raised rather than left unmasked: a masked run's result is named for its mask, so pixels the mask did not touch
+    // would be sold as ones it had.
+    /// The run's result is not the shape of the photograph, so its mask cannot be laid over it.
+    #[error(
+        "the {result_width}x{result_height} result is not the shape of the {width}x{height} photograph, \
+         so the mask cannot be laid over it"
+    )]
+    MaskShape {
+        /// The photograph's width, which the mask is rasterised at.
+        width: u32,
+        /// The photograph's height.
+        height: u32,
+        /// The result's width.
+        result_width: u32,
+        /// The result's height.
+        result_height: u32,
+    },
+
     /// The caller asked the run to stop, and it stopped between tiles.
     ///
     /// **Not [`Shutdown`](Self::Shutdown).** One is somebody closing a dialog and the other is a process on its way
@@ -490,6 +508,7 @@ impl InferenceError {
             Self::Untileable { .. } => "untileable",
             Self::ColourMapping { .. } => "colour_mapping",
             Self::NoPasses { .. } => "no_passes",
+            Self::MaskShape { .. } => "mask_shape",
             Self::Cancelled => "cancelled",
             Self::Shutdown => "shutdown",
         }
@@ -902,6 +921,10 @@ mod tests {
             (InferenceError::Untileable { width: 0, height: 480 }, "untileable"),
             (InferenceError::ColourMapping { operation: "Rio".to_string(), column: 2 }, "colour_mapping"),
             (InferenceError::NoPasses { operation: "Kyoto".to_string(), scale: 3.0 }, "no_passes"),
+            (
+                InferenceError::MaskShape { width: 21, height: 52, result_width: 57, result_height: 141 },
+                "mask_shape",
+            ),
             (InferenceError::Cancelled, "cancelled"),
             (InferenceError::Shutdown, "shutdown"),
         ];
@@ -926,6 +949,7 @@ mod tests {
             InferenceError::Untileable { width: 0, height: 480 },
             InferenceError::ColourMapping { operation: "Rio".to_string(), column: 2 },
             InferenceError::NoPasses { operation: "Kyoto".to_string(), scale: 3.0 },
+            InferenceError::MaskShape { width: 21, height: 52, result_width: 57, result_height: 141 },
         ];
         for failure in failures {
             assert_eq!(failure.stop_reason(), None, "{failure:?} was read as a stop");

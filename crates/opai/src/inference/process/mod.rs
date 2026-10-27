@@ -28,6 +28,7 @@
 use std::sync::Arc;
 
 use image::DynamicImage;
+use image::imageops::FilterType;
 use rust_sak::memo::Memo;
 use tokio_util::sync::CancellationToken;
 
@@ -41,6 +42,7 @@ use super::progress::{ChainProgress, OnInference};
 use crate::cache::RunCache;
 use crate::error::InferenceError;
 use crate::image::Picture;
+use crate::mask::Mask;
 use crate::models::{Detection, Faces, Operation};
 use crate::pipeline::{Backend, Shared};
 use crate::providers::ExecutionProvider;
@@ -49,6 +51,8 @@ use crate::task::spawn_blocking;
 use crate::telemetry::metrics;
 use crate::telemetry::unit::{self, Outcome, Unit, unit_span};
 use imaging::ChannelDepth;
+use imaging::mix;
+use imaging::tensor::{Channel as _, Sampler, flattened};
 use tracing::Instrument as _;
 
 mod identity;
@@ -56,7 +60,7 @@ mod options;
 mod plan;
 mod report;
 
-pub(crate) use identity::{identity_after, identity_of_data};
+pub(crate) use identity::{identity_after, identity_masked, identity_of_data};
 pub use options::ProcessOptions;
 pub(crate) use plan::{Planned, plan};
 pub use report::{Enhanced, ProviderReport, ProviderVerdict};
@@ -218,6 +222,18 @@ where
     .instrument(span.clone())
     .await;
 
+    // After the chain and before the closing record, so the record's time and outcome are the whole run's, a stop
+    // during the blend included. A mask over an empty chain has nothing to limit: the result is the photograph.
+    let mask = options.mask.filter(|mask| !mask.is_empty() && !operations.is_empty());
+    let outcome = match (outcome, &mask) {
+        (Ok((pixels, providers)), Some(mask)) => masked(source, pixels, mask, depth, &options.cancel)
+            .instrument(span.clone())
+            .await
+            .map(|pixels| (pixels, providers))
+            .map_err(RunFailure::from),
+        (outcome, _) => outcome,
+    };
+
     // Recorded before the `?`, so that a run which failed says so rather than leaving a reader to infer it from a
     // beginning with no end. `duration` goes through `Duration`'s `Debug`, which renders `1.523s` and `250ms` — close
     // enough to Go's `time.Duration` spelling that a support instruction written for one log reads against the other.
@@ -262,9 +278,125 @@ where
     // deliberately no part of it: a result computed on a GPU and one computed on the CPU are the same pixels and are
     // interchangeable, so a provider in the identity would halve the run cache's hit rate on a machine whose GPU is
     // sometimes busy, for no correctness gain at all.
-    let picture = Picture::new(source.path(), pixels, identity_after(source.identity(), operations, depth));
+    //
+    // A mask is folded over the chain's identity rather than into it, so the steps' keys are the ones an unmasked run
+    // stores under, and a run with no mask is named exactly as it was before masks existed.
+    let chained = identity_after(source.identity(), operations, depth);
+    let named = match &mask {
+        Some(mask) => identity_masked(&chained, mask.signature()),
+        None => chained,
+    };
+    let picture = Picture::new(source.path(), pixels, named);
 
     Ok(Enhanced { picture, providers, faces })
+}
+
+/// `pixels`, the chain's result over `source`, limited to `mask`: blended with the photograph through the mask's weight
+/// at the source's size, the photograph enlarged with Lanczos3 first where the chain changed the size.
+///
+/// Not a step: it reports no progress and is never stored, since redoing it costs less than reading it back. A stop
+/// is honoured before it begins; it is quick enough not to need one inside.
+async fn masked(
+    source: &Picture,
+    pixels: Arc<DynamicImage>,
+    mask: &Arc<Mask>,
+    depth: ChannelDepth,
+    cancel: &CancellationToken,
+) -> Result<Arc<DynamicImage>, InferenceError> {
+    if cancel.is_cancelled() {
+        return Err(InferenceError::Cancelled);
+    }
+
+    let (photograph, applying) = (source.shared_pixels(), Arc::clone(mask));
+    let started = std::time::Instant::now();
+
+    // Off the runtime, as every full-resolution pass is: a rasterisation and a blend at 24 megapixels, and under an
+    // upscale a Lanczos enlargement the size of the result.
+    let blended =
+        spawn_blocking::<_, InferenceError, _>(move || blend(&photograph, pixels, &applying, depth)).await??;
+
+    // `debug`, with the per-step records: a user painting a mask redoes this on every stroke.
+    tracing::debug!(
+        mask = %format_args!("{:016x}", mask.signature()),
+        duration = ?started.elapsed(),
+        "mask applied"
+    );
+
+    Ok(blended)
+}
+
+/// [`masked`]'s pixel work, on the calling thread.
+///
+/// # Errors
+///
+/// Returns [`InferenceError::MaskShape`] where the result is not the photograph's shape.
+fn blend(
+    photograph: &DynamicImage,
+    result: Arc<DynamicImage>,
+    mask: &Mask,
+    depth: ChannelDepth,
+) -> Result<Arc<DynamicImage>, InferenceError> {
+    let (width, height) = (photograph.width(), photograph.height());
+    let (result_width, result_height) = (result.width(), result.height());
+
+    // No enhancement moves pixels — the crop is before the chain — so a result whose shape is not the photograph's
+    // came from something the mask cannot be laid over, and is refused rather than handed back unmasked under the
+    // identity of a masked result or smeared across the wrong pixels. Each side of an upscale is rounded on its own, so
+    // `result_width = width * s + a` and `result_height = height * s + b` with `a` and `b` each within half a pixel,
+    // and `result_width * height - result_height * width = a * height - b * width` is at most `(width + height) / 2`
+    // either way. A whole pixel on each side is allowed, for a scale that is floored or ceiled rather than rounded.
+    let (w, h, rw, rh) = (u64::from(width), u64::from(height), u64::from(result_width), u64::from(result_height));
+    if (rw * h).abs_diff(rh * w) > w + h {
+        return Err(InferenceError::MaskShape { width, height, result_width, result_height });
+    }
+
+    // At the source's size, and read bilinearly at the result's: an 8x upscale does not allocate a full-size plane.
+    let weight = mask.rasterised(width, height);
+
+    // A mask that is white everywhere keeps the result untouched and reads nothing of the photograph, so there is
+    // nothing to enlarge it for.
+    let enlarged;
+    let photograph = if (result_width, result_height) == (width, height) || weight.range().0 >= 1.0 {
+        photograph
+    } else {
+        enlarged = enlarge(photograph, result_width, result_height, depth);
+        &enlarged
+    };
+    let sampler = Sampler::new(photograph);
+
+    // Every step produces the resolved depth, so the result is that depth's RGB and the conversion is a move.
+    let result = Arc::unwrap_or_clone(result);
+    Ok(Arc::new(match depth {
+        ChannelDepth::Eight => u8::into_dynamic(mix::masked(&sampler, result.into_rgb8(), &weight)),
+        ChannelDepth::Sixteen => u16::into_dynamic(mix::masked(&sampler, result.into_rgb16(), &weight)),
+    }))
+}
+
+/// `photograph` enlarged to `width` x `height` with Lanczos3, at `depth`.
+///
+/// Any alpha is composited against black first, as colorization's stretch does and for its reason: Lanczos over
+/// straight alpha lets the colour stored under a transparent pixel bleed into its neighbours.
+fn enlarge(photograph: &DynamicImage, width: u32, height: u32, depth: ChannelDepth) -> DynamicImage {
+    let (from_width, from_height) = (photograph.width(), photograph.height());
+
+    match (photograph, depth) {
+        // Borrowed: nothing needs flattening, and at 24 megapixels a copy made only to be resampled is 72 MB.
+        (DynamicImage::ImageRgb8(_), ChannelDepth::Eight) | (DynamicImage::ImageRgb16(_), ChannelDepth::Sixteen) => {
+            photograph.resize_exact(width, height, FilterType::Lanczos3)
+        }
+        (_, ChannelDepth::Eight) => u8::into_dynamic(flattened::<u8>(
+            &Sampler::new(photograph),
+            from_width,
+            from_height,
+        ))
+        .resize_exact(width, height, FilterType::Lanczos3),
+        (_, ChannelDepth::Sixteen) => u16::into_dynamic(flattened::<u16>(
+            &Sampler::new(photograph),
+            from_width,
+            from_height,
+        ))
+        .resize_exact(width, height, FilterType::Lanczos3),
+    }
 }
 
 /// The operations of a run as one field value, comma-separated: two steps of one chain read as `<tag>,<tag>`.

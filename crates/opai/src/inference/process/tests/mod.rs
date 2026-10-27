@@ -5,6 +5,7 @@ mod entry;
 mod faces;
 mod identity;
 mod log;
+mod mask;
 mod plan;
 mod report;
 mod run;

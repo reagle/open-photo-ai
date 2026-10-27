@@ -190,6 +190,7 @@ mod libpath;
 #[cfg(test)]
 mod live_support;
 pub mod logging;
+pub mod mask;
 mod models;
 mod pipeline;
 mod progress;
@@ -220,6 +221,7 @@ pub use inference::process::{Enhanced, ProcessOptions, ProviderReport, ProviderV
 pub use inference::progress::{InferenceProgress, OnInference, Stage};
 pub use libpath::prepare_library_path;
 pub use logging::LogError;
+pub use mask::{Mask, Stroke};
 pub use models::{
     Analysis, ArtifactId, Bias, BuildError, ColorBalance, ColorBalanceParams, ColorBalanceVariant, Colorization,
     ColorizationVariant, Confidence, DataOperation, Denoise, DenoiseParams, DenoiseVariant, Detection, DetectionOutput,
