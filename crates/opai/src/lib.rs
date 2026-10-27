@@ -232,7 +232,7 @@ pub use image::{
 };
 /// The inference vocabulary needed to ask for a run or read its report. The module stays private.
 pub use inference::depth::OutputDepth;
-pub use inference::depth_map::fill_chain_depth;
+pub use inference::depth_map::{fill_chain_depth, own_lens};
 pub use inference::execute::{ExecuteOptions, Executed};
 pub use inference::faces::{
     ChainFaces, FaceSelection, FacedChain, SelectFaces, default_face_selection, fill_chain_faces,
@@ -248,7 +248,7 @@ pub use models::{
     DepthVariant, Detection, DetectionOutput, DetectionVariant, FNumber, FOCUS_X, FOCUS_Y, Face, FaceRecovery,
     FaceRecoveryParams, FaceRecoveryVariant, Faces, Family, FamilyEntry, Fidelity, FloatPrecision, Fraction, Grain,
     GrainAmount, GrainMode, GrainParams, GrainVariant, GraphRole, Lens, LensBlur, LensBlurVariant, LensOrigin,
-    LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant, Operation, OsakaPrecision, ParameterEntry,
+    LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant, Operation, OsakaPrecision, OwnLens, ParameterEntry,
     ParameterKind, ParameterValues, Pass, Point, Precision, RangeError, Rect, Remove, RemoveVariant, Resolution,
     Restore, RestoreParams, RestoreVariant, Scale, Sharpen, SharpenParams, SharpenVariant, Strength, Subject,
     UnknownRole, Upscale, UpscaleParams, UpscaleVariant, VariantEntry, catalogue,

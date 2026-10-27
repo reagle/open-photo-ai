@@ -28,7 +28,7 @@ use crate::pipeline::{Backend, Shared};
 use rust_sak::ai::Tuning;
 
 use lens::Blur;
-pub use lens::{Lens, LensOrigin};
+pub use lens::{Lens, LensOrigin, OwnLens};
 pub(crate) use variant::ALL;
 pub use variant::LensBlurVariant;
 

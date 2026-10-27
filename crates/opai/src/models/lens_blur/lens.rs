@@ -160,6 +160,41 @@ fn sane_framing(framing: f32) -> f32 {
     if framing.is_finite() && framing >= 1.0 { framing } else { 1.0 }
 }
 
+/// What a photograph's EXIF alone says of its own lens, in the same equivalent terms as a [`Lens`] and for the picture as
+/// it is framed: what a front end shows before any depth is estimated, so the f-number a slider ends at is the one a run
+/// blurs from.
+///
+/// The lens a run settles from the EXIF with no depth model to lean on, which is every photograph whose EXIF gives a
+/// crop factor, and the assumed f/8 for the rest. One case differs from the run, which then asks the depth model: an
+/// EXIF with a focal length and an f-number but no 35 mm equivalent or sensor size, whose crop factor only the depth
+/// model's focal estimate gives. Here that is the assumed f/8 too, which the run's [`LensOrigin::Estimated`] refines.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OwnLens {
+    /// The equivalent f-number the picture was taken at, or the f/8 assumed (times the framing) where the EXIF cannot
+    /// say.
+    pub own_f_number: f32,
+    /// The 35 mm-equivalent focal length, in millimetres, where the EXIF gives it or a focal length and a crop factor
+    /// to make it from: `None` where only the depth model could say.
+    pub focal_35mm: Option<f32>,
+    /// Where the f-number came from: [`LensOrigin::Exif`] or [`LensOrigin::Assumed`], never `Estimated`.
+    pub origin: LensOrigin,
+}
+
+impl OwnLens {
+    /// What `exif` says of the lens of a picture `framing` times smaller across than its file: 1 for the whole frame, 2
+    /// for a crop to half of it. See [`Lens::resolve`].
+    pub fn from_exif(exif: &LensExif, framing: f32) -> Self {
+        let lens = Lens::without_depth(exif, framing).unwrap_or_else(|| Lens::resolve(exif, None, framing));
+        let focal_known = exif.focal_35mm.is_some() || exif.focal_mm.zip(measured_crop(exif)).is_some();
+
+        Self {
+            own_f_number: lens.own_f_number,
+            focal_35mm: focal_known.then_some(lens.focal_35mm),
+            origin: lens.origin,
+        }
+    }
+}
+
 // By the bits of the two rounded numbers, which is what the cache tag spells: two lenses are one when they blur alike.
 // The origin is not in it, since it changes no pixel.
 impl PartialEq for Lens {
@@ -380,6 +415,51 @@ mod tests {
         assert!(
             Blur::new(&whole, 8.0, 3.0, whole_diagonal).is_none(),
             "f/8 of the whole is narrower than its own"
+        );
+    }
+
+    #[test]
+    fn the_own_lens_is_the_runs_before_the_depth_model_has_spoken() {
+        let own = OwnLens::from_exif(&exif(Some(24.0), Some(36.0), Some(4.0), None), 1.0);
+        assert_eq!(own, OwnLens { own_f_number: 6.0, focal_35mm: Some(36.0), origin: LensOrigin::Exif });
+
+        // The focal length from the focal length and the sensor's crop where the 35 mm equivalent is missing: a
+        // 28.84 mm diagonal is a crop factor of 1.5.
+        let own = OwnLens::from_exif(&exif(Some(24.0), None, Some(4.0), Some(28.84)), 1.0);
+        assert_eq!((own.own_f_number, own.focal_35mm, own.origin), (6.0, Some(36.0), LensOrigin::Exif));
+    }
+
+    #[test]
+    fn the_own_lens_of_a_crop_is_its_framings_times_the_wholes() {
+        let recorded = exif(Some(24.0), Some(36.0), Some(4.0), None);
+
+        // Cut to half the frame's diagonal: a sensor half the size behind the same lens.
+        let own = OwnLens::from_exif(&recorded, 2.0);
+
+        assert_eq!(own, OwnLens { own_f_number: 12.0, focal_35mm: Some(72.0), origin: LensOrigin::Exif });
+        // Bit for bit what a run resolves from the same EXIF at the same framing.
+        let lens = Lens::resolve(&recorded, None, 2.0);
+        assert_eq!((own.own_f_number, own.focal_35mm), (lens.own_f_number, Some(lens.focal_35mm)));
+    }
+
+    #[test]
+    fn the_own_lens_assumes_f8_and_names_no_focal_length_the_exif_cannot_give() {
+        let own = OwnLens::from_exif(&LensExif::default(), 1.0);
+        assert_eq!(own, OwnLens { own_f_number: ASSUMED_F_NUMBER, focal_35mm: None, origin: LensOrigin::Assumed });
+
+        // The assumed f-number is of the frame, so a crop of it is wider-numbered too.
+        assert_eq!(OwnLens::from_exif(&LensExif::default(), 1.5).own_f_number, 12.0);
+
+        // A focal length and an f-number with nothing to scale it by: only the depth model could say the crop, so the
+        // f-number is assumed and the focal length is not guessed at either.
+        let own = OwnLens::from_exif(&exif(Some(6.9), None, Some(1.7), None), 1.0);
+        assert_eq!((own.own_f_number, own.focal_35mm, own.origin), (ASSUMED_F_NUMBER, None, LensOrigin::Assumed));
+
+        // The 35 mm equivalent is the EXIF's own, though the f-number is assumed.
+        let own = OwnLens::from_exif(&exif(None, Some(28.0), None, None), 1.0);
+        assert_eq!(
+            (own.own_f_number, own.focal_35mm, own.origin),
+            (ASSUMED_F_NUMBER, Some(28.0), LensOrigin::Assumed)
         );
     }
 
