@@ -86,8 +86,8 @@ impl Qualities {
     }
 
     /// Each family's quality beside it, in the library's apply order, for the families that offer a choice of one: a
-    /// family whose every model is published at one precision (Grain's Sensor, at FP32) runs it at either, so its
-    /// quality says nothing and would only make a uniform quality read as mixed.
+    /// family whose every model is published at one precision (Lens Blur's Lisbon, at FP16, and Grain's Sensor, at
+    /// FP32) runs it at either, so its quality says nothing and would only make a uniform quality read as mixed.
     fn chosen(&self) -> impl Iterator<Item = (Family, Sourced<Quality>)> + '_ {
         Family::APPLY_ORDER.into_iter().zip(self.0).filter(|(family, _)| {
             opai::catalogue()
@@ -265,6 +265,17 @@ mod tests {
             settings.qualities.describe(),
             "(Denoise SD, Sharpen HD, Upscale SD from GUI settings; the rest HD by default)"
         );
+    }
+
+    #[test]
+    fn a_family_published_at_one_precision_does_not_make_the_quality_mixed() {
+        // Lisbon is published at FP16 alone: whether or not the GUI saved it, it runs at either quality.
+        let mut saved = all_sd();
+        saved.models.extend(SharedSettings::from_gui("auto", [], [("lens_blur", "lisbon_fp16")]).models);
+        let settings = Settings::resolve(None, None, Some(&saved));
+
+        assert_eq!(settings.qualities.label(), "SD");
+        assert_eq!(settings.qualities.describe(), "(from GUI settings)");
     }
 
     #[test]

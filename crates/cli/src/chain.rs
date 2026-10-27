@@ -6,8 +6,8 @@
 //! none restated.
 
 use opai::{
-    Bias, Family, GrainAmount, GrainMode, Operation, ParameterKind, ParameterValues, Scale, Strength, Subject,
-    Suggestion, VariantEntry,
+    Bias, FNumber, FOCUS_X, FOCUS_Y, Family, GrainAmount, GrainMode, Operation, ParameterKind, ParameterValues, Scale,
+    Strength, Subject, Suggestion, VariantEntry,
 };
 
 use crate::args::{Quality, Selection};
@@ -95,6 +95,9 @@ enum Parameter {
     Scale(Scale),
     /// A restore: the size it runs at where one was given, else the published 1x, and its strength.
     Restore { scale: Option<Scale>, strength: Option<u16> },
+    /// A lens blur: the f-number and the focus point where they were given, else the published defaults. Both are
+    /// already in the library's range, so they are set as they are.
+    LensBlur { f_number: Option<f64>, focus: Option<(f64, f64)> },
     /// A grain: its amount as a percentage where one was given, else the published default, and whether it is added
     /// rather than matched to the photograph.
     Grain { amount: Option<u16>, add: bool },
@@ -104,7 +107,7 @@ enum Parameter {
 ///
 /// An upscale with no scale runs at the factor the photograph needs, and is left out with a note where it needs
 /// none. A restore with no size restores at the photograph's own. Every face recovery restores nobody until the faces
-/// are found and handed to it.
+/// are found and handed to it, and every lens blur blurs nothing until the depth is estimated and handed to it.
 pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u32) -> Plan {
     let mut built = Vec::new();
     let mut notes = Vec::new();
@@ -144,8 +147,8 @@ pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u3
         }
     }
 
-    // Last, as the library runs it. The size is the catalogue's default, 1x, unless one was given; `parse_from` has
-    // already refused one above 1x beside an upscale.
+    // After everything faithful, as the library runs it. The size is the catalogue's default, 1x, unless one was
+    // given; `parse_from` has already refused one above 1x beside an upscale.
     if let Some(model) = selection.restore {
         built.push(build(
             model,
@@ -154,7 +157,17 @@ pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u3
         ));
     }
 
-    // After everything, the restore included, as the library runs it: the photograph's own grain at the catalogue's
+    // Last, as the library runs it. The f-number and the focus are the catalogue's defaults unless given; both are
+    // already in range, so they are set as they are rather than as percentages.
+    if let Some(model) = selection.lens_blur {
+        built.push(build(
+            model,
+            qualities,
+            Parameter::LensBlur { f_number: selection.lens_blur_f, focus: selection.lens_blur_focus },
+        ));
+    }
+
+    // After everything, the lens blur included, as the library runs it: the photograph's own grain at the catalogue's
     // default amount, all of it, unless an amount or adding was asked for.
     if let Some(model) = selection.grain {
         built.push(build(
@@ -212,6 +225,20 @@ fn build<M: CatalogueModel>(model: M, qualities: &Qualities, parameter: Paramete
                 None => format!("strength {percent}"),
             })
         }
+        Parameter::LensBlur { f_number, focus } => {
+            if let Some(f_number) = f_number {
+                values.set(FNumber::NAME, f_number).expect("a published parameter is known by its name");
+            }
+            if let Some((x, y)) = focus {
+                values.set(FOCUS_X, x).expect("a published parameter is known by its name");
+                values.set(FOCUS_Y, y).expect("a published parameter is known by its name");
+            }
+            let f_number = f_number.unwrap_or_else(|| published_default(variant, FNumber::NAME));
+            let (x, y) =
+                focus.unwrap_or_else(|| (published_default(variant, FOCUS_X), published_default(variant, FOCUS_Y)));
+            // `f64` renders without a trailing `.0`: `f/2`, `f/2.8`.
+            Some(format!("f/{f_number}, focus {x},{y}"))
+        }
         Parameter::Grain { amount, add } => {
             let percent = set(&mut values, variant, GrainAmount::NAME, amount.map(f64::from));
             if add {
@@ -228,6 +255,19 @@ fn build<M: CatalogueModel>(model: M, qualities: &Qualities, parameter: Paramete
         other => panic!("{:?} {} did not build an enhancement: {other:?}", M::FAMILY, variant.codename),
     };
     (operation, Applied { family: M::FAMILY, model: variant.label, detail })
+}
+
+/// The default `variant` publishes for the range parameter `name`.
+fn published_default(variant: &VariantEntry, name: &str) -> f64 {
+    variant
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == name)
+        .and_then(|parameter| match parameter.kind {
+            ParameterKind::Range { default, .. } => Some(default),
+            _ => None,
+        })
+        .expect("a model taking a range parameter publishes its default")
 }
 
 /// Sets `name` to `percent` of the model's own effect, where one was given, and answers the percentage it runs at:
@@ -265,6 +305,7 @@ mod tests {
         ColorBalance, Colorization, Denoise, FaceRecovery, Faces, Family, Fidelity, FloatPrecision, LightAdjustment,
         OsakaPrecision, Restore, Scale, Sharpen, Upscale,
     };
+    use opai::{Fraction, LensBlur};
 
     use super::*;
     use crate::args::{Args, parse_from};
@@ -282,6 +323,35 @@ mod tests {
 
     fn scale(factor: f64) -> Scale {
         Scale::new(factor).expect("in range")
+    }
+
+    fn f_number(value: f64) -> FNumber {
+        FNumber::new(value).expect("in range")
+    }
+
+    fn fraction(value: f64) -> Fraction {
+        Fraction::new(value).expect("in range")
+    }
+
+    #[test]
+    fn a_lens_blur_runs_last_at_the_f_number_and_focus_asked_for_and_otherwise_at_the_catalogues() {
+        assert_eq!(
+            plan("opai photo.jpg --lb -o out.jpg", 4000, 3000).operations,
+            vec![LensBlur::lisbon(f_number(2.8), Fraction::CENTRE, Fraction::CENTRE)]
+        );
+        assert_eq!(
+            plan("opai photo.jpg --lens-blur --lb-f f/1.4 --lb-focus 0.3,0.6 -o out.jpg", 4000, 3000).operations,
+            vec![LensBlur::lisbon(f_number(1.4), fraction(0.3), fraction(0.6))]
+        );
+
+        // After an upscale, whatever order the flags came in.
+        assert_eq!(
+            plan("opai photo.jpg --lb --lb-f 2 --up -o out.jpg", 1000, 800).operations,
+            vec![
+                Upscale::tokyo(FloatPrecision::Fp32, scale(4.0)),
+                LensBlur::lisbon(f_number(2.0), Fraction::CENTRE, Fraction::CENTRE)
+            ]
+        );
     }
 
     fn strength(value: f64) -> Strength {
@@ -303,6 +373,9 @@ mod tests {
             ("--up tokyo -q sd", Upscale::tokyo(FloatPrecision::Fp16, four)),
             ("--up saitama -q hd", Upscale::saitama(FloatPrecision::Fp32, four)),
             ("--up saitama -q sd", Upscale::saitama(FloatPrecision::Fp16, four)),
+            // Lisbon is published at FP16 alone, so both qualities run it.
+            ("--lb lisbon -q hd", LensBlur::lisbon(f_number(2.8), Fraction::CENTRE, Fraction::CENTRE)),
+            ("--lb lisbon -q sd", LensBlur::lisbon(f_number(2.8), Fraction::CENTRE, Fraction::CENTRE)),
             (
                 "--fr athens -q hd",
                 FaceRecovery::athens(FloatPrecision::Fp32, Faces::empty(), Fidelity::MAXIMUM),
@@ -491,14 +564,11 @@ mod tests {
 
     #[test]
     fn the_chain_is_pushed_in_the_librarys_apply_order() {
-        let plan = plan("opai photo.jpg --gr --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
+        let plan = plan("opai photo.jpg --gr --lb --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
         let families: Vec<_> = plan.operations.iter().map(Operation::family).collect();
 
-        // Every family the enhancement flags name; a removal is added from `--remove`'s mask, by the run, and lens blur
-        // is not named by any flag yet.
-        let named: Vec<_> =
-            Family::APPLY_ORDER[1..].iter().copied().filter(|family| *family != Family::LensBlur).collect();
-        assert_eq!(families, named);
+        // Every family the enhancement flags name; a removal is added from `--remove`'s mask, by the run.
+        assert_eq!(families, Family::APPLY_ORDER[1..]);
     }
 
     /// The chain autopilot plans for `suggested` with `models` at `quality` over a `width` x `height` photograph.
@@ -630,7 +700,7 @@ mod tests {
 
     #[test]
     fn the_description_follows_the_chain_one_for_one_in_its_order() {
-        let plan = plan("opai photo.jpg --gr --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
+        let plan = plan("opai photo.jpg --gr --lb --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
         let families: Vec<_> = plan.applied.iter().map(|applied| applied.family).collect();
 
         // Every family but the removal, which is `--rm`'s own and never planned from the flags.
@@ -639,7 +709,7 @@ mod tests {
             describe(&plan.applied),
             "Denoise Stockholm strength 100, Face Recovery Athens, Colorize Delhi, Light Adjust Paris bias 50, \
              Color Balance Rio bias 50, Sharpen Moscow strength 100, Upscale Tokyo 4x, Restore Kazan strength 100, \
-             Grain Sensor amount 100, matching the photograph"
+             Lens Blur Lisbon f/2.8, focus 0.5,0.5, Grain Sensor amount 100, matching the photograph"
         );
     }
 
@@ -662,6 +732,15 @@ mod tests {
         assert_eq!(words("opai photo.jpg --up saitama --scale 8 -o out.png"), "Upscale Saitama 8x");
         assert_eq!(words("opai photo.jpg --rs --rs-scale 2 -o out.png"), "Restore Kazan 2x, strength 100");
         assert_eq!(words("opai photo.jpg --rs osaka --rs-str 40 -o out.png"), "Restore Osaka strength 40");
+    }
+
+    #[test]
+    fn a_lens_blur_is_named_by_its_f_number_and_focus_point() {
+        assert_eq!(words("opai photo.jpg --lb -o out.png"), "Lens Blur Lisbon f/2.8, focus 0.5,0.5");
+        assert_eq!(
+            words("opai photo.jpg --lb --lb-f f/2 --lb-focus 0.55,0.3 -o out.png"),
+            "Lens Blur Lisbon f/2, focus 0.55,0.3"
+        );
     }
 
     #[test]
