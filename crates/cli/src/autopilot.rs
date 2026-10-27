@@ -355,12 +355,13 @@ mod tests {
         check::<UpscaleModel>();
     }
 
-    /// Every family an analysis can suggest, in the library's apply order: all of them but remove, whose region is the
-    /// user's to paint, and restore and grain, which are never chosen automatically.
+    /// Every family an analysis can suggest, in the library's apply order: all of them but restore, which a generative
+    /// redraw is never chosen automatically, lens blur, a creative choice an analysis never makes, grain, likewise, and
+    /// remove, whose region is the user's to paint.
     fn suggestible() -> Vec<Family> {
         Family::APPLY_ORDER
             .into_iter()
-            .filter(|family| !matches!(family, Family::Remove | Family::Restore | Family::Grain))
+            .filter(|family| !matches!(family, Family::Remove | Family::Restore | Family::LensBlur | Family::Grain))
             .collect()
     }
 

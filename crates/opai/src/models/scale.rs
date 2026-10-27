@@ -24,6 +24,15 @@ pub struct RangeError {
     pub max: f64,
 }
 
+impl RangeError {
+    /// This error under another name: for a type that serves two parameters, as [`Fraction`](super::Fraction) serves
+    /// a focus point's `focus_x` and `focus_y`, whose own name would say `fraction` to someone who never typed one.
+    #[must_use]
+    pub const fn named(self, parameter: &'static str) -> Self {
+        Self { parameter, ..self }
+    }
+}
+
 /// The factor an upscale operation enlarges an image by.
 ///
 /// Bounded to [`Scale::MIN`]x-[`Scale::MAX`]x inclusive, and quantized to three decimal places on acceptance. A scale

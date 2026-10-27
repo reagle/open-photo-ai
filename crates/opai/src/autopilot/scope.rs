@@ -10,8 +10,9 @@
 //! ```
 
 // Owned and `Copy` rather than the caller's slice, because the pixel reads run in a `'static` blocking closure that
-// cannot borrow it. A membership set over `Family::ALL` makes duplicates harmless and lets `Detection` and `Depth`
-// match nothing, with no special case for any of them.
+// cannot borrow it. A membership set over `Family::ALL` makes duplicates harmless and lets `Detection`, `Depth` and
+// `LensBlur` match nothing, with no special case for any of them: no read serves a lens blur, which is a creative
+// choice no analysis of a photograph suggests.
 
 use crate::models::Family;
 
@@ -91,11 +92,14 @@ mod tests {
     use super::*;
 
     /// Every family some signal can suggest: not detection or depth, which are never applied, not remove, whose region
-    /// is the user's to paint, and not restore or grain, which an analysis never suggests — a generative redraw and
-    /// grain are a user's choice, never an automatic one.
+    /// is the user's to paint, and not restore, lens blur or grain, which an analysis never suggests — a generative
+    /// redraw, a depth of field or grain is a user's choice, never an automatic one.
     fn suggestible() -> impl Iterator<Item = Family> {
         Family::ALL.into_iter().filter(|family| {
-            !matches!(family, Family::Detection | Family::Depth | Family::Remove | Family::Restore | Family::Grain)
+            !matches!(
+                family,
+                Family::Detection | Family::Depth | Family::Remove | Family::Restore | Family::LensBlur | Family::Grain
+            )
         })
     }
 
@@ -110,7 +114,13 @@ mod tests {
 
     #[test]
     fn an_empty_set_or_one_of_detection_alone_includes_nothing_suggestible_and_needs_no_read() {
-        for families in [&[][..], &[Family::Detection][..], &[Family::Depth][..], &[Family::Remove][..]] {
+        for families in [
+            &[][..],
+            &[Family::Detection][..],
+            &[Family::Depth][..],
+            &[Family::LensBlur][..],
+            &[Family::Remove][..],
+        ] {
             let scope = Scope::of(Some(families));
 
             assert!(scope.narrowed(), "{families:?}");

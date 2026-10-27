@@ -35,6 +35,10 @@ use opai::{Restore, RestoreParams, RestoreVariant};
 use opai::{BuildError, ParameterValues};
 // The colour series: what a picture carries beside its pixels.
 use opai::image::Metadata;
+// The lens blur: its parameters, the operation, the lens it is rendered for, and the EXIF that lens is read from.
+use opai::{
+    FNumber, FOCUS_X, FOCUS_Y, Fraction, Lens, LensBlur, LensBlurVariant, LensExif, LensOrigin, fill_chain_depth,
+};
 // The vocabulary a run is asked for and reports in, and — added by the cache slice — what a front end reads to find
 // out what is behind the store a run may use.
 use opai::{
@@ -478,8 +482,8 @@ fn the_restore_family_is_reachable_from_the_crate_root() {
     let wide = Restore::new(RestoreVariant::Kazan(FloatPrecision::Fp32), Scale::clamped(8.0), Strength::clamped(3.0));
     assert_eq!((wide.scale().get(), wide.strength().get()), (Restore::MAX_SCALE, Restore::MAX_STRENGTH));
 
-    // And after everything faithful, with only the grain after it.
-    assert_eq!(Family::APPLY_ORDER.last_chunk::<2>(), Some(&[Family::Restore, Family::Grain]));
+    // And after everything faithful in every chain, followed only by a lens blur and a grain.
+    assert_eq!(Family::APPLY_ORDER.last_chunk(), Some(&[Family::Restore, Family::LensBlur, Family::Grain]));
 }
 
 /// The grain family, reached the way a front end that offers it reaches it: an amount and a mode, a run of no model,
@@ -503,10 +507,10 @@ fn the_grain_family_is_reachable_from_the_crate_root() {
     assert_eq!(Family::APPLY_ORDER.last(), Some(&Family::Grain));
 }
 
-/// The catalogue as a front end offering all eleven families reads it: every chooser and every control configured
+/// The catalogue as a front end offering all twelve families reads it: every chooser and every control configured
 /// from this alone.
 #[test]
-fn the_catalogue_publishes_all_eleven_families_to_the_crate_root() {
+fn the_catalogue_publishes_all_twelve_families_to_the_crate_root() {
     let families: &'static [FamilyEntry] = catalogue();
 
     assert_eq!(
@@ -522,6 +526,7 @@ fn the_catalogue_publishes_all_eleven_families_to_the_crate_root() {
             Family::FaceRecovery,
             Family::Restore,
             Family::Depth,
+            Family::LensBlur,
             Family::Remove,
             Family::Grain,
         ]
@@ -741,6 +746,12 @@ fn a_published_catalogue_row_can_be_turned_back_into_an_operation_from_the_crate
                         Strength::NAME => values.with_strength(Strength::clamped(midpoint)),
                         Bias::NAME => values.with_bias(Bias::clamped(midpoint)),
                         Fidelity::NAME => values.with_fidelity(Fidelity::clamped(midpoint)),
+                        // Two parameters of one type, which a front end hands back by the name it read.
+                        FNumber::NAME | FOCUS_X | FOCUS_Y => {
+                            let mut values = values;
+                            values.set(parameter.name, midpoint).expect("a published name");
+                            values
+                        }
                         GrainAmount::NAME => values.with_amount(GrainAmount::clamped(midpoint)),
                         GrainMode::NAME => values.with_grain_mode(GrainMode::from_switch(midpoint)),
                         other => {
@@ -1709,4 +1720,47 @@ async fn an_analysis_can_be_read_through_the_public_surface_alone() {
     );
 
     cancel.cancel();
+}
+
+/// The lens blur, reached the way a front end reaches it: an f-number and a focus point, the lens read from a
+/// photograph's EXIF, and the depth a chain hands it, filled in by the same rules `Opai::process` follows.
+#[test]
+fn the_lens_blur_family_is_reachable_from_the_crate_root() {
+    let f_number = FNumber::new(1.4).expect("in range");
+    let (x, y) = (Fraction::new(0.55).expect("in range"), Fraction::new(0.3).expect("in range"));
+
+    let carried: Operation = LensBlur::lisbon(f_number, x, y);
+    assert_eq!(carried.family(), Family::LensBlur);
+    assert_eq!(carried.display_name(), "Lisbon (FP16)");
+    assert_eq!(carried.cache_tag(), "lb-lisbon-fp16-n1.4-x0.55-y0.3-d0-l0");
+    assert_eq!(
+        carried.required_artifacts().iter().map(ArtifactId::as_str).collect::<Vec<_>>(),
+        vec!["dp_lisbon_landscape_fp16", "dp_lisbon_portrait_fp16"]
+    );
+    // Last but for the grain, which puts back the noise a real blurred background still has.
+    assert_eq!(Family::APPLY_ORDER.last_chunk(), Some(&[Family::LensBlur, Family::Grain]));
+    assert_eq!(
+        LensBlurVariant::from_codename("lisbon", Precision::Fp16),
+        Some(LensBlurVariant::Lisbon(FloatPrecision::Fp16))
+    );
+
+    // A photograph with no file records no lens: the depth model's focal length, and an assumed f/8.
+    let exif: LensExif = opai::image::read_lens(std::path::Path::new(""));
+    let lens = Lens::resolve(&exif, Some(36.0), 1.0);
+    assert_eq!((lens.focal_35mm, lens.own_f_number, lens.origin), (36.0, 8.0, LensOrigin::Assumed));
+
+    // The pure half of the injection, which leaves every other operation alone. No map is built here: the chain
+    // estimates one, and the operation is refused until it has.
+    let chain = fill_chain_depth(vec![carried.clone()], &std::sync::Arc::new(depth_map()), lens);
+    let Operation::LensBlur(blur) = &chain[0] else { panic!("the injection changed the family") };
+    assert_eq!(blur.lens(), Some(lens));
+    assert!(blur.depth().is_some());
+    assert_ne!(chain[0].cache_tag(), carried.cache_tag());
+}
+
+/// A depth map, as a front end holding one from `Opai::estimate_depth` has it: here read back from the JSON the run
+/// cache keeps, the one way to build one outside the library.
+fn depth_map() -> opai::DepthMap {
+    serde_json::from_str(r#"{"width":2,"height":1,"near":1.0,"far":2.0,"focal_35mm":36.0,"disparity":[65535,0]}"#)
+        .expect("a depth map deserializes")
 }

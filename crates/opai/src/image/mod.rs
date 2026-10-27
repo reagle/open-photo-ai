@@ -10,6 +10,10 @@
 //! file picker to filter on and a drag-and-drop to check against. It costs nothing and touches no file, so it has no
 //! blocking form to distinguish.
 //!
+//! [`read_lens`] reads the lens a photograph was taken with from its EXIF — focal length, its 35 mm equivalent, the
+//! f-number and the sensor's width — for the lens blur. Blocking only: it is a few reads of a file's header, made from
+//! a blocking thread already. It never fails, answering an empty [`LensExif`] where the file records nothing.
+//!
 //! # Both forms of every operation
 //!
 //! The `_blocking` form runs on the calling thread. The plain name is an `async` wrapper that runs it on a blocking
@@ -122,6 +126,7 @@ mod extensions;
 mod fidelity;
 mod gain_map;
 mod identity;
+mod lens;
 mod load;
 mod picture;
 mod probe;
@@ -142,6 +147,10 @@ pub use fidelity::{Depth, Discarded, Fidelity};
 pub use gain_map::GainMap;
 pub(crate) use gain_map::base_orientation;
 pub use identity::{identity, identity_blocking};
+pub(crate) use lens::read_frame_diagonal;
+#[cfg(test)]
+pub(crate) use lens::tests as lens_fixtures;
+pub use lens::{LensExif, read_lens};
 pub use load::{load, load_blocking};
 pub use picture::Picture;
 pub use probe::{identify_raw_blocking, probe, probe_blocking, probe_raw, probe_raw_blocking};

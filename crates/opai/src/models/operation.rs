@@ -28,6 +28,7 @@ use super::detection::{Detection, DetectionVariant};
 use super::face::Faces;
 use super::face_recovery::FaceRecovery;
 use super::grain::Grain;
+use super::lens_blur::LensBlur;
 use super::light_adjustment::LightAdjustment;
 use super::precision::Precision;
 use super::remove::Remove;
@@ -93,8 +94,10 @@ pub enum Operation {
     Sharpen(Sharpen),
     /// An upscale run.
     Upscale(Upscale),
-    /// A generative restoration, which a chain runs after everything faithful.
+    /// A generative restoration, which a chain runs after every other image family except a lens blur and a grain.
     Restore(Restore),
+    /// A lens blur, driven by the depth of the chain's input, which a chain runs after everything but a grain.
+    LensBlur(LensBlur),
     /// A sensor's grain, which a chain adds last of all.
     Grain(Grain),
 }
@@ -118,6 +121,7 @@ macro_rules! forward {
             Self::Sharpen(operation) => operation.$question(),
             Self::Upscale(operation) => operation.$question(),
             Self::Restore(operation) => operation.$question(),
+            Self::LensBlur(operation) => operation.$question(),
             Self::Grain(operation) => operation.$question(),
         }
     };
@@ -138,6 +142,7 @@ impl Operation {
             Self::Sharpen(_) => Family::Sharpen,
             Self::Upscale(_) => Family::Upscale,
             Self::Restore(_) => Family::Restore,
+            Self::LensBlur(_) => Family::LensBlur,
             Self::Grain(_) => Family::Grain,
         }
     }
@@ -171,8 +176,14 @@ impl Operation {
     ///
     /// The name of the first artifact it needs, so a strength or a requested scale never reaches it and two operations
     /// differing only in one share it. An upscale whose scale selects the weights names the native scale of its first
-    /// pass. The values are the published catalogue's, never [`cache_tag`](Self::cache_tag)'s.
+    /// pass. A lens blur, which runs no graph of its own, has a name of its own (`lb_lisbon_fp16`) rather than the
+    /// depth model's, which its depth estimate is measured under. The values are the published catalogue's, never
+    /// [`cache_tag`](Self::cache_tag)'s.
     pub(crate) fn model_tag(&self) -> String {
+        if let Self::LensBlur(blur) = self {
+            return blur.model_tag();
+        }
+
         // A grain runs no model and names itself as one would be named; every other operation needs at least one
         // artifact, so the empty fallback is never reached.
         if let Self::Grain(grain) = self {
@@ -248,6 +259,9 @@ impl Operation {
             // Kept as a `Result`, as upscale's is: the family's contracts are not all one, and a multi-graph restorer
             // is refused where its graph set is incomplete.
             Self::Restore(restore) => restore.pipeline::<B>(),
+            // Kept as a `Result` for a real guard: a lens blur runs only once a chain has handed it the depth map and
+            // the lens it is driven by, and one planned by hand without them is refused before anything is installed.
+            Self::LensBlur(blur) => blur.pipeline::<B>(),
             // One variant and one contract, and a mask that marks nothing is answered with the photograph rather than
             // refused, so there is nothing for this seam to refuse.
             Self::Remove(removal) => Ok(removal.pipeline::<B>()),
@@ -705,10 +719,10 @@ pub(crate) mod tests {
         Fidelity::new(Fidelity::MAX).expect("the maximum is in range")
     }
 
-    /// One operation of each of the ten families this carrier holds, paired with the family it belongs to.
+    /// One operation of each of the eleven families this carrier holds, paired with the family it belongs to.
     ///
-    /// Ten rather than eleven: detection is carried in [`Analysis`], and the tests that need all eleven say so by
-    /// reaching across both carriers — see `every_family_can_be_carried_by_the_carrier_for_its_own_path`.
+    /// Eleven rather than thirteen: detection and depth are carried in [`Analysis`], and the tests that need all
+    /// thirteen say so by reaching across both carriers — see `every_family_can_be_carried_by_the_carrier_for_its_own_path`.
     fn one_of_each() -> Vec<(Operation, Family)> {
         let strength = Strength::new(0.5).expect("the test supplied a strength in range");
         let bias = Bias::new(-0.5).expect("the test supplied a bias in range");
@@ -747,6 +761,7 @@ pub(crate) mod tests {
                 Operation::Restore(Restore::new(RestoreVariant::Osaka(OsakaPrecision::Int8), scale, strength)),
                 Family::Restore,
             ),
+            (Operation::LensBlur(crate::models::lens_blur::tests::injected(1.4)), Family::LensBlur),
             (super::super::remove::Remove::lima(super::super::remove::tests::dot(0.5, 0.5)), Family::Remove),
             (Grain::sensor(GrainAmount::new(0.5).expect("in range"), GrainMode::Match), Family::Grain),
         ]
@@ -791,6 +806,7 @@ pub(crate) mod tests {
         let sharpen = Sharpen::new(SharpenVariant::Moscow(FloatPrecision::Fp32), strength);
         let upscale = Upscale::new(UpscaleVariant::Kyoto(FloatPrecision::Fp16), scale);
         let restore = Restore::new(RestoreVariant::Osaka(OsakaPrecision::Int8), scale, strength);
+        let blur = crate::models::lens_blur::tests::injected(1.4);
         let grain = Grain::new(
             GrainVariant::Sensor(FloatPrecision::Fp32),
             GrainAmount::new(0.5).expect("in range"),
@@ -821,6 +837,7 @@ pub(crate) mod tests {
         forwards!(sharpen, Operation::Sharpen(sharpen));
         forwards!(upscale, Operation::Upscale(upscale));
         forwards!(restore, Operation::Restore(restore));
+        forwards!(blur, Operation::LensBlur(blur.clone()));
         forwards!(grain, Operation::Grain(grain));
     }
 
@@ -850,6 +867,12 @@ pub(crate) mod tests {
                 "{operation:?} reported the cache tag {} under another family's prefix",
                 operation.cache_tag()
             );
+
+            // A lens blur runs no graph of its own: what it needs on disk is the depth model it is driven by.
+            let published = match operation.family() {
+                Family::LensBlur => Family::Depth.prefix(),
+                _ => published,
+            };
 
             for artifact in operation.required_artifacts() {
                 assert!(
@@ -899,6 +922,17 @@ pub(crate) mod tests {
         operations.push(FaceRecovery::athens(FloatPrecision::Fp16, faces, fidelity()));
 
         for operation in operations {
+            // What a chain injects is skipped: a lens blur carries its parameters across, and the chain it runs in
+            // hands it its depth and lens again. So it round-trips to the blur as it was before the injection.
+            let operation = match operation {
+                Operation::LensBlur(blur) => Operation::LensBlur(crate::models::lens_blur::LensBlur::new(
+                    blur.variant(),
+                    blur.f_number(),
+                    blur.focus().0,
+                    blur.focus().1,
+                )),
+                other => other,
+            };
             let json = serde_json::to_string(&operation).expect("an operation serializes");
             let back: Operation = serde_json::from_str(&json).expect("an operation deserializes");
 
@@ -1024,7 +1058,7 @@ pub(crate) mod tests {
             }
         }
 
-        assert_eq!(families.len(), 12, "the spread did not reach all twelve families: {families:?}");
+        assert_eq!(families.len(), 13, "the spread did not reach all thirteen families: {families:?}");
     }
 
     #[test]
@@ -1156,6 +1190,8 @@ pub(crate) mod tests {
                 // All three at FP16 only, ported from the reference. Delhi's is the reference's declaration beside
                 // Mumbai's rather than a measurement of its own graph; see `delhi`.
                 Operation::Colorization(colorization) => colorization.precision() == Precision::Fp16,
+                // The depth model's, whose graphs are what it requires: the blur itself opens no session.
+                Operation::LensBlur(_) => true,
                 // No model, so nothing measured.
                 Operation::Grain(_) => false,
             };

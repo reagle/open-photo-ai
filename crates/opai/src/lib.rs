@@ -14,9 +14,9 @@
 //! # Naming a model
 //!
 //! [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`], [`Colorization`], [`Detection`],
-//! [`FaceRecovery`], [`Restore`] and friends name a model, carry its parameters, and answer which files it needs — none of
-//! them run anything. [`fn@catalogue`] is what a front end reads instead of hard-coding a variant, precision or
-//! bound.
+//! [`FaceRecovery`], [`Restore`], [`LensBlur`] and friends name a model, carry its parameters, and answer which files
+//! it needs — none of them run anything. [`fn@catalogue`] is what a front end reads instead of hard-coding a variant,
+//! precision or bound.
 //!
 //! A per-run parameter ([`Scale`], [`Strength`], [`Bias`], [`Fidelity`], [`Faces`]) is validated on acceptance
 //! and is part of the operation's identity — two operations are equal exactly when they name the same model,
@@ -75,6 +75,20 @@
 //! [`restorable`](Face::restorable) ones), and reports what it found as [`Enhanced::faces`]. A failed detection
 //! restores nobody and leaves the rest of the chain to run; only a stop ends it. [`fill_chain_faces`] is the same rules
 //! without the detection.
+//!
+//! ## The depth a lens blur is driven by
+//!
+//! A [`LensBlur`] is driven by the depth of the picture and the photograph's own lens, and estimates neither itself.
+//! [`Opai::process`] finds both whenever the chain holds one: it estimates the depth of the chain's **input** through
+//! the cached [`Opai::estimate_depth`] (so changing the focus, the aperture or any earlier enhancement never estimates
+//! it again), reads the lens from the source's EXIF ([`image::read_lens`], resolved by [`Lens::resolve`]), and hands
+//! both to every lens blur. A failed depth estimate fails the run: there is no lens blur without one. Its progress
+//! shares the first operation's slot as the face detection's does.
+//!
+//! The EXIF describes the whole frame, so a picture cut from its file before the chain (a crop, which `opai` is never
+//! told of) is framed by how much smaller its diagonal is than the file's, and its lens scaled to match: see
+//! [`Lens::resolve`]. Where the EXIF alone shows that every lens blur is opened no wider than the photograph's own
+//! aperture, no depth is estimated, and the chain returns the photograph as it is.
 //!
 //! The detection and the chain report on one bar that moves forward once: every operation owns an equal `1 / N` of it,
 //! and the detection takes the first fifth of the first operation's slot (none, when the store already knew the
@@ -213,9 +227,12 @@ pub use error::{InferenceError, InitError, UnsupportedReason};
 use rust_sak::ai::ort;
 // Re-exported so a caller of this crate's image functions doesn't need `rust-sak` in its own manifest — it's
 // pinned by git tag and unpublished.
-pub use image::{EncodeOptions, ImageError, ImageFormat, ImageInfo, ImageIoError, Picture, RawFormat, RawImageInfo};
+pub use image::{
+    EncodeOptions, ImageError, ImageFormat, ImageInfo, ImageIoError, LensExif, Picture, RawFormat, RawImageInfo,
+};
 /// The inference vocabulary needed to ask for a run or read its report. The module stays private.
 pub use inference::depth::OutputDepth;
+pub use inference::depth_map::fill_chain_depth;
 pub use inference::execute::{ExecuteOptions, Executed};
 pub use inference::faces::{
     ChainFaces, FaceSelection, FacedChain, SelectFaces, default_face_selection, fill_chain_faces,
@@ -228,12 +245,13 @@ pub use mask::{Mask, Stroke};
 pub use models::{
     Analysis, ArtifactId, Bias, BuildError, ColorBalance, ColorBalanceParams, ColorBalanceVariant, Colorization,
     ColorizationVariant, Confidence, DataOperation, Denoise, DenoiseParams, DenoiseVariant, Depth, DepthMap,
-    DepthVariant, Detection, DetectionOutput, DetectionVariant, Face, FaceRecovery, FaceRecoveryParams,
-    FaceRecoveryVariant, Faces, Family, FamilyEntry, Fidelity, FloatPrecision, Grain, GrainAmount, GrainMode,
-    GrainParams, GrainVariant, GraphRole, LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant, Operation,
-    OsakaPrecision, ParameterEntry, ParameterKind, ParameterValues, Pass, Point, Precision, RangeError, Rect, Remove,
-    RemoveVariant, Resolution, Restore, RestoreParams, RestoreVariant, Scale, Sharpen, SharpenParams, SharpenVariant,
-    Strength, Subject, UnknownRole, Upscale, UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
+    DepthVariant, Detection, DetectionOutput, DetectionVariant, FNumber, FOCUS_X, FOCUS_Y, Face, FaceRecovery,
+    FaceRecoveryParams, FaceRecoveryVariant, Faces, Family, FamilyEntry, Fidelity, FloatPrecision, Fraction, Grain,
+    GrainAmount, GrainMode, GrainParams, GrainVariant, GraphRole, Lens, LensBlur, LensBlurVariant, LensOrigin,
+    LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant, Operation, OsakaPrecision, ParameterEntry,
+    ParameterKind, ParameterValues, Pass, Point, Precision, RangeError, Rect, Remove, RemoveVariant, Resolution,
+    Restore, RestoreParams, RestoreVariant, Scale, Sharpen, SharpenParams, SharpenVariant, Strength, Subject,
+    UnknownRole, Upscale, UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
 };
 pub use progress::{Dependency, OnPlan, OnProgress, Phase, PlannedDependency, Progress};
 pub use providers::{ExecutionProvider, SupportedProviders};
@@ -749,9 +767,10 @@ impl Opai {
     /// three models over a tile grid at the photograph's own resolution, then the strength), sharpen (all three
     /// models over a tile grid at the photograph's own resolution, then the strength), colorization (all
     /// three models once over the whole photograph at a fixed square, the predicted colour put onto the
-    /// photograph's own lightness), and restore (Kazan over a tile grid at the requested size, after a Lanczos3
-    /// resample, then the strength). **Detection is not among them and never will be** — its result isn't an
-    /// image, so it's carried in [`Analysis`] instead and can't be put in a chain.
+    /// photograph's own lightness), restore (Kazan over a tile grid at the requested size, after a Lanczos3
+    /// resample, then the strength), and lens blur (no graph: the depth of `source`, estimated first, and the
+    /// photograph's lens from its EXIF, rendered as a layered depth of field). **Detection is not among them and never
+    /// will be** — its result isn't an image, so it's carried in [`Analysis`] instead and can't be put in a chain.
     ///
     /// What can still refuse a run is [`InferenceError::Unsupported`], for a model whose declaration is
     /// incomplete (see [`UnsupportedReason`]), which no shipped variant is. That refusal is checked over the

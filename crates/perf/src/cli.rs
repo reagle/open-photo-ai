@@ -393,8 +393,11 @@ mod tests {
     fn every_parameter_the_catalogue_publishes_today_has_a_flag() {
         // The other half of the test above: the loud failure is a safety net, and this is the assertion that it is
         // not currently firing for anything the library actually publishes.
-        // Not a grain's, which this harness never measures: see `select::SelectionError::NoModel`.
-        for entry in catalogue().iter().filter(|entry| entry.family != opai::Family::Grain) {
+        // Not a lens blur's or a grain's, which this harness never measures: see `select::SelectionError::NoModel`.
+        for entry in catalogue()
+            .iter()
+            .filter(|entry| !matches!(entry.family, opai::Family::LensBlur | opai::Family::Grain))
+        {
             for variant in &entry.variants {
                 for parameter in variant.parameters {
                     options(&[]).parameter(parameter).unwrap_or_else(|error| {

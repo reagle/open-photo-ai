@@ -494,8 +494,11 @@ mod tests {
         let plan = plan("opai photo.jpg --gr --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
         let families: Vec<_> = plan.operations.iter().map(Operation::family).collect();
 
-        // Every family the enhancement flags name; a removal is added from `--remove`'s mask, by the run.
-        assert_eq!(families, Family::APPLY_ORDER[1..]);
+        // Every family the enhancement flags name; a removal is added from `--remove`'s mask, by the run, and lens blur
+        // is not named by any flag yet.
+        let named: Vec<_> =
+            Family::APPLY_ORDER[1..].iter().copied().filter(|family| *family != Family::LensBlur).collect();
+        assert_eq!(families, named);
     }
 
     /// The chain autopilot plans for `suggested` with `models` at `quality` over a `width` x `height` photograph.

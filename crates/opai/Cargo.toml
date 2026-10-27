@@ -85,6 +85,14 @@ image = { version = "0.25.10", default-features = false }
 # of their own, so that none of them can reach back into models, sessions or orchestration. See its `lib.rs`.
 imaging = { path = "../imaging" }
 
+# The five EXIF fields a lens blur needs to know the photograph's own lens: focal length, its 35 mm equivalent, the
+# f-number and the focal-plane resolution. `rust-sak`'s `image` decodes and orients and reads no EXIF field, and a new
+# module there would be a release of another repository before this could land; so the reader is this crate's, over
+# `kamadak-exif` (BSD-2-Clause, pure Rust, one small dependency), which reads the field table from every container the
+# application loads — JPEG, TIFF and the TIFF-based RAW formats, PNG, WebP and HEIF — through one call. It moves into
+# `rust-sak` unchanged in behaviour if that is preferred. See `image::lens`.
+kamadak-exif = "0.6.1"
+
 # The ONNX Runtime binding is `rust-sak`'s: its `ai` feature builds `ort =2.0.0-rc.15` with `load-dynamic`, `api-30`,
 # `tracing` and the `coreml`/`cuda`/`tensorrt` marker features, and re-exports it as `rust_sak::ai::ort`. It is not
 # named here, because two `ort-sys` versions cannot link into one binary and a second requirement on `ort` would only
