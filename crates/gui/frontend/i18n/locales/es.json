@@ -174,6 +174,39 @@
         "flipVertical": "Voltear verticalmente",
         "swap": "Intercambiar ancho y alto"
     },
+    "mask": {
+        "section": {
+            "none": "Sin máscara",
+            "some": "Máscara",
+            "paint": "Pintar máscara",
+            "edit": "Editar",
+            "invert": "Invertir",
+            "clear": "Vaciar"
+        },
+        "panel": {
+            "title": "Editar máscara",
+            "tool": "Pincel",
+            "paint": "Pintar",
+            "erase": "Borrar",
+            "size": "Tamaño",
+            "softness": "Suavidad",
+            "invert": "Invertir",
+            "undo": "Deshacer",
+            "redo": "Rehacer",
+            "clear": "Vaciar",
+            "overlay": "Mostrar superposición",
+            "done": "Listo",
+            "hint": "Arrastra para pintar. Mantén pulsada la tecla Space para mover la fotografía.",
+            "shortcut": "{{action}} ({{key}})"
+        },
+        "crop": {
+            "notice": "Cambiar el recorte borra la máscara."
+        },
+        "toast": {
+            "cleared": "El recorte ha cambiado, así que se ha borrado la máscara.",
+            "undo": "Deshacer"
+        }
+    },
     "export": {
         "title": "Exportar",
         "settings": {

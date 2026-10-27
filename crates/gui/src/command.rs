@@ -151,6 +151,9 @@ impl<T: Answer, E: CommandError> Outcome for Result<T, E> {
 
 impl Answer for () {}
 
+// A binary answer, which the window reads off the wire as the bytes themselves, as it reads a rendition.
+impl Answer for tauri::ipc::Response {}
+
 /// The answers that cannot fail, each of which is a finished request.
 macro_rules! finished {
     ($($answer:ty),+ $(,)?) => {

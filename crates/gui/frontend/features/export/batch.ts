@@ -11,12 +11,14 @@ import {
 import { describeExportError, type ExportFailure, qualityFor } from "@/lib/export";
 import { withChoice } from "@/lib/faces";
 import { track } from "@/lib/faro";
+import { toWire } from "@/lib/mask";
 import { useCropStore } from "@/stores/crop";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { batchSummary, useExportBatchStore } from "@/stores/exportBatch";
 import type { ExportSettingsData } from "@/stores/exportSettings";
 import { useFacesStore } from "@/stores/faces";
 import { useFileStore } from "@/stores/files";
+import { useMaskStore } from "@/stores/mask";
 import { type QualityChoices, useSettingsStore } from "@/stores/settings";
 
 const batch = () => useExportBatchStore.getState();
@@ -102,7 +104,11 @@ const exportOne = async (
         overwrite: settings.overwrite,
     };
 
-    const { run, done } = exportImage(identity, withChoice(operations, choice), processor, request, crop);
+    // What the user painted over this photograph, read now like the stack and the crop, and sent as the preview sends
+    // it: the file shows the enhancements where the canvas does. Nothing for a photograph that was never painted.
+    const mask = toWire(useMaskStore.getState().masks.get(path));
+
+    const { run, done } = exportImage(identity, withChoice(operations, choice), processor, request, crop, mask);
     setCurrent({ path, run });
     setStage(path, { stage: "enhancing", fraction: 0 });
 

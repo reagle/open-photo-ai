@@ -6,7 +6,7 @@
 
 // The commands stay here, because `tauri::generate_handler!` in `src/lib.rs` names them through this module.
 
-use opai::Opai;
+use opai::{Mask, Opai};
 use tauri::State;
 
 use crate::command::{Traceparent, command_span, traced, traced_sync};
@@ -36,6 +36,7 @@ pub(crate) use operation::Requested;
 pub(crate) use operation::UnknownOperation;
 pub(crate) use run::{
     EnhanceError, Enhancement, Enhancer, Prepared, Processor, Request, enhance_with, judge_chain, prepare_chain,
+    weighted,
 };
 pub(crate) use slot::{Resident, Runs};
 
@@ -48,6 +49,9 @@ pub(crate) use slot::{Resident, Runs};
 /// `crop` is how the user has framed that image, or absent to run over the whole photograph. The chain runs
 /// over the framed pixels, so the result is the enhancement of what the window is drawing rather than of the
 /// file — see [`enhance_with`].
+///
+/// `mask` is what the user has painted over that framing, or absent to enhance all of it. Strokes are fractions of
+/// the framed photograph, so it holds at whatever size the run produces; an empty one is read as absent.
 ///
 /// Answers the enhanced result's identity and dimensions, or that the run was stopped — **not its pixels**,
 /// which are served over the `opai://` scheme, addressed by the identity answered here.
@@ -69,6 +73,7 @@ pub(crate) async fn enhance(
     operations: Vec<Requested>,
     processor: Processor,
     crop: Option<Crop>,
+    mask: Option<Mask>,
     setup: State<'_, Setup<Opai>>,
     opened: State<'_, Opened>,
     runs: State<'_, Runs>,
@@ -80,7 +85,14 @@ pub(crate) async fn enhance(
         let opai = setup.peek(Opai::clone).await.ok_or(EnhanceError::NotReady)?;
         let reporting = reporting(&app, &run);
 
-        enhance_with(&opai, &opened, &runs, Some(reporting), Request { run, source, operations, processor, crop }).await
+        enhance_with(
+            &opai,
+            &opened,
+            &runs,
+            Some(reporting),
+            Request { run, source, operations, processor, crop, mask },
+        )
+        .await
     })
     .await
 }

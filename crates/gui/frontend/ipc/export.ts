@@ -3,6 +3,7 @@ import { exportNaming } from "@/lib/export";
 import type { CropInfo } from "./crop";
 import { type EnhanceError, mintRun, type Operation, type Processor, type RunProgress } from "./enhance";
 import { call } from "./invoke";
+import type { Mask } from "./mask";
 import { once } from "./once";
 
 // Written a second time in `crates/gui/src/export/`, as `#[tauri::command]` function names: the first two and the
@@ -155,7 +156,8 @@ export type ExportProgress = (RunProgress & { phase: "enhancing" }) | { run: str
  * not stop it.
  *
  * `operations` may be empty, which writes the framed photograph as it is. `crop` is how the user has framed it, or
- * absent to export the whole photograph.
+ * absent to export the whole photograph. `mask` is what the user painted over that framing, which the export applies as
+ * the canvas does, so the file shows the enhancements where the preview does; absent where nothing was painted.
  *
  * Rejects with the serialized {@link ExportError}, typed as `unknown` because that is what an `invoke` rejection is.
  */
@@ -165,13 +167,14 @@ export const exportImage = (
     processor: Processor,
     request: ExportRequest,
     crop?: CropInfo,
+    mask?: Mask,
 ) => {
     // Before the invoke, for the reason `enhance` gives beside its own. From the one counter every run name comes
     // from, so an export's name can never be a canvas run's or an analysis's.
     const run = mintRun();
     const { naming, quality, overwrite } = request;
 
-    // `crop` is sent as `undefined` rather than omitted, as `enhance` sends it.
+    // `crop` and `mask` are sent as `undefined` rather than omitted, as `enhance` sends them.
     return {
         run,
         done: call<Exported>(EXPORT_COMMAND, {
@@ -180,6 +183,7 @@ export const exportImage = (
             operations,
             processor,
             crop,
+            mask,
             naming: exportNaming(naming),
             quality,
             overwrite,

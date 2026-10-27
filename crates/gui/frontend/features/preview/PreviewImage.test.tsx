@@ -8,8 +8,10 @@ import type { RunProgress } from "@/ipc/enhance";
 import type { Face } from "@/ipc/faces";
 import { DRAWER_HEIGHT, ZOOM_MAX, ZOOM_MIN, ZOOM_WHEEL_STEP } from "@/lib/constants";
 import { useDrawerStore } from "@/stores/drawer";
+import { useEnhancementStore } from "@/stores/enhancements";
 import { useFacesStore } from "@/stores/faces";
 import { useFileStore } from "@/stores/files";
+import { useMaskStore } from "@/stores/mask";
 import { usePreviewStore } from "@/stores/preview";
 import { type ImageTransform, useTransformStore } from "@/stores/transform";
 import { FRAMING, frame, HOLIDAY, openFiles, render, resetCropStore, resetFileStore, SUNSET } from "@/test/support";
@@ -21,6 +23,10 @@ import { PreviewImage } from "./PreviewImage";
 vi.mock("@tauri-apps/api/core", () => ({
     convertFileSrc: vi.fn((identity: string) => `opai://localhost/${identity}`),
 }));
+
+// The tint over a mask being painted asks Rust for its picture; what it does with the answer is
+// `MaskOverlay.test.tsx`'s subject, and here only that it is drawn, or not, over the pane it should be.
+vi.mock("@/ipc/mask", () => ({ maskPreview: vi.fn(() => new Promise(() => {})) }));
 
 // The run itself is `hooks/useEnhancementRun.test.tsx`'s subject - what it asks for, what it stops
 // and what it does with the answers. Mocked here so this file stays about what the canvas *draws*
@@ -986,5 +992,348 @@ describe("the faces in the photograph on the canvas", () => {
 
         expect(sources()).toContain(`opai://localhost/${ENHANCED.identity}`);
         expect(boxes()).toHaveLength(0);
+    });
+});
+
+describe("painting the mask", () => {
+    const pane = (index = 0) => document.querySelectorAll("[data-slot='preview-pane']")[index] as HTMLElement;
+    const store = () => useMaskStore.getState();
+
+    // HOLIDAY drawn 900x600 in a 1000x600 pane sits at x = 50, so the photograph's middle is (500, 300) and a tenth of
+    // its width is 90 pixels.
+    const at = (x: number, y: number) => ({ pointerId: 1, button: 0, clientX: 50 + x * 900, clientY: y * 600 });
+
+    beforeEach(() => {
+        useMaskStore.setState(useMaskStore.getInitialState(), true);
+        useEnhancementStore.setState({
+            autopilot: true,
+            enhancements: new Map([
+                [HOLIDAY.path, [{ family: "sharpen", codename: "moscow", precision: "fp32", parameters: {} }]],
+            ]),
+        });
+        stubPaneGeometry();
+    });
+
+    const paintMode = () => act(() => store().startEditing(HOLIDAY.path));
+
+    it("paints a stroke along the drag, in fractions of the photograph, committed when the pointer comes up", () => {
+        paintMode();
+        draw("full");
+
+        fireEvent.pointerDown(pane(), at(0.5, 0.5));
+        expect(store().live?.stroke.points).toEqual([0.5, 0.5]);
+        expect(store().masks.get(HOLIDAY.path)).toBeUndefined();
+
+        fireEvent.pointerMove(pane(), at(0.6, 0.5));
+        fireEvent.pointerMove(pane(), at(0.7, 0.4));
+        expect(store().live?.stroke.points).toEqual([0.5, 0.5, 0.6, 0.5, 0.7, 0.4]);
+
+        fireEvent.pointerUp(pane(), at(0.8, 0.4));
+
+        expect(store().live).toBeUndefined();
+        expect(store().masks.get(HOLIDAY.path)?.strokes).toEqual([
+            { erase: false, radius: 0.025, softness: 0.5, points: [0.5, 0.5, 0.6, 0.5, 0.7, 0.4, 0.8, 0.4] },
+        ]);
+    });
+
+    it("clamps a stroke to the photograph where the pointer leaves it, and keeps following", () => {
+        paintMode();
+        draw("full");
+
+        fireEvent.pointerDown(pane(), at(0.9, 0.5));
+        fireEvent.pointerMove(pane(), { ...at(1, 0.5), clientX: 2000, clientY: -300 });
+        fireEvent.pointerUp(pane(), { ...at(1, 0.5), clientX: 2000, clientY: -300 });
+
+        expect(store().masks.get(HOLIDAY.path)?.strokes[0]?.points).toEqual([0.9, 0.5, 1, 0]);
+        expect(pane().hasPointerCapture(1)).toBe(false);
+    });
+
+    it("erases with Option held, for that stroke only", () => {
+        paintMode();
+        draw("full");
+
+        fireEvent.pointerDown(pane(), { ...at(0.5, 0.5), altKey: true });
+        fireEvent.pointerUp(pane(), at(0.5, 0.5));
+        fireEvent.pointerDown(pane(), at(0.2, 0.2));
+        fireEvent.pointerUp(pane(), at(0.2, 0.2));
+
+        expect(
+            store()
+                .masks.get(HOLIDAY.path)
+                ?.strokes.map((stroke) => stroke.erase),
+        ).toEqual([true, false]);
+    });
+
+    it("paints with the tool's size and softness, and erases when the tool does", () => {
+        paintMode();
+        act(() => {
+            store().setMode("erase");
+            store().setSize(0.1);
+            store().setSoftness(0.8);
+        });
+        draw("full");
+
+        fireEvent.pointerDown(pane(), at(0.5, 0.5));
+        fireEvent.pointerUp(pane(), at(0.5, 0.5));
+
+        expect(store().masks.get(HOLIDAY.path)?.strokes[0]).toMatchObject({ erase: true, radius: 0.05, softness: 0.8 });
+    });
+
+    it("starts nothing for a press beside the photograph", () => {
+        paintMode();
+        draw("full");
+
+        // The pane is 1000 wide and the photograph 900, so the first 50 pixels are margin.
+        fireEvent.pointerDown(pane(), { pointerId: 1, button: 0, clientX: 20, clientY: 300 });
+        fireEvent.pointerUp(pane(), { pointerId: 1, clientX: 20, clientY: 300 });
+
+        expect(store().live).toBeUndefined();
+        expect(store().masks.get(HOLIDAY.path)).toBeUndefined();
+        expect(pane().hasPointerCapture(1)).toBe(false);
+    });
+
+    it("pans, and paints nothing, while Space is held", () => {
+        paintMode();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+        act(() => store().setPanning(true));
+
+        fireEvent.pointerDown(pane(), at(0.5, 0.5));
+        fireEvent.pointerMove(pane(), at(0.6, 0.5));
+        fireEvent.pointerUp(pane(), at(0.6, 0.5));
+
+        expect(store().live).toBeUndefined();
+        expect(store().masks.get(HOLIDAY.path)).toBeUndefined();
+        expect(pane().className).toContain("cursor-grab");
+    });
+
+    it("lets a stroke finish when Space is pressed half way through it", () => {
+        paintMode();
+        draw("full");
+
+        fireEvent.pointerDown(pane(), at(0.3, 0.5));
+        act(() => store().setPanning(true));
+        fireEvent.pointerMove(pane(), at(0.4, 0.5));
+        fireEvent.pointerUp(pane(), at(0.5, 0.5));
+
+        expect(store().masks.get(HOLIDAY.path)?.strokes[0]?.points).toEqual([0.3, 0.5, 0.4, 0.5, 0.5, 0.5]);
+    });
+
+    it("drops a stroke the system takes away", () => {
+        paintMode();
+        draw("full");
+
+        fireEvent.pointerDown(pane(), at(0.3, 0.5));
+        fireEvent.pointerCancel(pane(), { pointerId: 1 });
+
+        expect(store().live).toBeUndefined();
+        expect(store().masks.get(HOLIDAY.path)).toBeUndefined();
+    });
+
+    it("pans, as it always has, when the mask is not being edited", () => {
+        draw("full");
+
+        fireEvent.pointerDown(pane(), at(0.5, 0.5));
+        fireEvent.pointerUp(pane(), at(0.5, 0.5));
+
+        expect(store().live).toBeUndefined();
+        expect(store().masks.size).toBe(0);
+        expect(pane().className).toContain("cursor-grab");
+        expect(document.querySelector("[data-slot='brush-cursor']")).toBeNull();
+    });
+
+    it("paints nothing while the stack is empty", () => {
+        useEnhancementStore.setState({ enhancements: new Map() });
+        paintMode();
+        draw("full");
+
+        fireEvent.pointerDown(pane(), at(0.5, 0.5));
+
+        expect(store().live).toBeUndefined();
+    });
+
+    it("paints the same mask from either pane of a side by side comparison", () => {
+        paintMode();
+        draw("side");
+
+        fireEvent.pointerDown(pane(0), at(0.2, 0.2));
+        fireEvent.pointerUp(pane(0), at(0.2, 0.2));
+        fireEvent.pointerDown(pane(1), at(0.7, 0.7));
+        fireEvent.pointerUp(pane(1), at(0.7, 0.7));
+
+        expect(
+            store()
+                .masks.get(HOLIDAY.path)
+                ?.strokes.map((stroke) => stroke.points),
+        ).toEqual([
+            [0.2, 0.2],
+            [0.7, 0.7],
+        ]);
+    });
+
+    it("paints the same mask in the split comparison", () => {
+        paintMode();
+        draw("split");
+
+        fireEvent.pointerDown(pane(1), at(0.7, 0.7));
+        fireEvent.pointerUp(pane(1), at(0.7, 0.7));
+
+        expect(store().masks.get(HOLIDAY.path)?.strokes).toHaveLength(1);
+    });
+
+    it("tints the enhanced pane alone, and only while the tint is on", () => {
+        act(() => {
+            store().beginStroke(HOLIDAY.path, 0.5, 0.5, false);
+            store().endStroke(0.6, 0.5);
+        });
+        paintMode();
+        draw("side");
+
+        expect(document.querySelectorAll("[data-slot='mask-overlay']")).toHaveLength(1);
+        expect(pane(1).querySelector("[data-slot='mask-overlay']")).not.toBeNull();
+
+        act(() => store().setOverlay(false));
+        expect(document.querySelector("[data-slot='mask-overlay']")).toBeNull();
+    });
+
+    it("draws no tint when the mask is not being edited", () => {
+        act(() => {
+            store().beginStroke(HOLIDAY.path, 0.5, 0.5, false);
+            store().endStroke(0.6, 0.5);
+        });
+        draw("side");
+
+        expect(document.querySelector("[data-slot='mask-overlay']")).toBeNull();
+    });
+
+    it("maps the pointer to the photograph through the zoom and the pan, not the pane", () => {
+        paintMode();
+        // Twice as large, so 1800x1200, with its corner at (-100, -50) in the pane.
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+
+        fireEvent.pointerDown(pane(), { pointerId: 1, button: 0, clientX: 500, clientY: 300 });
+        fireEvent.pointerMove(pane(), { pointerId: 1, clientX: 800, clientY: 500 });
+        // Beyond the photograph's far corner, which is at (1700, 1150) in the pane, and short of nowhere on the near
+        // one.
+        fireEvent.pointerUp(pane(), { pointerId: 1, clientX: 2500, clientY: 900 });
+
+        // (500 + 100) / 1800 across and (300 + 50) / 1200 down.
+        const [first, second, third, fourth, fifth, sixth] = store().masks.get(HOLIDAY.path)?.strokes[0]?.points ?? [];
+        expect(first).toBeCloseTo(600 / 1800, 10);
+        expect(second).toBeCloseTo(350 / 1200, 10);
+        expect(third).toBeCloseTo(900 / 1800, 10);
+        expect(fourth).toBeCloseTo(550 / 1200, 10);
+        // Clamped to the photograph's edge, not to the pane's.
+        expect(fifth).toBe(1);
+        expect(sixth).toBeCloseTo(950 / 1200, 10);
+    });
+
+    it("counts a press in what was the margin at fit as on the photograph once it is magnified", () => {
+        paintMode();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+
+        // At fit this is the 50 pixels of margin; magnified the photograph reaches under it.
+        fireEvent.pointerDown(pane(), { pointerId: 1, button: 0, clientX: 20, clientY: 300 });
+
+        expect(store().live?.stroke.points).toEqual([expect.closeTo(120 / 1800, 10), expect.closeTo(350 / 1200, 10)]);
+    });
+
+    describe("on a Mac, where Ctrl and a click is a right click", () => {
+        beforeEach(() => {
+            vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+        });
+
+        it("starts no stroke", () => {
+            paintMode();
+            draw("full");
+
+            fireEvent.pointerDown(pane(), { ...at(0.5, 0.5), ctrlKey: true });
+
+            expect(store().live).toBeUndefined();
+            expect(pane().hasPointerCapture(1)).toBe(false);
+        });
+
+        it("still paints with a plain press", () => {
+            paintMode();
+            draw("full");
+
+            fireEvent.pointerDown(pane(), at(0.5, 0.5));
+
+            expect(store().live).toBeDefined();
+        });
+    });
+
+    it("paints with Ctrl held anywhere else, where it is only a key", () => {
+        vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+        paintMode();
+        draw("full");
+
+        fireEvent.pointerDown(pane(), { ...at(0.5, 0.5), ctrlKey: true });
+
+        expect(store().live).toBeDefined();
+    });
+
+    it("ends the stroke where it last was when the capture is lost without a release", () => {
+        paintMode();
+        draw("full");
+
+        fireEvent.pointerDown(pane(), at(0.3, 0.5));
+        fireEvent.pointerMove(pane(), at(0.4, 0.5));
+        fireEvent.lostPointerCapture(pane(), { pointerId: 1 });
+
+        expect(store().live).toBeUndefined();
+        expect(store().masks.get(HOLIDAY.path)?.strokes[0]?.points).toEqual([0.3, 0.5, 0.4, 0.5]);
+
+        // A release that comes after it has nothing left to end.
+        fireEvent.pointerUp(pane(), at(0.5, 0.5));
+        expect(store().masks.get(HOLIDAY.path)?.strokes).toHaveLength(1);
+    });
+
+    it("does not end a stroke twice for the capture a release gives up", () => {
+        paintMode();
+        draw("full");
+
+        fireEvent.pointerDown(pane(), at(0.3, 0.5));
+        fireEvent.pointerUp(pane(), at(0.4, 0.5));
+        fireEvent.lostPointerCapture(pane(), { pointerId: 1 });
+
+        expect(store().masks.get(HOLIDAY.path)?.strokes).toHaveLength(1);
+    });
+
+    it("draws the ring inside the pane, except in the split comparison, where nothing clips it", () => {
+        paintMode();
+        draw("side");
+
+        expect(pane(0).querySelector("[data-slot='brush-cursor']")).not.toBeNull();
+        expect(pane(1).querySelector("[data-slot='brush-cursor']")).not.toBeNull();
+    });
+
+    it("draws the split comparison's ring in the canvas, so a stroke that crosses the divider keeps it", () => {
+        paintMode();
+        draw("split");
+
+        const rings = [...document.querySelectorAll("[data-slot='brush-cursor']")];
+        expect(rings).toHaveLength(2);
+
+        // Neither is inside a pane, which the enhanced one is clipped to the divider's right.
+        for (const ring of rings) {
+            expect(ring.closest("[data-slot='preview-pane']")).toBeNull();
+            expect(ring.parentElement).toBe(pane(0).parentElement);
+        }
+    });
+
+    it("draws the ring at the brush's size, the same fraction of the photograph at every zoom", () => {
+        paintMode();
+        draw("full");
+
+        // A diameter of 5 percent of the longer side, which is 900 pixels drawn: a ring of 45 across.
+        const ring = () => document.querySelector("[data-slot='brush-radius']") as HTMLElement;
+        expect(ring().style.width).toBe("45px");
+
+        magnify({ scale: 2, x: -100, y: -50 });
+
+        expect(ring().style.width).toBe("90px");
     });
 });

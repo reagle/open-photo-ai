@@ -172,6 +172,39 @@
         "flipVertical": "垂直翻转",
         "swap": "交换宽度和高度"
     },
+    "mask": {
+        "section": {
+            "none": "无蒙版",
+            "some": "蒙版",
+            "paint": "绘制蒙版",
+            "edit": "编辑",
+            "invert": "反相",
+            "clear": "清除"
+        },
+        "panel": {
+            "title": "编辑蒙版",
+            "tool": "画笔",
+            "paint": "绘制",
+            "erase": "擦除",
+            "size": "大小",
+            "softness": "柔化",
+            "invert": "反相",
+            "undo": "撤销",
+            "redo": "重做",
+            "clear": "清除",
+            "overlay": "显示叠加层",
+            "done": "完成",
+            "hint": "拖动以绘制。按住 Space 可移动照片。",
+            "shortcut": "{{action}} ({{key}})"
+        },
+        "crop": {
+            "notice": "更改裁剪会清除蒙版。"
+        },
+        "toast": {
+            "cleared": "裁剪已更改，因此蒙版已清除。",
+            "undo": "撤销"
+        }
+    },
     "export": {
         "title": "导出",
         "settings": {

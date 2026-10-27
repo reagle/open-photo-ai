@@ -1,6 +1,6 @@
 import { act, waitFor } from "@testing-library/react";
 import { toast as sonner } from "sonner";
-import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 // Initialised here, not by `AppProviders`: the run's notice is composed through a `t` held in a ref
 // and raised outside the tree, so a toast would otherwise read back as its own key.
 import "@/i18n";
@@ -11,6 +11,7 @@ import { detectFaces, type Face } from "@/ipc/faces";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useFacesStore } from "@/stores/faces";
 import { useFileStore } from "@/stores/files";
+import { useMaskStore } from "@/stores/mask";
 import { useSettingsStore } from "@/stores/settings";
 import { FRAMING, HOLIDAY, openFiles, render, resetFileStore, SUNSET } from "@/test/support";
 import { type EnhancementRun, useEnhancementRun } from "./useEnhancementRun";
@@ -145,7 +146,7 @@ describe("running the current image's enhancements", () => {
         stack(HOLIDAY.path, upscale(2));
         mount();
 
-        expect(asked).toHaveBeenCalledWith(HOLIDAY.identity, [upscale(2)], "auto", undefined);
+        expect(asked).toHaveBeenCalledWith(HOLIDAY.identity, [upscale(2)], "auto", undefined, undefined);
 
         pending[0]?.settle({ outcome: "enhanced", identity: "abcdef0123456789", width: 6000, height: 4000 });
 
@@ -162,7 +163,7 @@ describe("running the current image's enhancements", () => {
 
         await waitFor(() => expect(asked).toHaveBeenCalledTimes(2));
         expect(stopped).toHaveBeenCalledWith("run-1");
-        expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(4)], "auto", undefined);
+        expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(4)], "auto", undefined, undefined);
     });
 
     it("runs again when the processor changes", async () => {
@@ -171,7 +172,9 @@ describe("running the current image's enhancements", () => {
 
         act(() => useSettingsStore.setState({ processor: "cpu" }));
 
-        await waitFor(() => expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(2)], "cpu", undefined));
+        await waitFor(() =>
+            expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(2)], "cpu", undefined, undefined),
+        );
     });
 
     it("runs again when the framing changes, and stops the run it replaces", async () => {
@@ -184,7 +187,7 @@ describe("running the current image's enhancements", () => {
         // producing pixels for a framing nobody is looking at any more.
         await waitFor(() => expect(asked).toHaveBeenCalledTimes(2));
         expect(stopped).toHaveBeenCalledWith("run-1");
-        expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(2)], "auto", FRAMING);
+        expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(2)], "auto", FRAMING, undefined);
     });
 
     it("lets go of the result the previous framing produced", async () => {
@@ -420,7 +423,13 @@ describe("a chain that restores faces", () => {
         mount();
 
         expect(detected).not.toHaveBeenCalled();
-        expect(asked).toHaveBeenCalledExactlyOnceWith(HOLIDAY.identity, [recovery(), upscale(2)], "auto", undefined);
+        expect(asked).toHaveBeenCalledExactlyOnceWith(
+            HOLIDAY.identity,
+            [recovery(), upscale(2)],
+            "auto",
+            undefined,
+            undefined,
+        );
     });
 
     it("sends the choice made among the photograph's faces, and leaves the stack without it", async () => {
@@ -433,6 +442,7 @@ describe("a chain that restores faces", () => {
             HOLIDAY.identity,
             [{ ...recovery(), faces: choice }, upscale(2)],
             "auto",
+            undefined,
             undefined,
         );
         expect(useEnhancementStore.getState().enhancements.get(HOLIDAY.path)).toEqual([recovery(), upscale(2)]);
@@ -516,5 +526,187 @@ describe("a chain that restores faces", () => {
 
         deliver(progress("run-1", { family: "face_recovery", operation: "Athens (FP32)", chainFraction: 0.6 }));
         await waitFor(() => expect(answer.fraction).toBe(0.6));
+    });
+});
+
+describe("a mask painted over the photograph", () => {
+    beforeEach(() => {
+        useMaskStore.setState(useMaskStore.getInitialState(), true);
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    /** One stroke, committed as the pointer coming up commits it. */
+    const paint = (path: string, x = 0.4) =>
+        act(() => {
+            const { beginStroke, endStroke } = useMaskStore.getState();
+
+            beginStroke(path, x, 0.5, false);
+            endStroke(x, 0.5);
+        });
+
+    /** Lets a run land, and what is waiting on it run. */
+    const land = async (index: number) => {
+        pending[index]?.settle({ outcome: "enhanced", identity: "abcdef0123456789", width: 6000, height: 4000 });
+        await act(async () => {});
+    };
+
+    /** Lets the time a mask change waits for another go by. */
+    const wait = (ms = 300) => act(() => vi.advanceTimersByTime(ms));
+
+    it("is sent with the run once a stroke is committed and a pause has gone by, and is re-run for each", async () => {
+        stack(HOLIDAY.path, upscale(2));
+        mount();
+        expect(asked).toHaveBeenLastCalledWith(HOLIDAY.identity, [upscale(2)], "auto", undefined, undefined);
+        await land(0);
+
+        paint(HOLIDAY.path);
+        expect(asked).toHaveBeenCalledTimes(1);
+        wait();
+
+        expect(asked).toHaveBeenCalledTimes(2);
+        expect(stopped).toHaveBeenCalledWith("run-1");
+
+        const [, , , , mask] = asked.mock.calls[1] as unknown[];
+        expect(mask).toEqual({
+            strokes: [{ erase: false, radius: 0.025, softness: 0.5, points: [0.4, 0.5] }],
+            inverted: false,
+        });
+
+        paint(HOLIDAY.path, 0.6);
+        wait();
+
+        expect(asked).toHaveBeenCalledTimes(3);
+    });
+
+    it("costs one run for a flurry of strokes, from the pause after the last", async () => {
+        stack(HOLIDAY.path, upscale(2));
+        mount();
+        await land(0);
+
+        paint(HOLIDAY.path, 0.2);
+        wait(200);
+        paint(HOLIDAY.path, 0.4);
+        wait(200);
+        paint(HOLIDAY.path, 0.6);
+        wait(299);
+        expect(asked).toHaveBeenCalledTimes(1);
+
+        wait(1);
+
+        expect(asked).toHaveBeenCalledTimes(2);
+        expect((asked.mock.calls[1] as unknown[])[4]).toMatchObject({ strokes: [{}, {}, {}] });
+    });
+
+    it("lets a run that is still computing its models finish, then runs once more with the latest mask", async () => {
+        stack(HOLIDAY.path, upscale(2));
+        mount();
+
+        paint(HOLIDAY.path, 0.2);
+        paint(HOLIDAY.path, 0.4);
+        wait(1000);
+
+        // Neither stroke stopped the first, uncached run, and neither started one of its own.
+        expect(asked).toHaveBeenCalledTimes(1);
+        expect(stopped).not.toHaveBeenCalled();
+
+        await land(0);
+
+        expect(asked).toHaveBeenCalledTimes(2);
+        expect((asked.mock.calls[1] as unknown[])[4]).toMatchObject({ strokes: [{}, {}] });
+        // The result that landed is on screen meanwhile, and nothing waits a further pause for the re-run.
+        expect(answer.enhanced?.identity).toBe("abcdef0123456789");
+    });
+
+    it("does not re-run when the run that was computing had already been given the latest mask", async () => {
+        stack(HOLIDAY.path, upscale(2));
+        paint(HOLIDAY.path);
+        mount();
+
+        await land(0);
+        wait(1000);
+
+        expect(asked).toHaveBeenCalledTimes(1);
+    });
+
+    it("takes a stroke that arrives with a change of stack along with that run, rather than after it", async () => {
+        stack(HOLIDAY.path, upscale(2));
+        mount();
+
+        act(() => {
+            paint(HOLIDAY.path);
+            stack(HOLIDAY.path, upscale(4));
+        });
+        wait(1000);
+
+        expect(asked).toHaveBeenCalledTimes(2);
+        expect((asked.mock.calls[1] as unknown[])[4]).toMatchObject({ strokes: [{}] });
+        await land(1);
+        expect(asked).toHaveBeenCalledTimes(2);
+    });
+
+    it("stops a cheap re-run that a newer stroke displaces, once the pause has gone by", async () => {
+        stack(HOLIDAY.path, upscale(2));
+        mount();
+        await land(0);
+        paint(HOLIDAY.path, 0.2);
+        wait();
+        expect(asked).toHaveBeenCalledTimes(2);
+
+        // The re-run's models are cached, so it is the one a new stroke may displace.
+        paint(HOLIDAY.path, 0.4);
+        expect(stopped).toHaveBeenCalledTimes(1);
+        wait();
+
+        expect(asked).toHaveBeenCalledTimes(3);
+        expect(stopped).toHaveBeenLastCalledWith("run-2");
+    });
+
+    it("does not start a run for a stroke that is still being drawn", () => {
+        stack(HOLIDAY.path, upscale(2));
+        mount();
+
+        act(() => {
+            const { beginStroke, extendStroke } = useMaskStore.getState();
+
+            beginStroke(HOLIDAY.path, 0.1, 0.1, false);
+            extendStroke(0.5, 0.5, 1.5);
+            extendStroke(0.9, 0.9, 1.5);
+        });
+        wait(1000);
+
+        expect(asked).toHaveBeenCalledTimes(1);
+    });
+
+    it("runs again for an undo and for an invert, and sends nothing once the mask paints nothing", async () => {
+        stack(HOLIDAY.path, upscale(2));
+        mount();
+        await land(0);
+        paint(HOLIDAY.path);
+        wait();
+        expect(asked).toHaveBeenCalledTimes(2);
+
+        act(() => useMaskStore.getState().invert(HOLIDAY.path));
+        wait();
+        expect(asked).toHaveBeenCalledTimes(3);
+        expect((asked.mock.calls[2] as unknown[])[4]).toMatchObject({ inverted: true });
+
+        act(() => useMaskStore.getState().clear(HOLIDAY.path));
+        wait();
+        expect(asked).toHaveBeenCalledTimes(4);
+        expect((asked.mock.calls[3] as unknown[])[4]).toBeUndefined();
+    });
+
+    it("is another photograph's own: a stroke on one does not re-run the other", () => {
+        stack(HOLIDAY.path, upscale(2));
+        mount();
+
+        paint(SUNSET.path);
+        wait(1000);
+
+        expect(asked).toHaveBeenCalledTimes(1);
     });
 });

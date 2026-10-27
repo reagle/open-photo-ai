@@ -176,6 +176,39 @@
         "flipVertical": "Rifletti verticalmente",
         "swap": "Scambia larghezza e altezza"
     },
+    "mask": {
+        "section": {
+            "none": "Nessuna maschera",
+            "some": "Maschera",
+            "paint": "Dipingi maschera",
+            "edit": "Modifica",
+            "invert": "Inverti",
+            "clear": "Azzera"
+        },
+        "panel": {
+            "title": "Modifica maschera",
+            "tool": "Pennello",
+            "paint": "Dipingi",
+            "erase": "Cancella",
+            "size": "Dimensione",
+            "softness": "Morbidezza",
+            "invert": "Inverti",
+            "undo": "Annulla",
+            "redo": "Ripeti",
+            "clear": "Azzera",
+            "overlay": "Mostra sovrapposizione",
+            "done": "Fine",
+            "hint": "Trascina per dipingere. Tieni premuto Space per spostare la fotografia.",
+            "shortcut": "{{action}} ({{key}})"
+        },
+        "crop": {
+            "notice": "Cambiare il ritaglio cancella la maschera."
+        },
+        "toast": {
+            "cleared": "Il ritaglio è cambiato, quindi la maschera è stata cancellata.",
+            "undo": "Annulla"
+        }
+    },
     "export": {
         "title": "Esporta",
         "settings": {

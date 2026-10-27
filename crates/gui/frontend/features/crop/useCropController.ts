@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type Coordinates, type CropperRef, type CropperState, rotateSize } from "react-advanced-cropper";
+import { toast } from "sonner";
 import { FREE_RATIO, ratioByKey } from "@/features/crop/ratios";
+import i18n from "@/i18n";
 import type { CropInfo } from "@/ipc/crop";
 import { renditionFor } from "@/ipc/images";
 import { CROP_DIALOG_BOUND, MIN_CROP_SIZE } from "@/lib/constants";
@@ -8,6 +10,7 @@ import { track } from "@/lib/faro";
 import { clampTo } from "@/lib/utils";
 import { useCropStore, useImageCrop } from "@/stores/crop";
 import { useCurrentFile } from "@/stores/files";
+import { useMaskStore } from "@/stores/mask";
 import { FITTED, useTransformStore } from "@/stores/transform";
 
 // What the widget was measured to do, in the version this project pins.
@@ -38,6 +41,12 @@ import { FITTED, useTransformStore } from "@/stores/transform";
 //    `flipImage(true, false)` once leaves `{ horizontal: true, vertical: false }`; a second call
 //    leaves `{ horizontal: false, vertical: false }`. That is why the mirrors are not mirrored into
 //    React state here - see `useCropController`.
+
+/**
+ * How long the notice that a crop change cleared the mask offers its Undo, in milliseconds: longer than a notice's
+ * usual, because it is the only way back.
+ */
+const MASK_UNDO_MS = 10_000;
 
 /** A whole turn, in degrees. */
 const FULL_TURN = 360;
@@ -129,6 +138,7 @@ export const useCropController = (open: boolean, onClose: () => void) => {
     // components would put each half of it out of sight of the other.
     const file = useCurrentFile();
     const identity = file?.identity;
+    const path = file?.path;
     const recorded = useImageCrop(identity);
     const setCrop = useCropStore((state) => state.setCrop);
     const forgetCrop = useCropStore((state) => state.forgetCrop);
@@ -580,6 +590,43 @@ export const useCropController = (open: boolean, onClose: () => void) => {
         if (unchanged) forgetCrop(identity);
         else if (changed) setCrop(identity, info);
 
+        // A mask is strokes over the framing it was painted on, so a change of framing takes it away. The panel has
+        // said so beforehand; what it cannot say is that the strokes are gone for good, because the mask's own Undo
+        // belongs to the old framing. The notice's Undo is the one way back, and it gives the framing and the mask back
+        // together.
+        const cleared = changed && path !== undefined ? useMaskStore.getState().takeMask(path) : undefined;
+
+        if (cleared && path !== undefined) {
+            // **The notice goes with the first stroke painted after the crop**, and its Undo restores only while the
+            // photograph still has no mask: giving the old one back over new strokes would overwrite them.
+            let noticeId: string | number | undefined;
+            const unwatch = useMaskStore.subscribe((state) => {
+                if (!state.masks.has(path)) return;
+
+                unwatch();
+                toast.dismiss(noticeId);
+            });
+
+            noticeId = toast(i18n.t("mask.toast.cleared"), {
+                duration: MASK_UNDO_MS,
+                onDismiss: unwatch,
+                onAutoClose: unwatch,
+                action: {
+                    label: i18n.t("mask.toast.undo"),
+                    onClick: () => {
+                        unwatch();
+                        if (useMaskStore.getState().masks.has(path)) return;
+
+                        if (recorded) setCrop(identity, recorded);
+                        else forgetCrop(identity);
+
+                        setTransform(identity, FITTED);
+                        useMaskStore.getState().restoreMask(path, cleared);
+                    },
+                },
+            });
+        }
+
         // The condition is not decoration: `gui-images` says an image *whose framing changes* is fitted
         // again, and `gui-crop` says applying a framing that changes nothing changes nothing about how
         // the image is drawn - so a user who was examining a detail at 4x, opened the dialog and
@@ -598,7 +645,19 @@ export const useCropController = (open: boolean, onClose: () => void) => {
         }
 
         onClose();
-    }, [baseRotation, fineRotation, identity, recorded, ratio, toSource, forgetCrop, setCrop, setTransform, onClose]);
+    }, [
+        baseRotation,
+        fineRotation,
+        identity,
+        path,
+        recorded,
+        ratio,
+        toSource,
+        forgetCrop,
+        setCrop,
+        setTransform,
+        onClose,
+    ]);
 
     return {
         cropper,

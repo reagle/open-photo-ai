@@ -176,6 +176,39 @@
         "flipVertical": "Retourner verticalement",
         "swap": "Permuter largeur et hauteur"
     },
+    "mask": {
+        "section": {
+            "none": "Aucun masque",
+            "some": "Masque",
+            "paint": "Peindre le masque",
+            "edit": "Modifier",
+            "invert": "Inverser",
+            "clear": "Vider"
+        },
+        "panel": {
+            "title": "Modifier le masque",
+            "tool": "Pinceau",
+            "paint": "Peindre",
+            "erase": "Effacer",
+            "size": "Taille",
+            "softness": "Douceur",
+            "invert": "Inverser",
+            "undo": "Annuler",
+            "redo": "Rétablir",
+            "clear": "Vider",
+            "overlay": "Afficher la superposition",
+            "done": "Terminé",
+            "hint": "Glissez pour peindre. Maintenez Space enfoncé pour déplacer la photo.",
+            "shortcut": "{{action}} ({{key}})"
+        },
+        "crop": {
+            "notice": "Modifier le recadrage efface le masque."
+        },
+        "toast": {
+            "cleared": "Le recadrage a changé, le masque a donc été effacé.",
+            "undo": "Annuler"
+        }
+    },
     "export": {
         "title": "Exporter",
         "settings": {

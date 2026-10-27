@@ -3,6 +3,7 @@ import type { Family, Precision } from "./catalogue";
 import type { CropInfo } from "./crop";
 import type { Face } from "./faces";
 import { call } from "./invoke";
+import type { Mask } from "./mask";
 import type { SupportedProviders } from "./setup";
 
 /** Rust command names. Must match `#[tauri::command]` functions in `crates/gui/src/enhance/mod.rs`; renames aren't type-checked across the IPC boundary. */
@@ -133,13 +134,24 @@ export const mintRun = () => `${SESSION}-${++minted}`;
  * opened image's identity. `crop`, if given, runs the chain over the framed pixels only; omitted means the
  * whole photograph. An empty `operations` chain is valid and resolves with the source's own identity.
  *
+ * `mask`, if given, limits the chain to what the user painted over the framed photograph: the result is the enhanced
+ * picture where the mask is white and the photograph where it is black. Omitted - and an empty mask is omitted by the
+ * caller - means the enhancements apply everywhere. The mask is never part of a model's work, so changing it re-runs
+ * no model: the cached results are blended again.
+ *
  * Rejects with a serialized {@link EnhanceError} (typed `unknown`, as `invoke` rejections carry no type).
  */
-export const enhance = (source: string, operations: Operation[], processor: Processor, crop?: CropInfo) => {
+export const enhance = (
+    source: string,
+    operations: Operation[],
+    processor: Processor,
+    crop?: CropInfo,
+    mask?: Mask,
+) => {
     // Minted before the invoke so a cleanup racing the dispatch still has a name to cancel.
     const run = mintRun();
 
-    return { run, done: call<Enhancement>(ENHANCE_COMMAND, { run, source, operations, processor, crop }) };
+    return { run, done: call<Enhancement>(ENHANCE_COMMAND, { run, source, operations, processor, crop, mask }) };
 };
 
 /**

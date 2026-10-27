@@ -144,6 +144,10 @@ serde_json = "1"
 tracing = "0.1.44"
 
 [dev-dependencies]
+# The preview of a mask is a PNG, and its tests read the picture back: `image` has no codec of its own in this crate
+# otherwise (see the dependency above), so the test build takes the one.
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+
 # Temporary directories for the fixtures `src/images/` builds rather than committing photographs, so no test writes
 # into the working tree.
 tempfile = "3.27"

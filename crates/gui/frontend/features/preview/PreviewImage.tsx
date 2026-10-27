@@ -1,19 +1,46 @@
 import { type CSSProperties, type PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronsLeftRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { BrushCursor } from "@/features/mask/BrushCursor";
+import { MaskOverlay } from "@/features/mask/MaskOverlay";
 import { useEnhancementRun } from "@/hooks/useEnhancementRun";
 import { useResizeObserver } from "@/hooks/useResizeObserver";
 import { useSettledFile } from "@/hooks/useSettledFile";
 import { framedDimensions } from "@/ipc/crop";
 import { renditionFor } from "@/ipc/images";
 import { DRAWER_HEIGHT, ZOOM_WHEEL_STEP } from "@/lib/constants";
+import { onMac, radiusOf } from "@/lib/mask";
 import { cn } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useDrawerStore } from "@/stores/drawer";
+import { useFileEnhancements } from "@/stores/enhancements";
+import { useIsEditing, useMaskStore } from "@/stores/mask";
 import { usePreviewStore } from "@/stores/preview";
 import { clampScale, type ImageTransform, useImageTransform, useTransformStore } from "@/stores/transform";
 import { constrain, constrainPosition, fitInside, imageFraction, type Size } from "./geometry";
 import { ProgressBar } from "./ProgressBar";
+
+/**
+ * What a pane does with a press while the mask is being painted: the brush, and what to tell the store as a stroke
+ * begins, moves and ends. Present only while a primary press paints - not while Space is held, which pans.
+ *
+ * Positions are fractions across and down the framed photograph, clamped to it.
+ */
+type Paint = {
+    /** The brush's diameter as a fraction of the longer side, which the ring under the pointer is drawn from. */
+    size: number;
+    /** The brush's softness, `0..1`. */
+    softness: number;
+    /** Whether the tool is Erase, as opposed to Option or Alt held for one stroke. */
+    erase: boolean;
+    /** A stroke begins at a point of the photograph; `alt` is whether Option or Alt was held as it went down. */
+    onBegin: (x: number, y: number, alt: boolean) => void;
+    onMove: (x: number, y: number) => void;
+    onEnd: (x: number, y: number) => void;
+    /** The press was taken away by the system: no stroke. */
+    onCancel: () => void;
+};
 
 type PaneProps = {
     // Handed down rather than read from the store here, so that both panes draw the same photograph on
@@ -58,6 +85,17 @@ type PaneProps = {
     // which is why this is stated rather than inferred.
     /** Which photograph's transform this pane reads and writes. Absent, the pane draws the fitted one. */
     transformKey?: string;
+    // The two of them are the mask's, and are the same for both panes of a comparison, except that only the enhanced
+    // pane shows the tint: the original is what the mask is *not* applied to.
+    /** What a press does while the mask is painted, or absent where a press pans. */
+    paint?: Paint;
+    /** The photograph whose mask is tinted over this pane, or absent where none is shown. */
+    maskPath?: string;
+    // In the split comparison the enhanced pane is clipped from the divider rightward, and the ring is drawn inside the
+    // pane that has the pointer - so a stroke that began on one side and crossed the divider would lose it. Drawn in
+    // the canvas instead, which nothing clips.
+    /** The canvas to draw the brush's ring in, over both panes, or absent to draw it inside this pane. */
+    ringIn?: HTMLElement | null;
 };
 
 /** The gap between a pane's chip and whatever is beneath it. */
@@ -139,6 +177,9 @@ const Pane = ({
     publishViewport,
     transformKey,
     published,
+    paint,
+    maskPath,
+    ringIn,
 }: PaneProps) => {
     const container = useRef<HTMLDivElement>(null);
 
@@ -332,8 +373,51 @@ const Pane = ({
     const frame = useRef<number>(undefined);
     const [dragging, setDragging] = useState(false);
 
+    /*
+     * The stroke this pane has under the pointer, as the handlers it began with: kept so that a stroke goes on to its
+     * end however `paint` has changed since - Space pressed half way through does not strand it.
+     */
+    const stroking = useRef<Paint>(undefined);
+    // Where the stroke last was, for a press that ends without a pointer to say where.
+    const lastAt = useRef<{ x: number; y: number }>(undefined);
+
+    /*
+     * Where the pointer is on the framed photograph, as fractions across and down it - the wheel's own anchor
+     * arithmetic - clamped to its edges; and the same, or `undefined` for a point in the margin beside it.
+     */
+    const fractionsAt = (clientX: number, clientY: number) => {
+        const { drawn: current, fitted: fittedNow } = live.current;
+        const rect = container.current?.getBoundingClientRect();
+        const size = scaled(fittedNow, current.scale);
+        if (!rect || size.width <= 0 || size.height <= 0) return;
+
+        const offset = { x: clientX - rect.left - current.x, y: clientY - rect.top - current.y };
+
+        return {
+            at: { x: imageFraction(offset.x, size.width), y: imageFraction(offset.y, size.height) },
+            inside: offset.x >= 0 && offset.y >= 0 && offset.x <= size.width && offset.y <= size.height,
+        };
+    };
+
     const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
         if (identity === undefined) return;
+
+        // Painting takes the primary press, and only where it lands on the photograph: one in the margin starts
+        // nothing. Another button still pans, and so does Space, which is `paint` being absent.
+        if (paint && event.button === 0) {
+            // Ctrl and a click is a right click on a Mac, and the context menu is what it opens: not a stroke.
+            if (event.ctrlKey && onMac()) return;
+
+            const pressed = fractionsAt(event.clientX, event.clientY);
+            if (!pressed?.inside) return;
+
+            event.currentTarget.setPointerCapture(event.pointerId);
+            stroking.current = paint;
+            lastAt.current = pressed.at;
+            paint.onBegin(pressed.at.x, pressed.at.y, event.altKey);
+
+            return;
+        }
 
         // Capture rather than document-level listeners, because a drag that leaves the pane - and one
         // that leaves the window - must keep delivering moves to the element that started it, and the
@@ -344,6 +428,16 @@ const Pane = ({
     };
 
     const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+        if (stroking.current) {
+            const moved = fractionsAt(event.clientX, event.clientY);
+            if (moved) {
+                lastAt.current = moved.at;
+                stroking.current.onMove(moved.at.x, moved.at.y);
+            }
+
+            return;
+        }
+
         const start = grab.current;
         const { drawn: current, fitted: fittedNow, measured: measuredNow, identity: id } = live.current;
         if (!start || id === undefined) return;
@@ -366,13 +460,48 @@ const Pane = ({
         });
     };
 
-    const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    const release = (event: PointerEvent<HTMLDivElement>) => {
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId);
         }
 
         grab.current = undefined;
         setDragging(false);
+    };
+
+    const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+        const stroke = stroking.current;
+        stroking.current = undefined;
+
+        if (stroke) {
+            // Ends where the pointer came up, which is the last point of the stroke.
+            const ended = fractionsAt(event.clientX, event.clientY);
+            if (ended) stroke.onEnd(ended.at.x, ended.at.y);
+            else stroke.onCancel();
+        }
+
+        release(event);
+    };
+
+    // A press the system took away is no stroke.
+    const onPointerCancel = (event: PointerEvent<HTMLDivElement>) => {
+        stroking.current?.onCancel();
+        stroking.current = undefined;
+        release(event);
+    };
+
+    // Capture lost with no release or cancel to say why - the element re-rendered away, or the webview took it: the
+    // press is over, and the stroke ends where it last was rather than being left under a pointer that is no longer
+    // there. After a release this finds nothing to end.
+    const onLostPointerCapture = () => {
+        const stroke = stroking.current;
+        stroking.current = undefined;
+        grab.current = undefined;
+        setDragging(false);
+
+        const at = lastAt.current;
+        if (stroke && at) stroke.onEnd(at.x, at.y);
+        else stroke?.onCancel();
     };
 
     /*
@@ -392,17 +521,29 @@ const Pane = ({
         [setTransform],
     );
 
+    const ring = paint && (
+        <BrushCursor
+            container={container}
+            frame={ringIn}
+            radius={radiusOf(paint.size) * Math.max(fitted.width, fitted.height) * drawn.scale}
+            softness={paint.softness}
+            erase={paint.erase}
+        />
+    );
+
     return (
         <div
             ref={container}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
+            onPointerCancel={onPointerCancel}
+            onLostPointerCapture={onLostPointerCapture}
             style={style}
             className={cn(
                 "relative min-w-0 flex-1 touch-none overflow-hidden",
-                dragging ? "cursor-grabbing" : "cursor-grab",
+                // No system cursor while painting: the ring under the pointer is the cursor.
+                dragging ? "cursor-grabbing" : paint ? "cursor-none" : "cursor-grab",
                 className,
             )}
             data-slot="preview-pane"
@@ -446,6 +587,25 @@ const Pane = ({
                 }}
                 className="block max-w-none select-none"
             />
+
+            {/*
+             * The mask's tint, in the box the photograph is drawn in: the pane's own position and size of it, not the
+             * picture's transform, so it is the same shape at every zoom - as the faces' boxes are.
+             */}
+            {maskPath !== undefined && (
+                <MaskOverlay
+                    path={maskPath}
+                    box={{
+                        x: drawn.x,
+                        y: drawn.y,
+                        width: fitted.width * drawn.scale,
+                        height: fitted.height * drawn.scale,
+                    }}
+                />
+            )}
+
+            {paint && ringIn === undefined && ring}
+            {paint && ringIn && createPortal(ring, ringIn)}
 
             {/*
              * The offset is a style rather than a class pair, for the reason the drawer's own fold is:
@@ -547,6 +707,22 @@ export const PreviewImage = () => {
      */
     const [divider, setDivider] = useState(DIVIDER_START);
     const handle = useRef<HTMLDivElement>(null);
+    // The canvas itself, as state so that a pane draws into it once it is there: see `PaneProps.ringIn`.
+    const [canvas, setCanvas] = useState<HTMLDivElement | null>(null);
+
+    /*
+     * Painting the mask: whether a press on the photograph paints, and with what.
+     *
+     * It does while the preview is in paint mode for this photograph and Space is not held - Space turns the drag back
+     * into a pan. The stack has to have something in it, for there is nothing for a mask to limit otherwise. The
+     * strokes go to the store, which holds them until the pointer comes up; both panes paint the same mask.
+     */
+    const path = file?.path;
+    const editing = useIsEditing(path);
+    const panning = useMaskStore((state) => state.panning);
+    const tool = useMaskStore((state) => state.tool);
+    const stacked = useFileEnhancements(path).length > 0;
+    const paintable = editing && stacked && path !== undefined;
 
     const moveDivider = (clientX: number) => {
         const rect = handle.current?.parentElement?.getBoundingClientRect();
@@ -570,6 +746,25 @@ export const PreviewImage = () => {
      */
     const framed = framedDimensions(file, crop);
 
+    // The photograph's shape as it is framed, which decimating a stroke's points is measured in. Zero where unknown.
+    const aspect = framed.width && framed.height ? framed.width / framed.height : 0;
+
+    const paint: Paint | undefined =
+        paintable && !panning
+            ? {
+                  size: tool.size,
+                  softness: tool.softness,
+                  erase: tool.mode === "erase",
+                  onBegin: (x, y, alt) => useMaskStore.getState().beginStroke(path, x, y, alt),
+                  onMove: (x, y) => useMaskStore.getState().extendStroke(x, y, aspect),
+                  onEnd: (x, y) => useMaskStore.getState().endStroke(x, y),
+                  onCancel: () => useMaskStore.getState().cancelStroke(),
+              }
+            : undefined;
+
+    // The tint is the enhanced pane's alone, and only while the mask is being edited and the user has it on.
+    const maskPath = paintable && tool.overlay ? path : undefined;
+
     /*
      * What the enhanced pane draws: the result's own pixels and its own dimensions, or the source's
      * URL and the framing's shape while nothing has been produced - which is both panes pointing at
@@ -585,7 +780,7 @@ export const PreviewImage = () => {
     const enhancedSource = enhanced ? renditionFor(enhanced) : source;
 
     return (
-        <div className="relative flex size-full flex-row gap-0.5 p-0.5">
+        <div ref={setCanvas} className="relative flex size-full flex-row gap-0.5 p-0.5">
             {/*
              * Absent in full, which draws the enhanced image alone - and present in split, where it is
              * the pane the other one is revealed over rather than a second half of the canvas.
@@ -599,6 +794,8 @@ export const PreviewImage = () => {
                     label={t("preview.pane.original")}
                     chipClassName="left-2.5 text-foreground"
                     chipBottom={chipBottom}
+                    {...(paint && { paint })}
+                    {...(previewMode === "split" && { ringIn: canvas })}
                 />
             )}
 
@@ -627,6 +824,9 @@ export const PreviewImage = () => {
                 {...(previewMode === "split" && { style: { clipPath: `inset(0 0 0 ${divider}%)` } })}
                 chipClassName="right-2.5 text-foreground"
                 chipBottom={chipBottom}
+                {...(paint && { paint })}
+                {...(maskPath !== undefined && { maskPath })}
+                {...(previewMode === "split" && { ringIn: canvas })}
             />
 
             {running && <ProgressBar fraction={fraction} {...(report && { report })} />}

@@ -172,6 +172,39 @@
         "flipVertical": "上下反転",
         "swap": "幅と高さを入れ替える"
     },
+    "mask": {
+        "section": {
+            "none": "マスクなし",
+            "some": "マスク",
+            "paint": "マスクを描く",
+            "edit": "編集",
+            "invert": "反転",
+            "clear": "クリア"
+        },
+        "panel": {
+            "title": "マスクを編集",
+            "tool": "ブラシ",
+            "paint": "描画",
+            "erase": "消去",
+            "size": "サイズ",
+            "softness": "ぼかし",
+            "invert": "反転",
+            "undo": "元に戻す",
+            "redo": "やり直す",
+            "clear": "クリア",
+            "overlay": "オーバーレイを表示",
+            "done": "完了",
+            "hint": "ドラッグして描画します。Space キーを押したままで写真を移動します。",
+            "shortcut": "{{action}} ({{key}})"
+        },
+        "crop": {
+            "notice": "切り抜きを変更するとマスクがクリアされます。"
+        },
+        "toast": {
+            "cleared": "切り抜きが変更されたため、マスクをクリアしました。",
+            "undo": "元に戻す"
+        }
+    },
     "export": {
         "title": "書き出し",
         "settings": {

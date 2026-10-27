@@ -1,10 +1,12 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { CropperRef } from "react-advanced-cropper";
+import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CropInfo } from "@/ipc/crop";
 import { CROP_DIALOG_BOUND } from "@/lib/constants";
 import { track } from "@/lib/faro";
 import { useCropStore } from "@/stores/crop";
+import { useMaskStore } from "@/stores/mask";
 import { FITTED, useTransformStore } from "@/stores/transform";
 import { HOLIDAY, openFiles, resetCropStore, resetFileStore, SUNSET } from "@/test/support";
 import { useCropController } from "./useCropController";
@@ -16,6 +18,14 @@ vi.mock("@/lib/faro", () => ({
     pauseFaro: vi.fn(),
     // Untraced, as before Faro starts: the request goes out exactly as `invoke` alone would send it.
     traced: (_name: string, send: () => Promise<unknown>) => send(),
+}));
+
+// Raised for a crop that clears a mask, with the Undo that gives both back.
+vi.mock("sonner", () => ({
+    toast: Object.assign(
+        vi.fn(() => "notice"),
+        { dismiss: vi.fn() },
+    ),
 }));
 
 // `convertFileSrc` reads a global Tauri's init script installs, which jsdom has none of.
@@ -676,6 +686,177 @@ describe("useCropController", () => {
             // No Apply.
             expect(useCropStore.getState().crops.size).toBe(0);
             expect(useTransformStore.getState().transforms.size).toBe(0);
+        });
+    });
+
+    describe("a mask painted over the framing", () => {
+        const paint = () =>
+            act(() => {
+                const { beginStroke, endStroke } = useMaskStore.getState();
+
+                beginStroke(HOLIDAY.path, 0.2, 0.2, false);
+                endStroke(0.5, 0.2);
+            });
+
+        /** The notice's Undo, as the toast was given it. */
+        const undoOf = () => {
+            const [, options] = vi.mocked(toast).mock.calls.at(-1) ?? [];
+            const action = (options as { action?: { onClick: () => void } } | undefined)?.action;
+            if (!action) throw new Error("the notice offered no Undo");
+
+            return action.onClick;
+        };
+
+        beforeEach(() => {
+            vi.mocked(toast).mockClear();
+            vi.mocked(toast.dismiss).mockClear();
+            useMaskStore.setState(useMaskStore.getInitialState(), true);
+        });
+
+        it("is cleared by a crop change, with a notice that offers to undo it", async () => {
+            openFiles(HOLIDAY);
+            paint();
+            const { hook, widget } = await openOn(decode, { width: 3000, height: 2000 });
+
+            act(() => widget.ref.setCoordinates({ left: 0, top: 0, width: 1000, height: 800 }));
+            act(() => hook.result.current.onApply());
+
+            expect(useMaskStore.getState().masks.has(HOLIDAY.path)).toBe(false);
+            expect(toast).toHaveBeenCalledExactlyOnceWith(
+                "The crop changed, so the mask was cleared.",
+                expect.objectContaining({ action: expect.objectContaining({ label: "Undo" }) }),
+            );
+        });
+
+        it("gives the crop and the mask back together when the notice's Undo is pressed", async () => {
+            const recorded: CropInfo = {
+                left: 10,
+                top: 20,
+                width: 500,
+                height: 400,
+                millidegrees: 0,
+                flipHorizontal: false,
+                flipVertical: false,
+            };
+            openFiles(HOLIDAY);
+            act(() => useCropStore.getState().setCrop(HOLIDAY.identity ?? "", recorded));
+            paint();
+            const painted = useMaskStore.getState().masks.get(HOLIDAY.path)?.strokes;
+            const { hook, widget } = await openOn(decode, { width: 3000, height: 2000 });
+
+            act(() => widget.ref.setCoordinates({ left: 0, top: 0, width: 1000, height: 800 }));
+            act(() => hook.result.current.onApply());
+            expect(useCropStore.getState().crops.get(HOLIDAY.identity ?? "")).not.toEqual(recorded);
+
+            act(() => undoOf()());
+
+            expect(useCropStore.getState().crops.get(HOLIDAY.identity ?? "")).toEqual(recorded);
+            expect(useMaskStore.getState().masks.get(HOLIDAY.path)?.strokes).toEqual(painted);
+            expect(useTransformStore.getState().transforms.get(HOLIDAY.identity ?? "")).toEqual(FITTED);
+        });
+
+        it("takes its notice away with the first stroke painted after, so Undo cannot overwrite it", async () => {
+            openFiles(HOLIDAY);
+            paint();
+            const { hook, widget } = await openOn(decode, { width: 3000, height: 2000 });
+
+            act(() => widget.ref.setCoordinates({ left: 0, top: 0, width: 1000, height: 800 }));
+            act(() => hook.result.current.onApply());
+            const undo = undoOf();
+            expect(toast.dismiss).not.toHaveBeenCalled();
+
+            paint();
+            const fresh = useMaskStore.getState().masks.get(HOLIDAY.path);
+
+            expect(toast.dismiss).toHaveBeenCalledExactlyOnceWith("notice");
+
+            // A stale press that got through anyway restores nothing.
+            act(() => undo());
+
+            expect(useMaskStore.getState().masks.get(HOLIDAY.path)).toBe(fresh);
+            expect(useCropStore.getState().crops.get(HOLIDAY.identity ?? "")).toBeDefined();
+        });
+
+        it("stops watching for strokes once the notice is gone", async () => {
+            openFiles(HOLIDAY);
+            paint();
+            const { hook, widget } = await openOn(decode, { width: 3000, height: 2000 });
+
+            act(() => widget.ref.setCoordinates({ left: 0, top: 0, width: 1000, height: 800 }));
+            act(() => hook.result.current.onApply());
+            const [, options] = vi.mocked(toast).mock.calls.at(-1) ?? [];
+            act(() => (options as { onAutoClose: () => void }).onAutoClose());
+
+            paint();
+
+            expect(toast.dismiss).not.toHaveBeenCalled();
+        });
+
+        it("restores an unframed photograph as unframed", async () => {
+            openFiles(HOLIDAY);
+            paint();
+            const { hook, widget } = await openOn(decode, { width: 3000, height: 2000 });
+
+            act(() => widget.ref.setCoordinates({ left: 0, top: 0, width: 1000, height: 800 }));
+            act(() => hook.result.current.onApply());
+            expect(useCropStore.getState().crops.has(HOLIDAY.identity ?? "")).toBe(true);
+
+            act(() => undoOf()());
+
+            expect(useCropStore.getState().crops.has(HOLIDAY.identity ?? "")).toBe(false);
+            expect(useMaskStore.getState().masks.get(HOLIDAY.path)?.strokes).toHaveLength(1);
+        });
+
+        it("is cleared when the framing is taken away too", async () => {
+            const recorded: CropInfo = {
+                ...{
+                    left: 10,
+                    top: 20,
+                    width: 500,
+                    height: 400,
+                    millidegrees: 0,
+                    flipHorizontal: false,
+                    flipVertical: false,
+                },
+            };
+            openFiles(HOLIDAY);
+            act(() => useCropStore.getState().setCrop(HOLIDAY.identity ?? "", recorded));
+            paint();
+            const { hook } = await openOn(decode, { width: 3000, height: 2000 });
+
+            await act(async () => hook.result.current.onReset());
+            act(() => hook.result.current.onApply());
+
+            expect(useMaskStore.getState().masks.has(HOLIDAY.path)).toBe(false);
+            expect(toast).toHaveBeenCalledOnce();
+        });
+
+        it("is kept, with no notice, when the framing did not change", async () => {
+            openFiles(HOLIDAY);
+            paint();
+            const { hook } = await openOn(decode, { width: 3000, height: 2000 });
+
+            act(() => hook.result.current.onApply());
+
+            expect(useMaskStore.getState().masks.get(HOLIDAY.path)?.strokes).toHaveLength(1);
+            expect(toast).not.toHaveBeenCalled();
+        });
+
+        it("raises no notice for a photograph with no mask, and leaves another photograph's alone", async () => {
+            openFiles(HOLIDAY, SUNSET);
+            act(() => {
+                const { beginStroke, endStroke } = useMaskStore.getState();
+
+                beginStroke(SUNSET.path, 0.2, 0.2, false);
+                endStroke(0.5, 0.2);
+            });
+            const { hook, widget } = await openOn(decode, { width: 3000, height: 2000 });
+
+            act(() => widget.ref.setCoordinates({ left: 0, top: 0, width: 1000, height: 800 }));
+            act(() => hook.result.current.onApply());
+
+            expect(toast).not.toHaveBeenCalled();
+            expect(useMaskStore.getState().masks.get(SUNSET.path)?.strokes).toHaveLength(1);
         });
     });
 });

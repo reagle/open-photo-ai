@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { type CropInfo, sameCrop } from "@/ipc/crop";
@@ -6,10 +6,18 @@ import { cancelEnhance, enhance, onEnhanceProgress, type RunProgress } from "@/i
 import type { Face } from "@/ipc/faces";
 import type { ImageRecord } from "@/ipc/images";
 import { withChoice } from "@/lib/faces";
+import { toWire } from "@/lib/mask";
 import { report } from "@/lib/report";
 import { useFileEnhancements } from "@/stores/enhancements";
 import { useFaceChoice, useFacesStore } from "@/stores/faces";
+import { useFileMask } from "@/stores/mask";
 import { useSettingsStore } from "@/stores/settings";
+
+/**
+ * How long a change that is only to the mask waits for another before it re-runs, in milliseconds: one run per pause in
+ * a flurry of strokes.
+ */
+const MASK_DEBOUNCE_MS = 300;
 
 /** Where an enhanced result's pixels are, and how large they are. */
 export type EnhancedImage = { identity: string; width: number; height: number };
@@ -72,12 +80,18 @@ export type EnhancementRun = {
  * *closed* has already had every owner told to forget it, and putting an entry back for it would outlive
  * the only thing that empties the store.
  *
- * **A run starts when the stack, the image, the framing, the processor or the choice of faces changes**,
- * and stops the one it replaces. A choice is one write however many boxes were clicked, so a chooser
- * opened and applied costs one run - and applying a choice that changes nothing writes nothing, so it
- * costs none. The backend enforces the displacement rather than trusting this side to ask, so the
- * explicit stop in the cleanup is for the case a new run does not cover: removing the last
+ * **A run starts when the stack, the image, the framing, the processor, the choice of faces or the mask changes**,
+ * and stops the one it replaces - except for the mask, which is gentler: see "A mask is waited for" below. A choice is
+ * one write however many boxes were clicked, so a chooser opened and applied costs one run - and applying a choice that
+ * changes nothing writes nothing, so it costs none. The backend enforces the displacement rather than trusting this
+ * side to ask, so the explicit stop in the cleanup is for the case a new run does not cover: removing the last
  * enhancement, or moving to a photograph with none.
+ *
+ * **A mask is waited for.** A stroke re-runs only the blend, the models behind it being served from the cache, but only
+ * once a run has computed them. A change that is only to the mask therefore waits {@link MASK_DEBOUNCE_MS} for another,
+ * so a flurry of strokes costs one run; and it never stops a run whose models are still computing - the first, uncached
+ * run of a chain, or any run a change of anything else started - because stopping it would throw that work away. That
+ * run finishes, and the latest mask is run once it has: cheap, and the one a stop is then free to displace.
  *
  * **An empty stack asks for nothing.** The seam accepts an empty chain and answers with the source,
  * but that is a round trip for an answer the window already holds - so the pane is pointed at the
@@ -135,6 +149,34 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
      * effect instead of needing a second one. See design.md D7.
      */
     const choice = useFaceChoice(source);
+
+    /*
+     * What the user has painted over this photograph, as the run is sent it - or nothing, for a mask that paints
+     * nothing.
+     *
+     * Compared by the entry the store holds: it is replaced on every committed change and is the same object until the
+     * next one, which is the store's version counter by another name. A stroke is committed when the pointer comes up,
+     * so one being drawn is in no entry and re-runs nothing. Memoised on the entry so the run effect sees one mask
+     * between changes, not a new object per render.
+     */
+    const painted = useFileMask(file?.path);
+    const mask = useMemo(() => toWire(painted), [painted]);
+
+    /*
+     * What the mask-only re-run is built from, all read in the run effect rather than listed as its dependencies - a
+     * mask change must not restart it on its own, which is the whole of the wait below.
+     */
+    /* The latest mask, which any run starts with whatever started it. */
+    const latest = useRef(mask);
+    latest.current = mask;
+    /* The mask the run in flight, or the last one, was started with: what `latest` is compared with. */
+    const ran = useRef(mask);
+    /* Whether the run in flight is still computing models, which is what a mask change leaves be. */
+    const computing = useRef(false);
+    /* Set by whoever asks for a re-run for the mask, and read by the run it starts: that run computes no models. */
+    const forMask = useRef(false);
+    /* Counted up to ask the run effect for a re-run of the same chain over the latest mask. */
+    const [rerun, setRerun] = useState(0);
 
     /*
      * The last result, beside the photograph it was made from.
@@ -207,10 +249,15 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
         };
     }, []);
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: `rerun` is a request nothing in here reads
     useEffect(() => {
         mine.current = undefined;
 
+        const cheap = forMask.current;
+        forMask.current = false;
+
         if (source === undefined || operations.length === 0) {
+            computing.current = false;
             setRunning(false);
             setResult(undefined);
             setIndicator(undefined);
@@ -219,7 +266,13 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
 
         setIndicator(undefined);
 
-        const { run, done } = enhance(source, withChoice(operations, choice), processor, crop);
+        // The mask as it is now, whatever started the run: a stack that changed while strokes were waiting takes them
+        // along.
+        const sent = latest.current;
+        ran.current = sent;
+        computing.current = !cheap;
+
+        const { run, done } = enhance(source, withChoice(operations, choice), processor, crop, sent);
         mine.current = run;
         setRunning(true);
 
@@ -229,8 +282,20 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
         const ended = () => {
             if (mine.current !== run) return;
 
+            computing.current = false;
             setRunning(false);
             setIndicator(undefined);
+        };
+
+        /*
+         * Asks for the run a mask change was held back for, once this one - which was computing models - is over. The
+         * mask that is now in force is not the one this run was given only if a change arrived while it worked.
+         */
+        const catchUp = () => {
+            if (mine.current !== run || latest.current === ran.current) return;
+
+            forMask.current = true;
+            setRerun((count) => count + 1);
         };
 
         /*
@@ -242,6 +307,7 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
 
         done.then(
             (outcome) => {
+                const current = mine.current === run;
                 ended();
 
                 if (outcome.outcome !== "enhanced") return;
@@ -251,6 +317,7 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
                     ...(crop && { crop }),
                     image: { identity: outcome.identity, width: outcome.width, height: outcome.height },
                 });
+                if (current) catchUp();
 
                 if (outcome.faces) record(outcome.faces);
 
@@ -290,7 +357,29 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
         // The choice among faces is one of these because it is what the run is asked to keep. It changes
         // only when a person applies one - a detection landing records faces and never writes a choice -
         // so nothing else re-runs on its account.
-    }, [source, operations, processor, crop, choice]);
+        //
+        // The mask is not one of these, but `rerun` is: a committed stroke, an undo, an invert or a clear changes the
+        // mask the chain is limited to, and the effect below asks for a run for it once it has waited out the next
+        // change. The models behind that run are served from the cache, so what it costs is the blend.
+    }, [source, operations, processor, crop, choice, rerun]);
+
+    /*
+     * A change that is only to the mask asks for a re-run after a pause - and not at all while the run in flight is
+     * still computing models, which asks for it itself when it ends. A change that came with another one has already
+     * been taken by the effect above, which left `ran` equal to `latest`.
+     */
+    useEffect(() => {
+        if (mask === ran.current || computing.current) return;
+
+        const timer = setTimeout(() => {
+            if (latest.current === ran.current) return;
+
+            forMask.current = true;
+            setRerun((count) => count + 1);
+        }, MASK_DEBOUNCE_MS);
+
+        return () => clearTimeout(timer);
+    }, [mask]);
 
     return {
         running,

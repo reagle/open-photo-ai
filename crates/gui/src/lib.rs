@@ -20,6 +20,7 @@ mod frontend;
 mod images;
 mod links;
 mod logs;
+mod mask;
 mod reveal;
 mod setup;
 mod single_instance;
@@ -164,6 +165,7 @@ pub fn run(prepared: Result<(), opai::InitError>) {
             export::export_names,
             export::directory::pick_directory,
             export::written::reveal_export,
+            mask::mask_preview,
             images::files::open_images,
             images::files::describe_images,
             images::files::reveal_image,

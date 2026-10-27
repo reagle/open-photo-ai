@@ -1,7 +1,8 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import { useCropStore } from "@/stores/crop";
+import { useMaskStore } from "@/stores/mask";
 import { useTransformStore } from "@/stores/transform";
 import {
     applyBackground,
@@ -53,6 +54,20 @@ describe("CropRotate", () => {
         render(<CropRotate open onClose={vi.fn()} />);
 
         expect(screen.getByText(/mouse wheel or the trackpad pinch/)).toBeInTheDocument();
+    });
+
+    it("says that applying a framing clears the mask, but only where there is one", () => {
+        useMaskStore.setState(useMaskStore.getInitialState(), true);
+        render(<CropRotate open onClose={vi.fn()} />);
+
+        expect(screen.queryByText("Changing the crop clears the mask.")).not.toBeInTheDocument();
+
+        act(() => {
+            useMaskStore.getState().beginStroke(HOLIDAY.path, 0.2, 0.2, false);
+            useMaskStore.getState().endStroke(0.4, 0.2);
+        });
+
+        expect(screen.getByText("Changing the crop clears the mask.")).toBeInTheDocument();
     });
 
     it("is named by its title bar rather than announced as an unnamed dialog", () => {

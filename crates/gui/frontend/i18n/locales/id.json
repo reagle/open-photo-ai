@@ -172,6 +172,39 @@
         "flipVertical": "Balik vertikal",
         "swap": "Tukar lebar dan tinggi"
     },
+    "mask": {
+        "section": {
+            "none": "Tanpa masker",
+            "some": "Masker",
+            "paint": "Lukis masker",
+            "edit": "Edit",
+            "invert": "Balik",
+            "clear": "Hapus"
+        },
+        "panel": {
+            "title": "Edit masker",
+            "tool": "Kuas",
+            "paint": "Lukis",
+            "erase": "Hapus",
+            "size": "Ukuran",
+            "softness": "Kelembutan",
+            "invert": "Balik",
+            "undo": "Urungkan",
+            "redo": "Ulangi",
+            "clear": "Bersihkan",
+            "overlay": "Tampilkan overlay",
+            "done": "Selesai",
+            "hint": "Seret untuk melukis. Tahan Space untuk memindahkan foto.",
+            "shortcut": "{{action}} ({{key}})"
+        },
+        "crop": {
+            "notice": "Mengubah pemangkasan akan menghapus masker."
+        },
+        "toast": {
+            "cleared": "Pemangkasan berubah, jadi masker dihapus.",
+            "undo": "Urungkan"
+        }
+    },
     "export": {
         "title": "Ekspor",
         "settings": {

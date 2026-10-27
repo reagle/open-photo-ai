@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { AddEnhancement } from "@/features/enhancements/AddEnhancement";
 import { EnhancementList } from "@/features/enhancements/EnhancementList";
 import { ExportDialog } from "@/features/export/ExportDialog";
+import { MaskSection } from "@/features/mask/MaskSection";
 import { SidebarMiniature } from "@/features/sidebar/SidebarMiniature";
 import { useAutopilot } from "@/hooks/useAutopilot";
 import { useEnhancementStore } from "@/stores/enhancements";
@@ -65,9 +66,17 @@ export const Sidebar = () => {
                 <AddEnhancement />
             </div>
 
-            <EnhancementList />
+            {/*
+             * The list, the mask under it, and the room left over, in one column that scrolls: the mask's tools are
+             * taller than a short window leaves, and the export button below must stay where it is.
+             */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                <EnhancementList />
 
-            <div className="flex-1" />
+                <MaskSection />
+
+                <div className="flex-1" />
+            </div>
 
             {/*
              * Gated on the selection rather than on an image being open: nothing can be picked with

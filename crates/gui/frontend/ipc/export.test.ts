@@ -99,6 +99,33 @@ describe("exportImage", () => {
         });
     });
 
+    it("sends the mask beside the framing, and none when it is given none", () => {
+        const mask = {
+            strokes: [{ erase: false, radius: 0.03, softness: 0.25, points: [0.5, 0.5] }],
+            inverted: false,
+        };
+
+        const { run } = exportImage("0123456789abcdef", [kyoto], "coreml", request, framing, mask);
+
+        expect(invoked).toHaveBeenCalledWith("export", {
+            run,
+            source: "0123456789abcdef",
+            operations: [kyoto],
+            processor: "coreml",
+            crop: framing,
+            mask,
+            naming: { prefix: "", suffix: "-opai", format: "jpeg" },
+            quality: 90,
+            overwrite: false,
+        });
+
+        exportImage("0123456789abcdef", [kyoto], "coreml", request, framing);
+
+        const [, args] = invoked.mock.calls[1] as [string, { mask?: unknown }];
+
+        expect(args.mask).toBeUndefined();
+    });
+
     it("mints the export's name from the shared counter before the command is invoked", () => {
         const { run } = exportImage("0123456789abcdef", [kyoto], "cpu", request);
 
