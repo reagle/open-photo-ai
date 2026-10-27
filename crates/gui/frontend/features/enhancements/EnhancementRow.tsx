@@ -4,12 +4,13 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger } from "@/components/ui/popover";
 import { SelectFacesDialog } from "@/features/faces/SelectFacesDialog";
+import { useLensInfo } from "@/hooks/useLensInfo";
 import type { FamilyEntry } from "@/ipc/catalogue";
 import type { Operation } from "@/ipc/enhance";
 import { detectFaces } from "@/ipc/faces";
+import { ASSUMED_LENS, shownAmount } from "@/lib/blurAmount";
 import { type Enhancement, modelValue, optionFor, parameterOf, qualityLabel } from "@/lib/enhancements";
 import { enabledFaces } from "@/lib/faces";
-import { formatFNumber } from "@/lib/fstops";
 import { report } from "@/lib/report";
 import { toPercent } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
@@ -83,6 +84,8 @@ export const EnhancementRow = ({
      */
     const crop = useImageCrop(identity);
     const faces = useImageFaces(identity, crop);
+    // Only a lens blur's row asks: the amount it reads is against the photograph's own lens, as it is framed.
+    const lens = useLensInfo(operation.family === "lens_blur" ? identity : undefined, crop);
 
     /*
      * The choice made among them, which is what turns `2 Faces` into `1/2 Faces` and what the button in
@@ -289,14 +292,18 @@ export const EnhancementRow = ({
                     scale: Number.parseFloat((parameterOf(operation, entry, "scale") ?? 1).toFixed(SCALE_PLACES)),
                 });
             case "lens_blur": {
-                // The model and the aperture, with no quality: the model is published at one precision, which says
-                // nothing. The stop's own number, as the user set it.
+                // The model and the blur amount, with no quality: the model is published at one precision, which says
+                // nothing. The amount is the slider's, read against the photograph's own aperture.
                 const f = parameterOf(operation, entry, "f_number");
 
-                // The model alone where neither the operation nor the catalogue knows an aperture: nothing to report.
-                return f === undefined
+                // The model alone where the operation and the catalogue know no aperture, or the photograph's own lens
+                // is still on its way (a number now would change as it landed): nothing to report yet.
+                return f === undefined || lens === undefined
                     ? t("enhancements.infoModel", { name, quality })
-                    : t("enhancements.infoLensBlur", { name, f: formatFNumber(f) });
+                    : t("enhancements.infoLensBlur", {
+                          name,
+                          amount: shownAmount(f, (lens ?? ASSUMED_LENS).ownFNumber),
+                      });
             }
         }
     };

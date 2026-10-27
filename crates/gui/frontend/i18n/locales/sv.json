@@ -338,10 +338,12 @@
             "models": {
                 "lisbon": "Använd den här modellen för att göra ett foto suddigt som en objektivöppning med större bländare skulle göra, medan punkten du väljer hålls skarp. Den uppskattar hur långt bort allt på fotografiet är (MoGe-2 ViT-B, 324 MB). Första användningen kompilerar modellen för din processor, vilket tar cirka en minut på en Mac."
             },
-            "fNumber": "Bländare",
-            "equivalent": "fullformatsekvivalent",
+            "blurAmount": "Oskärpa",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} fullformat)",
+            "readoutEquivalent": "≈ f/{{equivalent}} fullformatsekvivalent",
             "asTaken": "Original",
             "assumed": "Fotografiet saknar objektivinformation; f/{{f}} antas",
+            "cannotBlurMore": "Fotografiet är taget vid f/{{f}} (fullformatsekvivalent), så öppet som effekten går; det kan inte göras mer oskarpt.",
             "setFocus": "Ställ in fokus",
             "focusHint": "Klicka på fotografiet där det ska vara skarpt. Esc för att avbryta."
         },
@@ -369,7 +371,7 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
-        "infoLensBlur": "{{name}}, f/{{f}}"
+        "infoLensBlur": "{{name}}, oskärpa {{amount}}"
     },
     "preview": {
         "empty": {

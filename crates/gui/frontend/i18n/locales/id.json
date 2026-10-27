@@ -330,10 +330,12 @@
             "models": {
                 "lisbon": "Gunakan model ini untuk memburamkan foto seperti bukaan lensa yang lebih lebar, dengan titik pilihan Anda tetap tajam. Model ini memperkirakan jarak setiap bagian foto (MoGe-2 ViT-B, 324 MB). Penggunaan pertama akan mengompilasi model untuk prosesor Anda, yang memakan waktu sekitar satu menit di Mac."
             },
-            "fNumber": "Bukaan",
-            "equivalent": "setara full-frame",
+            "blurAmount": "Jumlah blur",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} full-frame)",
+            "readoutEquivalent": "≈ f/{{equivalent}} setara full-frame",
             "asTaken": "Asli",
             "assumed": "Foto ini tidak memiliki informasi lensa; f/{{f}} diasumsikan",
+            "cannotBlurMore": "Foto ini diambil pada f/{{f}} (setara full-frame), selebar batas efeknya; foto ini tidak bisa diburamkan lagi.",
             "setFocus": "Atur fokus",
             "focusHint": "Klik bagian foto yang harus tajam. Esc untuk membatalkan."
         },
@@ -359,7 +361,7 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
-        "infoLensBlur": "{{name}}, f/{{f}}"
+        "infoLensBlur": "{{name}}, blur {{amount}}"
     },
     "preview": {
         "empty": {

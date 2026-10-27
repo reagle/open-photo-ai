@@ -330,10 +330,12 @@
             "models": {
                 "lisbon": "より開放絞りのレンズで撮ったように写真をぼかしたいときに使用します。選んだ点はシャープなままです。写真内の各部分までの距離を推定します（MoGe-2 ViT-B、324 MB）。初回使用時にお使いのプロセッサ向けにモデルをコンパイルします。Mac では約1分かかります。"
             },
-            "fNumber": "絞り",
-            "equivalent": "35mm判換算",
+            "blurAmount": "ぼかし量",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} 35mm判換算)",
+            "readoutEquivalent": "≈ f/{{equivalent}} 35mm判換算",
             "asTaken": "撮影時のまま",
             "assumed": "レンズ情報がないため f/{{f}} と仮定",
+            "cannotBlurMore": "この写真は f/{{f}}（35mm判換算）で撮影されており、効果の上限と同じ明るさのため、これ以上ぼかせません。",
             "setFocus": "ピントを合わせる",
             "focusHint": "シャープに写したい部分をクリックしてください。Esc でキャンセルします。"
         },
@@ -359,7 +361,7 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
-        "infoLensBlur": "{{name}}、f/{{f}}"
+        "infoLensBlur": "{{name}}、ぼかし {{amount}}"
     },
     "preview": {
         "empty": {
