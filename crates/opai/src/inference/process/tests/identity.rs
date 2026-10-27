@@ -1,7 +1,7 @@
 //! The identity a result carries, and the key a result that is not a picture is stored under.
 
 use super::*;
-use crate::inference::process::identity::DATA_DISCRIMINATOR;
+use crate::inference::process::identity::{DATA_DISCRIMINATOR, MASK_DISCRIMINATOR};
 
 #[test]
 fn a_chained_pair_of_runs_agrees_with_one_run_over_the_concatenated_operations() {
@@ -187,5 +187,30 @@ fn a_data_key_and_a_chain_key_are_never_the_same_string() {
     assert!(
         ![ChannelDepth::Eight.tag(), ChannelDepth::Sixteen.tag()].contains(&DATA_DISCRIMINATOR),
         "the data discriminator is a depth tag"
+    );
+}
+
+#[test]
+fn a_masked_identity_is_never_a_chain_key_or_a_data_key() {
+    // A masked result is never stored, but it is named, and a name that collided with a step's key would hand the
+    // unmasked picture to whatever looks the masked one up — or the other way round.
+    let image = kyoto(2.0);
+
+    for identity in ["cafebabecafebabe", "f00df00df00df00d"] {
+        for signature in [0, 1, u64::MAX] {
+            let masked = identity_masked(identity, signature);
+
+            assert_ne!(masked, identity_of_data(identity, &as_subject(image.clone())));
+            for depth in [ChannelDepth::Eight, ChannelDepth::Sixteen] {
+                assert_ne!(masked, identity_after(identity, std::slice::from_ref(&image), depth));
+            }
+        }
+
+        assert_ne!(identity_masked(identity, 1), identity_masked(identity, 2), "two masks named one result");
+    }
+
+    // Not a word a depth or the data path could spell, in the position both of theirs occupy.
+    assert!(
+        ![ChannelDepth::Eight.tag(), ChannelDepth::Sixteen.tag(), DATA_DISCRIMINATOR].contains(&MASK_DISCRIMINATOR)
     );
 }

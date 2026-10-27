@@ -79,3 +79,20 @@ pub(crate) fn identity_of_data(identity: &str, operation: &crate::models::Subjec
     // The same separators, for the same reason: two adjacent fields must not run together into a third reading.
     xxh3_string(&format!("{identity}|{}|{DATA_DISCRIMINATOR}", operation.cache_tag()))
 }
+
+// Not a depth tag and not the data discriminator: see `identity_masked`'s collision test.
+/// What tells a masked result's identity apart from a chain key and a data key, in the position a
+/// [`ChannelDepth::tag`] and [`DATA_DISCRIMINATOR`] occupy.
+pub(super) const MASK_DISCRIMINATOR: &str = "mask";
+
+/// The identity of `identity`'s pixels blended through a mask whose [`signature`](crate::Mask::signature) is
+/// `signature`.
+///
+/// Folded over the chain's own identity ([`identity_after`]), so a masked result is never taken for the unmasked one or
+/// for the same chain under another mask. It is **never a step's cache key**: the mask is applied after the chain, and
+/// every step keeps the key it has without one, which is what lets a mask edit be served every step from the store.
+pub(crate) fn identity_masked(identity: &str, signature: u64) -> String {
+    // The signature in the operation's place and the discriminator in the depth's, with the same separators, so no
+    // identity and chain can fold to this string through `identity_after` or `identity_of_data`.
+    xxh3_string(&format!("{identity}|{signature:016x}|{MASK_DISCRIMINATOR}"))
+}

@@ -6,6 +6,7 @@ mod faces;
 mod grain;
 mod identity;
 mod log;
+mod mask;
 mod plan;
 mod report;
 mod run;
