@@ -12,6 +12,7 @@ import type { Operation } from "@/ipc/enhance";
 import { detectFaces } from "@/ipc/faces";
 import { type Enhancement, modelValue, optionFor, parameterOf, qualityLabel } from "@/lib/enhancements";
 import { enabledFaces } from "@/lib/faces";
+import { formatFNumber } from "@/lib/fstops";
 import { report } from "@/lib/report";
 import type { ShortcutAction } from "@/lib/shortcuts";
 import { cn, toPercent } from "@/lib/utils";
@@ -25,6 +26,7 @@ import { ColorizationOptions } from "./ColorizationOptions";
 import { DenoiseOptions } from "./DenoiseOptions";
 import { FaceRecoveryOptions } from "./FaceRecoveryOptions";
 import { GrainOptions, matchesSource } from "./GrainOptions";
+import { LensBlurOptions } from "./LensBlurOptions";
 import { LightAdjustmentOptions } from "./LightAdjustmentOptions";
 import { OptionsPanel } from "./OptionsPanel";
 import { RestoreOptions } from "./RestoreOptions";
@@ -269,6 +271,16 @@ export const EnhancementRow = ({
                 return (
                     <RestoreOptions enhancement={enhancement} operation={operation} entry={entry} onChange={onChange} />
                 );
+            case "lens_blur":
+                return (
+                    <LensBlurOptions
+                        enhancement={enhancement}
+                        operation={operation}
+                        entry={entry}
+                        {...(identity !== undefined && { identity })}
+                        onChange={onChange}
+                    />
+                );
             case "grain":
                 return (
                     <GrainOptions enhancement={enhancement} operation={operation} entry={entry} onChange={onChange} />
@@ -356,6 +368,16 @@ export const EnhancementRow = ({
                     scale: Number.parseFloat((parameterOf(operation, entry, "scale") ?? 1).toFixed(SCALE_PLACES)),
                     intensity: toPercent(amount("strength")),
                 });
+            case "lens_blur": {
+                // The model and the aperture, with no quality: the model is published at one precision, which says
+                // nothing. The stop's own number, as the user set it.
+                const f = parameterOf(operation, entry, "f_number");
+
+                // The model alone where neither the operation nor the catalogue knows an aperture: nothing to report.
+                return f === undefined
+                    ? t("enhancements.infoModel", { name, quality })
+                    : t("enhancements.infoLensBlur", { name, f: formatFNumber(f) });
+            }
             case "grain":
                 // The amount, and what it is a share of: the photograph's own noise, or a sensor's added.
                 return t("enhancements.infoGrain", {

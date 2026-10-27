@@ -465,6 +465,18 @@
                 "osaka": "Use this model when you want the most thorough restoration available. It rebuilds detail rather than just sharpening it, going furthest on photos that are soft or heavily compressed. It's slow, though, and needs a powerful GPU to run well."
             }
         },
+        "lensBlur": {
+            "name": "Lens Blur",
+            "models": {
+                "lisbon": "Use this model to blur a photograph as a wider lens aperture would, keeping the point you choose sharp. It estimates how far away everything is (MoGe-2 ViT-B, 324 MB). The first use compiles the model for your processor, which takes about a minute on a Mac."
+            },
+            "fNumber": "Aperture",
+            "equivalent": "full-frame equivalent",
+            "asTaken": "As taken",
+            "assumed": "This photograph has no lens information; f/{{f}} assumed",
+            "setFocus": "Set focus",
+            "focusHint": "Click the photograph where it should be sharp. Esc to cancel."
+        },
         "grain": {
             "name": "Grain",
             "amount": "Amount",
@@ -502,6 +514,7 @@
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
+        "infoLensBlur": "{{name}}, f/{{f}}",
         "infoGrain": "{{name}}, {{intensity}}%, {{mode}}"
     },
     "preview": {
@@ -525,6 +538,7 @@
             "upscale": "Upscaling",
             "sharpen": "Sharpening",
             "restore": "Restoring",
+            "lensBlur": "Blurring",
             "grain": "Grain",
             "enhancing": "Enhancing",
             "compiling": "Compiling {{model}} model",

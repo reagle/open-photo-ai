@@ -225,7 +225,18 @@ const GRAIN: VariantEntry["parameters"] = [
 /** What Lima publishes: the region a removal takes out, painted rather than set by a control. */
 const MASK: VariantEntry["parameters"] = [{ name: "mask", kind: "mask" }];
 
-/** The place `opai`'s `Family::APPLY_ORDER` gives each family in a chain; detection has none. */
+/**
+ * What Lisbon's lens blur publishes: the equivalent f-number with the bounds `FNumber::MIN` and `FNumber::MAX` enforce,
+ * and the two halves of the focus point with the bounds `Fraction::MIN` and `Fraction::MAX` enforce. The aperture
+ * starts at f/2.8 and the focus at the middle, which a new operation overrides with the photograph's own aperture.
+ */
+const LENS_BLUR: VariantEntry["parameters"] = [
+    { name: "f_number", kind: "range", min: 1, max: 32, default: 2.8 },
+    { name: "focus_x", kind: "range", min: 0, max: 1, default: 0.5 },
+    { name: "focus_y", kind: "range", min: 0, max: 1, default: 0.5 },
+];
+
+/** The place `opai`'s `Family::APPLY_ORDER` gives each family in a chain; detection and depth have none. */
 const ORDER: Partial<Record<Family, number>> = {
     remove: 0,
     denoise: 1,
@@ -236,7 +247,8 @@ const ORDER: Partial<Record<Family, number>> = {
     sharpen: 6,
     upscale: 7,
     restore: 8,
-    grain: 9,
+    lens_blur: 9,
+    grain: 10,
 };
 
 const family = (name: Family, variants: VariantEntry[]): FamilyEntry => {
@@ -290,6 +302,8 @@ export const CATALOGUE: FamilyEntry[] = [
     // Published, and drawn by nothing: "which model detects faces" is model vocabulary the library
     // declines to leave a front end to restate, but it is not an enhancement a user adds.
     family("detection", [variant("newyork", "New York")]),
+    // Published, and drawn by nothing, for the same reason: the model a lens blur is driven by is not one a user adds.
+    family("depth", [variant("lisbon", "Lisbon", ["fp16"])]),
     family("face_recovery", [
         variant("athens", "Athens", ["fp32", "fp16"], FACES_AND_FIDELITY),
         variant("santorini", "Santorini", ["fp32", "fp16"], FACES),
@@ -300,6 +314,8 @@ export const CATALOGUE: FamilyEntry[] = [
         // diffusion transformer was ever released, and it is now also published quantised to int8.
         variant("osaka", "Osaka", ["fp16", "int8"], RESTORE),
     ]),
+    // Last, as the library publishes it: it runs after everything else, and is the one model published at FP16 alone.
+    family("lens_blur", [variant("lisbon", "Lisbon", ["fp16"], LENS_BLUR)]),
     // One precision, its arithmetic's: the grain runs no model.
     family("grain", [variant("sensor", "Sensor", ["fp32"], GRAIN)]),
 ];
