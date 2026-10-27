@@ -4,6 +4,10 @@
 //! Two callers from two families, which is why it is here rather than in either: São Paulo reads its weight map back
 //! over the photograph (`models::color_balance::saopaulo::process`), and colorization reads its predicted chroma back
 //! onto the photograph's own lightness (`models::colorization::compose`).
+//!
+//! The tables are not only for squares: [`plane`](crate::plane), [`guided`](crate::guided) and
+//! [`defocus`](crate::defocus) resample planes of any size through [`Axis`], reading the taps' fields directly because
+//! their planes are not square or not one channel.
 
 // Hand-rolled rather than `image`'s `Triangle`, because they are not the same filter. `Triangle` is a support-based
 // resampler with its own normalisation and its own edge handling, which is a different answer at every pixel — and it
@@ -25,12 +29,12 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Tap {
     /// The lower source index, clamped into the source.
-    lo: usize,
+    pub(crate) lo: usize,
     /// The upper source index, clamped to the last source index — which is what makes the last destination pixel
     /// read one sample rather than run off the end.
-    hi: usize,
+    pub(crate) hi: usize,
     /// How far between `lo` and `hi` the destination position falls, in `[0, 1]`.
-    frac: f32,
+    pub(crate) frac: f32,
 }
 
 /// One axis's bilinear table: a [`Tap`] per destination position, resolved once for the whole photograph.

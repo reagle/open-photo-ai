@@ -14,6 +14,11 @@
 //! of a graph's square plane back onto the photograph ([`bilinear`]), the row-banded split of a full-resolution CPU
 //! pass across cores ([`rows`]), and the tiling driver [`run_tiled`].
 //!
+//! And the model-free half of the lens blur: a single-channel plane of any size ([`plane`]), sRGB to linear light and
+//! back ([`linear`]), edge-aware upsampling and the edge grow ([`guided`]), and the layered depth-of-field render
+//! ([`defocus`]). A depth model's map arrives through the first three; the render takes a blur radius per pixel and
+//! knows nothing of lenses or depth.
+//!
 //! **This crate knows nothing of `opai`**: no model, session, execution provider or orchestration. It depends on
 //! `image` and `thiserror` alone, so that independence is a compile error to break rather than a convention to keep.
 //! Its items are `pub` because that is how `opai` reaches them; it is not published.
@@ -44,9 +49,13 @@
 pub mod bilinear;
 pub mod blend;
 pub mod canvas;
+pub mod defocus;
 pub mod grid;
+pub mod guided;
+pub mod linear;
 pub mod mix;
 pub mod pad;
+pub mod plane;
 pub mod present;
 pub mod rows;
 pub mod tensor;
