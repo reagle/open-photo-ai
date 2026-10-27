@@ -2,6 +2,10 @@
 //!
 //! Shared by São Paulo's weight map (`models::color_balance::saopaulo::process`) and colorization's chroma
 //! (`models::colorization::compose`).
+//!
+//! The tables are not only for squares: [`plane`](crate::plane), [`guided`](crate::guided) and
+//! [`defocus`](crate::defocus) resample planes of any size through [`Axis`], reading the taps' fields directly because
+//! their planes are not square or not one channel.
 
 // Hand-rolled rather than `image`'s `Triangle`, because they are not the same filter. `Triangle` is a support-based
 // resampler with its own normalisation and its own edge handling, which is a different answer at every pixel — and it

@@ -7,8 +7,13 @@
 //! ([`bilinear`]), row-banded CPU passes ([`rows`]), grain measured per brightness and synthesised back ([`grain`]),
 //! and the tiling driver [`run_tiled`].
 //!
-//! And the pixels of a mask: a single-channel plane of any size ([`plane`]), soft brush strokes painted into one
-//! ([`stroke`]), and the per-pixel form of the control blend ([`mix::masked`]) that limits a finished result to it.
+//! And the model-free half of the lens blur: a single-channel plane of any size ([`plane`]), sRGB to linear light and
+//! back ([`linear`]), edge-aware upsampling and the edge grow ([`guided`]), and the layered depth-of-field render
+//! ([`defocus`]). A depth model's map arrives through the first three; the render takes a blur radius per pixel and
+//! knows nothing of lenses or depth.
+//!
+//! And the pixels of a mask: soft brush strokes painted into a [`plane`] ([`stroke`]), and the per-pixel form of the
+//! control blend ([`mix::masked`]) that limits a finished result to it.
 //!
 //! **This crate knows nothing of `opai`** and depends only on `image` and `thiserror`, so that independence is a
 //! compile error to break. Items are `pub` only so `opai` can reach them; it is not published.
@@ -40,9 +45,12 @@ pub mod bilinear;
 pub mod blend;
 pub(crate) mod boxes;
 pub mod canvas;
+pub mod defocus;
 pub mod fill;
 pub mod grain;
 pub mod grid;
+pub mod guided;
+pub mod linear;
 pub mod mix;
 pub mod pad;
 pub mod plane;
