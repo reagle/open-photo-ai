@@ -23,6 +23,9 @@ The series' decisions are in `add-lens-blur-1-depth/design.md` (this is D16). On
 | 4 | `add-lens-blur-4-gui` | Panel, f-number slider, click to focus, `lens_info`, i18n | 3 | 3 | built |
 | 5 | `add-lens-blur-5-hdr-gainmap` | Gain map blurred and rewritten | 3, colour stack | `add-color-4-ultra-hdr-gainmap` + 1..4 | **this change** |
 | 6 | `add-lens-blur-6-live-preview` | Display-size render while dragging | 4 | 4 | pending |
+| 7 | `add-lens-blur-7-matte-render` | Subject composite in `defocus`, push-pull fill, blur fusion, morphology, geometric layers | 2 (4 for the stack) | 4 | proposed |
+| 8 | `add-lens-blur-8-matting` | Matting family (Porto = ViTMatte-S), depth trimap, matte injected into the lens blur, `--lb-edges` | 7 | 7 | proposed |
+| 9 | `add-lens-blur-9-matte-gainmap` | The matte composite applied to an Ultra HDR gain map | 5, 8 | 5 + 7..8 | pending, not proposed |
 
 ## How the work divides
 

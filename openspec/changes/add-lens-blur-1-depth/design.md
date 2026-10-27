@@ -66,6 +66,9 @@ The prototype that settled the numbers is local and not shipped (`opai-notes/blu
 | 4 | `add-lens-blur-4-gui` | Lens Blur panel: f-number slider in third stops, click on the photograph to focus, `lens_info` command, i18n | 3 | 3 | built |
 | 5 | `add-lens-blur-5-hdr-gainmap` | Gain map blurred with the same radii as the SDR base and rewritten from the HDR/SDR ratio | 3 (4 for the GUI check), fork colour stack | `add-color-4-ultra-hdr-gainmap` + 1..4 | built |
 | 6 | `add-lens-blur-6-live-preview` | A display-size render that follows the slider while dragging | 4 | 4 | pending, not proposed |
+| 7 | `add-lens-blur-7-matte-render` | Subject composite in `defocus`, push-pull fill, blur fusion, morphology, geometric layers | 2 (4 for the stack) | 4 | proposed |
+| 8 | `add-lens-blur-8-matting` | Matting family (Porto = ViTMatte-S), depth trimap, matte injected into the lens blur, `--lb-edges` | 7 | 7 | proposed |
+| 9 | `add-lens-blur-9-matte-gainmap` | The matte composite applied to an Ultra HDR gain map | 5, 8 | 5 + 7..8 | pending, not proposed |
 
 ## How the work divides
 
