@@ -16,10 +16,6 @@ use super::loss::{Loss, losses_carrying, reconcile};
 use crate::image::{self, ImageFormat, ImageIoError, Picture, recommended_encode_options};
 use crate::task::{Cancelled, spawn_blocking};
 
-/// The largest XMP packet a JPEG holds in its standard `APP1` segment; a larger one `rust-sak` moves whole into extended
-/// XMP, leaving only a reference behind (`rust_sak::image`'s `MAX_STANDARD_LEN`, which is not public).
-const MAX_STANDARD_XMP: usize = 65_502;
-
 /// How [`write()`] writes.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct WriteOptions {
@@ -85,10 +81,13 @@ impl From<Cancelled> for WriteError {
 /// not shrink it; otherwise it is encoded at its own resolution (shrunk only where the written image is smaller than it,
 /// never enlarged) at the export's quality or 90, whichever is higher, with its own `hdrgm` XMP and ISO 21496-1
 /// metadata. It is appended after the primary with an MPF index; the primary keeps its `hdrgm` XMP, its
-/// `Container:Directory` (with the gain map's new length) and its ISO 21496-1 version marker. Every other format leaves
-/// the gain map out. **Nothing about the gain map fails the export**: one that cannot be prepared, or whose primary XMP
-/// is too large for a JPEG's standard XMP segment (where `hdrgm:Version` must be), is left out, the primary is written as
-/// SDR without its gain-map XMP, and the HDR it could not carry is reported.
+/// `Container:Directory` (with the gain map's new length) and its ISO 21496-1 version marker. An XMP packet too large
+/// for a JPEG's standard XMP segment is split by `rust-sak` the way the Pixel camera splits it: `hdrgm:`, the directory
+/// and as much of the rest as fits stay in the standard segment, where Ultra HDR readers look, and the largest properties
+/// (a Pixel's `GCamera:HdrPlusMakernote`) go into extended XMP. Every other format leaves the gain map out. **Nothing
+/// about the gain map fails the export**: one that cannot be prepared, or that the encoder does not append (its
+/// declaration could not stay in the standard segment and there is no ISO marker), is left out, and the HDR it could not
+/// carry is reported.
 ///
 /// **What the file loses against the picture's source is assessed as it is written** ([`losses`](super::losses)):
 /// HDR written as SDR, fewer bits per channel, a colour profile not embedded — **reconciled with what the encoder
@@ -122,15 +121,12 @@ pub async fn write(
     // A primary whose XMP could not be rewritten has no `hdrgm:Version`, which a Google-style reader needs to find the
     // gain map, unless it has the ISO version marker; without either the gain map is not written.
     let undeclared = picture.metadata().xmp.is_some() && metadata.xmp.is_none() && metadata.iso_gain_map.is_none();
-    // Nor where the XMP is too large for a JPEG's standard XMP segment: `rust-sak` would move all of it, `hdrgm:Version`
-    // and the `Container:Directory` too, into extended XMP, where Ultra HDR readers do not look, and the file would
-    // claim its HDR where no reader sees it. Its XMP is then rewritten as for an SDR export, without the gain map's.
-    let oversized = metadata.xmp.as_ref().is_some_and(|xmp| xmp.len() > MAX_STANDARD_XMP);
+    // An XMP packet too large for a JPEG's standard XMP segment is no reason: `rust-sak` keeps `hdrgm:` and the
+    // `Container:Directory` in the standard segment and moves the largest other properties into extended XMP. Only where
+    // that cannot be done (the required properties alone too large, or a packet it cannot walk) does it move everything,
+    // and then it appends the gain map only beside the ISO version marker — reported below as not appended.
     if gain_map.is_some() && undeclared {
         dropped(picture, &"the XMP that declares it could not be rewritten");
-    } else if gain_map.is_some() && oversized {
-        dropped(picture, &"the XMP that declares it is too large for a JPEG's standard XMP segment");
-        metadata = super::metadata::for_export(picture, format, now, None);
     } else {
         metadata.gain_map = gain_map;
     }
@@ -534,18 +530,6 @@ mod tests {
         let cut = dir.path().join("cut.jpg");
         std::fs::write(&cut, truncated_ultra_hdr()).expect("written");
         let cut = image::load_blocking(&cut).expect("the photograph still loads");
-        // Its primary's XMP, padded past what a JPEG's standard XMP segment holds by a property the rewrite keeps:
-        // `hdrgm:Version` would be moved into extended XMP with the rest, where readers would not find it.
-        let mut padded = loaded.metadata().clone();
-        let padding = "x".repeat(70_000);
-        let xmp = String::from_utf8(padded.xmp.take().expect("XMP")).expect("UTF-8");
-        padded.xmp = Some(
-            xmp.replacen("hdrgm:Version=", &format!("xmlns:pad=\"urn:pad\" pad:Pad=\"{padding}\" hdrgm:Version="), 1)
-                .into_bytes(),
-        );
-        let padded = loaded.clone().with_metadata(padded);
-        assert!(padded.gain_map().is_some());
-
         // A secondary image the MPF index calls a gain map, with no gain-map metadata of its own: refused at load.
         let bare = {
             use crate::image::test_support::{ISO_VERSION, ULTRA_HDR_XMP, display_p3, ramp_image};
@@ -576,7 +560,7 @@ mod tests {
         };
         assert!(bare.gain_map().is_none());
 
-        let pictures = [("refused.jpg", refused), ("cut-out.jpg", cut), ("padded.jpg", padded), ("bare-out.jpg", bare)];
+        let pictures = [("refused.jpg", refused), ("cut-out.jpg", cut), ("bare-out.jpg", bare)];
         for (name, picture) in pictures {
             let (log, result) = crate::logging::records_of_blocking("info", || {
                 tokio::runtime::Builder::new_current_thread()
@@ -594,14 +578,46 @@ mod tests {
             assert_eq!((read.gain_map, read.iso_gain_map), (None, None), "{name}");
             assert!(!String::from_utf8(read.xmp.expect("XMP")).expect("UTF-8").contains("hdrgm"), "{name}");
             assert!(rust_sak::image::decode_bytes(&file).is_ok(), "{name}");
-            if name == "padded.jpg" {
-                assert!(read_xmp_kept_padding(&file), "the rest of the XMP is still written");
-            }
             if name == "refused.jpg" {
                 let records = crate::logging::records(&log, "HDR gain map dropped: it could not be carried");
                 assert_eq!(records.len(), 1, "{log}");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn a_gain_map_whose_xmp_outgrows_the_standard_segment_is_still_carried_and_declared_there() {
+        use crate::image::test_support::written_ultra_hdr;
+
+        // As a Pixel photograph edited in Lightroom: its primary's XMP padded past what a JPEG's standard XMP segment
+        // holds, by a property the rewrite keeps, written beside `hdrgm:Version`.
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let hawk = dir.path().join("hawk.jpg");
+        std::fs::write(&hawk, written_ultra_hdr()).expect("written");
+        let loaded = image::load_blocking(&hawk).expect("decodable");
+        let mut padded = loaded.metadata().clone();
+        let padding = "x".repeat(70_000);
+        let xmp = String::from_utf8(padded.xmp.take().expect("XMP")).expect("UTF-8");
+        padded.xmp = Some(
+            xmp.replacen("hdrgm:Version=", &format!("xmlns:pad=\"urn:pad\" pad:Pad=\"{padding}\" hdrgm:Version="), 1)
+                .into_bytes(),
+        );
+        let padded = loaded.clone().with_metadata(padded);
+
+        let (written, file) = write_to(&padded, dir.path(), "padded.jpg", ImageFormat::Jpeg).await;
+
+        // Nothing lost: the gain map is appended, the padding kept in extended XMP, and `hdrgm:Version` found in the
+        // standard segment — the first XMP `APP1`, which is all an Ultra HDR reader reads.
+        assert_eq!(written.losses, []);
+        assert!(rust_sak::image::metadata_bytes(&file).gain_map.is_some());
+        assert_eq!(rust_sak::image::hdr_bytes(&file), Some(rust_sak::image::Hdr::GainMap));
+        assert!(read_xmp_kept_padding(&file), "the rest of the XMP is still written");
+        let header = b"http://ns.adobe.com/xap/1.0/\0";
+        let at = file.windows(header.len()).position(|w| w == header).expect("a standard XMP segment");
+        let length = usize::from(u16::from_be_bytes([file[at - 2], file[at - 1]]));
+        let standard = String::from_utf8_lossy(&file[at + header.len()..at - 2 + length]);
+        assert!(standard.contains("hdrgm:Version") && standard.contains("HasExtendedXMP"), "{standard}");
+        assert!(!standard.contains("pad:Pad"));
     }
 
     #[tokio::test]
