@@ -290,6 +290,7 @@ impl LensBlurPipeline {
             height,
             &radius,
             self.keep_sharp.as_deref(),
+            None,
             Defocus::DEFAULT,
             &per_layer(REFINE_SHARE, blur_share, 1.0),
         )
