@@ -339,6 +339,16 @@ pub enum UnsupportedReason {
         /// What the analysis produces.
         produces: &'static str,
     },
+
+    // Unreachable through `Opai::process`, which injects both before it plans; a chain planned by hand from a
+    // deserialized lens blur is the one way here.
+    /// An enhancement driven by another run's result — a lens blur by the depth map of its input — planned before the
+    /// chain had handed it that result.
+    #[error("this enhancement needs {missing}, which the chain finds before it runs")]
+    Uninjected {
+        /// What it was not handed.
+        missing: &'static str,
+    },
 }
 
 /// Everything that can stop a run from producing an enhanced image.

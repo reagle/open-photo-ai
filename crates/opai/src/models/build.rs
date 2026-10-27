@@ -28,9 +28,12 @@ use super::colorization::{Colorization, ColorizationVariant};
 use super::denoise::{Denoise, DenoiseVariant};
 use super::depth::{Depth, DepthVariant};
 use super::detection::{Detection, DetectionVariant};
+use super::f_number::FNumber;
 use super::face::Faces;
 use super::face_recovery::{FaceRecovery, FaceRecoveryVariant};
 use super::fidelity::Fidelity;
+use super::fraction::Fraction;
+use super::lens_blur::{FOCUS_X, FOCUS_Y, LensBlur, LensBlurVariant};
 use super::light_adjustment::{LightAdjustment, LightAdjustmentVariant};
 use super::precision::Precision;
 use super::scale::Scale;
@@ -98,11 +101,17 @@ pub struct ParameterValues {
     fidelity: Fidelity,
     /// The faces a face-recovery run restores, as a detection run found them.
     faces: Faces,
+    /// The equivalent f-number a lens blur opens the lens to.
+    f_number: FNumber,
+    /// Where a lens blur focuses, across the frame.
+    focus_x: Fraction,
+    /// And down it.
+    focus_y: Fraction,
 }
 
 impl ParameterValues {
-    /// Every parameter at its neutral value: no enlargement, no strength, no lean, Athens' own default fidelity and
-    /// no faces.
+    /// Every parameter at its neutral value: no enlargement, no strength, no lean, Athens' own default fidelity, no
+    /// faces, and a lens blur at its narrowest aperture, which adds the least, focused on the middle of the frame.
     ///
     /// Neutral rather than arbitrary, so that a caller which forgot to set the parameter its variant takes gets the
     /// run that does the least rather than one it did not ask for. [`Fidelity`] is the exception and is
@@ -116,6 +125,9 @@ impl ParameterValues {
             bias: Bias::clamped(0.0),
             fidelity: Fidelity::MAXIMUM,
             faces: Faces::empty(),
+            f_number: FNumber::clamped(FNumber::MAX),
+            focus_x: Fraction::CENTRE,
+            focus_y: Fraction::CENTRE,
         }
     }
 
@@ -154,6 +166,21 @@ impl ParameterValues {
         self
     }
 
+    /// The equivalent f-number a lens blur opens the lens to.
+    #[must_use]
+    pub fn with_f_number(mut self, f_number: FNumber) -> Self {
+        self.f_number = f_number;
+        self
+    }
+
+    /// Where a lens blur focuses, as fractions across and down the frame.
+    #[must_use]
+    pub fn with_focus(mut self, x: Fraction, y: Fraction) -> Self {
+        self.focus_x = x;
+        self.focus_y = y;
+        self
+    }
+
     /// Sets the parameter the catalogue publishes under `name` to `value`, **brought inside its range** rather than
     /// refused.
     ///
@@ -185,6 +212,12 @@ impl ParameterValues {
             Fidelity::NAME => {
                 self.fidelity = clamped_logged(Fidelity::NAME, value, Fidelity::MIN, Fidelity::MAX, Fidelity::clamped);
             }
+            FNumber::NAME => {
+                self.f_number = clamped_logged(FNumber::NAME, value, FNumber::MIN, FNumber::MAX, FNumber::clamped);
+            }
+            // Two parameters of one type, so named here rather than by the type: the focus point's two coordinates.
+            FOCUS_X => self.focus_x = clamped_logged(FOCUS_X, value, Fraction::MIN, Fraction::MAX, Fraction::clamped),
+            FOCUS_Y => self.focus_y = clamped_logged(FOCUS_Y, value, Fraction::MIN, Fraction::MAX, Fraction::clamped),
             name => return Err(BuildError::UnknownParameter { name: name.to_string() }),
         }
 
@@ -333,6 +366,10 @@ impl VariantEntry {
                 UpscaleVariant::Saitama(precision) => Upscale::saitama(precision, values.scale),
                 UpscaleVariant::Osaka(precision) => Upscale::osaka(precision, values.scale),
             },
+            // Built with nothing injected: the chain it runs in hands it the depth map and the lens.
+            Family::LensBlur => match LensBlurVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
+                LensBlurVariant::Lisbon(_) => LensBlur::lisbon(values.f_number, values.focus_x, values.focus_y),
+            },
         };
 
         Ok(Subject::Enhancement(enhancement))
@@ -420,7 +457,15 @@ mod tests {
     #[test]
     fn a_value_set_by_its_published_name_is_the_value_the_typed_builder_would_carry() {
         let mut named = ParameterValues::new();
-        for (name, value) in [("scale", 2.5), ("strength", 0.25), ("bias", -0.35), ("fidelity", 0.05)] {
+        for (name, value) in [
+            ("scale", 2.5),
+            ("strength", 0.25),
+            ("bias", -0.35),
+            ("fidelity", 0.05),
+            ("f_number", 1.4),
+            ("focus_x", 0.55),
+            ("focus_y", 0.3),
+        ] {
             named.set(name, value).expect("every range the catalogue publishes can be set by its name");
         }
 
@@ -428,7 +473,9 @@ mod tests {
             .with_scale(Scale::clamped(2.5))
             .with_strength(Strength::clamped(0.25))
             .with_bias(Bias::clamped(-0.35))
-            .with_fidelity(Fidelity::clamped(0.05));
+            .with_fidelity(Fidelity::clamped(0.05))
+            .with_f_number(FNumber::clamped(1.4))
+            .with_focus(Fraction::clamped(0.55), Fraction::clamped(0.3));
 
         assert_eq!(named, typed);
     }

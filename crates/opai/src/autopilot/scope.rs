@@ -10,8 +10,9 @@
 //! ```
 
 // Owned and `Copy` rather than the caller's slice, because the pixel reads run in a `'static` blocking closure that
-// cannot borrow it. A membership set over `Family::ALL` makes duplicates harmless and lets `Detection` and `Depth`
-// match nothing, with no special case for any of them.
+// cannot borrow it. A membership set over `Family::ALL` makes duplicates harmless and lets `Detection`, `Depth` and
+// `LensBlur` match nothing, with no special case for any of them: no read serves a lens blur, which is a creative
+// choice no analysis of a photograph suggests.
 
 use crate::models::Family;
 
@@ -92,7 +93,9 @@ mod tests {
 
     /// Every family some signal can suggest.
     fn suggestible() -> impl Iterator<Item = Family> {
-        Family::ALL.into_iter().filter(|family| !matches!(family, Family::Detection | Family::Depth))
+        Family::ALL
+            .into_iter()
+            .filter(|family| !matches!(family, Family::Detection | Family::Depth | Family::LensBlur))
     }
 
     #[test]
@@ -106,7 +109,7 @@ mod tests {
 
     #[test]
     fn an_empty_set_or_one_of_detection_alone_includes_nothing_suggestible_and_needs_no_read() {
-        for families in [&[][..], &[Family::Detection][..], &[Family::Depth][..]] {
+        for families in [&[][..], &[Family::Detection][..], &[Family::Depth][..], &[Family::LensBlur][..]] {
             let scope = Scope::of(Some(families));
 
             assert!(scope.narrowed(), "{families:?}");
@@ -138,7 +141,11 @@ mod tests {
             );
             assert_eq!(scope.needs_blocks(), matches!(family, Family::Denoise | Family::Sharpen), "{family:?}");
             assert_eq!(scope.needs_face(), family == Family::FaceRecovery, "{family:?}");
-            assert_eq!(scope.needs_anything(), !matches!(family, Family::Detection | Family::Depth), "{family:?}");
+            assert_eq!(
+                scope.needs_anything(),
+                !matches!(family, Family::Detection | Family::Depth | Family::LensBlur),
+                "{family:?}"
+            );
         }
     }
 

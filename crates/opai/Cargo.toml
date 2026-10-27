@@ -84,6 +84,14 @@ image = { version = "0.25.10", default-features = false }
 # of their own, so that none of them can reach back into models, sessions or orchestration. See its `lib.rs`.
 imaging = { path = "../imaging" }
 
+# The five EXIF fields a lens blur needs to know the photograph's own lens: focal length, its 35 mm equivalent, the
+# f-number and the focal-plane resolution. `rust-sak`'s `image` decodes and orients and reads no EXIF field, and a new
+# module there would be a release of another repository before this could land; so the reader is this crate's, over
+# `kamadak-exif` (BSD-2-Clause, pure Rust, one small dependency), which reads the field table from every container the
+# application loads — JPEG, TIFF and the TIFF-based RAW formats, PNG, WebP and HEIF — through one call. It moves into
+# `rust-sak` unchanged in behaviour if that is preferred. See `image::lens`.
+kamadak-exif = "0.6.1"
+
 # The ONNX Runtime binding. `load-dynamic` is what lets the runtime be the library this project downloads, opened at a
 # path decided at run time, instead of one linked at build time; turning the defaults off is what stops
 # `download-binaries` from having a build script fetch a second copy of the 175 MB artifact this project installs

@@ -32,6 +32,8 @@ pub enum Family {
     Sharpen,
     /// Upscaling.
     Upscale,
+    /// A lens's depth of field, added to the photograph from a depth estimate.
+    LensBlur,
 }
 
 impl Family {
@@ -40,7 +42,7 @@ impl Family {
     /// The one list, so a family added later is covered by everything that iterates families rather than by whichever
     /// of them its author remembered to extend. Not the order the catalogue publishes — that one is a presentation
     /// decision and is pinned where it is made.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Detection,
         Self::Depth,
         Self::Denoise,
@@ -50,9 +52,10 @@ impl Family {
         Self::ColorBalance,
         Self::Sharpen,
         Self::Upscale,
+        Self::LensBlur,
     ];
 
-    /// The seven families whose result is an image, in the order a chain applies them.
+    /// The eight families whose result is an image, in the order a chain applies them.
     ///
     /// **The one order of a chain**, which [`Opai::process`](crate::Opai::process) puts every chain into before it
     /// runs and the catalogue publishes, so a front end draws a stack in the order it will actually run rather than
@@ -68,17 +71,20 @@ impl Family {
     ///   face restored after an upscale would be pasted at a quarter of its size.
     /// - **Colorization, then light, then colour**: colour is predicted from lightness, and light and colour balance
     ///   then correct the photograph as a whole, colour cast last so it is fitted to the exposure it will be seen at.
-    /// - **Sharpen late**, over the corrected picture, and **upscale last**, so every model before it runs at the
+    /// - **Sharpen late**, over the corrected picture, and **upscale after it**, so every model before it runs at the
     ///   photograph's own resolution rather than at up to sixty-four times its pixels.
+    /// - **Lens blur last of all.** It is a creative choice rather than a restoration: every faithful step runs on the
+    ///   sharp photograph, and nothing after it sharpens or denoises the blur. Its radii are in output pixels, so it
+    ///   is as right after an upscale as without one.
     ///
     /// The same order the application has always presented its enhancements in; it is [`Family::ALL`] without
     /// detection and depth, and derived from it so the two cannot drift apart.
-    pub const APPLY_ORDER: [Self; 7] = {
+    pub const APPLY_ORDER: [Self; 8] = {
         assert!(
             matches!(Self::ALL[0], Self::Detection) && matches!(Self::ALL[1], Self::Depth),
             "`ALL` must begin with the two families that are never applied"
         );
-        *Self::ALL.last_chunk::<7>().unwrap()
+        *Self::ALL.last_chunk::<8>().unwrap()
     };
 
     /// Where this family's operation sits in a chain — its index in [`Family::APPLY_ORDER`] — or `None` for detection
@@ -109,6 +115,7 @@ impl Family {
             Self::Colorization => "cl",
             Self::Sharpen => "sh",
             Self::Upscale => "up",
+            Self::LensBlur => "lb",
         }
     }
 
@@ -131,6 +138,7 @@ impl Family {
             Self::Colorization => "Colorization",
             Self::Sharpen => "Sharpen",
             Self::Upscale => "Upscale",
+            Self::LensBlur => "Lens Blur",
         }
     }
 }
@@ -202,6 +210,7 @@ mod tests {
         assert_eq!(Family::Colorization.prefix(), "cl");
         assert_eq!(Family::Sharpen.prefix(), "sh");
         assert_eq!(Family::Upscale.prefix(), "up");
+        assert_eq!(Family::LensBlur.prefix(), "lb");
     }
 
     #[test]
@@ -211,7 +220,14 @@ mod tests {
         assert!(Family::FaceRecovery.applied_at() < Family::Upscale.applied_at());
         assert_eq!(Family::Detection.applied_at(), None);
         assert_eq!(Family::Depth.applied_at(), None);
-        assert_eq!(Family::Upscale.applied_at(), Some(Family::APPLY_ORDER.len() - 1));
+    }
+
+    #[test]
+    fn lens_blur_is_last_and_upscale_just_before_it() {
+        // A lens blur is a creative choice made on the finished photograph, so nothing faithful runs after it; its
+        // radii are in output pixels, so it follows an upscale rather than being enlarged by one.
+        assert_eq!(Family::LensBlur.applied_at(), Some(Family::APPLY_ORDER.len() - 1));
+        assert_eq!(Family::Upscale.applied_at(), Some(Family::APPLY_ORDER.len() - 2));
     }
 
     #[test]
