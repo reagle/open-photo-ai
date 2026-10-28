@@ -9,7 +9,7 @@
 //!   read_lens(source path), the file's frame, the picture's framing
 //!   lens known from the EXIF alone, and every lens blur at or above its own f-number?
 //!                            --> each lens blur := with_lens(lens); nothing estimated
-//!   Depth (cached execute) on the chain's input
+//!   Depth (cached execute) on the chain's input, after its removals
 //!      Ok(map)    --> lens := Lens::resolve(exif, map's focal estimate, framing)
 //!                     each lens blur := with_depth(map), with_lens(lens)
 //!      Err(error) --> the run fails with it (a stop included)
@@ -25,6 +25,11 @@
 //! The depth is estimated on the chain's **input** — the framed source, before any enhancement — so changing the
 //! focus, the aperture or any earlier enhancement never estimates it again: the cached run serves it. The matte is too,
 //! keyed by its trimap, which the focus moves and the aperture does not.
+//!
+//! **Except for its removals**, which `process` runs first and hands this the result of as the input: the depth and
+//! the matte of what a removal took out would still drive the blur over the fill, a silhouette of it sharp or blurred
+//! where it was. The picture after them is named as the chain names that step, so another region is estimated again
+//! and the same one is served.
 //!
 //! **The framing** is how much smaller the input is than its file across the diagonal: a crop made before the chain
 //! (the GUI's, which `opai` never sees) is a picture smaller than the file it names, and the file's EXIF describes the
@@ -249,10 +254,10 @@ pub(crate) fn mattes_asked(operations: &[Operation]) -> usize {
     mattes + holes + usize::from(holes > 0)
 }
 
-/// `operations` with every lens blur that mattes its subject handed the matte of `source`, the chain's input, over the
-/// trimap its depth and focus give, from `matte`, and what that came to: called once for each such blur whose blur
-/// reaches 3 px somewhere and whose focus has a subject, with the options `options` gives for the next of the analyses
-/// still to come (its argument, at least 1), so each reports where the last left off.
+/// `operations` with every lens blur that mattes its subject handed the matte of `source`, the chain's input after its
+/// removals, over the trimap its depth and focus give, from `matte`, and what that came to: called once for each such
+/// blur whose blur reaches 3 px somewhere and whose focus has a subject, with the options `options` gives for the next
+/// of the analyses still to come (its argument, at least 1), so each reports where the last left off.
 ///
 /// A blur that looks for its subject's holes ([`LensBlur::finds_holes`]) is matted twice: over the trimap the depth
 /// drew, and over that trimap with Bilbao's holes seeded as background ([`seeded`]), the two then [`joined`]. Bilbao's matte of the whole photograph is asked for once, for the first such blur, and

@@ -154,11 +154,11 @@ async fn a_chain_of_a_face_recovery_and_a_lens_blur_reports_one_bar_that_only_mo
             detecting(options);
             std::future::ready(Ok(Faces::empty()))
         },
-        |_, options| {
+        |_, _, options| {
             estimating(options);
             std::future::ready(Ok(two_planes(8, 8, 1.0, 2.0)))
         },
-        |matting, options| {
+        |_, matting, options| {
             reporting(Analysis::Matting(matting))(options);
             std::future::ready(Ok(Matte::new(8, 8, &[1.0; 64])))
         },

@@ -1,11 +1,14 @@
-//! A chain holding a removal: where it runs, what an empty one is, what the store keeps, the limiting mask over it, and
-//! the faces it takes out.
+//! A chain holding a removal: where it runs, what an empty one is, what the store keeps, the limiting mask over it, the
+//! faces it takes out, and the depth and matte a lens blur after it is driven by.
 
 use super::*;
+use crate::inference::depth_map::ChainMatte;
 use crate::mask::{Base, Mask, Plane, Stroke};
 use crate::models::face::tests::face_at;
+use crate::models::lens_blur::tests::two_planes;
 use crate::models::{
-    Bias, FaceRecovery, Fidelity, LightAdjustment, LightAdjustmentVariant, Remove, Sharpen, SharpenVariant, Strength,
+    Bias, FNumber, FaceRecovery, Fidelity, Fraction, LensBlur, LightAdjustment, LightAdjustmentVariant, Matte, Remove,
+    Sharpen, SharpenVariant, Strength, Subject,
 };
 
 /// The artifact the removal opens.
@@ -294,4 +297,147 @@ async fn a_chain_without_a_removal_keeps_the_sources_gain_map_shared() {
     let sharpened = process(&Fake::new(), None, &source, &[sharpen(0.5)], None).await.unwrap().picture;
 
     assert!(Arc::ptr_eq(&sharpened.shared_gain_map().unwrap(), &source.shared_gain_map().unwrap()));
+}
+
+/// The landscape depth graph, which [`checkered`] is estimated through.
+const LANDSCAPE: &str = "dp_lisbon_landscape_fp16";
+
+/// The matting graph a lens blur's subject is matted through.
+const PORTO: &str = "mt_porto_fp32";
+
+/// How many tiles `artifact`'s graph ran.
+fn runs(backend: &Fake, artifact: &str) -> usize {
+    backend.log().ran.iter().filter(|ran| *ran == artifact).count()
+}
+
+/// A lens blur at `f_number` focused near the left edge, matting its subject: on [`checkered`] at about f/1 it is
+/// matted, whether over the fake depth's slope or over [`two_planes`].
+fn blur(f_number: f64) -> Operation {
+    LensBlur::lisbon(
+        FNumber::new(f_number).expect("in range"),
+        Fraction::new(0.1).expect("in range"),
+        Fraction::CENTRE,
+    )
+}
+
+/// The lens blur tests' checkerboard, which the fake depth puts two to five metres away, left to right.
+fn checkered() -> Picture {
+    let pixels = image::RgbImage::from_fn(960, 640, |x, y| {
+        if (x / 4 + y / 4) % 2 == 0 { image::Rgb([230, 200, 40]) } else { image::Rgb([20, 40, 120]) }
+    });
+
+    Picture::new("/pictures/holiday.jpg", DynamicImage::ImageRgb8(pixels), "cafebabecafebabe")
+}
+
+#[tokio::test]
+async fn a_lens_blur_after_a_removal_is_driven_by_the_depth_and_the_matte_of_what_the_removal_left() {
+    let backend = Fake::new();
+    let source = checkered();
+    let removed = process(&backend, None, &source, &[removing(0.25, 0.5)], None).await.unwrap().picture;
+
+    // Listed after the blur, and with no store: the removal still runs once, first, and the chain goes on from it.
+    for (chain, analysed) in [(vec![blur(1.0), removing(0.25, 0.5)], &removed), (vec![blur(1.0)], &source)] {
+        let lima = runs(&backend, LIMA);
+        let estimated = Mutex::new(Vec::new());
+        let matted = Mutex::new(Vec::new());
+
+        let enhanced = process_with(
+            &backend,
+            None,
+            &source,
+            &chain,
+            Some(ProcessOptions { cache: false, ..Default::default() }),
+            |_| std::future::ready(Ok(Faces::empty())),
+            |picture, _, _| {
+                estimated.lock().unwrap().push(picture);
+                std::future::ready(Ok(two_planes(8, 8, 1.0, 2.0)))
+            },
+            |picture, _, _| {
+                matted.lock().unwrap().push(picture);
+                std::future::ready(Ok(Matte::new(8, 8, &[1.0; 64])))
+            },
+        )
+        .await
+        .expect("the chain runs");
+
+        let (estimated, matted) = (estimated.into_inner().unwrap(), matted.into_inner().unwrap());
+        assert_eq!(estimated.len(), 1);
+        assert!(matches!(enhanced.matte, ChainMatte::Matted), "{:?}", enhanced.matte);
+        for picture in estimated.iter().chain(&matted) {
+            assert_eq!(picture.identity(), analysed.identity(), "{chain:?}");
+            assert_eq!(picture.pixels().as_bytes(), analysed.pixels().as_bytes(), "{chain:?}");
+        }
+        assert_eq!(runs(&backend, LIMA) - lima, usize::from(chain.len() == 2), "{chain:?}: Lima ran again");
+    }
+}
+
+#[tokio::test]
+async fn the_depth_and_the_matte_under_a_removal_are_its_regions_own_and_the_store_serves_them_for_it() {
+    let (backend, cache) = (Fake::new(), store());
+    let run = async |chain: &[Operation]| {
+        cached_run(&backend, Some(&cache), &checkered(), chain, OutputDepth::Eight)
+            .await
+            .expect("the chain runs");
+        settled();
+        (runs(&backend, LANDSCAPE), runs(&backend, PORTO), runs(&backend, LIMA))
+    };
+
+    let (depth, matte, _) = run(&[blur(1.0)]).await;
+    assert_eq!(depth, 1);
+
+    // The photograph's own depth and matte are not the removed one's.
+    let (removed_depth, removed_matte, lima) = run(&[removing(0.25, 0.5), blur(1.0)]).await;
+    assert_eq!((removed_depth, lima), (2, 1), "the photograph's depth was served under its removal");
+    assert!(removed_matte > matte, "the photograph's matte was served under its removal");
+
+    // Another aperture over the same region: nothing estimated, matted or removed again.
+    assert_eq!(run(&[removing(0.25, 0.5), blur(1.1)]).await, (2, removed_matte, 1));
+
+    // Another region: estimated and matted again, never served the first region's.
+    let (moved_depth, moved_matte, lima) = run(&[removing(0.75, 0.5), blur(1.0)]).await;
+    assert_eq!((moved_depth, lima), (3, 2));
+    assert!(moved_matte > removed_matte, "another region was served the first one's matte");
+
+    // And the first region again is the store's.
+    assert_eq!(run(&[removing(0.25, 0.5), blur(1.0)]).await, (3, moved_matte, 2));
+}
+
+#[tokio::test]
+async fn a_limiting_mask_over_a_removal_and_a_lens_blur_brings_back_the_removal_fresh_or_cached() {
+    let (backend, cache) = (Fake::new(), store());
+    let source = checkered();
+    let chain = [removing(0.25, 0.5), blur(1.0)];
+    let options = || Some(ProcessOptions { mask: Some(right_of(960, 640, 480)), ..Default::default() });
+
+    let removed = process(&backend, None, &source, &chain[..1], None).await.unwrap().picture.pixels().to_rgb8();
+    let whole = process(&backend, None, &source, &chain, None).await.unwrap().picture.pixels().to_rgb8();
+
+    for cached in [None, Some(&cache), Some(&cache)] {
+        let limited = process(&backend, cached, &source, &chain, options()).await.unwrap().picture.pixels().to_rgb8();
+        settled();
+
+        assert_eq!(limited.get_pixel(240, 320), removed.get_pixel(240, 320), "{cached:?}: the removal came back");
+        assert_eq!(limited.get_pixel(10, 10), removed.get_pixel(10, 10), "{cached:?}: the left was blurred");
+        assert_eq!(limited.get_pixel(900, 320), whole.get_pixel(900, 320), "{cached:?}: the right was not");
+    }
+}
+
+#[tokio::test]
+async fn a_removal_and_a_lens_blur_report_one_bar_that_only_moves_forward() {
+    let (backend, cache) = (Fake::new(), store());
+    let (reports, options) = recording();
+
+    process(&backend, Some(&cache), &checkered(), &[removing(0.25, 0.5), blur(1.0)], Some(options))
+        .await
+        .expect("the chain runs");
+    settled();
+
+    let reports = reports.lock().unwrap();
+    assert_never_decreases(&reports, "over a removal, a depth estimate, its mattes and the blur");
+    let removal = |report: &&InferenceProgress| matches!(&*report.subject, Subject::Enhancement(Operation::Remove(_)));
+    assert!(
+        reports.iter().filter(removal).any(|report| report.stage == Stage::Running),
+        "the removal reported nothing"
+    );
+    assert_eq!(reports.last().map(|report| report.chain_fraction), Some(1.0));
 }

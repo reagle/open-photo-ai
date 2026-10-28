@@ -178,11 +178,11 @@ async fn two_matted_lens_blurs_report_one_bar_that_only_moves_forward() {
         &[matted(1.4, 0.5), matted(2.0, 0.5)],
         Some(options),
         |_| std::future::ready(Ok(Faces::empty())),
-        |depth, options| {
+        |_, depth, options| {
             reporting(Analysis::Depth(depth), options);
             std::future::ready(Ok(two_planes(8, 8, 1.0, 2.0)))
         },
-        |matting, options| {
+        |_, matting, options| {
             reporting(Analysis::Matting(matting), options);
             std::future::ready(Ok(Matte::new(8, 8, &[1.0; 64])))
         },

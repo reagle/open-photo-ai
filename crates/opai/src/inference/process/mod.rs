@@ -112,11 +112,11 @@ pub(crate) async fn process<B: Backend>(
                 .await
                 .map(|executed| executed.value)
         },
-        |depth, options| async move {
-            execute(backend, cache, source, &depth, options).await.map(|executed| executed.value)
+        |picture, depth, options| async move {
+            execute(backend, cache, &picture, &depth, options).await.map(|executed| executed.value)
         },
-        |matting, options| async move {
-            execute(backend, cache, source, &matting, options).await.map(|executed| executed.value)
+        |picture, matting, options| async move {
+            execute(backend, cache, &picture, &matting, options).await.map(|executed| executed.value)
         },
     )
     .await
@@ -124,7 +124,8 @@ pub(crate) async fn process<B: Backend>(
 
 /// [`process`] over any face detection, depth estimate and matting: `detect` is called at most once, and only where
 /// [`ProcessOptions::faces`] asks for one and the chain carries a face recovery; `estimate` is called at most once, and
-/// only where the chain carries a lens blur; `matte` once for each lens blur whose subject is worth matting.
+/// only where the chain carries a lens blur; `matte` once for each lens blur whose subject is worth matting. Both of
+/// the last two are handed the picture to analyse: the source, or the source after the chain's removals.
 #[expect(
     clippy::too_many_arguments,
     reason = "the arguments of `process`, and the three analyses a chain may need"
@@ -143,9 +144,9 @@ where
     B: Backend,
     D: FnOnce(Option<ExecuteOptions>) -> F,
     F: Future<Output = Result<Faces, InferenceError>>,
-    E: FnOnce(Depth, Option<ExecuteOptions>) -> G,
+    E: FnOnce(Picture, Depth, Option<ExecuteOptions>) -> G,
     G: Future<Output = Result<DepthMap, InferenceError>>,
-    M: Fn(Matting, Option<ExecuteOptions>) -> H,
+    M: Fn(Picture, Matting, Option<ExecuteOptions>) -> H,
     H: Future<Output = Result<Matte, InferenceError>>,
 {
     let mut options = options.unwrap_or_default();
@@ -185,15 +186,27 @@ where
     let (width, height) = source.dimensions();
     let operations = sparing_removed_faces(operations, width, height);
 
+    // Resolved **here**, once, and handed to the run, to the identity composition and to every cache key the run
+    // derives. Resolving it twice — once for what runs and once for what the result is named — is two answers to one
+    // question, and the identity is only true of the pixels while they agree. Before the depth, since a chain that
+    // removes something runs its removals first, at this depth, to estimate it.
+    //
+    // Resolving per operation would work, each operation's input being the previous one's output, but only by
+    // accident, and it would put the depth of a result at the mercy of how many enhancements a user happened to
+    // select.
+    let depth = options.depth.resolve(source.pixels());
+
     // Beside the faces and for the same reason: the depth map and the lens every lens blur carries are part of every
-    // cache key the run derives. Estimated on `source`, the chain's input, so no earlier enhancement and no change of
-    // focus or aperture estimates it again — the cached run serves it. Its progress shares the first slot as the
-    // detection's does; one served from the store reports nothing. The matte of a lens blur's subject follows it, on
-    // the same input and through the same cached run, keyed by its trimap: a change of focus mattes again, a change of
-    // aperture does not. The depth and each matte that may be asked for share the slot's head in turn, each from where
-    // the last left off, and the chain starts where the last of them did.
-    let (operations, matte) = match depth_asked(&operations) {
-        None => (operations, ChainMatte::NotAsked),
+    // cache key the run derives. Estimated on the chain's input after its removals — the source itself where it removes
+    // nothing — so no later enhancement and no change of focus or aperture estimates it again: the cached run serves
+    // it. Never on the source under a removal, whose depth and matte would still hold what was taken out, and blur its
+    // silhouette into the fill. Its progress shares the first slot as the detection's does; one served from the store
+    // reports nothing. The matte of a lens blur's subject follows it, on the same picture and through the same cached
+    // run, keyed by its trimap: a change of focus mattes again, a change of aperture does not. The removals, the depth
+    // and each matte that may be asked for share the slot's head in turn, each from where the last left off, and the
+    // chain starts where the last of them did.
+    let (operations, matte, removed) = match depth_asked(&operations) {
+        None => (operations, ChainMatte::NotAsked, None),
         Some(_) => {
             let handover = options.on_progress.as_ref().map(|on_progress| Handover::new(on_progress, &operations));
             let analysis = |remaining: usize| {
@@ -206,21 +219,35 @@ where
             };
 
             let mattes = mattes_asked(&operations);
+            let removals: Vec<Operation> = in_apply_order(&operations)
+                .iter()
+                .take_while(|operation| operation.family() == Family::Remove)
+                .cloned()
+                .collect();
+            let removed = match removals.as_slice() {
+                [] => None,
+                removals => Some(removed_first(backend, cache, source, removals, depth, analysis(2 + mattes)).await?),
+            };
+            let analysed = removed.as_ref().map_or(source, |removed| &removed.picture);
+
             let filled = find_chain_depth(
                 operations.into_owned(),
-                source.path(),
-                source.dimensions(),
+                analysed.path(),
+                analysed.dimensions(),
                 analysis(1 + mattes),
-                estimate,
+                |depth, options| estimate(analysed.clone(), depth, options),
             )
             .await?;
-            let (filled, matte) = find_chain_matte(filled, source, analysis, matte).await?;
+            let (filled, matte) = find_chain_matte(filled, analysed, analysis, |matting, options| {
+                matte(analysed.clone(), matting, options)
+            })
+            .await?;
 
             if let Some(handover) = &handover {
                 options.on_progress = Some(handover.chain());
             }
 
-            (std::borrow::Cow::Owned(filled), matte)
+            (std::borrow::Cow::Owned(filled), matte, removed)
         }
     };
 
@@ -234,15 +261,6 @@ where
     // alone, or over an empty one, has nothing to limit: the result is named and made as with no mask.
     let removals = operations.iter().take_while(|operation| operation.family() == Family::Remove).count();
     let mask = options.mask.take().filter(|mask| !mask.is_empty() && operations.len() > removals);
-
-    // Resolved **here**, once, and handed to the run, to the identity composition and to every cache key the run
-    // derives. Resolving it twice — once for what runs and once for what the result is named — is two answers to one
-    // question, and the identity is only true of the pixels while they agree.
-    //
-    // Resolving per operation would work, each operation's input being the previous one's output, but only by
-    // accident, and it would put the depth of a result at the mercy of how many enhancements a user happened to
-    // select.
-    let depth = options.depth.resolve(source.pixels());
 
     // Before the opening record, so a refused chain is recorded once — as refused, by `plan` — and never as a run
     // that began and failed. It is a scan of values already in memory, so nothing is spent before the refusal.
@@ -290,18 +308,29 @@ where
 
     let started = std::time::Instant::now();
 
+    // A chain whose removals already ran, for its lens blurs' depth, starts after them from what they made: they are
+    // neither run again nor read back from the store.
+    let (pixels, gain_map, from) = match &removed {
+        Some(removed) => (removed.picture.shared_pixels(), removed.picture.shared_gain_map(), removed.steps),
+        None => (source.shared_pixels(), source.shared_gain_map(), 0),
+    };
     let outcome = run(
         backend,
-        source.shared_pixels(),
-        source.shared_gain_map(),
+        pixels,
+        gain_map,
         &planned,
-        Steps { provider: options.provider, depth, keep: if mask.is_some() { removals } else { 0 } },
+        Steps { provider: options.provider, depth, keep: if mask.is_some() { removals } else { 0 }, from },
         options.on_progress,
         &options.cancel,
         cache.as_ref(),
     )
     .instrument(span.clone())
-    .await;
+    .await
+    .map(|ran| match &removed {
+        // What the removals ran on is the chain's too.
+        Some(removed) => Ran { providers: removed.providers.and(ran.providers), ..ran },
+        None => ran,
+    });
 
     // After the chain and before the closing record, so the record's time and outcome are the whole run's, a stop
     // during the blend included.
@@ -381,6 +410,58 @@ where
     let picture = source.derive(pixels, named).with_shared_gain_map(gain_map);
 
     Ok(Enhanced { picture, providers, faces, matte })
+}
+
+/// A chain's leading removals, run before the rest of it so that its lens blurs' depth and mattes are estimated on what
+/// they left rather than on what they took out.
+struct Removed {
+    /// The source after the removals, named as the chain names its result at that step, which is what keys the depth
+    /// and the mattes: another region is another picture, and estimated again.
+    picture: Picture,
+    /// How many steps the removals are: the chain's run starts after them.
+    steps: usize,
+    /// What they ran on, which the chain's report includes.
+    providers: ProviderReport,
+}
+
+/// `source` after `removals`, the leading steps of its chain, at `depth`: run as [`run`] runs the head of the chain,
+/// through the same store and under the same keys, so a removal already made is served from the store and the chain
+/// that follows takes this up where it ends, with `options`' provider, progress, token and store.
+///
+/// # Errors
+///
+/// The [`InferenceError`] a removal failed or stopped with, or the chain's refusal of one.
+async fn removed_first<B: Backend>(
+    backend: &B,
+    cache: Option<&Memo>,
+    source: &Picture,
+    removals: &[Operation],
+    depth: ChannelDepth,
+    options: Option<ExecuteOptions>,
+) -> Result<Removed, InferenceError> {
+    let ExecuteOptions { provider, on_progress, cancel, cache: enabled } = options.unwrap_or_default();
+    let planned = plan::<B>(removals)?;
+    let store = RunCache::for_run(cache, enabled, source);
+
+    let ran = run(
+        backend,
+        source.shared_pixels(),
+        source.shared_gain_map(),
+        &planned,
+        Steps { provider, depth, keep: 0, from: 0 },
+        on_progress,
+        &cancel,
+        store.as_ref(),
+    )
+    .await
+    .map_err(|failure| failure.error)?;
+    let named = identity_after(source.identity(), removals, depth);
+
+    Ok(Removed {
+        picture: source.derive(ran.pixels, named).with_shared_gain_map(ran.gain_map),
+        steps: removals.len(),
+        providers: ran.providers,
+    })
 }
 
 /// `pixels`, the chain's result, limited to `mask`: blended with `photograph` — the chain's input after its removals —
@@ -631,6 +712,9 @@ pub(crate) struct Steps {
     /// How many leading steps' result to hand back as [`Ran::kept`] — the photograph after its removals, which a
     /// limiting mask is blended with — or 0 for none.
     pub(crate) keep: usize,
+    /// How many leading steps the source has already been through — the removals a chain ran first, for its lens
+    /// blurs' depth — which are reported as served and neither run nor read again; 0 for none.
+    pub(crate) from: usize,
 }
 
 /// What a chain run produced: the result, what it ran on, and the intermediate [`Steps::keep`] asked for.
@@ -696,7 +780,7 @@ pub(crate) async fn run<B: Backend>(
     cancel: &CancellationToken,
     cache: Option<&RunCache>,
 ) -> Result<Ran, RunFailure> {
-    let Steps { provider, depth, keep } = steps;
+    let Steps { provider, depth, keep, from } = steps;
 
     if planned.is_empty() {
         // No session, so nothing to report having run on — which is a different answer from "it ran on what was
@@ -724,10 +808,19 @@ pub(crate) async fn run<B: Backend>(
     // began at. A hit supersedes the one before it — each stored entry is the whole picture at that point in the
     // chain — so only the newest is kept, and it is decoded once, when something actually needs the pixels.
     let mut pending: Option<Vec<u8>> = None;
-    let mut skipped_from = 0_usize;
+    let mut skipped_from = from;
 
     // Cache reads are suppressed below this index. Only a prefix that would not decode raises it; see the rewind.
     let mut distrust_before = 0_usize;
+
+    // The steps `source` has already been through own their share of the bar, as steps the store served do, and none
+    // is run: their result is `source`, which is also the picture to keep where it is the one asked for.
+    for (index, step) in planned.iter().enumerate().take(from) {
+        progress.operation(index, step.operation().clone()).cached();
+    }
+    if from > 0 && from == keep {
+        kept = Some((Arc::clone(&current), current_map.clone()));
+    }
 
     // The run cache sits in this loop, which is what makes dragging a slider cheap: a step whose result is already
     // there skips the model *and* the session acquisition, since acquiring would install a model for an operation that
@@ -737,7 +830,7 @@ pub(crate) async fn run<B: Backend>(
     // would read a several-hundred-megabyte value off disk merely to find out whether it was there, since the store
     // has no existence probe and `get_bytes` returns the value. A forward walk reads each stored prefix's bytes on its
     // way past and decodes only the newest, which is the one it uses.
-    let mut index = 0;
+    let mut index = from;
     loop {
         // `index == planned.len()` is the tail: the chain ended on a run of hits, so the newest prefix *is* the
         // result. It reaches the decode below by the same path a miss does, because it is the same moment — the first
