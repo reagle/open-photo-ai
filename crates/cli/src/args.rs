@@ -13,8 +13,8 @@ use crate::autopilot::AutopilotModels;
 /// Enhance photographs with Open Photo AI.
 ///
 /// Each input is a photograph or a directory of them; a directory contributes the images directly inside it, or its
-/// whole tree with `--recursive`. The enhancements run in one order whatever order the flags are given in: denoise,
-/// face recovery, colorization, light adjustment, colour balance, sharpen, and then upscale.
+/// whole tree with `--recursive`. The enhancements run in one order whatever order the flags are given in: remove,
+/// denoise, face recovery, colorization, light adjustment, colour balance, sharpen, and then upscale.
 ///
 /// The output is a file when its extension names a format opai writes and it is not an existing directory; it then
 /// takes exactly one input photograph. Any other output is a directory, created if missing, that mirrors each
@@ -49,6 +49,15 @@ pub struct Args {
     /// aspect ratio must match it within 1%.
     #[arg(long, value_name = "FILE")]
     pub mask: Option<PathBuf>,
+
+    // On `Args` rather than on `Selection`, as `--mask` is: a file does not fit the `Copy` value autopilot also builds,
+    // and a removal goes with `--autopilot` as well as with the flags. It is an enhancement all the same, and counts as
+    // one for the refusal of a command with none.
+    /// Remove the white part of a mask image, filling it from the photograph around it, before any other enhancement:
+    /// black is kept. Its luminance is read and any transparency is ignored. It is resized to each photograph, whose
+    /// aspect ratio must match it within 1%.
+    #[arg(long = "remove", visible_alias = "rm", value_name = "FILE")]
+    pub remove: Option<PathBuf>,
 
     /// `hd` runs every model at its higher-fidelity build, `sd` at its lighter, faster one.
     #[arg(long, short = 'q', value_enum, default_value_t = Quality::Hd, ignore_case = true)]
@@ -391,12 +400,12 @@ where
 
     // Not a clap `ArgGroup`: its refusal lists the group's members as "required arguments", where what the user needs
     // to hear is that an enhancement is.
-    if !args.autopilot && args.selection.is_empty() {
+    if !args.autopilot && args.selection.is_empty() && args.remove.is_none() {
         return Err(Args::command().error(
             clap::error::ErrorKind::MissingRequiredArgument,
-            "at least one enhancement is required: --denoise (--dn), --face-recovery (--fr), --colorization (--cl), \
-             --light-adjustment (--la), --color-balance (--cb), --sharpen (--sh), --upscale (--up) or \
-             --autopilot (--ap)",
+            "at least one enhancement is required: --remove (--rm), --denoise (--dn), --face-recovery (--fr), \
+             --colorization (--cl), --light-adjustment (--la), --color-balance (--cb), --sharpen (--sh), \
+             --upscale (--up) or --autopilot (--ap)",
         ));
     }
 
@@ -754,6 +763,27 @@ mod tests {
 
         assert!(parse("opai photo.jpg --ap --mask subject.png -o out.png").expect("parses").mask.is_some());
         assert_eq!(parse("opai photo.jpg --sh -o out.png").expect("parses").mask, None);
+    }
+
+    #[test]
+    fn a_removal_mask_is_an_enhancement_on_its_own_and_goes_with_the_others() {
+        let args = parse("opai photo.jpg --rm tag.png -o out.png").expect("a removal alone is an enhancement");
+        assert_eq!(args.remove, Some(PathBuf::from("tag.png")));
+        assert!(args.selection.is_empty());
+
+        let args = parse("opai photo.jpg --remove tag.png --sh --mask subject.png -o out.png").expect("parses");
+        assert_eq!((args.remove.is_some(), args.mask.is_some()), (true, true));
+        assert!(parse("opai photo.jpg --ap --rm tag.png -o out.png").expect("parses").remove.is_some());
+        assert_eq!(parse("opai photo.jpg --sh -o out.png").expect("parses").remove, None);
+    }
+
+    #[test]
+    fn a_removal_without_its_file_is_a_usage_error() {
+        let error = parse("opai photo.jpg --rm -o out.png").expect_err("no file named");
+        assert_eq!(error.exit_code(), 2, "{error}");
+
+        let error = parse("opai photo.jpg -o out.png").expect_err("nothing asked for");
+        assert!(error.to_string().contains("--remove (--rm)"), "{error}");
     }
 
     #[test]

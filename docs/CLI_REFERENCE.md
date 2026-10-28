@@ -8,6 +8,7 @@
 - [Where the results go](#where-the-results-go)
 - [Enhancements](#enhancements)
 - [Masks](#masks)
+- [Remove](#remove)
 - [Autopilot](#autopilot)
 - [Processing order](#processing-order)
 - [Supported formats](#supported-formats)
@@ -69,6 +70,9 @@ opai photo.jpg --up -p cpu -o photo-large.png
 
 # Let autopilot choose each photo's enhancements, as the GUI's Autopilot does
 opai photos --ap -o enhanced
+
+# Remove what a mask marks in white (a sign, a passer-by), then sharpen
+opai street.jpg --rm passer-by.png --sh -o street-clean.jpg
 ```
 
 ## Arguments and global options
@@ -213,6 +217,8 @@ Default models are in **bold**.
 | Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, osaka, saitama               | `--scale` (1.0 to 8.0)     |
 
 `--mask <FILE>` limits whichever enhancements are asked for (or chosen by `--ap`) to part of the photograph. See [Masks](#masks).
+
+`--remove <FILE>` (alias `--rm`) removes the part of the photograph a mask image marks in white, filling it from its surroundings, before any other enhancement. It counts as an enhancement on its own. See [Remove](#remove).
 
 The sections below explain each enhancement briefly. For more detail on when to pick each model, see the [Enhancements section of the README](../README.md#-enhancements).
 
@@ -365,6 +371,27 @@ opai photos --dn --mask sky.png -o enhanced
 - **The models still run over the whole photograph**; the mask decides afterwards how much of their result each pixel shows. So a mask adds a quick blend to a run (and, under an upscale, an enlargement of the photograph), but changes neither how long the models take nor what the [run cache](#run-cache) stores, and running the same enhancements again with a different mask runs no model.
 - **With an upscale**, the black part shows a plain (Lanczos) enlargement of the photograph, which is softer than the upscaled part. A strongly changed result, such as an upscale or a colorization, can show a visible seam at the mask's edge: a softer edge in the mask hides it.
 
+## Remove
+
+`--remove <FILE>` (alias `--rm`) takes out what a mask image marks in white and fills it from the photograph around it, with Lima (Big-LaMa, a generative inpainting model):
+
+```bash
+# Remove a tag hanging off a plant
+opai bonsai.jpg --rm tag.png -o bonsai-clean.jpg
+
+# Remove a passer-by, then restore the faces that are left and sharpen
+opai street.jpg --rm passer-by.png --fr --sh -o street-clean.jpg
+```
+
+- **White is removed, black is kept.** The mask's brightness is read, and a pixel is removed where it is at least 50% grey; there are no partial removals. Transparency is ignored. Paint a little past the object's edge, and over its shadow if it casts one.
+- **The mask is grown, and the fill feathered.** Every pixel within 8 px of the white part is replaced; from 8 to 16 px the fill fades into the photograph; nothing further than 16 px changes at all. These are pixels of the photograph, whatever its size.
+- **Each separate region is filled on its own**, from a crop around it with generous context (0.6 times the region's size, plus 64 px, on every side), resized so its longer side is 512 px for the model and read back at full size. Regions close enough for their crops to overlap are filled together. Small objects come out sharp; a **large region comes out soft**, since a crop of thousands of pixels is filled at 512 and enlarged.
+- **It runs first**, on the photograph as it was taken, before every other enhancement, so the fill is denoised, sharpened and upscaled along with the rest of the photograph. A face in the removed part is not restored by `--fr`.
+- **The shapes must match**, as for `--mask`: a photograph whose aspect ratio differs from the mask's by more than 1% is refused, naming both ratios, and the rest of the batch still runs. With several inputs, one mask applies to each.
+- **It goes with everything**: other enhancement flags, `--mask` (which limits the other enhancements, but never brings back what was removed) and `--ap` (whose analysis sees the photograph before the removal).
+- **It runs on the CPU** under `-p auto`, which measured faster than Core ML for this model; `-p coreml` uses Core ML anyway. A first run loads the 210 MB model (a few seconds); each region then takes about 1 to 2 s. The removal is kept in the [run cache](#run-cache), so changing only the later enhancements does not run it again.
+- **Fork only.** Lima is exported by this fork and installed by hand (see the fork's notes); it is not downloaded. Its weights were trained on Places365, whose terms allow non-commercial research use.
+
 ## Autopilot
 
 `--autopilot` (alias `--ap`) runs the same analysis as the GUI's Autopilot on each image, once it's loaded, and applies the enhancements that image calls for: denoise for visible grain, face recovery when there are faces to restore, colorization for a black & white photo, light adjustment for a badly exposed one, color balance for a color cast, sharpen for a blurred one, and an upscale for a small one. Different images in one batch can get different enhancements. They still run in the [fixed order](#processing-order).
@@ -373,7 +400,7 @@ opai photos --dn --mask sky.png -o enhanced
 opai photos --ap -o enhanced
 ```
 
-- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `--mask`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
+- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `--mask`, `--remove`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
 - **Each enhancement uses its default strength or bias**: strength `100` for denoise and sharpen, bias `50` for light adjustment and color balance. An upscale runs at the factor the image's size calls for (see [Upscale](#upscale---upscale-model---up-model)); an image above 4 MP is not upscaled.
 - **An image that needs nothing is still written**, unchanged, in the format asked for. Its row ends with `Enhancements applied to` as any other.
 - **If face detection can't run** (for example, its model can't be downloaded), the image still gets the other enhancements, without face recovery, and the [log file](#log-file) records a warning.
@@ -417,7 +444,7 @@ OPAI_AP_SHARPEN=off OPAI_AP_FACE=off OPAI_AP_DENOISE=malmo opai photos --ap -o o
 The enhancements always run in this order, no matter what order you type the flags in:
 
 ```
-Denoise → Face Recovery → Colorization → Light Adjustment → Color Balance → Sharpen → Upscale
+Remove → Denoise → Face Recovery → Colorization → Light Adjustment → Color Balance → Sharpen → Upscale
 ```
 
 So these two commands do exactly the same thing:
@@ -622,7 +649,7 @@ What's in it that the terminal doesn't show:
 
 | What you see                                                                 | Cause and fix |
 |-------------------------------------------------------------------------------|---------------|
-| `error: at least one enhancement is required: --denoise (--dn), …`             | No enhancement flag was given. Add at least one, or `--ap`. |
+| `error: at least one enhancement is required: --remove (--rm), --denoise (--dn), …` | No enhancement flag was given. Add at least one, or `--ap`. |
 | `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`   | `--ap` chooses the enhancements itself. Drop `--ap`, or drop the enhancement flags and their options. |
 | `error: invalid value 'paris' for the environment variable OPAI_AP_UPSCALE` followed by `[possible values: …]` | An `OPAI_AP_*` variable names a model of another enhancement, or a misspelt one. Pick one from the list shown, `off`, or unset it. |
 | `error: the following required arguments were not provided: --output <OUTPUT>` | `-o`/`--output` is missing. |
@@ -645,6 +672,8 @@ What's in it that the terminal doesn't show:
 | `🧨 the processor … is not available on this machine; use …`                   | This machine doesn't offer the processor given with `-p` (for example, no supported NVIDIA GPU for `cuda`). Use one of the processors listed, or leave `-p` out. Exit code `2`. |
 | `🧨 the mask could not be read: …`                                             | The file given with `--mask` doesn't exist or isn't an image `opai` can read. Exit code `2`. |
 | `🧨 could not enhance photos/b.jpg: the mask's aspect ratio is 1.500 (3000x2000) and the photograph's is 1.333 (4000x3000); …` | The mask isn't the photograph's shape. Make a mask for it, or leave that photograph out; the rest of the batch went on. |
+| `🧨 the removal mask could not be read: …`                                     | The file given with `--remove` doesn't exist or isn't an image `opai` can read. Exit code `2`. |
+| `🧨 could not enhance photos/b.jpg: the removal mask's aspect ratio is …`       | As for `--mask`: the removal mask isn't the photograph's shape. |
 | `🧨 [ 42%] Failed to enhance photos/b.jpg`                                      | That image failed; the rest of the batch went on. Its reason is listed under the view when the run ends. |
 | `🧨 could not enhance photos/b.jpg: …`                                         | That image failed; the rest of the batch went on. The log file has the full error. |
 | `🧨 failed to decode photos/b.jpg: …`                                          | That image's header was readable, but the image itself wasn't; the rest of the batch went on. |

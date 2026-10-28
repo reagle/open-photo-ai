@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! the update check             --> started at launch, beside the checks below
-//! output, inputs, the mask     --> refused here: nothing installed; the mask is read once for every image
+//! output, inputs, the masks    --> refused here: nothing installed; each mask is read once for every image
 //! the update line              --> 💡 and a blank line, when the check answered "outdated" within 1.5s of launch
 //! initialize                   --> once; the 💾 line; a Ctrl-C on it abandons initialization; another instance ends it
 //! check the processor          --> one this machine does not offer is refused here: no image loaded
@@ -12,7 +12,7 @@
 //! for each image:
 //!   plan, start its row        --> 🖼️ [  0%] Preparing to enhance <path>; the bar is not touched. Under --ap the
 //!                                  plan waits for the image itself
-//!   check the mask             --> a mask whose aspect ratio is not the image's fails this image alone
+//!   check the masks            --> a mask whose aspect ratio is not the image's fails this image alone
 //!   load                       --> under --ap: 🖼️ [  0%] Choosing enhancements for <path> while the analysis runs,
 //!                                  then the chain planned from its suggestions and the OPAI_AP_* models; a signal it
 //!                                  could not read is logged and the image goes on
@@ -35,7 +35,7 @@ use std::time::Instant;
 
 use opai::{
     APP_NAME, CLI, CancellationToken, ChainFaces, Enhanced, ExecuteOptions, ExecutionProvider, FaceSelection,
-    InitOptions, Mask, OnInference, Opai, OutputDepth, Picture, ProcessOptions, ProviderVerdict, Suggestions,
+    InitOptions, Mask, OnInference, Opai, OutputDepth, Picture, ProcessOptions, ProviderVerdict, Remove, Suggestions,
     default_face_selection, image,
 };
 
@@ -80,9 +80,15 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
     };
     let sources = inputs::expand(&args.inputs, args.recursive, skip.as_deref())?;
     events::files_added(&sources.iter().map(|source| source.path.as_path()).collect::<Vec<_>>());
-    let mask = match &args.mask {
-        Some(path) => Some(read_mask(path).await?),
-        None => None,
+    let masks = Masks {
+        limit: match &args.mask {
+            Some(path) => Some(read_mask(path, "the mask").await?),
+            None => None,
+        },
+        remove: match &args.remove {
+            Some(path) => Some(read_mask(path, "the removal mask").await?),
+            None => None,
+        },
     };
 
     // Before the dependency line, the first thing that can draw. A refusal above prints its failure line alone.
@@ -165,7 +171,7 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
             outcome = tracing::field::Empty,
             error = tracing::field::Empty
         );
-        let result = enhance_one(&opai, &args, &target, source, index, planner, mask.as_ref(), &view, &cancel)
+        let result = enhance_one(&opai, &args, &target, source, index, planner, &masks, &view, &cancel)
             .instrument(span.clone())
             .await;
         analytics::mark(&span, &result);
@@ -273,8 +279,17 @@ enum Planner<'a> {
     Autopilot(&'a AutopilotModels),
 }
 
-/// Enhances `source`, the image at `index`, with the chain `planner` gives for its own size, on the processor `args`
-/// names, limited to `mask` where there is one, and writes it, answering the path written.
+/// The two mask files a command can be given, each read once for every image.
+struct Masks {
+    /// `--mask`'s: where the enhancements apply.
+    limit: Option<Arc<Mask>>,
+    /// `--remove`'s: what is taken out first.
+    remove: Option<Arc<Mask>>,
+}
+
+/// Enhances `source`, the image at `index`, with the chain `planner` gives for its own size, after removing what
+/// `masks` marks for removal and limited to the limiting mask where there is one, on the processor `args` names, and
+/// writes it, answering the path written.
 #[allow(
     clippy::too_many_arguments,
     reason = "one run's state, threaded through rather than bundled for one caller"
@@ -286,13 +301,15 @@ async fn enhance_one(
     source: &Source,
     index: usize,
     planner: Planner<'_>,
-    mask: Option<&Arc<Mask>>,
+    masks: &Masks,
     view: &View,
     cancel: &CancellationToken,
 ) -> Result<PathBuf, CliError> {
     // From the header's size, before the pixels are decoded: a mask that does not fit costs this image nothing.
-    if let Some(mask) = mask {
-        check_mask(mask, source.width, source.height)?;
+    for (mask, what) in [(&masks.limit, "mask"), (&masks.remove, "removal mask")] {
+        if let Some(mask) = mask {
+            check_mask(mask, source.width, source.height, what)?;
+        }
     }
 
     // A file whose header read cleanly but whose pixels do not decode fails this image, not the batch. The library's
@@ -308,11 +325,20 @@ async fn enhance_one(
             (plan, events::Source::Autopilot)
         }
     };
-    for operation in &plan.operations {
+
+    // First, as the library would put it anyway: a removal is the flag's own, never autopilot's, and runs on the
+    // photograph before anything the flags or the analysis chose.
+    let mut operations = plan.operations;
+    if let Some(remove) = &masks.remove {
+        operations.insert(0, Remove::lima(Arc::clone(remove)));
+    }
+
+    for operation in &operations {
+        let from = if operation.family() == opai::Family::Remove { events::Source::Manual } else { from };
         events::enhancement_added(operation.family(), from);
     }
 
-    let enhanced = enhance(opai, &picture, &plan.operations, provider, mask, view, cancel).await?;
+    let enhanced = enhance(opai, &picture, &operations, provider, masks.limit.as_ref(), view, cancel).await?;
 
     // A Ctrl-C that landed after the last tile was checked still means "write nothing".
     if cancel.is_cancelled() {
@@ -327,7 +353,7 @@ async fn enhance_one(
         "wrote {} ({width}x{height}, {}); {}",
         written.display(),
         format.name(),
-        provenance(plan.operations.is_empty(), &enhanced.providers.verdict())
+        provenance(operations.is_empty(), &enhanced.providers.verdict())
     );
 
     Ok(written)
@@ -441,21 +467,23 @@ fn chain_options(provider: ExecutionProvider, on_progress: OnInference, cancel: 
 /// a mask saved a few pixels off at any size, and not a 3:2 mask over a 4:3 photograph.
 const MASK_ASPECT_TOLERANCE: f64 = 0.01;
 
-/// The mask at `path`, read once for every image of the run: its luminance is the weight, white applies the
-/// enhancements and any alpha is ignored. Refused as a usage error where it cannot be read.
-async fn read_mask(path: &Path) -> Result<Arc<Mask>, CliError> {
+/// The mask at `path`, read once for every image of the run: its luminance is the weight (white applies the
+/// enhancements, or for a removal is removed) and any alpha is ignored. Refused as a usage error, as `what`, where it
+/// cannot be read.
+async fn read_mask(path: &Path, what: &str) -> Result<Arc<Mask>, CliError> {
     // Through the library's loader, so a mask is decoded and oriented exactly as a photograph is, in any format it
     // reads. Its message names the path.
     let picture = image::load(path)
         .await
-        .map_err(|error| CliError::Usage(format!("the mask could not be read: {error}")))?;
+        .map_err(|error| CliError::Usage(format!("{what} could not be read: {error}")))?;
 
     Ok(Arc::new(Mask::from_image(picture.pixels())))
 }
 
 /// Refuses `mask` for a `width` x `height` photograph whose aspect ratio differs from the mask's by more than
-/// [`MASK_ASPECT_TOLERANCE`], naming both. A mask with no base, which a file never gives, fits anything.
-fn check_mask(mask: &Mask, width: u32, height: u32) -> Result<(), CliError> {
+/// [`MASK_ASPECT_TOLERANCE`], naming both and calling the mask `what`. A mask with no base, which a file never gives,
+/// fits anything.
+fn check_mask(mask: &Mask, width: u32, height: u32, what: &str) -> Result<(), CliError> {
     let Some(base) = &mask.base else { return Ok(()) };
     let (mask_width, mask_height) = (base.plane().width(), base.plane().height());
     let ratio = |width: u32, height: u32| f64::from(width) / f64::from(height);
@@ -466,7 +494,7 @@ fn check_mask(mask: &Mask, width: u32, height: u32) -> Result<(), CliError> {
     }
 
     Err(CliError::Usage(format!(
-        "the mask's aspect ratio is {theirs:.3} ({mask_width}x{mask_height}) and the photograph's is {ours:.3} \
+        "the {what}'s aspect ratio is {theirs:.3} ({mask_width}x{mask_height}) and the photograph's is {ours:.3} \
          ({width}x{height}); they must match within 1%"
     )))
 }
@@ -712,18 +740,18 @@ mod tests {
     #[test]
     fn a_mask_fits_a_photograph_of_its_shape_at_any_size_to_within_a_percent() {
         for (width, height) in [(300, 200), (3000, 2000), (6000, 4000), (3000, 2012), (2980, 2000)] {
-            assert!(check_mask(&grey(300, 200), width, height).is_ok(), "{width}x{height}");
+            assert!(check_mask(&grey(300, 200), width, height, "mask").is_ok(), "{width}x{height}");
         }
     }
 
     #[test]
     fn a_mask_of_another_shape_is_refused_naming_both_ratios() {
         for (width, height) in [(4000, 3000), (2000, 3000), (3000, 2040)] {
-            let error = check_mask(&grey(300, 200), width, height).expect_err("the shapes differ");
+            let error = check_mask(&grey(300, 200), width, height, "removal mask").expect_err("the shapes differ");
 
             assert_eq!(error.exit_code(), 2);
             let message = error.to_string();
-            assert!(message.contains("1.500 (300x200)"), "{message}");
+            assert!(message.contains("the removal mask's aspect ratio is 1.500 (300x200)"), "{message}");
             assert!(message.contains(&format!("{:.3} ({width}x{height})", f64::from(width) / f64::from(height))));
         }
     }
@@ -741,7 +769,7 @@ mod tests {
         });
         image.save(&path).expect("the mask is written");
 
-        let mask = read_mask(&path).await.expect("the mask is read");
+        let mask = read_mask(&path, "the mask").await.expect("the mask is read");
         let plane = mask.base.as_ref().expect("a file is a base").plane();
 
         assert_eq!((plane.width(), plane.height()), (3, 1));
@@ -756,10 +784,11 @@ mod tests {
         let dir = tempfile::tempdir().expect("a temporary directory");
         let path = dir.path().join("missing.png");
 
-        let error = read_mask(&path).await.expect_err("there is no mask");
+        let error = read_mask(&path, "the removal mask").await.expect_err("there is no mask");
 
         assert_eq!(error.exit_code(), 2);
         assert!(error.to_string().contains("missing.png"), "{error}");
+        assert!(error.to_string().contains("the removal mask could not be read"), "{error}");
     }
 
     #[test]
