@@ -169,23 +169,24 @@ enum Pixels {
 
 /// Resolves `identity` to [`Pixels`], or the [`Refusal`] for why not.
 ///
-/// Checks the run slot before [`Opened`]: it's the cheaper lookup, and an enhanced identity can never
-/// collide with an admitted file's, since one describes bytes and the other is composed from those plus
-/// every operation applied.
+/// Checks [`Opened`] before the run slot, because the two can name the same identity: a chain that applies
+/// nothing hands its source back, identity included, and the run that does so records it as produced. A
+/// removal of nothing is such a chain — Remove added before anything is painted, which the run leaves out
+/// — and once a later run displaced it, the photograph itself would be refused as superseded. An admitted
+/// file's pixels are what its identity describes, whoever else produced them, so they are always served.
 fn locate(opened: &Opened, runs: &crate::enhance::Runs, identity: &str) -> Result<Pixels, Refusal> {
+    if let Some(path) = opened.resolve(identity) {
+        return Ok(Pixels::File(identity.to_string(), path, opened.decoded().clone()));
+    }
+
     match runs.resolve(identity) {
-        Some(crate::enhance::Resident::Picture(picture)) => return Ok(Pixels::Held(picture)),
+        Some(crate::enhance::Resident::Picture(picture)) => Ok(Pixels::Held(picture)),
         // Produced by this application and no longer held, a later run having displaced it or its image
         // having been closed — refused rather than reported as unknown, so a stale address reads as "this is
         // gone" rather than "you asked for something that never was".
-        Some(crate::enhance::Resident::Displaced) => return Err(Refusal::Displaced),
-        None => {}
+        Some(crate::enhance::Resident::Displaced) => Err(Refusal::Displaced),
+        None => Err(Refusal::Unknown),
     }
-
-    opened
-        .resolve(identity)
-        .map(|path| Pixels::File(identity.to_string(), path, opened.decoded().clone()))
-        .ok_or(Refusal::Unknown)
 }
 
 /// Decodes the file behind `pixels`, or hands back a held result unchanged.
@@ -1118,6 +1119,27 @@ mod tests {
         held(&runs, "run-1", "aaaaaaaaaaaaaaaa", 16, 16);
 
         assert_eq!(locate(&Opened::default(), &runs, "bbbbbbbbbbbbbbbb").map(|_| ()), Err(Refusal::Unknown));
+    }
+
+    #[test]
+    fn a_photograph_a_run_handed_back_unchanged_is_still_served_once_a_later_run_displaces_it() {
+        // Remove added before anything is painted: the run leaves the removal of nothing out, applies nothing, and
+        // hands back the photograph under its own identity. The next run then displaced that identity, and the
+        // original pane — show original included — drew the photograph as a broken image.
+        let dir = tempdir().expect("a temporary directory");
+        let opened = Opened::default();
+        let identity = admit(&opened, &write_image(&dir, "holiday.png", 64, 48, ImageFormat::Png));
+        let runs = crate::enhance::Runs::default();
+        held(&runs, "run-1", &identity, 64, 48);
+
+        runs.start("run-2", &identity);
+
+        assert!(
+            matches!(locate(&opened, &runs, &identity), Ok(Pixels::File(..))),
+            "the photograph was refused because a run once handed it back"
+        );
+        let (_, decoded) = rendered_from(&opened, &runs, &identity, 0);
+        assert_eq!((decoded.width(), decoded.height()), (64, 48));
     }
 
     #[test]
