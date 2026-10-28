@@ -165,7 +165,13 @@ impl AutopilotModels {
 
     /// Where the family `M`'s choice came from.
     pub fn source<M: FamilyModel>(&self) -> Source {
-        M::FAMILY.applied_at().map_or(Source::Default, |index| self.sources[index])
+        // Counted from denoise, the first family an analysis suggests: a removal runs before it and has no source.
+        let first = Family::Denoise.applied_at().unwrap_or_default();
+        M::FAMILY
+            .applied_at()
+            .and_then(|index| index.checked_sub(first))
+            .and_then(|index| self.sources.get(index).copied())
+            .unwrap_or(Source::Default)
     }
 
     /// The families not switched off, in the library's apply order: what the analysis is asked to look for.

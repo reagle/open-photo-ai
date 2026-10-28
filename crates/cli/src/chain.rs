@@ -630,7 +630,8 @@ mod tests {
         let plan = plan("opai photo.jpg --gr --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
         let families: Vec<_> = plan.applied.iter().map(|applied| applied.family).collect();
 
-        assert_eq!(families, Family::APPLY_ORDER);
+        // Every family but the removal, which is `--rm`'s own and never planned from the flags.
+        assert_eq!(families, Family::APPLY_ORDER[1..]);
         assert_eq!(
             describe(&plan.applied),
             "Denoise Stockholm strength 100, Face Recovery Athens, Colorize Delhi, Light Adjust Paris bias 50, \
