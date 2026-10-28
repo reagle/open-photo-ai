@@ -2,8 +2,10 @@ import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { configureMenu, onMenuItem } from "@/ipc/menu";
 import { isMacOs } from "@/ipc/os";
+import { onOpenRecent } from "@/ipc/recent";
 import { quit } from "@/ipc/setup";
 import { APP_NAME } from "@/lib/constants";
+import { openRecent } from "@/lib/recent";
 import { report } from "@/lib/report";
 import { type AppAction, appActionFor, isAppAction, isEditing, isOverlayOpen, isWindowShortcut } from "@/lib/shortcuts";
 import { useCanExport, useExportDialogStore } from "@/stores/exportDialog";
@@ -22,6 +24,8 @@ const MENU_LABELS = [
     "quit",
     "file",
     "open",
+    "openRecent",
+    "clearRecent",
     "export",
     "closeImage",
     "closeAll",
@@ -56,7 +60,8 @@ const MENU_LABELS = [
  * Export is the sidebar's button (and does nothing with nothing picked), Close Image and Close All
  * Images are the file options menu's (and do nothing with no image open), Settings is the navbar's
  * button, and Quit - only Linux's Ctrl+Q reaches here - is the setup dialog's. None of them closes
- * the window.
+ * the window. An entry of File > Open Recent arrives as `open-recent` carrying its path, and is
+ * opened by `openRecent`, as the drawer's Open Recent button opens one on Windows and Linux.
  *
  * While a dialog or a menu is open over the window, none of them takes effect - so Command-W never
  * closes an image under an open export dialog. A key press is offered only when `isWindowShortcut`
@@ -131,6 +136,14 @@ export const useAppActions = () => {
                       perform(id);
                   })
                 : undefined;
+        // Under the same rule as the items above: nothing opens under an open dialog.
+        const stopRecent =
+            platform === "macos"
+                ? onOpenRecent((path) => {
+                      if (typeof path !== "string" || isOverlayOpen()) return;
+                      openRecent(path).catch((error: unknown) => report("Failed to open a recent image", error));
+                  })
+                : undefined;
 
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.defaultPrevented) return;
@@ -147,9 +160,11 @@ export const useAppActions = () => {
 
         return () => {
             window.removeEventListener("keydown", onKeyDown);
-            stop?.then((unlisten) => unlisten()).catch((error: unknown) =>
-                report("Failed to stop listening to the menu", error),
-            );
+            for (const listening of [stop, stopRecent]) {
+                listening
+                    ?.then((unlisten) => unlisten())
+                    .catch((error: unknown) => report("Failed to stop listening to the menu", error));
+            }
         };
     }, []);
 };

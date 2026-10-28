@@ -19,6 +19,7 @@ import { useDrawerStore } from "@/stores/drawer";
 import { useCurrentFile, useFileStore, useHasFiles } from "@/stores/files";
 import { isPreviewMode, PREVIEW_MODES, usePreviewStore } from "@/stores/preview";
 import { stepZoom, useTransformStore } from "@/stores/transform";
+import { OpenRecentMenu } from "./OpenRecentMenu";
 
 /** The label and the icon each comparison is offered under, in the order the design draws them. */
 const MODES = {
@@ -165,6 +166,9 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
                     {t("drawer.addImages")}
                 </Button>
             </HintTooltip>
+
+            {/* Windows and Linux only: the macOS menu bar has File > Open Recent. */}
+            <OpenRecentMenu />
 
             <Separator orientation="vertical" className="data-[orientation=vertical]:h-5" />
 
