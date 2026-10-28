@@ -12,6 +12,7 @@ import {
     type ExportRequest,
     exportFormats,
     exportImage,
+    exportLosses,
     exportNames,
     forgetExportFormats,
     onExportProgress,
@@ -155,7 +156,12 @@ describe("exportImage", () => {
     });
 
     it("answers what was written", async () => {
-        const written: Exported = { outcome: "exported", path: "/Users/someone/Pictures/holiday-opai_1.jpg", bytes: 3 };
+        const written: Exported = {
+            outcome: "exported",
+            path: "/Users/someone/Pictures/holiday-opai_1.jpg",
+            bytes: 3,
+            losses: [],
+        };
         invoked.mockResolvedValue(written);
 
         await expect(exportImage("0123456789abcdef", [kyoto], "cpu", request).done).resolves.toEqual(written);
@@ -182,6 +188,23 @@ describe("exportFormats", () => {
         await exportFormats();
 
         expect(invoked).toHaveBeenCalledExactlyOnceWith("export_formats");
+    });
+});
+
+describe("exportLosses", () => {
+    it("calls the command Rust registers, by name, with the paths and only the naming's own fields", async () => {
+        const answer = [
+            { path: "/photos/hawk.jpg", losses: [{ kind: "hdr", hdr: "gainMap", format: "PNG", cause: "format" }] },
+        ];
+        invoked.mockResolvedValueOnce(answer);
+        const settings = { prefix: "", suffix: "", format: "jpeg" as const, overwrite: false };
+
+        await expect(exportLosses(["/photos/hawk.jpg"], settings)).resolves.toEqual(answer);
+
+        expect(invoked).toHaveBeenCalledExactlyOnceWith("export_losses", {
+            paths: ["/photos/hawk.jpg"],
+            naming: { prefix: "", suffix: "", format: "jpeg" },
+        });
     });
 });
 

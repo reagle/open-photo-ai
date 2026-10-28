@@ -272,6 +272,22 @@
             "endedFailed_one": "{{written}} di {{count}} scritto, {{failed}} non riusciti",
             "endedFailed_many": "{{written}} di {{count}} scritti, {{failed}} non riusciti",
             "endedFailed_other": "{{written}} di {{count}} scritti, {{failed}} non riusciti"
+        },
+        "loss": {
+            "notice": "{{count}} immagini su {{total}} perderanno qualità in questo formato. Passa il puntatore sull'avviso di una riga per vedere cosa.",
+            "warning": "Perdita di qualità in questo formato",
+            "hdrGainMap": "Mappa di guadagno HDR rimossa: per ora {{format}} viene scritto solo in SDR",
+            "hdrGainMapNotCarried": "Mappa di guadagno HDR rimossa: non è stato possibile conservarla",
+            "hdrTransfer": "HDR ({{transfer}}) rimosso: per ora {{format}} viene scritto solo in SDR",
+            "depth": "{{from}} → {{to}} in {{format}}",
+            "bits": "{{bits}} bit",
+            "bitsFloat": "{{bits}} bit in virgola mobile",
+            "profileFormat": "Profilo {{profile}} non incorporato in {{format}}",
+            "profileColourModel": "Profilo {{profile}} non incorporato in {{format}}: è per {{colourSpace}}, non per i colori del file",
+            "profileDiscarded": "Profilo {{profile}} scartato: è per {{colourSpace}}, non per i pixel dell'immagine",
+            "profileNotWritten": "Profilo {{profile}} non incorporato in {{format}}: l'encoder non è riuscito a scriverlo",
+            "profileCoded": "Descrizione colore {{profile}} non scritta in {{format}}",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {

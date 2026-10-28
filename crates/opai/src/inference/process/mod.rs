@@ -297,6 +297,10 @@ where
     // interchangeable, so a provider in the identity would halve the run cache's hit rate on a machine whose GPU is
     // sometimes busy, for no correctness gain at all.
     //
+    // Built with `derive`, so the result keeps the source's metadata — its colour profile — whether the pixels were
+    // computed just now or served from the run cache, which stores pixels only: the profile is re-attached here from
+    // the source on every path, and the source identity already covers its bytes.
+    //
     // A mask is folded over the chain's identity rather than into it, so the steps' keys are the ones an unmasked run
     // stores under, and a run with no mask is named exactly as it was before masks existed.
     let chained = identity_after(source.identity(), operations, depth);
@@ -304,7 +308,7 @@ where
         Some(mask) => identity_masked(&chained, mask.signature()),
         None => chained,
     };
-    let picture = Picture::new(source.path(), pixels, named);
+    let picture = source.derive(pixels, named);
 
     Ok(Enhanced { picture, providers, faces })
 }

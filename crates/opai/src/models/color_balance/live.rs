@@ -233,7 +233,7 @@ async fn balances_on((name, codename, model, shown): Model, precision: FloatPrec
     for (bias, produced, _) in &results {
         let keep = std::env::temp_dir().join(format!("opai-live-{codename}-{precision:?}-{provider}-b{bias}.png"));
 
-        crate::image::save(produced.shared_pixels(), &keep, ImageFormat::Png, None)
+        crate::image::save(produced.shared_pixels(), produced.shared_metadata(), &keep, ImageFormat::Png, None)
             .await
             .expect("a result must encode to PNG");
         println!("  inspect bias {bias} at {}", keep.display());

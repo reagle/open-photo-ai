@@ -173,6 +173,7 @@ finished!(
     f64,
     opai::export::ExportFormats,
     Vec<crate::export::ExportName>,
+    Vec<crate::export::ExportLosses>,
     Option<String>,
     Option<crate::TelemetryIds>,
     &'static str,

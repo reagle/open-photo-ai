@@ -50,7 +50,7 @@ async fn gray_photograph() -> Picture {
 
     let gray = ImageBuffer::from_fn(width, height, |x, y| Rgb([u8::from_unit(lab::gray(sampler.rgb(x, y))); 3]));
 
-    Picture::new(source.path(), DynamicImage::ImageRgb8(gray), format!("{}-gray", source.identity()))
+    source.derive(DynamicImage::ImageRgb8(gray), format!("{}-gray", source.identity()))
 }
 
 /// The mean absolute difference in Lab L between `result` and `source`, and the mean Lab chroma of `result`.
@@ -132,9 +132,15 @@ async fn colorizes_on(
 
     // Kept where it can be looked at: a swapped plane or a wrong normalisation is a photograph rather than a number.
     let keep = std::env::temp_dir().join(format!("opai-live-{codename}-{precision:?}-{provider}.png"));
-    crate::image::save(produced.shared_pixels(), &keep, rust_sak::image::ImageFormat::Png, None)
-        .await
-        .expect("a result must encode to PNG");
+    crate::image::save(
+        produced.shared_pixels(),
+        produced.shared_metadata(),
+        &keep,
+        rust_sak::image::ImageFormat::Png,
+        None,
+    )
+    .await
+    .expect("a result must encode to PNG");
     println!("         inspect at {}", keep.display());
 
     produced

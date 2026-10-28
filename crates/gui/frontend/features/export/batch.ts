@@ -122,7 +122,7 @@ const exportOne = async (
 
         // Done even after an Abort: a stop that arrived once the file was being written let the write finish.
         if (answer.outcome === "exported") {
-            setStage(path, { stage: "done", path: answer.path, bytes: answer.bytes });
+            setStage(path, { stage: "done", path: answer.path, bytes: answer.bytes, losses: answer.losses });
             return batch().aborted ? "stop" : "next";
         }
 

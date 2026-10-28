@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use ::image::{DynamicImage, RgbImage};
-use rust_sak::image::{EncodeOptions, ImageFormat, encode_writer};
+use rust_sak::image::{EncodeOptions, ImageFormat, Metadata, encode_writer, encode_writer_with};
 
 // Above 16x16 deliberately. `rust-sak`'s `image` module records that the bundled AVIF encoder **hangs** on sub-16px
 // frames rather than returning an error, so a fixture below that turns a failing test into a CI job that never
@@ -65,6 +65,308 @@ pub(crate) fn written_jpeg() -> Vec<u8> {
 /// [`sample_image`] as TIFF, for the tests about RAW: a RAW file is a TIFF as far as its magic bytes go.
 pub(crate) fn written_tiff() -> Vec<u8> {
     encoded(ImageFormat::Tiff, None)
+}
+
+/// A Display P3 ICC profile: `DisplayP3-v4.icc` from saucecontrol/Compact-ICC-Profiles (CC0 1.0), 480 bytes,
+/// committed at the workspace root's `fixtures/` beside the live photograph so every crate's tests reach the same file.
+///
+/// The one fixture that is committed rather than generated, because a profile is not something these tests can
+/// produce: what they assert is that a real one travels byte for byte.
+pub(crate) const DISPLAY_P3: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/DisplayP3-v4.icc"));
+
+/// Metadata carrying [`DISPLAY_P3`].
+pub(crate) fn display_p3() -> Metadata {
+    let mut metadata = Metadata::default();
+    metadata.icc_profile = Some(DISPLAY_P3.to_vec());
+    metadata
+}
+
+/// An RGB ICC v2 profile that names itself `description`, `len` bytes long (at least its 220 bytes of header, tag
+/// table and `desc` tag, zero-padded beyond): enough for what this crate reads of a profile — its colour space and its
+/// name — and for a profile of any size, since no committed sRGB profile is free to ship.
+pub(crate) fn rgb_profile_named(description: &str, len: usize) -> Vec<u8> {
+    let mut desc = b"desc\0\0\0\0".to_vec();
+    desc.extend(u32::try_from(description.len() + 1).expect("short").to_be_bytes());
+    desc.extend(description.as_bytes());
+    desc.push(0);
+    // No Unicode text, no ScriptCode text.
+    desc.extend([0; 4 + 4 + 2 + 1 + 67]);
+    let offset = 128 + 4 + 12;
+    let mut profile = vec![0; 128];
+    profile[8..12].copy_from_slice(&[2, 0x10, 0, 0]);
+    profile[12..16].copy_from_slice(b"mntr");
+    profile[16..20].copy_from_slice(b"RGB ");
+    profile[20..24].copy_from_slice(b"XYZ ");
+    profile[36..40].copy_from_slice(b"acsp");
+    profile.extend(1u32.to_be_bytes());
+    profile.extend(b"desc");
+    profile.extend(u32::try_from(offset).expect("small").to_be_bytes());
+    profile.extend(u32::try_from(desc.len()).expect("small").to_be_bytes());
+    profile.extend(desc);
+    profile.resize(len.max(profile.len()), 0);
+    let size = u32::try_from(profile.len()).expect("under 4 GB").to_be_bytes();
+    profile[0..4].copy_from_slice(&size);
+    profile
+}
+
+/// The plain sRGB profile most cameras and editors embed, as [`rgb_profile_named`] makes it, `len` bytes long.
+pub(crate) fn srgb_profile(len: usize) -> Vec<u8> {
+    rgb_profile_named("sRGB IEC61966-2.1", len)
+}
+
+/// [`sample_image`] as `format` with [`DISPLAY_P3`] embedded: a wide-gamut photograph as a camera or a phone writes it.
+///
+/// # Panics
+///
+/// Panics if the fixture cannot be encoded, or if the format did not take the profile.
+pub(crate) fn written_p3(format: ImageFormat) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let embedded = encode_writer_with(&sample_image(), &mut bytes, format, None, &display_p3())
+        .unwrap_or_else(|err| panic!("the P3 {format:?} fixture could not be encoded: {err}"));
+    assert!(embedded.icc_profile, "{format:?} did not embed the profile");
+    bytes
+}
+
+/// `jpeg` with an `APP2` segment holding `data` inserted straight after `SOI`.
+pub(crate) fn with_app2(jpeg: &[u8], data: &[u8]) -> Vec<u8> {
+    let length = u16::try_from(data.len() + 2).expect("one segment").to_be_bytes();
+    let mut out = jpeg[..2].to_vec();
+    out.extend([0xFF, 0xE2, length[0], length[1]]);
+    out.extend(data);
+    out.extend(&jpeg[2..]);
+    out
+}
+
+/// The primary XMP of a Lightroom Ultra HDR export: `hdrgm:Version` only, Adobe style, with no `Container:Directory`.
+pub(crate) const ULTRA_HDR_XMP: &[u8] = br#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/" hdrgm:Version="1.0"/></rdf:RDF></x:xmpmeta>"#;
+
+/// A primary image's ISO 21496-1 payload: minimum and writer version, both 0.
+pub(crate) const ISO_VERSION: &[u8] = &[0, 0, 0, 0];
+
+/// The gain-map image's XMP packet of `18-1603-hawk-bird-mt_auburn-cemetery.jpg`, Joseph's Lightroom Ultra HDR export
+/// the gain-map work was written for (`exiftool -b -MPImage2`, then its `APP1` cut out): the `hdrgm` description with
+/// per-channel `GainMapMin`, `GainMapMax` and `Gamma` as `rdf:Seq`s.
+pub(crate) const HAWK_GAIN_MAP_XMP: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/hawk-gain-map.xmp"));
+
+/// The same gain-map image's 141-byte ISO 21496-1 metadata, its `APP2` after the URN.
+pub(crate) const HAWK_GAIN_MAP_ISO: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/hawk-gain-map.iso"));
+
+/// A gain-map JPEG of `size` with `channels` (1 or 3) as Lightroom writes one: the hawk's own gain-map XMP and ISO
+/// payload, no ICC, no EXIF. Its pixels are a smooth ramp, brighter to the right and, in the first channel, downward, so
+/// a test can tell which part of the scene a crop kept.
+pub(crate) fn gain_map_jpeg(size: (u32, u32), channels: u8) -> Vec<u8> {
+    let (width, height) = size;
+    let ramp = |x: u32, y: u32| ((x * 200 / width.max(1)) + 20, (y * 200 / height.max(1)) + 20);
+    let pixels = if channels == 1 {
+        DynamicImage::ImageLuma8(::image::GrayImage::from_fn(width, height, |x, _| image::Luma([ramp(x, 0).0 as u8])))
+    } else {
+        DynamicImage::ImageRgb8(RgbImage::from_fn(width, height, |x, y| {
+            let (across, down) = ramp(x, y);
+            image::Rgb([across as u8, down as u8, 128])
+        }))
+    };
+    let mut metadata = Metadata::default();
+    metadata.xmp = Some(HAWK_GAIN_MAP_XMP.to_vec());
+    metadata.iso_gain_map = Some(HAWK_GAIN_MAP_ISO.to_vec());
+    let options = EncodeOptions::Jpeg { quality: 95 };
+    let mut bytes = Vec::new();
+    encode_writer_with(&pixels, &mut bytes, ImageFormat::Jpeg, Some(options), &metadata).expect("encodable");
+    bytes
+}
+
+/// A picture of `size` like [`sample_image`]'s: a ramp to the right and downward, so a crop's register can be checked
+/// against the gain map's.
+pub(crate) fn ramp_image(size: (u32, u32)) -> DynamicImage {
+    let (width, height) = size;
+    DynamicImage::ImageRgb8(RgbImage::from_fn(width, height, |x, y| {
+        image::Rgb([(x * 200 / width.max(1) + 20) as u8, (y * 200 / height.max(1) + 20) as u8, 90])
+    }))
+}
+
+/// An Ultra HDR JPEG shaped like the hawk — a primary of `size` carrying [`DISPLAY_P3`], [`ULTRA_HDR_XMP`] and the ISO
+/// 21496-1 version marker, then an MPF gain map of `gain_map` size with `channels` — assembled by `rust-sak`.
+pub(crate) fn written_ultra_hdr_of(size: (u32, u32), gain_map: (u32, u32), channels: u8) -> Vec<u8> {
+    written_ultra_hdr_with(size, gain_map, channels, None)
+}
+
+/// [`written_ultra_hdr_of`] as a phone held on its side writes one: the frame and its gain map stored at `size` and
+/// `gain_map`, and [`EXIF`] recording Orientation 6, so both decode turned a quarter clockwise.
+pub(crate) fn written_turned_ultra_hdr_of(size: (u32, u32), gain_map: (u32, u32)) -> Vec<u8> {
+    written_ultra_hdr_with(size, gain_map, 3, Some(EXIF))
+}
+
+fn written_ultra_hdr_with(size: (u32, u32), gain_map: (u32, u32), channels: u8, exif: Option<&[u8]>) -> Vec<u8> {
+    let mut metadata = display_p3();
+    metadata.exif = exif.map(<[u8]>::to_vec);
+    metadata.xmp = Some(ULTRA_HDR_XMP.to_vec());
+    metadata.iso_gain_map = Some(ISO_VERSION.to_vec());
+    metadata.gain_map = Some(gain_map_jpeg(gain_map, channels));
+    let mut bytes = Vec::new();
+    let embedded =
+        encode_writer_with(&ramp_image(size), &mut bytes, ImageFormat::Jpeg, None, &metadata).expect("encodable");
+    assert!(embedded.gain_map && embedded.iso_gain_map && embedded.xmp);
+    bytes
+}
+
+/// The hawk in miniature: an Ultra HDR JPEG of [`FIXTURE_SIZE`] with a full-resolution, three-channel gain map.
+pub(crate) fn written_ultra_hdr() -> Vec<u8> {
+    written_ultra_hdr_of(FIXTURE_SIZE, FIXTURE_SIZE, 3)
+}
+
+/// [`written_ultra_hdr`] cut short inside its gain map: the primary is whole and still declares HDR, and the gain map
+/// cannot be read.
+pub(crate) fn truncated_ultra_hdr() -> Vec<u8> {
+    let mut bytes = written_ultra_hdr();
+    bytes.truncate(bytes.len() - 40);
+    bytes
+}
+
+/// A minimal big-endian EXIF block: `Make` = `Cam` and `Orientation` = 6 (rotate 90° clockwise to view) in IFD0.
+///
+/// Orientation 6 rather than 1 so a test can tell a rendition that carried it from one that did not.
+pub(crate) const EXIF: &[u8] = b"MM\0\x2a\0\0\0\x08\0\x02\
+    \x01\x0f\0\x02\0\0\0\x04Cam\0\
+    \x01\x12\0\x03\0\0\0\x01\0\x06\0\0\
+    \0\0\0\0";
+
+/// A small XMP packet naming two keywords.
+pub(crate) const XMP: &[u8] = b"<?xpacket begin='\xef\xbb\xbf' id='W5M0MpCehiHzreSzNTczkc9d'?>\
+<x:xmpmeta xmlns:x='adobe:ns:meta/'><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>\
+<rdf:Description rdf:about='' xmlns:dc='http://purl.org/dc/elements/1.1/'>\
+<dc:subject><rdf:Bag><rdf:li>hawk</rdf:li><rdf:li>bird</rdf:li></rdf:Bag></dc:subject>\
+</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end='w'?>";
+
+/// A Photoshop resource block holding one IPTC-IIM resource (`0x0404`) with one keyword dataset (2:25 `hawk`).
+pub(crate) const IPTC: &[u8] = b"8BIM\x04\x04\0\0\0\0\0\x09\x1c\x02\x19\0\x04hawk\0";
+
+/// Metadata carrying [`DISPLAY_P3`] and the three descriptive blocks, [`EXIF`], [`XMP`] and [`IPTC`].
+pub(crate) fn described() -> Metadata {
+    let mut metadata = display_p3();
+    metadata.exif = Some(EXIF.to_vec());
+    metadata.xmp = Some(XMP.to_vec());
+    metadata.iptc = Some(IPTC.to_vec());
+    metadata
+}
+
+/// [`sample_image`] as `format` with [`described`] embedded: a photograph as a camera and a cataloguing tool leave it.
+///
+/// # Panics
+///
+/// Panics if the fixture cannot be encoded, or if the format did not take every block it can hold.
+pub(crate) fn written_described(format: ImageFormat) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let embedded = encode_writer_with(&sample_image(), &mut bytes, format, None, &described())
+        .unwrap_or_else(|err| panic!("the described {format:?} fixture could not be encoded: {err}"));
+    assert!(embedded.icc_profile && embedded.exif && embedded.xmp, "{format:?} did not embed {embedded:?}");
+    assert_eq!(embedded.iptc, format == ImageFormat::Jpeg, "{format:?}");
+    bytes
+}
+
+/// Where the parts of [`camera_exif`] are.
+pub(crate) struct CameraExif {
+    /// The block.
+    pub(crate) exif: Vec<u8>,
+    /// The MakerNote's bytes, whose one entry points at its data by an offset from the start of the block.
+    pub(crate) maker_note: std::ops::Range<usize>,
+}
+
+/// The data [`camera_exif`]'s MakerNote points at.
+pub(crate) const MAKER_NOTE_DATA: &[u8; 8] = b"SECRET!!";
+
+/// A big-endian EXIF block as a camera writes one: IFD0 (Make `Canon`, Orientation 6, Software, DateTime), an Exif IFD
+/// (DateTimeOriginal, OffsetTimeOriginal, a Canon-style MakerNote whose pointer is absolute, PixelX/YDimension 4000 ×
+/// 3000), a GPS IFD (latitude 42° N) and IFD1 with a 64-byte thumbnail last. Laid out byte by byte, so the tests do not
+/// depend on the code they test to build it.
+pub(crate) fn camera_exif() -> CameraExif {
+    let mut b = vec![0_u8; 392];
+    let put = |b: &mut Vec<u8>, at: usize, bytes: &[u8]| b[at..at + bytes.len()].copy_from_slice(bytes);
+    let table = |b: &mut Vec<u8>, at: usize, entries: &[(u16, u16, u32, [u8; 4])], next: u32| {
+        put(b, at, &u16::try_from(entries.len()).expect("few").to_be_bytes());
+        for (index, (tag, kind, count, raw)) in entries.iter().enumerate() {
+            let entry = at + 2 + 12 * index;
+            put(b, entry, &tag.to_be_bytes());
+            put(b, entry + 2, &kind.to_be_bytes());
+            put(b, entry + 4, &count.to_be_bytes());
+            put(b, entry + 8, raw);
+        }
+        put(b, at + 2 + 12 * entries.len(), &next.to_be_bytes());
+    };
+    let at = u32::to_be_bytes;
+    let short = |value: u16| {
+        let mut raw = [0; 4];
+        raw[..2].copy_from_slice(&value.to_be_bytes());
+        raw
+    };
+
+    put(&mut b, 0, b"MM\0\x2a\0\0\0\x08");
+    table(
+        &mut b,
+        8,
+        &[
+            (0x010F, 2, 6, at(86)),   // Make
+            (0x0112, 3, 1, short(6)), // Orientation
+            (0x0131, 2, 11, at(92)),  // Software
+            (0x0132, 2, 20, at(104)), // DateTime
+            (0x8769, 4, 1, at(124)),  // Exif IFD
+            (0x8825, 4, 1, at(244)),  // GPS IFD
+        ],
+        298,
+    );
+    put(&mut b, 86, b"Canon\0");
+    put(&mut b, 92, b"Cam FW 1.0\0");
+    put(&mut b, 104, b"2026:10:18 16:03:50\0");
+    table(
+        &mut b,
+        124,
+        &[
+            (0x9003, 2, 20, at(190)),    // DateTimeOriginal
+            (0x9011, 2, 7, at(210)),     // OffsetTimeOriginal
+            (0x927C, 7, 26, at(218)),    // MakerNote
+            (0xA002, 3, 1, short(4000)), // PixelXDimension
+            (0xA003, 3, 1, short(3000)), // PixelYDimension
+        ],
+        0,
+    );
+    put(&mut b, 190, b"2026:10:18 16:03:50\0");
+    put(&mut b, 210, b"-04:00\0");
+    table(&mut b, 218, &[(0x0001, 7, 8, at(236))], 0);
+    put(&mut b, 236, MAKER_NOTE_DATA);
+    table(&mut b, 244, &[(0x0001, 2, 2, *b"N\0\0\0"), (0x0002, 5, 3, at(274))], 0);
+    put(
+        &mut b,
+        274,
+        &[42_u32, 1, 22, 1, 12, 1].iter().flat_map(|value| value.to_be_bytes()).collect::<Vec<u8>>(),
+    );
+    table(&mut b, 298, &[(0x0201, 4, 1, at(328)), (0x0202, 4, 1, at(64))], 0);
+    put(&mut b, 328, &[0xD8; 64]);
+
+    CameraExif { exif: b, maker_note: 218..244 }
+}
+
+/// A Photoshop resource block as Lightroom writes one: resolution info, the IPTC-IIM record (keyword `hawk`), a
+/// thumbnail resource and the IIM's digest.
+pub(crate) fn photoshop_block() -> Vec<u8> {
+    let resource = |id: u16, data: &[u8]| {
+        let mut bytes = b"8BIM".to_vec();
+        bytes.extend(id.to_be_bytes());
+        bytes.extend([0, 0]);
+        bytes.extend(u32::try_from(data.len()).expect("small").to_be_bytes());
+        bytes.extend(data);
+        if data.len() % 2 == 1 {
+            bytes.push(0);
+        }
+        bytes
+    };
+    [
+        resource(0x03ED, &[1; 16]),
+        IPTC.to_vec(),
+        resource(0x040C, &[0xFF; 40]),
+        resource(0x0425, &[7; 16]),
+    ]
+    .concat()
 }
 
 /// Writes `bytes` into `dir` under `name` and hands back the path.

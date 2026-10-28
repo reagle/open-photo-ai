@@ -266,6 +266,22 @@
             "ended_other": "{{written}} από {{count}} γράφτηκαν",
             "endedFailed_one": "{{written}} από {{count}} γράφτηκαν, {{failed}} απέτυχαν",
             "endedFailed_other": "{{written}} από {{count}} γράφτηκαν, {{failed}} απέτυχαν"
+        },
+        "loss": {
+            "notice": "{{count}} από {{total}} εικόνες θα χάσουν ποιότητα σε αυτή τη μορφή. Περάστε τον δείκτη πάνω από την προειδοποίηση σε μια γραμμή για να δείτε τι.",
+            "warning": "Απώλεια ποιότητας σε αυτή τη μορφή",
+            "hdrGainMap": "Ο χάρτης κέρδους HDR αφαιρέθηκε: η έξοδος {{format}} είναι προς το παρόν μόνο SDR",
+            "hdrGainMapNotCarried": "Ο χάρτης κέρδους HDR αφαιρέθηκε: δεν ήταν δυνατό να διατηρηθεί",
+            "hdrTransfer": "Το HDR ({{transfer}}) αφαιρέθηκε: η έξοδος {{format}} είναι προς το παρόν μόνο SDR",
+            "depth": "{{from}} → {{to}} σε {{format}}",
+            "bits": "{{bits}}-bit",
+            "bitsFloat": "{{bits}}-bit κινητής υποδιαστολής",
+            "profileFormat": "Το προφίλ {{profile}} δεν ενσωματώθηκε σε {{format}}",
+            "profileColourModel": "Το προφίλ {{profile}} δεν ενσωματώθηκε σε {{format}}: είναι για {{colourSpace}}, όχι για τα χρώματα του αρχείου",
+            "profileDiscarded": "Το προφίλ {{profile}} απορρίφθηκε: είναι για {{colourSpace}}, όχι για τα εικονοστοιχεία της εικόνας",
+            "profileNotWritten": "Το προφίλ {{profile}} δεν ενσωματώθηκε σε {{format}}: ο κωδικοποιητής δεν μπόρεσε να το γράψει",
+            "profileCoded": "Η περιγραφή χρωμάτων {{profile}} δεν γράφτηκε σε {{format}}",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {

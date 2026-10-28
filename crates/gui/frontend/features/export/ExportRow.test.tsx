@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { useShallow } from "zustand/react/shallow";
 import "@/i18n";
-import { revealExport } from "@/ipc/export";
+import { type Loss, revealExport } from "@/ipc/export";
 import { exportNaming } from "@/lib/export";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { type Row, useExportBatchStore } from "@/stores/exportBatch";
@@ -130,7 +130,7 @@ describe("a row", () => {
         [{ stage: "analysing" }, "Analysing"],
         [{ stage: "enhancing", fraction: 0.5 }, "Enhancing"],
         [{ stage: "writing" }, "Writing"],
-        [{ stage: "done", path: "/h.png", bytes: 2048 }, "Done"],
+        [{ stage: "done", path: "/h.png", bytes: 2048, losses: [] }, "Done"],
         [{ stage: "failed", reason: "no" }, "Failed"],
     ] as [Row, string][])("reads its stage: %j", async (row, label) => {
         await renderRow();
@@ -165,12 +165,66 @@ describe("a row", () => {
     });
 });
 
+describe("the loss warning", () => {
+    const HDR: Loss = { kind: "hdr", hdr: "gainMap", format: "JPEG", cause: "notCarried" };
+    const DEPTH: Loss = {
+        kind: "depth",
+        from: { bits: 16, float: false },
+        to: { bits: 8, float: false },
+        format: "JPEG",
+    };
+    const warning = () => screen.queryByRole("button", { name: "Quality lost in this format" });
+
+    const PredictedRow = ({ predicted }: { predicted: Loss[] }) => (
+        <ExportRow path={HOLIDAY.path} name={useNames()?.byPath.get(HOLIDAY.path)} predicted={predicted} />
+    );
+
+    /** The words the warning's tooltip lists, once it is focused open. */
+    const listed = async () => {
+        const trigger = warning();
+        if (!trigger) throw new Error("no warning is drawn");
+        fireEvent.focus(trigger);
+        const lists = await waitFor(() => {
+            const found = document.querySelectorAll("[data-slot='export-loss-list']");
+            expect(found.length).toBeGreaterThan(0);
+            return found;
+        });
+
+        return [...(lists[0]?.querySelectorAll("li") ?? [])].map((item) => item.textContent);
+    };
+
+    it("is drawn on a row predicted to lose something, listing each loss in words", async () => {
+        render(<PredictedRow predicted={[HDR, DEPTH]} />);
+        await named();
+
+        expect(await listed()).toEqual(["HDR gain map dropped: it could not be carried", "16-bit → 8-bit in JPEG"]);
+    });
+
+    it("is not drawn on a row that loses nothing", async () => {
+        render(<PredictedRow predicted={[]} />);
+        await named();
+
+        expect(warning()).not.toBeInTheDocument();
+    });
+
+    it("says what was written once the row is done, in place of the prediction", async () => {
+        render(<PredictedRow predicted={[HDR]} />);
+        await named();
+
+        await at({ stage: "done", path: "/h.jpg", bytes: 1, losses: [DEPTH] });
+        expect(await listed()).toEqual(["16-bit → 8-bit in JPEG"]);
+
+        await at({ stage: "done", path: "/h.jpg", bytes: 1, losses: [] });
+        expect(warning()).not.toBeInTheDocument();
+    });
+});
+
 describe("a written row", () => {
     it("shows the size written and reveals the path actually written", async () => {
         await renderRow();
         expect(screen.queryByRole("button", { name: "Show in Finder" })).not.toBeInTheDocument();
 
-        await at({ stage: "done", path: "/Users/someone/Pictures/holiday_1.png", bytes: 2048 });
+        await at({ stage: "done", path: "/Users/someone/Pictures/holiday_1.png", bytes: 2048, losses: [] });
         expect(screen.getByText("2.00 KB")).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "Show in Finder" }));
@@ -184,7 +238,7 @@ describe("a written row", () => {
         revealed.mockRejectedValueOnce({ kind: "revealExport", message: "no" });
 
         await renderRow();
-        await at({ stage: "done", path: "/h.png", bytes: 1 });
+        await at({ stage: "done", path: "/h.png", bytes: 1, losses: [] });
         fireEvent.click(screen.getByRole("button", { name: "Show in Finder" }));
 
         await waitFor(() =>

@@ -266,6 +266,22 @@
             "ended_other": "{{written}} of {{count}} written",
             "endedFailed_one": "{{written}} of {{count}} written, {{failed}} failed",
             "endedFailed_other": "{{written}} of {{count}} written, {{failed}} failed"
+        },
+        "loss": {
+            "notice": "{{count}} of {{total}} images will lose quality in this format. Hover the warning on a row to see what.",
+            "warning": "Quality lost in this format",
+            "hdrGainMap": "HDR gain map dropped: {{format}} output is SDR only for now",
+            "hdrGainMapNotCarried": "HDR gain map dropped: it could not be carried",
+            "hdrTransfer": "HDR ({{transfer}}) dropped: {{format}} output is SDR only for now",
+            "depth": "{{from}} → {{to}} in {{format}}",
+            "bits": "{{bits}}-bit",
+            "bitsFloat": "{{bits}}-bit float",
+            "profileFormat": "{{profile}} profile not embedded in {{format}}",
+            "profileColourModel": "{{profile}} profile not embedded in {{format}}: it is for {{colourSpace}}, not the file's colors",
+            "profileDiscarded": "{{profile}} profile dropped: it is for {{colourSpace}}, not the image's pixels",
+            "profileNotWritten": "{{profile}} profile not embedded in {{format}}: the encoder could not write it",
+            "profileCoded": "{{profile}} color description not written in {{format}}",
+            "unnamedProfile": "ICC"
         }
     },
     "dialogs": {

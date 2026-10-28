@@ -681,13 +681,13 @@ async fn osaka_upscales_a_multi_region_image_through_the_public_api() {
 async fn photograph(width: u32, height: u32) -> Picture {
     let picture = live_support::photograph().await;
 
-    // A fresh identity derived from the source's and what was done to it, as `Picture::new`'s contract requires:
+    // A fresh identity derived from the source's and what was done to it, as `Picture::derive`'s contract requires:
     // these are not the file's pixels any more, and handing back the file's identity would key a cache entry for one
     // picture onto another.
     let resampled = picture.pixels().resize_exact(width, height, FilterType::Lanczos3);
     let identity = rust_sak::crypto::xxh3_string(&format!("{}|{width}x{height}", picture.identity()));
 
-    Picture::new(picture.path(), resampled, identity)
+    picture.derive(resampled, identity)
 }
 
 /// One image's luminance, as the `[0, 1]` plane every structural comparison above is made over.

@@ -163,6 +163,7 @@ pub fn run(prepared: Result<(), opai::InitError>) {
             export::cancel_export,
             export::export_formats,
             export::export_names,
+            export::export_losses,
             export::directory::pick_directory,
             export::written::reveal_export,
             mask::mask_preview,

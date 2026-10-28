@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use ::image::DynamicImage;
-use rust_sak::image::{EncodeOptions, ImageError, ImageFormat, encode_writer};
+use rust_sak::image::{EncodeOptions, ImageError, ImageFormat, Metadata, encode_writer_with};
 
 use super::error::{self, ImageIoError};
 use crate::task::spawn_blocking;
@@ -19,11 +19,12 @@ use crate::telemetry::unit::{Unit, unit_span};
 /// could run.
 pub async fn encode(
     pixels: Arc<DynamicImage>,
+    metadata: Arc<Metadata>,
     format: ImageFormat,
     options: Option<EncodeOptions>,
 ) -> Result<Vec<u8>, ImageIoError> {
     // An `Arc` for the reason `save` takes one.
-    spawn_blocking::<_, ImageIoError, _>(move || encode_blocking(&pixels, format, options)).await?
+    spawn_blocking::<_, ImageIoError, _>(move || encode_blocking(&pixels, &metadata, format, options)).await?
 }
 
 /// Encodes `pixels` as `format` into a buffer, on the calling thread.
@@ -37,6 +38,9 @@ pub async fn encode(
 /// JPEG comes back at 8 bits rather than being refused. Which formats keep the depth is in the module's own
 /// documentation.
 ///
+/// `metadata` is embedded exactly as [`save_blocking`](super::save_blocking) embeds it, with the same warning where the
+/// format cannot hold it.
+///
 /// `options` may be omitted for the format's defaults, and settings targeting another format are refused.
 ///
 /// # Errors
@@ -45,18 +49,20 @@ pub async fn encode(
 ///   picture.
 pub fn encode_blocking(
     pixels: &DynamicImage,
+    metadata: &Metadata,
     format: ImageFormat,
     options: Option<EncodeOptions>,
 ) -> Result<Vec<u8>, ImageIoError> {
     let span = unit_span!("image_encode", format = ?format);
     error::traced(Unit::ImageEncode, span, || {
-        encode_into(pixels, format, options).inspect_err(error::unencodable(format))
+        encode_into(pixels, metadata, format, options).inspect_err(error::unencodable(format))
     })
 }
 
 /// [`encode_blocking`]'s body, which leaves recording its failure to the public boundary.
 fn encode_into(
     pixels: &DynamicImage,
+    metadata: &Metadata,
     format: ImageFormat,
     options: Option<EncodeOptions>,
 ) -> Result<Vec<u8>, ImageIoError> {
@@ -76,7 +82,11 @@ fn encode_into(
     // and a caller that encoded through the `image` crate directly would have a refusal instead, for exactly the files
     // this crate exists to open.
     let mut bytes = Vec::new();
-    encode_writer(pixels, &mut bytes, format, options).map_err(|source| ImageIoError::Encode { source })?;
+    let embeddable = super::profile::embeddable(metadata, pixels, format);
+    let embedded = encode_writer_with(pixels, &mut bytes, format, options, &embeddable)
+        .map_err(|source| ImageIoError::Encode { source })?;
+    super::profile::warn_if_dropped(metadata, embedded, format, None);
+    super::descriptive::warn_if_dropped(metadata, embedded, format, None);
 
     Ok(bytes)
 }
@@ -96,8 +106,9 @@ mod tests {
         let dir = tempdir().expect("a temporary directory");
         let destination = dir.path().join("round-trip.png");
 
-        save_blocking(&sample_image(), &destination, ImageFormat::Png, None).expect("writable");
-        let encoded = encode_blocking(&sample_image(), ImageFormat::Png, None).expect("encodable");
+        save_blocking(&sample_image(), &Metadata::default(), &destination, ImageFormat::Png, None).expect("writable");
+        let encoded =
+            encode_blocking(&sample_image(), &Metadata::default(), ImageFormat::Png, None).expect("encodable");
 
         assert_eq!(encoded, std::fs::read(&destination).expect("readable"));
     }
@@ -114,7 +125,7 @@ mod tests {
             ImageFormat::Heif,
             ImageFormat::WebP,
         ] {
-            let bytes = encode_blocking(&sample_image(), format, None)
+            let bytes = encode_blocking(&sample_image(), &Metadata::default(), format, None)
                 .unwrap_or_else(|err| panic!("{format:?} could not be encoded: {err}"));
             assert!(!bytes.is_empty(), "{format:?} reported success having encoded nothing");
 
@@ -133,10 +144,20 @@ mod tests {
     fn the_options_are_honoured() {
         // A lower quality produces fewer bytes, which is what proves the settings reach the encoder rather than being
         // dropped on the way.
-        let high = encode_blocking(&sample_image(), ImageFormat::Jpeg, Some(EncodeOptions::Jpeg { quality: 95 }))
-            .expect("encodable");
-        let low = encode_blocking(&sample_image(), ImageFormat::Jpeg, Some(EncodeOptions::Jpeg { quality: 20 }))
-            .expect("encodable");
+        let high = encode_blocking(
+            &sample_image(),
+            &Metadata::default(),
+            ImageFormat::Jpeg,
+            Some(EncodeOptions::Jpeg { quality: 95 }),
+        )
+        .expect("encodable");
+        let low = encode_blocking(
+            &sample_image(),
+            &Metadata::default(),
+            ImageFormat::Jpeg,
+            Some(EncodeOptions::Jpeg { quality: 20 }),
+        )
+        .expect("encodable");
 
         assert!(
             low.len() < high.len(),
@@ -148,8 +169,13 @@ mod tests {
 
     #[test]
     fn settings_that_target_another_format_are_refused() {
-        let error = encode_blocking(&sample_image(), ImageFormat::Png, Some(EncodeOptions::Jpeg { quality: 90 }))
-            .expect_err("JPEG settings do not describe a PNG");
+        let error = encode_blocking(
+            &sample_image(),
+            &Metadata::default(),
+            ImageFormat::Png,
+            Some(EncodeOptions::Jpeg { quality: 90 }),
+        )
+        .expect_err("JPEG settings do not describe a PNG");
 
         match error {
             ImageIoError::Encode { source: ImageError::FormatMismatch { expected, options } } => {
@@ -161,7 +187,8 @@ mod tests {
 
     #[test]
     fn the_failure_names_no_file_because_there_is_none() {
-        let error = encode_blocking(&sample_image(), ImageFormat::Png, Some(EncodeOptions::Tiff)).expect_err("refused");
+        let error = encode_blocking(&sample_image(), &Metadata::default(), ImageFormat::Png, Some(EncodeOptions::Tiff))
+            .expect_err("refused");
 
         assert!(!error.to_string().contains('/'), "the message named a path it cannot know: {error}");
     }
@@ -171,8 +198,9 @@ mod tests {
         let deep =
             DynamicImage::ImageRgb16(image::ImageBuffer::from_pixel(32, 24, image::Rgb([30_000u16, 20_000, 10_000])));
 
-        let bytes = encode_blocking(&deep, ImageFormat::Jpeg, Some(EncodeOptions::Jpeg { quality: 90 }))
-            .expect("a 16-bit picture is narrowed for JPEG rather than refused");
+        let bytes =
+            encode_blocking(&deep, &Metadata::default(), ImageFormat::Jpeg, Some(EncodeOptions::Jpeg { quality: 90 }))
+                .expect("a 16-bit picture is narrowed for JPEG rather than refused");
 
         assert!(!bytes.is_empty());
     }
@@ -181,15 +209,16 @@ mod tests {
     async fn both_forms_produce_the_same_bytes() {
         let pixels = Arc::new(sample_image());
 
-        let asynchronous = encode(Arc::clone(&pixels), ImageFormat::Png, None).await.expect("encodable");
-        let blocking = encode_blocking(&pixels, ImageFormat::Png, None).expect("encodable");
+        let asynchronous =
+            encode(Arc::clone(&pixels), Arc::default(), ImageFormat::Png, None).await.expect("encodable");
+        let blocking = encode_blocking(&pixels, &Metadata::default(), ImageFormat::Png, None).expect("encodable");
 
         assert_eq!(asynchronous, blocking);
     }
 
     #[test]
     fn a_runtime_that_shuts_down_before_the_encode_runs_reports_cancellation() {
-        let outcome = on_a_dead_runtime(encode(Arc::new(sample_image()), ImageFormat::Png, None));
+        let outcome = on_a_dead_runtime(encode(Arc::new(sample_image()), Arc::default(), ImageFormat::Png, None));
 
         match outcome {
             Err(ImageIoError::Cancelled) => {}
@@ -205,19 +234,36 @@ mod tests {
 
         let mismatched = Some(EncodeOptions::Jpeg { quality: 90 });
 
-        let (log, outcome) =
-            records_of_blocking("info", || encode_blocking(&sample_image(), ImageFormat::Png, mismatched));
+        let (log, outcome) = records_of_blocking("info", || {
+            encode_blocking(&sample_image(), &Metadata::default(), ImageFormat::Png, mismatched)
+        });
         assert!(outcome.is_err());
         let record = the_one_failure(&log, "an image could not be encoded", "encode");
         assert!(field(record, "format").is_some(), "{record}");
         assert!(field(record, "path").is_none(), "an encode has no file to name: {record}");
 
-        let (log, outcome) = recorded_async(super::encode(Arc::new(sample_image()), ImageFormat::Png, mismatched));
+        let (log, outcome) =
+            recorded_async(super::encode(Arc::new(sample_image()), Arc::default(), ImageFormat::Png, mismatched));
         assert!(outcome.is_err());
         the_one_failure(&log, "an image could not be encoded", "encode");
 
-        let (log, outcome) = records_of_blocking("info", || encode_blocking(&sample_image(), ImageFormat::Png, None));
+        let (log, outcome) = records_of_blocking("info", || {
+            encode_blocking(&sample_image(), &Metadata::default(), ImageFormat::Png, None)
+        });
         assert!(outcome.is_ok());
         assert!(!log.contains("msg="), "a success was recorded:\n{log}");
+    }
+
+    #[test]
+    fn the_profile_is_embedded_in_the_buffer_as_saving_would_embed_it() {
+        use crate::image::test_support::{DISPLAY_P3, display_p3};
+
+        let dir = tempdir().expect("a temporary directory");
+        let destination = dir.path().join("p3.png");
+        save_blocking(&sample_image(), &display_p3(), &destination, ImageFormat::Png, None).expect("writable");
+        let encoded = encode_blocking(&sample_image(), &display_p3(), ImageFormat::Png, None).expect("encodable");
+
+        assert_eq!(encoded, std::fs::read(&destination).expect("readable"));
+        assert_eq!(rust_sak::image::icc_profile_bytes(&encoded).expect("readable").as_deref(), Some(DISPLAY_P3));
     }
 }
