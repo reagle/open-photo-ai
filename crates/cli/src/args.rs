@@ -50,6 +50,13 @@ pub struct Args {
     #[arg(long, value_name = "FILE")]
     pub mask: Option<PathBuf>,
 
+    /// What the mask is for under a lens blur: `both` limits the enhancements to it and keeps it in focus (the
+    /// default), `enhancements` only limits them, `lens-blur` only keeps it in focus and applies every other
+    /// enhancement to the whole photograph. With a lens blur the mask is blended before the blur, so what it leaves out
+    /// is the photograph, blurred.
+    #[arg(long = "mask-use", value_name = "USE", value_enum, ignore_case = true, requires = "mask")]
+    pub mask_use: Option<MaskUse>,
+
     // On `Args` rather than on `Selection`, as `--mask` is: a file does not fit the `Copy` value autopilot also builds,
     // and a removal goes with `--autopilot` as well as with the flags. It is an enhancement all the same, and counts as
     // one for the refusal of a command with none.
@@ -121,6 +128,31 @@ pub enum UpscaleModel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum LensBlurModel {
     Lisbon,
+}
+
+/// What `--mask` is used for, as the command line names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
+pub enum MaskUse {
+    /// Limit the enhancements to the mask and keep it in focus under a lens blur.
+    #[default]
+    Both,
+    /// Limit the enhancements to the mask only.
+    Enhancements,
+    /// Keep the mask in focus under a lens blur only.
+    LensBlur,
+}
+
+impl MaskUse {
+    /// `mask` used as this says: whether it limits the enhancements, and whether a lens blur keeps it in focus.
+    pub fn applied(self, mask: opai::Mask) -> opai::Mask {
+        let (limits_enhancements, keeps_sharp) = match self {
+            Self::Both => (true, true),
+            Self::Enhancements => (true, false),
+            Self::LensBlur => (false, true),
+        };
+
+        opai::Mask { limits_enhancements, keeps_sharp, ..mask }
+    }
 }
 
 /// How a lens blur treats the edge of the subject in focus, as the command line names it.
@@ -514,6 +546,14 @@ where
             "at least one enhancement is required: --remove (--rm), --denoise (--dn), --face-recovery (--fr), \
              --colorization (--cl), --light-adjustment (--la), --color-balance (--cb), --sharpen (--sh), \
              --upscale (--up), --lens-blur (--lb) or --autopilot (--ap)",
+        ));
+    }
+
+    // Autopilot never chooses a lens blur, so it is refused with that too.
+    if args.mask_use == Some(MaskUse::LensBlur) && args.selection.lens_blur.is_none() {
+        return Err(Args::command().error(
+            clap::error::ErrorKind::ArgumentConflict,
+            "--mask-use lens-blur needs --lens-blur (--lb): without a lens blur the mask would have no effect",
         ));
     }
 
@@ -912,6 +952,48 @@ mod tests {
 
         assert!(parse("opai photo.jpg --ap --mask subject.png -o out.png").expect("parses").mask.is_some());
         assert_eq!(parse("opai photo.jpg --sh -o out.png").expect("parses").mask, None);
+    }
+
+    #[test]
+    fn a_mask_is_used_for_both_unless_told_otherwise() {
+        let args = parse("opai photo.jpg --sh --lb --mask subject.png -o out.png").expect("parses");
+        assert_eq!(args.mask_use, None);
+
+        for (word, mask_use) in [
+            ("both", MaskUse::Both),
+            ("enhancements", MaskUse::Enhancements),
+            ("Lens-Blur", MaskUse::LensBlur),
+        ] {
+            let line = format!("opai photo.jpg --sh --lb --mask subject.png --mask-use {word} -o out.png");
+            assert_eq!(parse(&line).expect("parses").mask_use, Some(mask_use), "{word}");
+        }
+
+        let applied = |mask_use: MaskUse| {
+            let mask = mask_use.applied(opai::Mask::default());
+            (mask.limits_enhancements, mask.keeps_sharp)
+        };
+        assert_eq!(applied(MaskUse::Both), (true, true));
+        assert_eq!(applied(MaskUse::Enhancements), (true, false));
+        assert_eq!(applied(MaskUse::LensBlur), (false, true));
+    }
+
+    #[test]
+    fn a_mask_use_needs_a_mask_and_focus_alone_needs_a_lens_blur() {
+        let error = parse("opai photo.jpg --sh --lb --mask-use both -o out.png").expect_err("no mask");
+        assert_eq!(error.exit_code(), 2, "{error}");
+        assert!(error.to_string().contains("--mask"), "{error}");
+
+        for line in [
+            "opai photo.jpg --sh --mask subject.png --mask-use lens-blur -o out.png",
+            "opai photo.jpg --ap --mask subject.png --mask-use lens-blur -o out.png",
+        ] {
+            let error = parse(line).expect_err("nothing to keep in focus");
+            assert_eq!(error.exit_code(), 2, "{error}");
+            assert!(error.to_string().contains("the mask would have no effect"), "{error}");
+        }
+
+        assert!(parse("opai photo.jpg --sh --mask subject.png --mask-use enhancements -o out.png").is_ok());
+        assert!(parse("opai photo.jpg --lb --mask subject.png --mask-use lens-blur -o out.png").is_ok());
     }
 
     #[test]

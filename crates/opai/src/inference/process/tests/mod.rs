@@ -7,6 +7,7 @@ mod entry;
 mod faces;
 mod gain_map;
 mod identity;
+mod keep_sharp;
 mod log;
 mod mask;
 mod matte;
@@ -485,7 +486,7 @@ async fn run_chain(
         source,
         None,
         &planned,
-        Steps { provider, depth, keep: 0, from: 0 },
+        Steps { provider, depth, keep: 0, from: 0, part: None },
         on_progress,
         cancel,
         cache,

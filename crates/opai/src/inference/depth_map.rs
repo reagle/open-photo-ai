@@ -65,6 +65,21 @@ pub fn fill_chain_depth(operations: Vec<Operation>, map: &Arc<DepthMap>, lens: L
         .collect()
 }
 
+/// `operations` with every lens blur that was handed a depth also handed `weight` to keep sharp, signed `signature`:
+/// a mask's weight at the chain input's size, and the mask's signature. Every other operation unchanged, and so is a
+/// blur with no depth, which adds nothing to the photograph and so has nothing to keep in focus.
+pub(crate) fn fill_chain_keep_sharp(operations: Vec<Operation>, weight: &Arc<Plane>, signature: u64) -> Vec<Operation> {
+    operations
+        .into_iter()
+        .map(|operation| match operation {
+            Operation::LensBlur(blur) if blur.depth().is_some() => {
+                Operation::LensBlur(blur.with_keep_sharp(Arc::clone(weight), signature))
+            }
+            other => other,
+        })
+        .collect()
+}
+
 /// The depth estimate `operations` need, or `None` where they hold no lens blur.
 pub(crate) fn depth_asked(operations: &[Operation]) -> Option<Depth> {
     operations.iter().find_map(|operation| match operation {

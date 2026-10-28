@@ -74,12 +74,21 @@ pub(crate) struct ChainProgress {
     on_progress: Option<OnInference>,
     /// How many operations the chain has, which is what each one's share is derived from.
     operations: usize,
+    /// How many of them come before the ones this reports: 0 unless the chain is run in parts.
+    before: usize,
 }
 
 impl ChainProgress {
     /// The reporting of a chain of `operations` operations, going to `on_progress`.
     pub(crate) fn new(on_progress: Option<OnInference>, operations: usize) -> Self {
-        Self { on_progress, operations }
+        Self { on_progress, operations, before: 0 }
+    }
+
+    /// The reporting of a part of a chain of `operations` operations that starts after the first `before` of them, so
+    /// that a chain run in two parts reports on one bar: operation `index` of the part is `before + index` of the
+    /// chain.
+    pub(crate) fn part(on_progress: Option<OnInference>, before: usize, operations: usize) -> Self {
+        Self { on_progress, operations, before }
     }
 
     /// The reporting of operation `index` of the chain, which is `subject`.
@@ -89,7 +98,7 @@ impl ChainProgress {
         OperationProgress {
             on_progress: self.on_progress.clone(),
             subject: Arc::new(subject.into()),
-            index,
+            index: self.before + index,
             operations: self.operations,
             state: Mutex::new(OperationState { installed: false, high: 0.0 }),
         }

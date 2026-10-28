@@ -1303,6 +1303,28 @@ mod tests {
     }
 
     #[test]
+    fn a_kept_sharp_highlight_keeps_its_gain() {
+        // The highlight in the background that `blooms` blurs into a disc, held in focus by a weight over its corner.
+        let (input, gain_map) = highlighted(1);
+        let corner = (0..64 * 48).map(|i| if i % 64 < 20 && i / 64 < 20 { 1.0 } else { 0.0 }).collect();
+        let weight = Arc::new(Plane::from_vec(64, 48, corner).unwrap());
+        let blurred = rewritten_map(&pipeline(1.0, None), &input, &gain_map).expect("rewritten");
+        let kept = rewritten_map(&pipeline(1.0, Some(weight)), &input, &gain_map).expect("rewritten");
+
+        let before = gain_map.pixels().to_rgb8();
+        let (blurred, kept) = (blurred.pixels().to_rgb8(), kept.pixels().to_rgb8());
+        assert_ne!(
+            blurred.get_pixel(120, 120),
+            before.get_pixel(120, 120),
+            "the highlight was not blurred to begin with"
+        );
+        for (x, y) in [(120, 120), (118, 121), (110, 120), (130, 125)] {
+            let (was, is) = (before.get_pixel(x, y).0, kept.get_pixel(x, y).0);
+            assert!(was.iter().zip(is).all(|(was, is)| was.abs_diff(is) <= 1), "({x}, {y}): {was:?} to {is:?}");
+        }
+    }
+
+    #[test]
     fn a_gain_map_is_left_as_it_was_where_nothing_blurs() {
         let (input, gain_map) = highlighted(1);
 

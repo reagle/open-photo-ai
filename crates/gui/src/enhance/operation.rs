@@ -711,11 +711,8 @@ mod tests {
     #[test]
     fn a_removal_carries_the_region_the_window_painted_into_the_operation_the_library_constructs() {
         let requested = parse(removal(across()));
-        let region = Mask {
-            base: None,
-            strokes: vec![opai::Stroke::new(false, 0.02, 0.0, vec![0.4, 0.5, 0.6, 0.5])],
-            inverted: false,
-        };
+        let region =
+            Mask { strokes: vec![opai::Stroke::new(false, 0.02, 0.0, vec![0.4, 0.5, 0.6, 0.5])], ..Mask::default() };
 
         assert_eq!(requested.mask.as_ref(), Some(&region), "the strokes did not arrive as the library's own mask");
         assert_eq!(requested.resolve().expect("Lima is published at FP32"), opai::Remove::lima(Arc::new(region)));

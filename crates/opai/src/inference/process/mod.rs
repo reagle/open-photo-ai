@@ -3,7 +3,8 @@
 //! [`fn@plan`] decides what a chain will do and refuses what it cannot serve; [`run`] carries it out;
 //! [`identity_after`] names what came out. [`process`] is the three of them together, after finding the faces a chain's
 //! face recoveries restore where it was asked to and the depth and lens its lens blurs are driven by, and is the whole
-//! body of [`Opai::process`](crate::Opai::process).
+//! body of [`Opai::process`](crate::Opai::process). A mask is blended in after the chain, or before its lens blurs,
+//! which it is also handed to keep in focus: a chain with a limiting mask and a lens blur is run in two parts.
 
 // What a run leaves in the log. `process` brackets the run with a pair of records at `info` — what it was asked to
 // apply, the source's identity and the resolved depth on the way in; the elapsed time and whether it succeeded on the
@@ -36,7 +37,9 @@ use tokio_util::sync::CancellationToken;
 use std::future::Future;
 
 use super::acquire;
-use super::depth_map::{ChainMatte, depth_asked, find_chain_depth, find_chain_matte, mattes_asked};
+use super::depth_map::{
+    ChainMatte, depth_asked, fill_chain_keep_sharp, find_chain_depth, find_chain_matte, mattes_asked,
+};
 use super::execute::{ExecuteOptions, execute};
 use super::faces::{ChainFaces, FaceSelection, FacedChain, find_chain_faces};
 use super::handover::Handover;
@@ -254,13 +257,39 @@ where
     // Before everything else — the plan, the identity, every cache key and every report — so all of them describe the
     // chain that actually runs. A chain already in order is borrowed as it is, so its cache keys are the ones it has
     // always had.
-    let operations = &*in_apply_order(&operations);
+    let operations = in_apply_order(&operations);
 
-    // The removals lead the chain (`Family::APPLY_ORDER`), and a limiting mask is blended with the photograph *after*
-    // them, so it limits the enhancements and never brings back what was removed. A mask over a chain of removals
-    // alone, or over an empty one, has nothing to limit: the result is named and made as with no mask.
+    // Which of the mask's uses this chain gives it something to do. The removals lead the chain and the lens blurs end
+    // it (`Family::APPLY_ORDER`). A limiting mask is blended with the photograph *after* the removals, so it never
+    // brings back what was removed, and *before* the lens blurs, so they blur the blended picture rather than being
+    // limited like an enhancement, which would show the photograph unblurred where the mask is black; it limits what is
+    // between them, and a chain with nothing there has nothing for it to limit. A mask keeps its subject in focus only
+    // under a lens blur. A mask left with neither use is no mask: the result is named and made as with none.
     let removals = operations.iter().take_while(|operation| operation.family() == Family::Remove).count();
-    let mask = options.mask.take().filter(|mask| !mask.is_empty() && operations.len() > removals);
+    let blurs = operations.iter().rev().take_while(|operation| operation.family() == Family::LensBlur).count();
+    let mask = options.mask.take().filter(|mask| !mask.is_empty());
+    // The limit is switched off only under a lens blur: elsewhere it is all the mask does, and a front end that shows
+    // the switch only with a lens blur would otherwise leave a mask that silently does nothing once the blur is gone.
+    let limiting = mask
+        .clone()
+        .filter(|mask| (mask.limits_enhancements || blurs == 0) && operations.len() > removals + blurs);
+    let focusing = mask.filter(|mask| mask.keeps_sharp && blurs > 0);
+
+    // Handed to the lens blurs before the plan, beside their depth and matte, so the weight is in their cache keys:
+    // the one step whose key a mask joins, the blur running no model. Rasterised at the chain input's size, which the
+    // blur reads at whatever size it runs at; never part of the depth's or the matte's keys, so a stroke estimates
+    // neither again.
+    let operations = match &focusing {
+        None => operations,
+        Some(mask) => {
+            let (width, height) = source.dimensions();
+            let drawing = Arc::clone(mask);
+            let weight = spawn_blocking::<_, InferenceError, _>(move || drawing.rasterised(width, height)).await?;
+
+            std::borrow::Cow::Owned(fill_chain_keep_sharp(operations.into_owned(), &Arc::new(weight), mask.signature()))
+        }
+    };
+    let operations = &*operations;
 
     // Before the opening record, so a refused chain is recorded once — as refused, by `plan` — and never as a run
     // that began and failed. It is a scan of values already in memory, so nothing is spent before the refusal.
@@ -276,6 +305,7 @@ where
     );
 
     // Scoped rather than held: an entered span cannot be held across the awaits below.
+    let store = cache;
     let cache = span.in_scope(|| {
         let cache = RunCache::for_run(cache, options.cache, source);
 
@@ -308,19 +338,33 @@ where
 
     let started = std::time::Instant::now();
 
+    // A limiting mask before lens blurs splits the chain there: the head, the blend, and then the lens blurs over the
+    // blended picture, keyed from its identity, which is the masked identity of the head. Its steps keep the keys an
+    // unmasked run stores them under. Otherwise the chain is run whole, and a limiting mask is blended after it.
+    let split = match &limiting {
+        Some(_) if blurs > 0 => operations.len() - blurs,
+        _ => operations.len(),
+    };
+    let (head, tail) = planned.split_at(split);
+    let part = (!tail.is_empty()).then_some((0, operations.len()));
+    let blended = limiting
+        .as_ref()
+        .map(|mask| identity_masked(&identity_after(source.identity(), &operations[..split], depth), mask.signature()));
+
     // A chain whose removals already ran, for its lens blurs' depth, starts after them from what they made: they are
     // neither run again nor read back from the store.
     let (pixels, gain_map, from) = match &removed {
         Some(removed) => (removed.picture.shared_pixels(), removed.picture.shared_gain_map(), removed.steps),
         None => (source.shared_pixels(), source.shared_gain_map(), 0),
     };
+    let keep = if limiting.is_some() { removals } else { 0 };
     let outcome = run(
         backend,
         pixels,
         gain_map,
-        &planned,
-        Steps { provider: options.provider, depth, keep: if mask.is_some() { removals } else { 0 }, from },
-        options.on_progress,
+        head,
+        Steps { provider: options.provider, depth, keep, from, part },
+        options.on_progress.clone(),
         &options.cancel,
         cache.as_ref(),
     )
@@ -334,7 +378,7 @@ where
 
     // After the chain and before the closing record, so the record's time and outcome are the whole run's, a stop
     // during the blend included.
-    let outcome = match (outcome, &mask) {
+    let outcome = match (outcome, &limiting) {
         // The mask limits only what follows the removals: a removal is inside what it blends with, so the photograph it
         // brings back, and that photograph's gain map, are as the removals left them — the fill and the gain a
         // removal wrote under it included. A gain map only a removal rewrote is the chain's whatever the mask.
@@ -348,6 +392,22 @@ where
                 .map_err(RunFailure::from)
         }
         (outcome, _) => outcome.map(|ran| (ran.pixels, ran.gain_map, ran.providers)),
+    };
+
+    // The lens blurs after the blend, on the same bar as the head and through a store keyed from the blended picture.
+    let outcome = match (outcome, &blended) {
+        (Ok((pixels, gain_map, providers)), Some(blended)) if !tail.is_empty() => {
+            let input = source.derive(Arc::clone(&pixels), blended.as_str());
+            let blending = RunCache::for_run(store, options.cache, &input);
+            let steps =
+                Steps { provider: options.provider, depth, keep: 0, from: 0, part: Some((split, operations.len())) };
+
+            run(backend, pixels, gain_map, tail, steps, options.on_progress, &options.cancel, blending.as_ref())
+                .instrument(span.clone())
+                .await
+                .map(|ran| (ran.pixels, ran.gain_map, providers.and(ran.providers)))
+        }
+        (outcome, _) => outcome,
     };
 
     // Recorded before the `?`, so that a run which failed says so rather than leaving a reader to infer it from a
@@ -400,12 +460,14 @@ where
     // the source on every path, and the source identity already covers its bytes. The gain map is the one the last step
     // left: the source's own, shared, unless a step rewrote it, from the store or just now.
     //
-    // A mask is folded over the chain's identity rather than into it, so the steps' keys are the ones an unmasked run
-    // stores under, and a run with no mask is named exactly as it was before masks existed.
-    let chained = identity_after(source.identity(), operations, depth);
-    let named = match &mask {
-        Some(mask) => identity_masked(&chained, mask.signature()),
-        None => chained,
+    // A limiting mask is folded over the chain's identity rather than into it, so the steps' keys are the ones an
+    // unmasked run stores under, and a run with no mask is named exactly as it was before masks existed. Before lens
+    // blurs it is folded over the head's, and the blurs follow it, as their keys did. A mask kept in focus is already
+    // in the blurs' tags.
+    let named = match (&limiting, blended) {
+        (Some(_), Some(blended)) if !tail.is_empty() => identity_after(&blended, &operations[split..], depth),
+        (Some(mask), _) => identity_masked(&identity_after(source.identity(), operations, depth), mask.signature()),
+        (None, _) => identity_after(source.identity(), operations, depth),
     };
     let picture = source.derive(pixels, named).with_shared_gain_map(gain_map);
 
@@ -448,7 +510,7 @@ async fn removed_first<B: Backend>(
         source.shared_pixels(),
         source.shared_gain_map(),
         &planned,
-        Steps { provider, depth, keep: 0, from: 0 },
+        Steps { provider, depth, keep: 0, from: 0, part: None },
         on_progress,
         &cancel,
         store.as_ref(),
@@ -715,6 +777,9 @@ pub(crate) struct Steps {
     /// How many leading steps the source has already been through — the removals a chain ran first, for its lens
     /// blurs' depth — which are reported as served and neither run nor read again; 0 for none.
     pub(crate) from: usize,
+    /// Where these steps sit in a longer chain that is reported as one, run in parts: how many of its steps come
+    /// before them, and how many it has. `None` where they are the whole chain.
+    pub(crate) part: Option<(usize, usize)>,
 }
 
 /// What a chain run produced: the result, what it ran on, and the intermediate [`Steps::keep`] asked for.
@@ -780,7 +845,7 @@ pub(crate) async fn run<B: Backend>(
     cancel: &CancellationToken,
     cache: Option<&RunCache>,
 ) -> Result<Ran, RunFailure> {
-    let Steps { provider, depth, keep, from } = steps;
+    let Steps { provider, depth, keep, from, part } = steps;
 
     if planned.is_empty() {
         // No session, so nothing to report having run on — which is a different answer from "it ran on what was
@@ -788,7 +853,12 @@ pub(crate) async fn run<B: Backend>(
         return Ok(Ran { pixels: source, gain_map, providers: ProviderReport::new(provider, []), kept: None });
     }
 
-    let progress = ChainProgress::new(on_progress, planned.len());
+    let progress = match part {
+        Some((before, operations)) => ChainProgress::part(on_progress, before, operations),
+        None => ChainProgress::new(on_progress, planned.len()),
+    };
+    // A step is named by its place in the whole chain, in its records and its failure, as its progress is.
+    let before = part.map_or(0, |(before, _)| before);
 
     // What each step's cache key is derived from: the chain up to and including it.
     let operations: Vec<Operation> = planned.iter().map(|step| step.operation().clone()).collect();
@@ -872,7 +942,8 @@ pub(crate) async fn run<B: Backend>(
             {
                 // `debug`, because it repeats once per operation and a user dragging a slider would otherwise fill
                 // their file with it. See this module's header for the rule.
-                tracing::debug!(operation = %operation.operation().cache_tag(), index, key, "step served from the store");
+                let (at, tag) = (before + index, operation.operation().cache_tag());
+                tracing::debug!(operation = %tag, index = at, key, "step served from the store");
 
                 // Built here rather than before the lookup, because a miss - the ordinary case on a first run - would
                 // otherwise allocate a reporter only to drop it unread and build an identical one further down. No
@@ -977,7 +1048,8 @@ pub(crate) async fn run<B: Backend>(
 
         // Only a step that is computed has a span: one served from the store is its cache read's.
         let model = operation.operation().model_tag();
-        let step = unit_span!("step", operation = %operation.operation().cache_tag(), index, model = %model);
+        let step =
+            unit_span!("step", operation = %operation.operation().cache_tag(), index = before + index, model = %model);
 
         // Everything from here to the end of the step fails *in* it, so the failure carries which one it was, and the
         // step's span says so beside the run's. A stop inside a step is a stop there too.
@@ -988,7 +1060,7 @@ pub(crate) async fn run<B: Backend>(
             };
             unit::mark(&step, &ending);
 
-            RunFailure { error, step: Some((operation.operation().cache_tag(), index)) }
+            RunFailure { error, step: Some((operation.operation().cache_tag(), before + index)) }
         };
 
         let reporter = Arc::new(progress.operation(index, operation.operation().clone()));
@@ -1089,7 +1161,8 @@ pub(crate) async fn run<B: Backend>(
         // The counterpart of the hit above, at the same level and with the same fields, so one `grep` over an
         // operation's id returns every step of every run that touched it and says which way each went.
         step.in_scope(|| {
-            tracing::debug!(operation = %operation.operation().cache_tag(), index, stages, "step computed");
+            let at = before + index;
+            tracing::debug!(operation = %operation.operation().cache_tag(), index = at, stages, "step computed");
         });
         unit::mark(&step, &Outcome::Finished);
         // The model's run alone: a first run's install and build are measured as units of their own.

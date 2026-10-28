@@ -195,6 +195,10 @@
             "redo": "Opnieuw",
             "clear": "Wissen",
             "overlay": "Overlay tonen",
+            "limits": "Verbeteringen beperken",
+            "limitsHint": "De andere verbeteringen alleen toepassen waar het masker geschilderd is",
+            "keepsSharp": "Masker scherp houden",
+            "keepsSharpHint": "Lensvervaging houdt het geschilderde gebied scherp",
             "done": "Gereed",
             "hint": "Sleep om te schilderen. Houd Space ingedrukt om de foto te verplaatsen.",
             "shortcut": "{{action}} ({{key}})"

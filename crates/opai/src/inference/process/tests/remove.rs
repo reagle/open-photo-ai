@@ -403,22 +403,45 @@ async fn the_depth_and_the_matte_under_a_removal_are_its_regions_own_and_the_sto
 }
 
 #[tokio::test]
-async fn a_limiting_mask_over_a_removal_and_a_lens_blur_brings_back_the_removal_fresh_or_cached() {
+async fn a_mask_over_a_removal_and_a_lens_blur_is_blended_after_the_one_and_before_the_other_fresh_or_cached() {
     let (backend, cache) = (Fake::new(), store());
     let source = checkered();
-    let chain = [removing(0.25, 0.5), blur(1.0)];
+    let chain = [removing(0.25, 0.5), blur(1.0), brighten()];
     let options = || Some(ProcessOptions { mask: Some(right_of(960, 640, 480)), ..Default::default() });
+    let pixels = async |chain: &[Operation]| {
+        process(&backend, None, &source, chain, None).await.unwrap().picture.pixels().to_rgb8()
+    };
 
-    let removed = process(&backend, None, &source, &chain[..1], None).await.unwrap().picture.pixels().to_rgb8();
-    let whole = process(&backend, None, &source, &chain, None).await.unwrap().picture.pixels().to_rgb8();
+    let brightened = pixels(&[removing(0.25, 0.5), brighten()]).await;
+    // The photograph after its removal under the same blur, keeping the same half in focus.
+    let focus = Mask { limits_enhancements: false, ..Arc::unwrap_or_clone(right_of(960, 640, 480)) };
+    let focused = ProcessOptions { mask: Some(Arc::new(focus)), ..Default::default() };
+    let blurred = process(&backend, None, &source, &chain[..2], Some(focused))
+        .await
+        .unwrap()
+        .picture
+        .pixels()
+        .to_rgb8();
+    let whole = pixels(&chain).await;
+    assert_ne!(
+        whole.get_pixel(900, 320),
+        brightened.get_pixel(900, 320),
+        "the right was not blurred to begin with"
+    );
 
-    for cached in [None, Some(&cache), Some(&cache)] {
-        let limited = process(&backend, cached, &source, &chain, options()).await.unwrap().picture.pixels().to_rgb8();
+    for (round, cached) in [None, Some(&cache), Some(&cache)].into_iter().enumerate() {
+        let lima = runs(&backend, LIMA);
+        let masked = process(&backend, cached, &source, &chain, options()).await.unwrap().picture.pixels().to_rgb8();
         settled();
 
-        assert_eq!(limited.get_pixel(240, 320), removed.get_pixel(240, 320), "{cached:?}: the removal came back");
-        assert_eq!(limited.get_pixel(10, 10), removed.get_pixel(10, 10), "{cached:?}: the left was blurred");
-        assert_eq!(limited.get_pixel(900, 320), whole.get_pixel(900, 320), "{cached:?}: the right was not");
+        // Under the mask, enhanced and kept in focus. Beyond it, the photograph after its removal, blurred: what was
+        // removed never comes back, and the blur is over it rather than limited away.
+        assert_eq!(masked.get_pixel(900, 320), brightened.get_pixel(900, 320), "{cached:?}: the right was blurred");
+        let (is, was) = (masked.get_pixel(240, 320).0, blurred.get_pixel(240, 320).0);
+        assert!(is.iter().zip(was).all(|(is, was)| is.abs_diff(was) <= 1), "{cached:?}: {is:?} for {was:?}");
+
+        // Once a run at most, and not at all once the store has it: neither the blend nor the blur runs it again.
+        assert_eq!(runs(&backend, LIMA) - lima, usize::from(round < 2), "{cached:?}: Lima ran again");
     }
 }
 

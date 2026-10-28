@@ -197,6 +197,10 @@
             "redo": "Ripeti",
             "clear": "Azzera",
             "overlay": "Mostra sovrapposizione",
+            "limits": "Limita i miglioramenti",
+            "limitsHint": "Applica gli altri miglioramenti solo dove è dipinta la maschera",
+            "keepsSharp": "Mantieni a fuoco la maschera",
+            "keepsSharpHint": "La sfocatura mantiene nitida l'area dipinta",
             "done": "Fine",
             "hint": "Trascina per dipingere. Tieni premuto Space per spostare la fotografia.",
             "shortcut": "{{action}} ({{key}})"

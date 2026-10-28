@@ -195,6 +195,10 @@
             "redo": "Wiederholen",
             "clear": "Leeren",
             "overlay": "Overlay anzeigen",
+            "limits": "Verbesserungen begrenzen",
+            "limitsHint": "Die anderen Verbesserungen nur dort anwenden, wo die Maske gemalt ist",
+            "keepsSharp": "Maske scharf halten",
+            "keepsSharpHint": "Unschärfe lässt den gemalten Bereich scharf",
             "done": "Fertig",
             "hint": "Ziehen zum Malen. Space gedrückt halten, um das Foto zu verschieben.",
             "shortcut": "{{action}} ({{key}})"

@@ -208,7 +208,7 @@ async fn gain_map_after(
         source(48, 32),
         gain_map,
         planned,
-        Steps { provider: ExecutionProvider::Auto, depth: ChannelDepth::Eight, keep: 0, from: 0 },
+        Steps { provider: ExecutionProvider::Auto, depth: ChannelDepth::Eight, keep: 0, from: 0, part: None },
         None,
         &CancellationToken::new(),
         cache,

@@ -8,10 +8,15 @@
 //!
 //! The command line's `--mask` file is a base with no strokes ([`Mask::from_image`]); the GUI's brush is strokes with
 //! no base. Both are this one type.
+//!
+//! **Under a lens blur the mask is also the subject**, kept in focus: the blend is made before the blur, and the blur
+//! holds what the mask covers sharp ([`Mask::keeps_sharp`]). Either use can be switched off.
 
 // A top-level module beside `image` and `export` rather than under `models`: a mask is neither a model nor a step of
-// the chain. It never reaches a model, and it is not part of any step's cache key — a run applies it once, after the
-// last step, which is what lets a brush stroke redo a blend rather than the models (see `inference::process`).
+// the chain. It never reaches a model, and it is not part of any model's cache key — a run applies it once, after the
+// last step or before a trailing lens blur, which is what lets a brush stroke redo a blend rather than the models (see
+// `inference::process`). The lens blur, which runs no model, is the one step whose key it joins, as the weight it
+// keeps in focus.
 //
 // The pixel work is `imaging`'s: `stroke::painted` draws one stroke and `mix::masked` blends. What is here is what
 // those do not know: fractions of the photograph, the order strokes apply in, inversion, the wire shape and the
@@ -35,9 +40,15 @@ pub const RADIUS_MAX: f32 = 0.5;
 
 /// The part of a photograph the enhancements are for: strokes painted and erased in order over an optional base.
 ///
-/// Serialised in camelCase as `{ strokes: [{ erase, radius, softness, points }], inverted }`. The base never crosses
-/// the wire: it is built in-process, from a file or a selection.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// Serialised in camelCase as `{ strokes: [{ erase, radius, softness, points }], inverted, limitsEnhancements,
+/// keepsSharp }`, the last two left out where they are true. The base never crosses the wire: it is built in-process,
+/// from a file or a selection.
+///
+/// **Two uses**, each on unless switched off: limiting the enhancements to the mask, and, under a lens blur, keeping
+/// the masked part in focus. A use the chain gives nothing to do — keeping in focus with no lens blur, limiting a chain
+/// of nothing but removals and lens blurs — is ignored, and a mask whose every use is ignored is no mask. The limit is
+/// switched off only under a lens blur.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Mask {
     /// A weight image the strokes are painted over, or `None` to start from black.
@@ -49,6 +60,40 @@ pub struct Mask {
     /// Whether the finished weight is turned over, `1 - w`.
     #[serde(default)]
     pub inverted: bool,
+    /// Whether the enhancements apply only where the mask is white: the result is blended with the photograph through
+    /// it, before a lens blur where the chain ends in one. Switched off only under a lens blur: without one, limiting
+    /// is what a mask is for, and a mask is never left doing nothing.
+    #[serde(default = "yes", skip_serializing_if = "is_yes")]
+    pub limits_enhancements: bool,
+    /// Whether a lens blur keeps what the mask covers in focus, in proportion to its weight.
+    #[serde(default = "yes", skip_serializing_if = "is_yes")]
+    pub keeps_sharp: bool,
+}
+
+impl Default for Mask {
+    /// No base, no strokes, not inverted, and both uses on.
+    fn default() -> Self {
+        Self { base: None, strokes: Vec::new(), inverted: false, limits_enhancements: true, keeps_sharp: true }
+    }
+}
+
+/// The default of each of a mask's uses: on.
+const fn yes() -> bool {
+    true
+}
+
+/// Whether a use is on, which its serialized form then leaves out.
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "serde's `skip_serializing_if` hands a reference")]
+const fn is_yes(value: &bool) -> bool {
+    *value
+}
+
+/// What a mask weighs each pixel by, as its signature hashes it: the strokes and the inversion, spelt as the wire spelt
+/// a whole mask before it had uses, so a signature taken then is the same now.
+#[derive(Serialize)]
+struct Shape<'a> {
+    strokes: &'a [Stroke],
+    inverted: bool,
 }
 
 /// One brush stroke: a path, a radius and a softness, painting or erasing.
@@ -203,14 +248,18 @@ impl Mask {
         plane
     }
 
-    /// XXH3-64 of the strokes, the inversion and the base: what a masked result's identity folds in.
+    /// XXH3-64 of the strokes, the inversion and the base: what a masked result's identity folds in, and what a lens
+    /// blur keeping the mask in focus adds to its cache tag.
     ///
     /// Any change to a stroke's mode, radius, softness or points, to their order, to the inversion or to the base's
-    /// pixels changes it.
+    /// pixels changes it. **The uses do not**: the signature is of the weight, and what each use does to a run is
+    /// named where it applies — the masked identity for the limit, the lens blur's tag for the focus — so switching
+    /// off a use the chain ignores changes nothing, and a lens blur is not rendered again for a change to the limit.
     pub fn signature(&self) -> u64 {
-        // The wire shape as the canonical form: it is already exactly the strokes and the inversion, in order, and
+        // The wire shape of the strokes and the inversion as the canonical form: exactly those, in order, and
         // `serde_json` writes an `f32` the same way every time.
-        let shape = serde_json::to_string(self).expect("a mask serialises: it is numbers and booleans");
+        let shape = Shape { strokes: &self.strokes, inverted: self.inverted };
+        let shape = serde_json::to_string(&shape).expect("a mask serialises: it is numbers and booleans");
         let base = self.base.as_ref().map_or_else(|| "none".to_string(), |base| format!("{:016x}", base.signature));
 
         parse_hex(&xxh3_string(&format!("{shape}|{base}")))
@@ -336,7 +385,7 @@ mod tests {
     fn strokes_paint_over_the_base_resampled_to_the_target() {
         let base = Plane::from_vec(2, 1, vec![0.0, 1.0]).unwrap();
         let dot = Stroke::new(false, 0.05, 0.0, vec![0.25, 0.5]);
-        let mask = Mask { base: Some(Base::new(base)), strokes: vec![dot], inverted: false };
+        let mask = Mask { base: Some(Base::new(base)), strokes: vec![dot], ..Mask::default() };
 
         let plane = mask.rasterised(200, 100);
 
@@ -367,7 +416,7 @@ mod tests {
         assert_eq!(base.plane().as_slice(), [0.0, 0.5]);
 
         // And so a rasterised mask never carries one.
-        let mask = Mask { base: Some(base), strokes: vec![stroke], inverted: true };
+        let mask = Mask { base: Some(base), strokes: vec![stroke], inverted: true, ..Mask::default() };
         assert!(mask.rasterised(20, 10).as_slice().iter().all(|w| (0.0..=1.0).contains(w)));
     }
 
@@ -411,6 +460,29 @@ mod tests {
         distinct.sort_unstable();
         distinct.dedup();
         assert_eq!(distinct.len(), changed.len(), "two different masks share a signature: {changed:?}");
+    }
+
+    #[test]
+    fn both_uses_are_on_unless_switched_off_and_neither_is_in_the_signature() {
+        let mask = painted_with(vec![soft()]);
+        assert!(mask.limits_enhancements && mask.keeps_sharp);
+
+        // A mask sent before it had uses reads with both on, and one with both on is sent as it was then.
+        let json = serde_json::to_string(&mask).unwrap();
+        assert!(!json.contains("limitsEnhancements") && !json.contains("keepsSharp"), "{json}");
+        assert_eq!(serde_json::from_str::<Mask>(&json).unwrap(), mask);
+
+        let focus = Mask { limits_enhancements: false, ..mask.clone() };
+        let json = serde_json::to_string(&focus).unwrap();
+        assert!(json.contains(r#""limitsEnhancements":false"#) && !json.contains("keepsSharp"), "{json}");
+        assert_eq!(serde_json::from_str::<Mask>(&json).unwrap(), focus);
+        let limit: Mask = serde_json::from_str(r#"{"strokes":[],"keepsSharp":false}"#).unwrap();
+        assert!(limit.limits_enhancements && !limit.keeps_sharp);
+
+        // The weight is what is signed, and a mask's uses do not change it.
+        for other in [focus, Mask { keeps_sharp: false, ..mask.clone() }] {
+            assert_eq!(other.signature(), mask.signature());
+        }
     }
 
     #[test]

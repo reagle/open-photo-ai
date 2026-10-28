@@ -195,6 +195,10 @@
             "redo": "Gör om",
             "clear": "Rensa",
             "overlay": "Visa överlägg",
+            "limits": "Begränsa förbättringarna",
+            "limitsHint": "Tillämpa de andra förbättringarna bara där masken är målad",
+            "keepsSharp": "Håll masken i fokus",
+            "keepsSharpHint": "Oskärpa håller det målade området skarpt",
             "done": "Klar",
             "hint": "Dra för att måla. Håll ner Space för att flytta fotot.",
             "shortcut": "{{action}} ({{key}})"

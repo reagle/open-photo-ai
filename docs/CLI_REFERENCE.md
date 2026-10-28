@@ -217,7 +217,7 @@ Default models are in **bold**.
 | Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, osaka, saitama               | `--scale` (1.0 to 8.0)     |
 | Lens Blur        | `--lens-blur`        | `--lb` | **lisbon**                                     | `--lb-f` (1.0 to 32) or `--lb-amount` (0 to 100), `--lb-focus` (X,Y), `--lb-edges` (matte, depth) |
 
-`--mask <FILE>` limits whichever enhancements are asked for (or chosen by `--ap`) to part of the photograph. See [Masks](#masks).
+`--mask <FILE>` limits whichever enhancements are asked for (or chosen by `--ap`) to part of the photograph, and under a lens blur keeps that part in focus; `--mask-use` narrows it to one of the two. See [Masks](#masks).
 
 `--remove <FILE>` (alias `--rm`) removes the part of the photograph a mask image marks in white, filling it from its surroundings, before any other enhancement. It counts as an enhancement on its own. See [Remove](#remove).
 
@@ -412,6 +412,13 @@ opai photos --dn --mask sky.png -o enhanced
 - **It needs an enhancement**, or `--ap`, which it then limits to the mask.
 - **The models still run over the whole photograph**; the mask decides afterwards how much of their result each pixel shows. So a mask adds a quick blend to a run (and, under an upscale, an enlargement of the photograph), but changes neither how long the models take nor what the [run cache](#run-cache) stores, and running the same enhancements again with a different mask runs no model.
 - **With an upscale**, the black part shows a plain (Lanczos) enlargement of the photograph, which is softer than the upscaled part. A strongly changed result, such as an upscale or a colorization, can show a visible seam at the mask's edge: a softer edge in the mask hides it.
+- **With a lens blur, the white part is the subject, kept in focus.** The lens blur holds it sharp, in proportion to the mask (a grey pixel's blur is scaled down by its grey), and blurs the rest as it would without a mask. The enhancements are blended with the photograph *before* the blur, so the black part is the photograph blurred, not the photograph as it was. Changing only the mask estimates no depth and runs no model again: the blend and the blur are redone. A hard-edged mask can show a thin halo of background at the subject's edge; a softer edge hides it. With a lens blur and no other enhancement, a mask no longer limits where the blur applies: it is only what stays sharp, so to blur only part of the photograph, mask the part to keep sharp.
+- **`--mask-use <USE>`** says which of the two the mask is for: `both` (the default), `enhancements` (limit the enhancements; the lens blur ignores the mask) or `lens-blur` (keep the mask in focus and apply every other enhancement to the whole photograph). `lens-blur` without `--lens-blur` is refused, since the mask would have no effect, and so is `--mask-use` without `--mask`.
+
+```bash
+# Hold the side hair in focus under an f/1.4 blur, and denoise the whole photograph
+opai portrait.jpg --dn --lb --lb-f 1.4 --lb-focus 0.60,0.30 --mask hair.png --mask-use lens-blur -o out.jpg
+```
 
 ## Remove
 
@@ -442,7 +449,7 @@ opai street.jpg --rm passer-by.png --fr --sh -o street-clean.jpg
 opai photos --ap -o enhanced
 ```
 
-- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--lb`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--lb-f`, `--lb-amount`, `--lb-focus`, `--lb-edges`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `--mask`, `--remove`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
+- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--lb`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--lb-f`, `--lb-amount`, `--lb-focus`, `--lb-edges`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `--mask`, `--mask-use`, `--remove`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
 - **Each enhancement uses its default strength or bias**: strength `100` for denoise and sharpen, bias `50` for light adjustment and color balance. An upscale runs at the factor the image's size calls for (see [Upscale](#upscale---upscale-model---up-model)); an image above 4 MP is not upscaled.
 - **An image that needs nothing is still written**, unchanged, in the format asked for. Its row ends with `Enhancements applied to` as any other.
 - **If face detection can't run** (for example, its model can't be downloaded), the image still gets the other enhancements, without face recovery, and the [log file](#log-file) records a warning.

@@ -197,6 +197,10 @@
             "redo": "Rétablir",
             "clear": "Vider",
             "overlay": "Afficher la superposition",
+            "limits": "Limiter les améliorations",
+            "limitsHint": "Appliquer les autres améliorations uniquement là où le masque est peint",
+            "keepsSharp": "Garder le masque net",
+            "keepsSharpHint": "Le flou objectif garde la zone peinte nette",
             "done": "Terminé",
             "hint": "Glissez pour peindre. Maintenez Space enfoncé pour déplacer la photo.",
             "shortcut": "{{action}} ({{key}})"

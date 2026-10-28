@@ -3,6 +3,7 @@ import type { Stroke } from "@/ipc/mask";
 import {
     HISTORY_LIMIT,
     isEmpty,
+    isUsedFor,
     keepsPoint,
     radiusOf,
     SIZE_DEFAULT,
@@ -10,6 +11,8 @@ import {
     SOFTNESS_DEFAULT,
     stepSize,
     stepSoftness,
+    type Use,
+    usesOf,
 } from "@/lib/mask";
 import { clampTo } from "@/lib/utils";
 import { registerFileOwner } from "@/stores/files";
@@ -115,6 +118,12 @@ type MaskStore = {
      * mask's alone: a removal turned over would take out everything but what was painted.
      */
     invert: (path: string) => void;
+    /**
+     * Switches one of the limiting mask's uses under a lens blur on or off, as one undoable step: limiting the
+     * enhancements to it, or keeping it in focus. Nothing where it already is so. Kept by every other change, Clear
+     * included: it is what the mask is for, not what is painted.
+     */
+    setUse: (path: string, use: Use, on: boolean) => void;
     /** Takes every stroke of `target`'s region away, as one undoable step. */
     clear: (path: string, target?: Target) => void;
     undo: (path: string, target?: Target) => void;
@@ -146,13 +155,17 @@ type MaskStore = {
 let changes = 0;
 
 /** What an entry is a copy of, which is all a step of history holds. */
-const snapshot = ({ strokes, inverted }: Snapshot): Snapshot => ({ strokes, inverted });
+const snapshot = ({ strokes, inverted, ...uses }: Snapshot): Snapshot => ({ strokes, inverted, ...usesOf(uses) });
 
 /** `history` with `step` on the end, the oldest dropped past the limit. */
 const pushed = (history: Snapshot[], step: Snapshot) => [...history, step].slice(-HISTORY_LIMIT);
 
-/** `entry`'s state, changed to `next`, with the step it came from on the undo stack and nothing to redo. */
+/**
+ * `entry`'s state, changed to `next`, with the step it came from on the undo stack and nothing to redo. The uses are
+ * `entry`'s where `next` does not say.
+ */
 const changed = (entry: MaskEntry | undefined, next: Snapshot): MaskEntry => ({
+    ...usesOf(entry),
     ...next,
     undo: pushed(entry?.undo ?? [], snapshot(entry ?? { strokes: [], inverted: false })),
     redo: [],
@@ -281,6 +294,21 @@ export const useMaskStore = create<MaskStore>()((set, get) => ({
                     state.masks,
                     path,
                     changed(entry, { strokes: entry.strokes, inverted: !entry.inverted }),
+                ),
+            };
+        }),
+
+    setUse: (path, use, on) =>
+        set((state) => {
+            const entry = state.masks.get(path);
+            if (isUsedFor(entry, use) === on) return state;
+
+            const strokes = entry?.strokes ?? [];
+            return {
+                masks: withEntry(
+                    state.masks,
+                    path,
+                    changed(entry, { strokes, inverted: entry?.inverted ?? false, [use]: on }),
                 ),
             };
         }),

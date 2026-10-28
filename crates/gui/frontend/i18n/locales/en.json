@@ -195,6 +195,10 @@
             "redo": "Redo",
             "clear": "Clear",
             "overlay": "Show overlay",
+            "limits": "Limit the enhancements",
+            "limitsHint": "Apply the other enhancements only where the mask is painted",
+            "keepsSharp": "Keep the mask in focus",
+            "keepsSharpHint": "Lens Blur keeps the painted area sharp",
             "done": "Done",
             "hint": "Drag to paint. Hold Space to move the photograph.",
             "shortcut": "{{action}} ({{key}})"

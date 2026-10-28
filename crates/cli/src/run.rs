@@ -85,7 +85,10 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
     events::files_added(&sources.iter().map(|source| source.path.as_path()).collect::<Vec<_>>());
     let masks = Masks {
         limit: match &args.mask {
-            Some(path) => Some(read_mask(path, "the mask").await?),
+            Some(path) => {
+                let mask = read_mask(path, "the mask").await?;
+                Some(Arc::new(args.mask_use.unwrap_or_default().applied(Arc::unwrap_or_clone(mask))))
+            }
             None => None,
         },
         remove: match &args.remove {
@@ -319,7 +322,7 @@ enum Planner<'a> {
 
 /// The two mask files a command can be given, each read once for every image.
 struct Masks {
-    /// `--mask`'s: where the enhancements apply.
+    /// `--mask`'s: where the enhancements apply, and what a lens blur keeps in focus, as `--mask-use` says.
     limit: Option<Arc<Mask>>,
     /// `--remove`'s: what is taken out first.
     remove: Option<Arc<Mask>>,

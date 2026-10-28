@@ -193,6 +193,10 @@
             "redo": "重做",
             "clear": "清除",
             "overlay": "显示叠加层",
+            "limits": "限制增强",
+            "limitsHint": "其他增强仅应用于绘制了蒙版的区域",
+            "keepsSharp": "保持蒙版清晰",
+            "keepsSharpHint": "镜头模糊会让绘制的区域保持清晰",
             "done": "完成",
             "hint": "拖动以绘制。按住 Space 可移动照片。",
             "shortcut": "{{action}} ({{key}})"

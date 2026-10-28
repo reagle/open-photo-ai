@@ -712,6 +712,33 @@ describe("a mask painted over the photograph", () => {
         expect((asked.mock.calls[3] as unknown[])[4]).toBeUndefined();
     });
 
+    it("runs again when a use is switched under a lens blur, sending only the one switched off", async () => {
+        const blur: Operation = {
+            family: "lens_blur",
+            codename: "lisbon",
+            precision: "fp16",
+            parameters: { f_number: 1.4, focus_x: 0.5, focus_y: 0.5 },
+        };
+        stack(HOLIDAY.path, upscale(2), blur);
+        mount();
+        await land(0);
+        paint(HOLIDAY.path);
+        wait();
+        expect(asked).toHaveBeenCalledTimes(2);
+        expect((asked.mock.calls[1] as unknown[])[4]).not.toHaveProperty("keepsSharp");
+
+        act(() => useMaskStore.getState().setUse(HOLIDAY.path, "keepsSharp", false));
+        wait();
+        expect(asked).toHaveBeenCalledTimes(3);
+        expect((asked.mock.calls[2] as unknown[])[4]).toMatchObject({ keepsSharp: false });
+        expect((asked.mock.calls[2] as unknown[])[4]).not.toHaveProperty("limitsEnhancements");
+
+        // Switching it to what it already is changes nothing, and runs nothing.
+        act(() => useMaskStore.getState().setUse(HOLIDAY.path, "keepsSharp", false));
+        wait();
+        expect(asked).toHaveBeenCalledTimes(3);
+    });
+
     it("is another photograph's own: a stroke on one does not re-run the other", () => {
         stack(HOLIDAY.path, upscale(2));
         mount();

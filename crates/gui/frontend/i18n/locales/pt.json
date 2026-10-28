@@ -195,6 +195,10 @@
             "redo": "Refazer",
             "clear": "Limpar",
             "overlay": "Mostrar sobreposição",
+            "limits": "Limitar as melhorias",
+            "limitsHint": "Aplicar as outras melhorias só onde a máscara está pintada",
+            "keepsSharp": "Manter a máscara em foco",
+            "keepsSharpHint": "O desfoque mantém nítida a área pintada",
             "done": "Concluído",
             "hint": "Arraste para pintar. Segure Space para mover a foto.",
             "shortcut": "{{action}} ({{key}})"

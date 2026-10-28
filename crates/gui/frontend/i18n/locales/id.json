@@ -193,6 +193,10 @@
             "redo": "Ulangi",
             "clear": "Bersihkan",
             "overlay": "Tampilkan overlay",
+            "limits": "Batasi peningkatan",
+            "limitsHint": "Terapkan peningkatan lain hanya di area masker yang dilukis",
+            "keepsSharp": "Jaga masker tetap fokus",
+            "keepsSharpHint": "Blur Lensa menjaga area yang dilukis tetap tajam",
             "done": "Selesai",
             "hint": "Seret untuk melukis. Tahan Space untuk memindahkan foto.",
             "shortcut": "{{action}} ({{key}})"
