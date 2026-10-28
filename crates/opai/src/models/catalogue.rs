@@ -306,7 +306,7 @@ fn lens_blur_family() -> FamilyEntry {
     }
 }
 
-/// The matting family's entry: [`depth_family`]'s shape, at the one precision Porto is published in.
+/// The matting family's entry: [`depth_family`]'s shape, each row at the one precision it is published in.
 fn matting_family() -> FamilyEntry {
     FamilyEntry {
         family: Family::Matting,
@@ -317,7 +317,7 @@ fn matting_family() -> FamilyEntry {
                 family: Family::Matting,
                 codename: row.codename,
                 label: row.label,
-                precisions: &matting::variant::PRECISIONS,
+                precisions: matting::variant::precisions(row.codename),
                 parameters: row.parameters,
             })
             .collect(),
@@ -360,7 +360,7 @@ mod tests {
     /// The families published as one graph per variant per precision, all sharing one shape. Derived from
     /// [`Family::ALL`] rather than transcribed, so a family added later is covered here without being remembered:
     /// upscale is left out, because Osaka's precisions are its own, depth, because Lisbon is published at FP16 alone
-    /// and two graphs at that, and matting, because Porto is published at FP32 alone.
+    /// and two graphs at that, and matting, because Porto is published at FP32 alone and Bilbao at FP16.
     fn single_graph_families() -> Vec<Family> {
         Family::ALL
             .into_iter()
@@ -396,12 +396,13 @@ mod tests {
     }
 
     #[test]
-    fn matting_is_published_as_porto_at_full_precision_alone_with_no_parameter_and_no_order() {
+    fn matting_is_published_as_porto_at_full_precision_and_bilbao_at_half_with_no_parameter_and_no_order() {
         let entry = family_entry(Family::Matting);
 
-        assert_eq!(variants(Family::Matting), vec![("porto", "Porto")]);
+        assert_eq!(variants(Family::Matting), vec![("porto", "Porto"), ("bilbao", "Bilbao")]);
         assert_eq!(entry.variants[0].precisions, [Precision::Fp32]);
-        assert!(entry.variants[0].parameters.is_empty());
+        assert_eq!(entry.variants[1].precisions, [Precision::Fp16]);
+        assert!(entry.variants.iter().all(|variant| variant.parameters.is_empty()));
         assert_eq!(entry.order, None, "matting was published as an enhancement a chain applies");
     }
 

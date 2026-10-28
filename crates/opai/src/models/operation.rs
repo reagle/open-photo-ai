@@ -410,6 +410,12 @@ pub(crate) mod sealed {
             reason = "the seal is the point: this method speaks the crate-private `pipeline` vocabulary and is unreachable outside it"
         )]
         fn pipeline<B: Backend>(&self, dimensions: (u32, u32)) -> Result<SharedData<B, Self::Output>, InferenceError>;
+
+        /// The provider this operation is run on when `requested` is asked for: `requested`, but for a model a
+        /// provider is known to be unable to compile, which is moved off it before anything is opened.
+        fn provider(&self, requested: crate::providers::ExecutionProvider) -> crate::providers::ExecutionProvider {
+            requested
+        }
     }
 }
 
@@ -510,10 +516,19 @@ impl sealed::DataModel for Matting {
         crate::models::Subject::Analysis(Analysis::Matting(self.clone()))
     }
 
-    /// The family's model over the trimap it was handed, or a refusal where it was handed none.
+    /// The family's model over the trimap it was handed, or a refusal where Porto was handed none; Bilbao takes none.
     fn pipeline<B: Backend>(&self, _dimensions: (u32, u32)) -> Result<SharedData<B, Self::Output>, InferenceError> {
         match self.variant() {
             MattingVariant::Porto(_) => super::matting::porto::pipeline::<B>(self),
+            MattingVariant::Bilbao(_) => Ok(super::matting::bilbao::pipeline::<B>(self)),
+        }
+    }
+
+    /// Bilbao on the CPU wherever Core ML would be asked for: see `bilbao::provider`.
+    fn provider(&self, requested: crate::providers::ExecutionProvider) -> crate::providers::ExecutionProvider {
+        match self.variant() {
+            MattingVariant::Porto(_) => requested,
+            MattingVariant::Bilbao(_) => super::matting::bilbao::provider(requested),
         }
     }
 }

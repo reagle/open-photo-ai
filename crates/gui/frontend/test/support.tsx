@@ -288,7 +288,7 @@ export const CATALOGUE: FamilyEntry[] = [
     // Last, as the library publishes it: it runs after everything else, and is the one model published at FP16 alone.
     family("lens_blur", [variant("lisbon", "Lisbon", ["fp16"], LENS_BLUR)]),
     // Published, and drawn by nothing, for depth's reason: the model a lens blur mattes its subject with.
-    family("matting", [variant("porto", "Porto", ["fp32"])]),
+    family("matting", [variant("porto", "Porto", ["fp32"]), variant("bilbao", "Bilbao", ["fp16"])]),
 ];
 
 /**

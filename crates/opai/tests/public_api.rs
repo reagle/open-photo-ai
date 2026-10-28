@@ -1392,6 +1392,15 @@ fn a_matting_can_be_named_and_its_outcome_read_through_the_public_surface_alone(
         vec!["mt_porto_fp32"]
     );
 
+    // Bilbao, the model of the whole photograph, takes no trimap and is keyed by its variant alone.
+    let bilbao = Matting::bilbao();
+    assert_eq!(bilbao.variant(), MattingVariant::Bilbao(FloatPrecision::Fp16));
+    assert_eq!(
+        (bilbao.display_name(), bilbao.cache_tag()),
+        ("Bilbao (FP16)".to_string(), "mt-bilbao-fp16".to_string())
+    );
+    result_of(&bilbao);
+
     let carried = Analysis::Matting(matting.clone());
     assert_eq!(carried.family(), Family::Matting);
     assert_eq!(Subject::Analysis(carried).display_name(), "Porto (FP32)");
@@ -1431,6 +1440,7 @@ fn a_matting_can_be_named_and_its_outcome_read_through_the_public_surface_alone(
     };
     assert_eq!(blur.edges(), LensBlurEdges::Matte);
     assert_eq!(blur.clone().with_edges(LensBlurEdges::Depth).edges(), LensBlurEdges::Depth);
+    assert_eq!(blur.clone().with_edges(LensBlurEdges::Solid).edges(), LensBlurEdges::Solid);
 }
 
 #[test]

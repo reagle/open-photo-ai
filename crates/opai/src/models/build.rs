@@ -286,7 +286,7 @@ impl VariantEntry {
     ///
     /// A depth row builds an [`Analysis::Depth`] like detection's [`Analysis::Detection`]; it is run through
     /// [`Opai::estimate_depth`](crate::Opai::estimate_depth), not [`Opai::execute`](crate::Opai::execute), which
-    /// refuses it. A matting row builds an [`Analysis::Matting`] with no trimap, run through
+    /// refuses it. A matting row builds an [`Analysis::Matting`] with no trimap (Bilbao takes none), run through
     /// [`Opai::matte`](crate::Opai::matte) once one is handed it.
     ///
     /// # Errors
@@ -326,6 +326,7 @@ impl VariantEntry {
 
                 return Ok(Subject::Analysis(Analysis::Matting(match variant {
                     MattingVariant::Porto(_) => Matting::porto(),
+                    MattingVariant::Bilbao(_) => Matting::bilbao(),
                 })));
             }
             Family::Denoise => match DenoiseVariant::from_codename(codename, precision).ok_or_else(unpublished)? {

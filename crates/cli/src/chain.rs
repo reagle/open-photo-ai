@@ -207,6 +207,12 @@ mod tests {
             panic!("not a lens blur");
         };
         assert_eq!(matted.edges(), opai::LensBlurEdges::Matte);
+        let Operation::LensBlur(solid) =
+            plan("opai photo.jpg --lb --lb-edges solid -o out.jpg", 4000, 3000).operations.remove(0)
+        else {
+            panic!("not a lens blur");
+        };
+        assert_eq!(solid.edges(), opai::LensBlurEdges::Solid);
 
         // After an upscale, whatever order the flags came in.
         assert_eq!(
