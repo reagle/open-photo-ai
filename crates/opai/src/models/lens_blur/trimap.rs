@@ -167,6 +167,12 @@ pub(crate) fn trimap(refined: &Refined, band: Band) -> Plane {
     // left unknown, or the matting model, which cannot see depth, takes the subject's side of it for background.
     let (sure, maybe) = (eroded(&unoccluded, reduced_radius), dilated(&small, reduced_radius));
 
+    // What is in front of the band, opened by a pixel: at a bright edge against a dark background the guided depth
+    // overshoots, so a leaf's rim reads nearer than the band in dots and one-pixel arcs, which, sure background, the
+    // matting model cannot draw over and the blur shows as dark specks along the edge. A nearer thing is wider.
+    let front = plane_of(width, height, |x, y| in_front(y * columns + x));
+    let front = dilated(&eroded(&front, 1), 1);
+
     let mut trimap = Plane::new(width, height, 0.0);
     for_each_row(trimap.as_mut_slice(), columns, rows, |y, out| {
         let small_y = (y / REDUCTION as usize) as u32;
@@ -176,7 +182,7 @@ pub(crate) fn trimap(refined: &Refined, band: Band) -> Plane {
             let index = y * columns + x;
             let inside = held(index);
 
-            *value = if band.in_front(disparity(index)) {
+            *value = if front.as_slice()[index] > 0.5 {
                 // A nearer thing — a person passing in front — is never the subject, however close to its edge: left
                 // unknown, the matting model gives its edge to the subject, and it is then rendered sharp.
                 0.0
@@ -207,7 +213,9 @@ pub(crate) fn trimap(refined: &Refined, band: Band) -> Plane {
 //
 // The join: seeded, the matting model took both strands of a cable beside a seeded gap for background (Bilbao reads
 // them at 0.5 to 0.98). So where Bilbao calls a pixel the subject (above a half, grown by the seeds' 4 px), the matte is
-// the larger of the two; elsewhere, in the holes, the seeded one.
+// the plain one; elsewhere, in the holes, the smaller of the two. It was the larger of the two on the subject and the
+// seeded one in the holes at first: the tip of a nearer woman's strap, which the depth leaves out (plain alpha about 0)
+// and Bilbao finds salient, came back from the seeded matte at up to 0.7, held sharp in front of the subject.
 
 /// Bilbao's coverage above which a pixel is the salient subject.
 const SALIENT: f32 = 0.5;
@@ -294,8 +302,10 @@ pub(crate) fn seeded(trimap: &Plane, saliency: &Matte) -> Option<Plane> {
 }
 
 /// The matte of the subject from `seeded`, the matte over the [`seeded`] trimap, and `plain`, the one over the trimap the
-/// depth drew: the larger of the two wherever Bilbao's `saliency` calls a pixel the subject (grown by the seeds'
-/// inset), and the seeded one elsewhere, in the holes.
+/// depth drew: the plain one wherever Bilbao's `saliency` calls a pixel the subject (grown by the seeds' inset), and the
+/// smaller of the two elsewhere, in the holes. Seeds only add background, so a seeded alpha above the plain one is the
+/// matting model reading a changed neighbourhood (a nearer strap Bilbao finds salient drawn back as the subject), never
+/// the subject.
 pub(crate) fn joined(plain: &Matte, seeded: &Matte, saliency: &Matte) -> Matte {
     let (width, height) = seeded.dimensions();
     debug_assert_eq!(plain.dimensions(), (width, height), "two mattes of one photograph");
@@ -308,14 +318,65 @@ pub(crate) fn joined(plain: &Matte, seeded: &Matte, saliency: &Matte) -> Matte {
     );
     let (plain, seeded) = (plain.coverage(), seeded.coverage());
 
-    let alpha: Vec<f32> = seeded
+    let mut alpha: Vec<f32> = seeded
         .iter()
         .zip(&plain)
         .zip(subject.as_slice())
-        .map(|((&seeded, &plain), &subject)| if subject > 0.5 { seeded.max(plain) } else { seeded })
+        .map(|((&seeded, &plain), &subject)| if subject > 0.5 { plain } else { seeded.min(plain) })
         .collect();
 
+    // The specks: what the seeds took from the subject in islands too small to be a hole — a seed on a leaf's rim
+    // Bilbao blurred into the background, the matting model's answer shifting by a few pixels — has the plain matte.
+    let lost: Vec<bool> = plain.iter().zip(&alpha).map(|(&plain, &alpha)| plain - alpha > 0.5).collect();
+    for index in islands(&lost, width as usize, speck_area(ring)) {
+        alpha[index] = plain[index];
+    }
+
     Matte::new(width, height, &alpha)
+}
+
+/// The largest island of the subject the seeds may take away and the join gives back as a speck, in pixels: a square a
+/// quarter of the `ring` on a side, 64 px for a ring of 34.
+fn speck_area(ring: u32) -> usize {
+    (ring as usize / 4).pow(2).max(1)
+}
+
+/// The pixels of every island of `inside` (a `columns`-wide mask, its pixels joined by their four neighbours) smaller
+/// than `area`.
+fn islands(inside: &[bool], columns: usize, area: usize) -> Vec<usize> {
+    let mut seen = vec![false; inside.len()];
+    let (mut small, mut island, mut stack) = (Vec::new(), Vec::new(), Vec::new());
+
+    for start in 0..inside.len() {
+        if !inside[start] || seen[start] {
+            continue;
+        }
+        seen[start] = true;
+        stack.push(start);
+        island.clear();
+
+        while let Some(index) = stack.pop() {
+            island.push(index);
+            let (x, y) = (index % columns, index / columns);
+            let neighbours = [
+                (x > 0).then(|| index - 1),
+                (x + 1 < columns).then_some(index + 1),
+                (y > 0).then(|| index - columns),
+                (index + columns < inside.len()).then_some(index + columns),
+            ];
+            for next in neighbours.into_iter().flatten() {
+                if inside[next] && !seen[next] {
+                    seen[next] = true;
+                    stack.push(next);
+                }
+            }
+        }
+        if island.len() < area {
+            small.extend_from_slice(&island);
+        }
+    }
+
+    small
 }
 
 /// How far in from Bilbao's background a seed is planted, in pixels: an eighth of the `ring`, rounded, and at least one.
@@ -578,6 +639,67 @@ mod tests {
         assert_eq!(joined.alpha_at(100, 50), 1.0);
         assert!((joined.alpha_at(150, 50) - 0.2).abs() < 1e-4);
         assert_eq!(joined.dimensions(), (width, height));
+    }
+
+    #[test]
+    fn the_seeded_matte_never_draws_back_what_the_plain_one_left_out() {
+        // A nearer strap the depth left out (the plain matte 0), Bilbao's subject on its left half; seeded, the matting
+        // model read the changed neighbourhood and drew it back at 0.7 across the strip.
+        let (width, height) = (200, 100);
+        let saliency = Matte::new(
+            width,
+            height,
+            &(0..width * height).map(|i| if i % width < 100 { 0.9 } else { 0.0 }).collect::<Vec<_>>(),
+        );
+        let plain = Matte::new(width, height, &vec![0.0; (width * height) as usize]);
+        let holed = Matte::new(width, height, &vec![0.7; (width * height) as usize]);
+
+        let joined = joined(&plain, &holed, &saliency);
+
+        assert_eq!(joined.alpha_at(50, 50), 0.0, "on Bilbao's subject");
+        assert_eq!(joined.alpha_at(150, 50), 0.0, "in the holes");
+    }
+
+    #[test]
+    fn a_speck_the_seeds_took_from_the_subject_is_given_back_and_a_hole_is_not() {
+        // A strip of a 4800-pixel-wide photograph (a ring of 34 px) Bilbao calls background throughout, the depth's
+        // subject solid over it; seeded, the matting model opened a 40 px hole and took a 6 x 6 px speck off a leaf.
+        let (width, height) = (4800, 120);
+        let at = |x: u32, y: u32, (left, top, size): (u32, u32, u32)| {
+            (left..left + size).contains(&x) && (top..top + size).contains(&y)
+        };
+        let (hole, speck) = ((1000, 40, 40), (3000, 50, 6));
+        let holed: Vec<f32> = (0..height)
+            .flat_map(|y| (0..width).map(move |x| (x, y)))
+            .map(|(x, y)| if at(x, y, hole) || at(x, y, speck) { 0.0 } else { 1.0 })
+            .collect();
+        let plain = Matte::new(width, height, &vec![1.0; (width * height) as usize]);
+        let saliency = Matte::new(1, 1, &[0.0]);
+
+        let joined = joined(&plain, &Matte::new(width, height, &holed), &saliency);
+
+        assert_eq!(joined.alpha_at(1020, 60), 0.0, "the hole is open");
+        assert_eq!(joined.alpha_at(1000, 40), 0.0, "to its edge");
+        assert_eq!(joined.alpha_at(3002, 52), 1.0, "the speck is the subject again");
+        assert_eq!(joined.alpha_at(3005, 55), 1.0);
+    }
+
+    #[test]
+    fn a_rim_the_depth_reads_nearer_by_a_pixel_is_not_background() {
+        // The subject at 1 m before a wall at 10 m, with a one-pixel arc along its edge and a dot inside it that read
+        // 0.8 m (the guided depth's overshoot at a bright edge), and a real nearer thing, 12 px wide, at the left.
+        let depth = refined(400, 300, |x, y| match (x, y) {
+            (0..12, _) | (199, _) | (150, 150) => 0.8,
+            (12..200, _) => 1.0,
+            _ => 10.0,
+        });
+        let trimap = trimap(&depth, Band::around(1.0));
+
+        for y in [10, 150, 290] {
+            assert_ne!(trimap.get(199, y), 0.0, "the arc on the edge at (199, {y}) is sure background");
+            assert!((0..12).all(|x| trimap.get(x, y) == 0.0), "the nearer thing is not background");
+        }
+        assert_eq!(trimap.get(150, 150), 0.5, "the dot is not background, and not sure subject");
     }
 
     fn map(metres: impl Fn(u32, u32) -> f32) -> DepthMap {
