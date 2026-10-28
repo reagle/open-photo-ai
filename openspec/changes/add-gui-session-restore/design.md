@@ -32,7 +32,7 @@ Tauri does not expose.
 
 ## How the work divides
 
-Rust owns the list, the file and the menu: it reads the file at setup, keeps the list as application state, writes it on
+Rust owns the list, the file and the menu: it reads the file once at launch, keeps the list as application state, writes it on
 every change, and rebuilds the submenu from it. The window owns what opening means: it tells Rust which photographs
 entered the gallery, and it opens the one chosen through the same route a drop takes.
 
@@ -52,7 +52,7 @@ Beside `gui-settings.json`, at `rust_sak::fs::user_config_dir(opai::APP_NAME, "s
 
 and slice 2 adds a `session` member to the same object (D8). Written through a temporary file in the same directory
 and renamed over the old one, so a reader sees the old list or the new one and never a torn file; a write that would
-change nothing is skipped. Read once, at setup. **A file that is absent, unreadable, not JSON, or of another `version`
+change nothing is skipped. Read once, at launch. **A file that is absent, unreadable, not JSON, or of another `version`
 is an empty list**, logged as a warning with the reason, and replaced at the next change - never an error at launch.
 Unknown members are ignored on read, so a file written by a later slice still yields its list.
 
