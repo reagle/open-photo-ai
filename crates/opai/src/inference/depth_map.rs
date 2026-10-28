@@ -33,6 +33,7 @@
 use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use imaging::plane::Plane;
 
@@ -41,7 +42,7 @@ use crate::image::{LensExif, Picture, read_frame_diagonal, read_lens};
 use crate::inference::execute::ExecuteOptions;
 use crate::models::lens_blur::lens::Blur;
 use crate::models::lens_blur::render::Refined;
-use crate::models::lens_blur::trimap::{Band, matted_focus, trimap, worth_matting};
+use crate::models::lens_blur::trimap::{Band, joined, matted_focus, seeded, trimap, worth_matting};
 use crate::models::{Depth, DepthMap, Lens, LensBlur, Matte, Matting, Operation, OwnLens};
 use crate::task::spawn_blocking;
 
@@ -214,19 +215,30 @@ impl ChainMatte {
     }
 }
 
-/// How many lens blurs in `operations` matte their subject's edges, and so may each ask for a matte once the depth is
-/// known.
+/// How many analyses the lens blurs in `operations` may each ask for once the depth is known: a matte for each that
+/// mattes its subject's edges, a second, over the seeded trimap, for each of those that looks for its subject's holes,
+/// and Bilbao's matte of the whole photograph once for all of them.
 pub(crate) fn mattes_asked(operations: &[Operation]) -> usize {
-    operations
+    let (mattes, holes) = operations
         .iter()
-        .filter(|operation| matches!(operation, Operation::LensBlur(blur) if blur.matting().is_some()))
-        .count()
+        .filter_map(|operation| match operation {
+            Operation::LensBlur(blur) if blur.matting().is_some() => Some(blur.finds_holes()),
+            _ => None,
+        })
+        .fold((0, 0), |(mattes, holes), finds| (mattes + 1, holes + usize::from(finds)));
+
+    mattes + holes + usize::from(holes > 0)
 }
 
 /// `operations` with every lens blur that mattes its subject handed the matte of `source`, the chain's input, over the
 /// trimap its depth and focus give, from `matte`, and what that came to: called once for each such blur whose blur
-/// reaches 3 px somewhere and whose focus has a subject, with the options `options` gives for the next of the mattes
+/// reaches 3 px somewhere and whose focus has a subject, with the options `options` gives for the next of the analyses
 /// still to come (its argument, at least 1), so each reports where the last left off.
+///
+/// A blur that looks for its subject's holes ([`LensBlur::finds_holes`]) is matted twice: over the trimap the depth
+/// drew, and over that trimap with Bilbao's holes seeded as background ([`seeded`]), the two then [`joined`]. Bilbao's matte of the whole photograph is asked for once, for the first such blur, and
+/// served from the store afterwards whatever the focus. Where Bilbao is not installed or fails, or finds no hole, the
+/// subject is matted once, as solid.
 ///
 /// Called after [`find_chain_depth`], whose depth and lens it reads. A blur that adds nothing, mattes nothing, or was
 /// handed no depth is left as it is.
@@ -247,9 +259,19 @@ where
     M: Fn(Matting, Option<ExecuteOptions>) -> F,
     F: Future<Output = Result<Matte, InferenceError>>,
 {
-    let mut remaining = mattes_asked(&operations);
+    // Atomic rather than a `Cell` only so the future stays `Send`: it is read and written on one task.
+    let remaining = AtomicUsize::new(mattes_asked(&operations));
     let mut outcome = ChainMatte::NotAsked;
     let mut matted = Vec::with_capacity(operations.len());
+    // Bilbao's matte, once asked for: `Some(None)` where it could not be had.
+    let mut salient: Option<Option<Arc<Matte>>> = None;
+
+    // The options for the next analysis, and one fewer still to come.
+    let next = || {
+        let left = remaining.load(Ordering::Relaxed);
+        remaining.store(left.saturating_sub(1), Ordering::Relaxed);
+        options(left.max(1))
+    };
 
     for operation in operations {
         let Operation::LensBlur(blur) = operation else {
@@ -260,8 +282,7 @@ where
             matted.push(Operation::LensBlur(blur));
             continue;
         };
-        let next = options(remaining);
-        remaining -= 1;
+        let holes = blur.finds_holes();
 
         if matches!(outcome, ChainMatte::Unavailable(_)) {
             matted.push(Operation::LensBlur(blur));
@@ -279,9 +300,53 @@ where
             continue;
         };
 
+        // Bilbao once a chain, for the first blur that looks for holes; the store serves it to every later focus.
+        if holes && salient.is_none() {
+            salient = Some(match matte(Matting::bilbao(), next()).await {
+                Ok(found) => Some(Arc::new(found)),
+                Err(error) if error.stop_reason().is_some() => return Err(error),
+                Err(error) => {
+                    tracing::debug!(%error, "the subject's holes are not looked for: Bilbao could not matte it");
+                    None
+                }
+            });
+        }
+        let saliency = salient.clone().flatten().filter(|_| holes);
+        let trimap = Arc::new(trimap);
+        let seeded = match &saliency {
+            Some(saliency) => {
+                let (plain, saliency) = (Arc::clone(&trimap), Arc::clone(saliency));
+                spawn_blocking::<_, InferenceError, _>(move || seeded(&plain, &saliency)).await?
+            }
+            None => None,
+        };
+
         // Recorded by `execute`, where it happened; this only notes what the chain does about it.
-        match matte(matting.with_trimap(Arc::new(trimap)), next).await {
-            Ok(found) => {
+        match matte(matting.clone().with_trimap(trimap), next()).await {
+            Ok(plain) => {
+                let found = match (seeded, saliency) {
+                    (Some(seeded), Some(saliency)) => {
+                        match matte(matting.with_trimap(Arc::new(seeded)), next()).await {
+                            Ok(holed) => {
+                                spawn_blocking::<_, InferenceError, _>(move || joined(&plain, &holed, &saliency))
+                                    .await?
+                            }
+                            Err(error) if error.stop_reason().is_some() => return Err(error),
+                            Err(error) => {
+                                tracing::debug!(%error, "the subject's holes could not be matted; it is matted as solid");
+                                plain
+                            }
+                        }
+                    }
+                    // No hole found, or none looked for: the slot the seeded matte would have taken is passed over.
+                    _ => {
+                        if holes {
+                            let left = remaining.load(Ordering::Relaxed);
+                            remaining.store(left.saturating_sub(1), Ordering::Relaxed);
+                        }
+                        plain
+                    }
+                };
                 outcome = outcome.and(ChainMatte::Matted);
                 matted.push(Operation::LensBlur(blur.with_matte(Arc::new(found), Some(Arc::new(refined)))));
             }
@@ -346,7 +411,10 @@ mod tests {
     use super::*;
     use crate::image::lens_fixtures;
     use crate::models::lens_blur::tests::two_planes;
-    use crate::models::{FNumber, FloatPrecision, Fraction, LensBlur, LensOrigin, Scale, Upscale};
+    use crate::models::{
+        FNumber, FloatPrecision, Fraction, LensBlur, LensBlurEdges, LensOrigin, MattingVariant, Scale, Upscale,
+    };
+    use image::DynamicImage;
 
     fn blur() -> Operation {
         LensBlur::lisbon(FNumber::new(1.4).expect("in range"), Fraction::CENTRE, Fraction::CENTRE)
@@ -541,5 +609,108 @@ mod tests {
         assert_eq!(framing_of(Some(diagonal), (1200, 800)), 1.0);
         assert_eq!(framing_of(None, (300, 200)), 1.0);
         assert_eq!(framing_of(Some(diagonal), (0, 0)), 1.0);
+    }
+
+    /// Bilbao's matte of a 960 x 640 photograph whose depth puts a subject in the middle third: the subject, with a
+    /// 20 px hole the depth calls solid at its centre.
+    fn salient() -> Matte {
+        let alpha: Vec<f32> = (0..640_u32)
+            .flat_map(|y| (0..960_u32).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                let subject = (320..640).contains(&x) && (214..426).contains(&y);
+                let hole = (470..490).contains(&x) && (310..330).contains(&y);
+                if subject && !hole { 1.0 } else { 0.0 }
+            })
+            .collect();
+
+        Matte::new(960, 640, &alpha)
+    }
+
+    /// [`find_chain_matte`] over `operations` handed a two-plane depth and a 36 mm f/6 lens, on a 960 x 640 photograph,
+    /// with a matting that answers Bilbao with [`salient`] and Porto with its trimap; and what each matting was asked,
+    /// with the trimap's value at the hole's centre.
+    fn chain_matted(edges: &[LensBlurEdges]) -> (Vec<Operation>, Vec<(MattingVariant, Option<f32>)>) {
+        let source = Picture::new(
+            "/pictures/bonsai.jpg",
+            DynamicImage::ImageRgb8(image::RgbImage::from_pixel(960, 640, image::Rgb([90, 120, 150]))),
+            "feedfacefeedface",
+        );
+        let blurs = edges
+            .iter()
+            .map(|&edges| Operation::LensBlur(lens_blur(&blur_at(1.4)).clone().with_edges(edges)));
+        let operations = fill_chain_depth(
+            blurs.collect(),
+            &Arc::new(two_planes(96, 64, 1.0, 10.0)),
+            Lens::new(36.0, 6.0, LensOrigin::Exif),
+        );
+        let asked = std::sync::Mutex::new(Vec::new());
+        let matte = |matting: Matting, _options| {
+            asked
+                .lock()
+                .unwrap()
+                .push((matting.variant(), matting.trimap().map(|trimap| trimap.get(480, 320))));
+            std::future::ready(Ok(match matting.trimap() {
+                None => salient(),
+                Some(trimap) => Matte::new(trimap.width(), trimap.height(), trimap.as_slice()),
+            }))
+        };
+
+        let (matted, outcome) = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(find_chain_matte(operations, &source, |_| None, matte))
+            .expect("nothing stopped");
+        assert!(matches!(outcome, ChainMatte::Matted), "{outcome:?}");
+
+        (matted, asked.into_inner().unwrap())
+    }
+
+    #[test]
+    fn a_hole_bilbao_finds_is_matted_over_seeds_and_the_subject_around_it_kept() {
+        let (matted, asked) = chain_matted(&[LensBlurEdges::Matte]);
+
+        // Bilbao, then Porto over the depth's trimap, solid at the hole, then over the seeded one, background there.
+        let (bilbao, porto) =
+            (MattingVariant::Bilbao(FloatPrecision::Fp16), MattingVariant::Porto(FloatPrecision::Fp32));
+        assert_eq!(asked, vec![(bilbao, None), (porto, Some(1.0)), (porto, Some(0.0))]);
+
+        let matte = lens_blur(&matted[0]).matte().expect("a matte");
+        assert_eq!(matte.alpha_at(480, 320), 0.0, "the hole is not background");
+        assert_eq!(matte.alpha_at(400, 300), 1.0, "the subject around it is not the subject");
+    }
+
+    #[test]
+    fn bilbao_runs_once_a_chain_and_never_for_a_subject_matted_as_solid() {
+        let (bilbao, porto) =
+            (MattingVariant::Bilbao(FloatPrecision::Fp16), MattingVariant::Porto(FloatPrecision::Fp32));
+        let variants = |asked: Vec<(MattingVariant, Option<f32>)>| {
+            asked.into_iter().map(|(variant, _)| variant).collect::<Vec<_>>()
+        };
+
+        let (_, asked) = chain_matted(&[LensBlurEdges::Matte, LensBlurEdges::Matte]);
+        assert_eq!(variants(asked), vec![bilbao, porto, porto, porto, porto]);
+
+        let (matted, asked) = chain_matted(&[LensBlurEdges::Solid]);
+        assert_eq!(variants(asked), vec![porto]);
+        let matte = lens_blur(&matted[0]).matte().expect("a matte");
+        assert_eq!(matte.alpha_at(480, 320), 1.0, "a solid subject was given its hole");
+    }
+
+    #[test]
+    fn the_analyses_asked_count_bilbao_once_and_a_second_matte_for_each_subject_with_holes() {
+        let with = |edges: &[LensBlurEdges]| {
+            mattes_asked(
+                &edges
+                    .iter()
+                    .map(|&edges| Operation::LensBlur(lens_blur(&blur_at(1.4)).clone().with_edges(edges)))
+                    .collect::<Vec<_>>(),
+            )
+        };
+
+        assert_eq!(with(&[]), 0);
+        assert_eq!(with(&[LensBlurEdges::Depth]), 0);
+        assert_eq!(with(&[LensBlurEdges::Solid]), 1);
+        assert_eq!(with(&[LensBlurEdges::Matte]), 3);
+        assert_eq!(with(&[LensBlurEdges::Matte, LensBlurEdges::Matte, LensBlurEdges::Solid]), 6);
     }
 }

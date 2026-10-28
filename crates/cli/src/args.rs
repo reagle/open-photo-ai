@@ -114,6 +114,8 @@ pub enum LensBlurEdges {
     Matte,
     /// Let the depth alone decide what is sharp, as before matting existed.
     Depth,
+    /// Matte the subject, but look for no holes in it: the background seen through it stays as the depth has it.
+    Solid,
 }
 
 impl From<LensBlurEdges> for opai::LensBlurEdges {
@@ -121,6 +123,7 @@ impl From<LensBlurEdges> for opai::LensBlurEdges {
         match edges {
             LensBlurEdges::Matte => Self::Matte,
             LensBlurEdges::Depth => Self::Depth,
+            LensBlurEdges::Solid => Self::Solid,
         }
     }
 }
@@ -428,8 +431,9 @@ pub struct Selection {
     pub lens_blur_focus: Option<(f64, f64)>,
 
     /// How the edge of the subject in focus is made: `matte` mattes it (hair, fur and leaves stay sharp with the
-    /// background between them blurred; about 15 s for a new focus point, cached afterwards), `depth` leaves it to the
-    /// depth alone. Default matte.
+    /// background between them blurred, and the background seen through holes in the subject, between a canopy's leaves,
+    /// is found and blurred too; about 15 to 30 s for a new focus point, cached afterwards), `solid` mattes it without
+    /// looking for holes, `depth` leaves it to the depth alone. Default matte.
     #[arg(long = "lb-edges", value_name = "EDGES", value_enum, ignore_case = true, requires = "lens_blur")]
     pub lens_blur_edges: Option<LensBlurEdges>,
 }
@@ -1108,6 +1112,7 @@ mod tests {
             ("matte", LensBlurEdges::Matte),
             ("depth", LensBlurEdges::Depth),
             ("DEPTH", LensBlurEdges::Depth),
+            ("solid", LensBlurEdges::Solid),
         ] {
             let args = parse(&format!("opai photo.jpg --lb --lb-edges {flag} -o out.jpg")).expect(flag);
             assert_eq!(args.selection.lens_blur_edges, Some(edges));

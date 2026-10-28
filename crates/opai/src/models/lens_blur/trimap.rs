@@ -8,6 +8,13 @@
 //! model's edge is soft and the guided filter's only follows the photograph's own — so that ring is left unknown for
 //! the matting model, and only what lies beyond it either way is sure. A pixel nearer than the band is never the
 //! subject, in the ring or not.
+//!
+//! **The subject's holes.** The depth cannot see the background between a canopy's leaves or through the loop of a
+//! strap: it calls the subject there solid, or unknown in patches too large for the matting model, which then answers
+//! about a half — half the sharp gap over the blurred fill, a smudge. [`seeded`] reads Bilbao's matte of the whole
+//! photograph for those holes and plants sure background in them, so the matting model draws each gap's edge; and
+//! [`joined`] keeps the matte without the seeds wherever Bilbao says the subject is, so a thin part of the subject
+//! beside a seed (a cable, a twig) is not handed to the background with it.
 
 // How it is built (the OpenSpec design of `add-lens-blur-8-matting`, X5): the band on the guided-upsampled depth, the
 // morphology at a quarter of the size (a 40-pixel square at 24 megapixels is ten pixels there, and the band's edge need
@@ -29,7 +36,7 @@ use imaging::rows::for_each_row;
 
 use super::lens::Blur;
 use super::render::Refined;
-use crate::models::DepthMap;
+use crate::models::{DepthMap, Matte};
 
 /// How much nearer than the plane of focus the subject reaches, as a ratio of distances.
 const NEAR_RATIO: f32 = 1.1;
@@ -187,6 +194,147 @@ pub(crate) fn trimap(refined: &Refined, band: Band) -> Plane {
     trimap
 }
 
+// The holes (the "B7" of the prototype in the fork's notes, `lens-blur/gaps`, with the refinements its gate on two more
+// photographs called for). On the bonsai of that prototype, a ring of 34 px: Bilbao's subject (its matte above a half)
+// closed by 68 px at a quarter of the size, which fills every hole in it smaller than that and leaves the outline; the
+// sure background planted where Bilbao is below a tenth, 4 px in from it, within that closed subject alone; and the
+// sure subject within 17 px of what Bilbao calls background, within it too, made unknown. Every radius is the ring's
+// multiple, so it scales with the photograph as the ring does.
+//
+// Within the closed subject alone, both: a large thing the depth puts in the band and Bilbao does not find salient (the
+// table under a bonsai's pot, a glass case before a woman's hands) is not a hole, and keeps the depth's answer. Both
+// were tried everywhere in the band first: the table blurred, and the case came apart in patches.
+//
+// The join: seeded, the matting model took both strands of a cable beside a seeded gap for background (Bilbao reads
+// them at 0.5 to 0.98). So where Bilbao calls a pixel the subject (above a half, grown by the seeds' 4 px), the matte is
+// the larger of the two; elsewhere, in the holes, the seeded one.
+
+/// Bilbao's coverage above which a pixel is the salient subject.
+const SALIENT: f32 = 0.5;
+
+/// Bilbao's coverage below which a pixel inside the subject's outline is a hole: sure background.
+const HOLE: f32 = 0.1;
+
+/// The least share of the depth's sure subject that Bilbao must find salient for its holes to be trusted: below it,
+/// Bilbao has found another subject than the one in focus (focused on the street behind a passer-by, the passer-by),
+/// and the trimap is left as the depth drew it.
+const MIN_SALIENT: f64 = 0.25;
+
+/// The trimap `trimap` with sure background planted in the holes Bilbao's `saliency` finds in the subject, and the sure
+/// subject beside them unknown; or `None` where that changes nothing, or Bilbao found another subject than the depth.
+///
+/// `saliency` is at any size (Bilbao's graph's); it is resampled to the trimap's.
+pub(crate) fn seeded(trimap: &Plane, saliency: &Matte) -> Option<Plane> {
+    let (width, height) = (trimap.width(), trimap.height());
+    let (columns, rows) = (width as usize, height as usize);
+    let ring = unknown_radius(width, height);
+    let salient = saliency.plane().resized(width, height);
+    let (known, salience) = (trimap.as_slice(), salient.as_slice());
+
+    // The guard: of what the depth surely calls the subject, how much Bilbao calls it too.
+    let (sure, agreed) = known.iter().zip(salience).fold((0_usize, 0_usize), |(sure, agreed), (&value, &salience)| {
+        (sure + usize::from(value == 1.0), agreed + usize::from(value == 1.0 && salience > SALIENT))
+    });
+    #[allow(clippy::cast_precision_loss, reason = "a share of a pixel count")]
+    let share = agreed as f64 / sure.max(1) as f64;
+    if sure == 0 || share < MIN_SALIENT {
+        tracing::debug!(share, "the subject's holes are not looked for: the salient subject is another");
+        return None;
+    }
+
+    // Bilbao's subject closed by twice the ring, at a quarter of the size: its outline, with its holes filled.
+    let (small_width, small_height) = (width.div_ceil(REDUCTION), height.div_ceil(REDUCTION));
+    let reduction = REDUCTION as usize;
+    let small_salient =
+        plane_of(small_width, small_height, |x, y| salience[y * reduction * columns + x * reduction] > SALIENT);
+    let closing = (2 * ring).div_ceil(REDUCTION).max(1);
+    let outline = eroded(&dilated(&small_salient, closing), closing);
+    // Seeds a block further in: the block on the outline itself holds the edge between Bilbao's subject and what is
+    // beside it, and a seed there would be a sliver of background against the sure subject.
+    let inside = eroded(&outline, 1);
+    let at = |plane: &Plane, x: usize, y: usize| plane.get((x / reduction) as u32, (y / reduction) as u32) > 0.5;
+
+    // The sure subject beside what Bilbao calls background, by half the ring, at the quarter size the ring is drawn at:
+    // a block is beside it where most of the block is.
+    let beside = |x: usize, y: usize| known[y * columns + x] == 1.0 && salience[y * columns + x] < SALIENT;
+    let small_beside = plane_of(small_width, small_height, |x, y| {
+        let (top, left) = (y * reduction, x * reduction);
+        let (bottom, right) = ((top + reduction).min(rows), (left + reduction).min(columns));
+        let count = (top..bottom)
+            .flat_map(|row| (left..right).map(move |column| (column, row)))
+            .filter(|&(column, row)| beside(column, row))
+            .count();
+
+        2 * count > (bottom - top) * (right - left)
+    });
+    let near_hole = dilated(&small_beside, (ring / 2).div_ceil(REDUCTION).max(1));
+
+    // The holes: Bilbao's background inside the band, in from its edge by an eighth of the ring.
+    let hole = plane_of(width, height, |x, y| known[y * columns + x] > 0.0 && salience[y * columns + x] < HOLE);
+    let seeds = eroded(&hole, seed_inset(ring));
+
+    let mut out = trimap.clone();
+    for_each_row(out.as_mut_slice(), columns, rows, |y, out| {
+        for (x, value) in out.iter_mut().enumerate() {
+            if !at(&outline, x, y) {
+                continue;
+            }
+            if seeds.as_slice()[y * columns + x] > 0.5 && at(&inside, x, y) {
+                *value = 0.0;
+            } else if *value == 1.0 && at(&near_hole, x, y) {
+                *value = 0.5;
+            }
+        }
+    });
+    let changed = out.as_slice().iter().zip(known).filter(|(seeded, plain)| seeded != plain).count();
+
+    tracing::debug!(share, changed, "the subject's holes seeded");
+
+    (changed > 0).then_some(out)
+}
+
+/// The matte of the subject from `seeded`, the matte over the [`seeded`] trimap, and `plain`, the one over the trimap the
+/// depth drew: the larger of the two wherever Bilbao's `saliency` calls a pixel the subject (grown by the seeds'
+/// inset), and the seeded one elsewhere, in the holes.
+pub(crate) fn joined(plain: &Matte, seeded: &Matte, saliency: &Matte) -> Matte {
+    let (width, height) = seeded.dimensions();
+    debug_assert_eq!(plain.dimensions(), (width, height), "two mattes of one photograph");
+
+    let ring = unknown_radius(width, height);
+    let salient = saliency.plane().resized(width, height);
+    let subject = dilated(
+        &plane_of(width, height, |x, y| salient.as_slice()[y * width as usize + x] > SALIENT),
+        seed_inset(ring),
+    );
+    let (plain, seeded) = (plain.coverage(), seeded.coverage());
+
+    let alpha: Vec<f32> = seeded
+        .iter()
+        .zip(&plain)
+        .zip(subject.as_slice())
+        .map(|((&seeded, &plain), &subject)| if subject > 0.5 { seeded.max(plain) } else { seeded })
+        .collect();
+
+    Matte::new(width, height, &alpha)
+}
+
+/// How far in from Bilbao's background a seed is planted, in pixels: an eighth of the `ring`, rounded, and at least one.
+fn seed_inset(ring: u32) -> u32 {
+    ((ring + 4) / 8).max(1)
+}
+
+/// A `width` x `height` plane of 1 where `inside(x, y)` and 0 elsewhere.
+fn plane_of(width: u32, height: u32, inside: impl Fn(usize, usize) -> bool + Sync) -> Plane {
+    let mut plane = Plane::new(width, height, 0.0);
+    for_each_row(plane.as_mut_slice(), width as usize, height as usize, |y, out| {
+        for (x, value) in out.iter_mut().enumerate() {
+            *value = f32::from(u8::from(inside(x, y)));
+        }
+    });
+
+    plane
+}
+
 /// How far either side of the band's edge is unknown on a `width` x `height` photograph, in pixels: [`UNKNOWN`] of its
 /// long side.
 pub(crate) fn unknown_radius(width: u32, height: u32) -> u32 {
@@ -299,6 +447,137 @@ mod tests {
         assert!((matted_focus(3.0) / 3.0 - 1.0).abs() <= 0.0125);
         assert_ne!(matted_focus(3.0 * 1.03), matted_focus(3.0));
         assert_eq!(matted_focus(0.0), 0.0);
+    }
+
+    /// A scene at `scale` times 1000 x 750: the depth's subject, sure, from (300, 200) to (700, 550), ringed by 7 px of
+    /// unknown, with a table below it the depth also calls the subject, (300, 550) to (700, 700); and Bilbao's matte of
+    /// it, which finds the subject but not the table, and a 20 px hole in the subject at (490, 370), which the depth
+    /// calls solid. What `salient` says is in the subject is Bilbao's.
+    fn scene(scale: u32, salient: impl Fn(u32, u32) -> bool) -> (Plane, Matte) {
+        let (width, height) = (1000 * scale, 750 * scale);
+        let within = |x: u32, y: u32, (left, top, right, bottom): (u32, u32, u32, u32)| {
+            (left * scale..right * scale).contains(&x) && (top * scale..bottom * scale).contains(&y)
+        };
+        let subject = |x: u32, y: u32| within(x, y, (300, 200, 700, 700));
+        let ring = |x: u32, y: u32| within(x, y, (293, 193, 707, 707));
+        let pixels = || (0..height).flat_map(move |y| (0..width).map(move |x| (x, y)));
+
+        let trimap: Vec<f32> = pixels()
+            .map(|(x, y)| {
+                if subject(x, y) {
+                    1.0
+                } else if ring(x, y) {
+                    0.5
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let saliency: Vec<f32> = pixels().map(|(x, y)| if salient(x, y) { 0.97 } else { 0.02 }).collect();
+
+        (Plane::from_vec(width, height, trimap).unwrap(), Matte::new(width, height, &saliency))
+    }
+
+    /// Bilbao's subject at `scale`: the depth's, without the table, with a 20 px hole.
+    fn bilbao(scale: u32) -> impl Fn(u32, u32) -> bool {
+        move |x, y| {
+            let inside = (300 * scale..700 * scale).contains(&x) && (200 * scale..550 * scale).contains(&y);
+            let hole = (490 * scale..510 * scale).contains(&x) && (370 * scale..390 * scale).contains(&y);
+            inside && !hole
+        }
+    }
+
+    #[test]
+    fn a_hole_bilbao_finds_in_the_subject_is_seeded_as_background_and_nothing_outside_it() {
+        let (plain, saliency) = scene(1, bilbao(1));
+        let seeded = seeded(&plain, &saliency).expect("a hole was found");
+
+        // The hole is sure background, in from its edge; the subject beside it unknown, for Porto to draw its edge.
+        assert_eq!(seeded.get(500, 380), 0.0);
+        assert_eq!(seeded.get(491, 371), 0.0);
+        assert_eq!(seeded.get(489, 380), 0.5);
+        assert_eq!(seeded.get(510, 380), 0.5);
+
+        // Everywhere else the trimap is the depth's: the subject well away from the hole, its outline, the background,
+        // and the table, which Bilbao does not find salient but is no hole in the subject.
+        for (x, y) in [(400, 300), (600, 500), (300, 400), (296, 400), (100, 100), (500, 620), (690, 690), (500, 552)] {
+            assert_eq!(seeded.get(x, y), plain.get(x, y), "({x}, {y})");
+        }
+        // What changed is the hole and its edge, and the subject's along the table, where the depth's subject and
+        // Bilbao's part: unknown there, for Porto to say where the one ends.
+        for (index, (seeded, plain)) in seeded.as_slice().iter().zip(plain.as_slice()).enumerate() {
+            let (x, y) = (index % 1000, index / 1000);
+            let near_hole = (480..520).contains(&x) && (360..400).contains(&y);
+            let along_table = (540..560).contains(&y) && *seeded == 0.5;
+            assert!(seeded == plain || near_hole || along_table, "({x}, {y}): {plain} became {seeded}");
+        }
+        assert!(seeded.as_slice().iter().all(|value| [0.0, 0.5, 1.0].contains(value)));
+    }
+
+    #[test]
+    fn a_subject_with_no_hole_or_another_salient_subject_leaves_the_trimap_as_it_is() {
+        // No hole, and Bilbao's subject the depth's, table and all: nothing to seed.
+        let (plain, saliency) = scene(1, |x, y| (300..700).contains(&x) && (200..700).contains(&y));
+        assert!(seeded(&plain, &saliency).is_none());
+
+        // Bilbao found something else, a passer-by at the left, with a hole of its own: the depth's subject is not it,
+        // and its holes are not this subject's.
+        let elsewhere = |x: u32, y: u32| {
+            (20..250).contains(&x) && (100..600).contains(&y) && !((120..140).contains(&x) && (300..320).contains(&y))
+        };
+        let (plain, saliency) = scene(1, elsewhere);
+        assert!(seeded(&plain, &saliency).is_none());
+
+        // Nothing sure at all.
+        assert!(seeded(&Plane::new(400, 300, 0.5), &Matte::new(1, 1, &[1.0])).is_none());
+    }
+
+    #[test]
+    fn the_holes_radii_scale_with_the_photograph_as_the_ring_does() {
+        // The same scene at twice the size: the same hole, twice as large, is seeded at the same place, and the ring of
+        // unknown beside it is twice as wide.
+        let (small, small_saliency) = scene(1, bilbao(1));
+        let (large, large_saliency) = scene(2, bilbao(2));
+        let (small, large) = (seeded(&small, &small_saliency).unwrap(), seeded(&large, &large_saliency).unwrap());
+
+        assert_eq!((small.get(500, 380), large.get(1000, 760)), (0.0, 0.0));
+        assert_eq!((small.get(489, 380), large.get(975, 760)), (0.5, 0.5));
+        assert_eq!((small.get(486, 380), large.get(975, 760)), (1.0, 0.5));
+        let unknown = |plane: &Plane| plane.as_slice().iter().filter(|&&value| value == 0.5).count();
+        let seeds = |plane: &Plane| plane.as_slice().iter().filter(|&&value| value == 0.0).count();
+        #[allow(clippy::cast_precision_loss, reason = "pixel counts compared as ratios")]
+        let ratio = |count: fn(&Plane) -> usize| count(&large) as f64 / count(&small) as f64;
+        // Four times the area, give or take the quarter size's rounding.
+        assert!((3.0..5.5).contains(&ratio(unknown)), "{}", ratio(unknown));
+        assert!((3.0..5.5).contains(&ratio(seeds)), "{}", ratio(seeds));
+
+        // A hole wider than the closing is no hole: an opening in the outline, left to the depth.
+        let wide = |x: u32, y: u32| bilbao(1)(x, y) && !((400..600).contains(&x) && (300..450).contains(&y));
+        let (plain, saliency) = scene(1, wide);
+        let opened = seeded(&plain, &saliency).unwrap_or(plain);
+        assert!((400..600).all(|x| (300..450).all(|y| opened.get(x, y) == 1.0)));
+    }
+
+    #[test]
+    fn the_joined_matte_is_the_seeded_one_in_the_holes_and_never_less_than_the_plain_one_on_the_subject() {
+        // Bilbao's subject on the left half; the plain matte all 1 (the depth's solid subject); the seeded one 0 down
+        // the middle, where a thin part of the subject lay beside a seed.
+        let (width, height) = (200, 100);
+        let saliency = Matte::new(
+            width,
+            height,
+            &(0..width * height).map(|i| if i % width < 100 { 0.9 } else { 0.0 }).collect::<Vec<_>>(),
+        );
+        let plain = Matte::new(width, height, &vec![1.0; (width * height) as usize]);
+        let holed = Matte::new(width, height, &vec![0.2; (width * height) as usize]);
+
+        let joined = joined(&plain, &holed, &saliency);
+
+        // On the subject, and the seeds' inset past its edge, the plain matte; in the hole beyond, the seeded one.
+        assert_eq!(joined.alpha_at(50, 50), 1.0);
+        assert_eq!(joined.alpha_at(100, 50), 1.0);
+        assert!((joined.alpha_at(150, 50) - 0.2).abs() < 1e-4);
+        assert_eq!(joined.dimensions(), (width, height));
     }
 
     fn map(metres: impl Fn(u32, u32) -> f32) -> DepthMap {
