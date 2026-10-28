@@ -311,9 +311,10 @@ impl From<Cancelled> for SessionError {
 
 /// Why an operation has no pipeline.
 ///
-/// Every family this crate publishes has a pipeline for every variant it publishes, so the one case left is *"this
-/// model's declaration is incomplete"*: a bug in this crate, not a feature gap, and unreachable from any shipped
-/// variant. Matched rather than string-compared, so the wording is not a compatibility surface.
+/// Every family this crate publishes has a pipeline for every variant it publishes, so the cases left are *"this
+/// model's declaration is incomplete"* — a bug in this crate, not a feature gap, and unreachable from any shipped
+/// variant — and an analysis handed to the entry point whose result it does not produce. Matched rather than
+/// string-compared, so the wording is not a compatibility surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[non_exhaustive]
 pub enum UnsupportedReason {
@@ -325,6 +326,27 @@ pub enum UnsupportedReason {
     #[error("this variant does not declare its {missing} graph")]
     IncompleteGraphSet {
         /// The role with no graph behind it.
+        missing: &'static str,
+    },
+
+    // Reachable through the public API: `VariantEntry::build` returns a depth row as an `Analysis::Depth`, so a caller
+    // that builds from the catalogue and hands the result to `Opai::execute` gets this refusal rather than a run. A
+    // depth row is run through `Opai::estimate_depth`, with the `Depth` that `Depth::lisbon` returns.
+    /// An analysis whose result is not the [`Faces`](crate::Faces) [`Opai::execute`](crate::Opai::execute) returns,
+    /// handed to it rather than to its own entry point.
+    #[error("this analysis produces {produces}, not faces, and has an entry point of its own")]
+    OtherResult {
+        /// What the analysis produces.
+        produces: &'static str,
+    },
+
+    // Unreachable through `Opai::process`, which injects both before it plans; a chain planned by hand from a
+    // deserialized lens blur is the one way here.
+    /// An enhancement driven by another run's result — a lens blur by the depth map of its input — planned before the
+    /// chain had handed it that result.
+    #[error("this enhancement needs {missing}, which the chain finds before it runs")]
+    Uninjected {
+        /// What it was not handed.
         missing: &'static str,
     },
 }
@@ -427,6 +449,18 @@ pub enum InferenceError {
         column: usize,
     },
 
+    // Raised rather than returned as a flat map: a depth model that could place almost nothing of a photograph — a
+    // blank wall, a picture of fog — has no shift to recover, and a map of one distance would be a blur everywhere or
+    // nowhere with nothing to say why.
+    /// A depth model placed too few of the photograph's pixels to measure any distance.
+    #[error("{operation} could place only {valid} of the points it samples, too few to measure distances")]
+    Unmeasurable {
+        /// The operation whose model placed too little, as a user would see it named.
+        operation: String,
+        /// How many of the sampled points the model marked valid.
+        valid: usize,
+    },
+
     // A refusal rather than a plain resample presented as a successful enhancement, which is what running zero passes
     // and then correcting the overshoot would produce.
     /// No sequence of native passes covers the requested scale, so there is nothing to run.
@@ -436,6 +470,18 @@ pub enum InferenceError {
         operation: String,
         /// The scale that was asked for.
         scale: f64,
+    },
+
+    // Never the run's failure: the chain drops the gain map it names, with a warning, and the photograph is still
+    // enhanced. A variant rather than a string in `Run`, so the record names the operation and the reason together.
+    /// An enhancement that moves light around the frame, or changes what the photograph shows, could not rewrite the
+    /// HDR gain map the picture carries.
+    #[error("{operation} could not rewrite the HDR gain map: {reason}")]
+    GainMap {
+        /// The operation that could not rewrite it, as a user would see it named.
+        operation: String,
+        /// Why, worded to follow "could not rewrite the HDR gain map:".
+        reason: String,
     },
 
     // Raised rather than left unmasked: a masked run's result is named for its mask, so pixels the mask did not touch
@@ -454,17 +500,6 @@ pub enum InferenceError {
         result_width: u32,
         /// The result's height.
         result_height: u32,
-    },
-
-    // Never the run's failure: the chain drops the gain map it names, with a warning, and the photograph is still
-    // enhanced. A variant rather than a string in `Run`, so the record names the operation and the reason together.
-    /// An enhancement that changes what the photograph shows could not rewrite the HDR gain map the picture carries.
-    #[error("{operation} could not rewrite the HDR gain map: {reason}")]
-    GainMap {
-        /// The operation that could not rewrite it, as a user would see it named.
-        operation: String,
-        /// Why, worded to follow "could not rewrite the HDR gain map:".
-        reason: String,
     },
 
     /// The caller asked the run to stop, and it stopped between tiles.
@@ -518,6 +553,7 @@ impl InferenceError {
             Self::Run { .. } => "run",
             Self::Untileable { .. } => "untileable",
             Self::ColourMapping { .. } => "colour_mapping",
+            Self::Unmeasurable { .. } => "unmeasurable",
             Self::NoPasses { .. } => "no_passes",
             Self::GainMap { .. } => "gain_map",
             Self::MaskShape { .. } => "mask_shape",
@@ -932,9 +968,10 @@ mod tests {
             (InferenceError::run("Kyoto", 3)(std::io::Error::other("the model failed")), "run"),
             (InferenceError::Untileable { width: 0, height: 480 }, "untileable"),
             (InferenceError::ColourMapping { operation: "Rio".to_string(), column: 2 }, "colour_mapping"),
+            (InferenceError::Unmeasurable { operation: "Lisbon".to_string(), valid: 3 }, "unmeasurable"),
             (InferenceError::NoPasses { operation: "Kyoto".to_string(), scale: 3.0 }, "no_passes"),
             (
-                InferenceError::GainMap { operation: "Remove".to_string(), reason: "why".to_string() },
+                InferenceError::GainMap { operation: "Lens Blur".to_string(), reason: "why".to_string() },
                 "gain_map",
             ),
             (
@@ -964,7 +1001,9 @@ mod tests {
             InferenceError::run("Kyoto", 3)(std::io::Error::other("the model failed")),
             InferenceError::Untileable { width: 0, height: 480 },
             InferenceError::ColourMapping { operation: "Rio".to_string(), column: 2 },
+            InferenceError::Unmeasurable { operation: "Lisbon".to_string(), valid: 3 },
             InferenceError::NoPasses { operation: "Kyoto".to_string(), scale: 3.0 },
+            InferenceError::GainMap { operation: "Lens Blur".to_string(), reason: "why".to_string() },
             InferenceError::MaskShape { width: 21, height: 52, result_width: 57, result_height: 141 },
             InferenceError::GainMap { operation: "Remove".to_string(), reason: "why".to_string() },
         ];

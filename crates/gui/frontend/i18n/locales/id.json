@@ -387,6 +387,20 @@
                 "osaka": "Gunakan model ini saat Anda menginginkan kualitas perbesaran terbaik yang tersedia. Model ini membangun ulang detail alih-alih sekadar menajamkannya, dan hasilnya paling jauh pada foto yang lembut atau sangat terkompresi. Namun, model ini lambat dan membutuhkan GPU yang bertenaga agar berjalan dengan baik."
             }
         },
+        "lensBlur": {
+            "name": "Blur Lensa",
+            "models": {
+                "lisbon": "Gunakan model ini untuk memburamkan foto seperti bukaan lensa yang lebih lebar, dengan titik pilihan Anda tetap tajam. Model ini memperkirakan jarak setiap bagian foto (MoGe-2 ViT-B, 324 MB). Penggunaan pertama akan mengompilasi model untuk prosesor Anda, yang memakan waktu sekitar satu menit di Mac."
+            },
+            "blurAmount": "Jumlah blur",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} full-frame)",
+            "readoutEquivalent": "≈ f/{{equivalent}} setara full-frame",
+            "asTaken": "Asli",
+            "assumed": "Foto ini tidak memiliki informasi lensa; f/{{f}} diasumsikan",
+            "cannotBlurMore": "Foto ini diambil pada f/{{f}} (setara full-frame), selebar batas efeknya; foto ini tidak bisa diburamkan lagi.",
+            "setFocus": "Atur fokus",
+            "focusHint": "Klik bagian foto yang harus tajam. Esc untuk membatalkan."
+        },
         "add": "Tambah peningkatan",
         "remove": "Hapus peningkatan",
         "modelSelector": "Model AI",
@@ -408,7 +422,8 @@
             "button": "Pilih wajah ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoLensBlur": "{{name}}, blur {{amount}}"
     },
     "preview": {
         "empty": {
@@ -430,6 +445,7 @@
             "colorBalance": "Warna",
             "upscale": "Perbesaran",
             "sharpen": "Penajaman",
+            "lensBlur": "Blur Lensa",
             "enhancing": "Meningkatkan"
         }
     },
@@ -447,6 +463,7 @@
         "autopilotFailed": "Terjadi kesalahan. Gagal menjalankan autopilot.",
         "enhanceFailed": "Terjadi kesalahan. Gagal meningkatkan gambar.",
         "faceDetectFailed": "Terjadi kesalahan. Gagal mendeteksi wajah.",
+        "matteFailed": "Terjadi kesalahan. Gagal memisahkan subjek, jadi Blur Lensa hanya menggunakan kedalaman.",
         "showLogsFailed": "Tidak dapat membuka file log. Anda bisa menemukannya di folder konfigurasi aplikasi.",
         "revealFailed": "Tidak dapat membuka pengelola berkas. Berkas tetap tersimpan di lokasi ekspornya.",
         "revealFileFailed": "Tidak dapat membuka pengelola berkas.",

@@ -14,9 +14,9 @@
 //! # Naming a model
 //!
 //! [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`], [`Colorization`], [`Detection`],
-//! [`FaceRecovery`] and friends name a model, carry its parameters, and answer which files it needs — none of
-//! them run anything. [`fn@catalogue`] is what a front end reads instead of hard-coding a variant, precision or
-//! bound.
+//! [`FaceRecovery`], [`LensBlur`] and friends name a model, carry its parameters, and answer which files it needs —
+//! none of them run anything. [`fn@catalogue`] is what a front end reads instead of hard-coding a variant, precision
+//! or bound.
 //!
 //! A per-run parameter ([`Scale`], [`Strength`], [`Bias`], [`Fidelity`], [`Faces`]) is validated on acceptance
 //! and is part of the operation's identity — two operations are equal exactly when they name the same model,
@@ -74,6 +74,24 @@
 //! [`restorable`](Face::restorable) ones), and reports what it found as [`Enhanced::faces`]. A failed detection
 //! restores nobody and leaves the rest of the chain to run; only a stop ends it. [`fill_chain_faces`] is the same rules
 //! without the detection.
+//!
+//! ## The depth a lens blur is driven by
+//!
+//! A [`LensBlur`] is driven by the depth of the picture and the photograph's own lens, and estimates neither itself.
+//! [`Opai::process`] finds both whenever the chain holds one: it estimates the depth of the chain's **input** through
+//! the cached [`Opai::estimate_depth`] (so changing the focus, the aperture or any earlier enhancement never estimates
+//! it again), reads the lens from the source's EXIF ([`image::read_lens`], resolved by [`Lens::resolve`]), and hands
+//! both to every lens blur. A failed depth estimate fails the run: there is no lens blur without one. Its progress
+//! shares the first operation's slot as the face detection's does.
+//!
+//! The EXIF describes the whole frame, so a picture cut from its file before the chain (a crop, which `opai` is never
+//! told of) is framed by how much smaller its diagonal is than the file's, and its lens scaled to match: see
+//! [`Lens::resolve`]. Where the EXIF alone shows that every lens blur is opened no wider than the photograph's own
+//! aperture, no depth is estimated, and the chain returns the photograph as it is.
+//!
+//! A lens blur also mattes the subject in focus, where its blur is large enough to show the edge ([`LensBlurEdges`]):
+//! from the same depth, on the same input, through the run store. A matte that cannot be made does not fail the run;
+//! that blur renders from its depth alone, and [`Enhanced::matte`] says why ([`ChainMatte`]).
 //!
 //! The detection and the chain report on one bar that moves forward once: every operation owns an equal `1 / N` of it,
 //! and the detection takes the first fifth of the first operation's slot (none, when the store already knew the
@@ -210,9 +228,12 @@ pub use deps::ModelTrust;
 pub use error::{InferenceError, InitError, UnsupportedReason};
 // Re-exported so a caller of this crate's image functions doesn't need `rust-sak` in its own manifest — it's
 // pinned by git tag and unpublished.
-pub use image::{EncodeOptions, ImageError, ImageFormat, ImageInfo, ImageIoError, Picture, RawFormat, RawImageInfo};
+pub use image::{
+    EncodeOptions, ImageError, ImageFormat, ImageInfo, ImageIoError, LensExif, Picture, RawFormat, RawImageInfo,
+};
 /// The inference vocabulary needed to ask for a run or read its report. The module stays private.
 pub use inference::depth::OutputDepth;
+pub use inference::depth_map::{ChainMatte, fill_chain_depth, own_lens};
 pub use inference::execute::{ExecuteOptions, Executed};
 pub use inference::faces::{
     ChainFaces, FaceSelection, FacedChain, SelectFaces, default_face_selection, fill_chain_faces,
@@ -224,12 +245,14 @@ pub use logging::LogError;
 pub use mask::{Mask, Stroke};
 pub use models::{
     Analysis, ArtifactId, Bias, BuildError, ColorBalance, ColorBalanceParams, ColorBalanceVariant, Colorization,
-    ColorizationVariant, Confidence, DataOperation, Denoise, DenoiseParams, DenoiseVariant, Detection, DetectionOutput,
-    DetectionVariant, Face, FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant, Faces, Family, FamilyEntry,
-    Fidelity, FloatPrecision, GraphRole, GraphSet, LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant,
-    Operation, OsakaPrecision, ParameterEntry, ParameterKind, ParameterValues, Pass, Point, Precision, RangeError,
-    Rect, Remove, RemoveVariant, Resolution, Scale, Sharpen, SharpenParams, SharpenVariant, Strength, Subject,
-    UnknownRole, Upscale, UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
+    ColorizationVariant, Confidence, DataOperation, Denoise, DenoiseParams, DenoiseVariant, Depth, DepthMap,
+    DepthVariant, Detection, DetectionOutput, DetectionVariant, FNumber, FOCUS_X, FOCUS_Y, Face, FaceRecovery,
+    FaceRecoveryParams, FaceRecoveryVariant, Faces, Family, FamilyEntry, Fidelity, FloatPrecision, Fraction, GraphRole,
+    GraphSet, Lens, LensBlur, LensBlurEdges, LensBlurVariant, LensOrigin, LightAdjustment, LightAdjustmentParams,
+    LightAdjustmentVariant, Matte, Matting, MattingVariant, Operation, OsakaPrecision, OwnLens, ParameterEntry,
+    ParameterKind, ParameterValues, Pass, Point, Precision, RangeError, Rect, Remove, RemoveVariant, Resolution, Scale,
+    Sharpen, SharpenParams, SharpenVariant, Strength, Subject, UnknownRole, Upscale, UpscaleParams, UpscaleVariant,
+    VariantEntry, catalogue,
 };
 pub use progress::{Dependency, OnPlan, OnProgress, Phase, PlannedDependency, Progress};
 pub use providers::{ExecutionProvider, SupportedProviders};
@@ -736,15 +759,16 @@ impl Opai {
     ///
     /// # What is refused
     ///
-    /// No published enhancement is refused. All seven image families run, each running every variant it
+    /// No published enhancement is refused. All eight image families run, each running every variant it
     /// publishes: upscale (Kyoto/Tokyo/Saitama as native passes, Osaka via diffusion), face recovery (align,
     /// run, composite through one contract), light adjustment (both models at a fixed square, applied as a
     /// gain), colour balance (both models at a fixed square, applied as a fitted colour mapping), denoise (all
     /// three models over a tile grid at the photograph's own resolution, then the strength), sharpen (all three
     /// models over a tile grid at the photograph's own resolution, then the strength), and colorization (all
     /// three models once over the whole photograph at a fixed square, the predicted colour put onto the
-    /// photograph's own lightness). **Detection is not among them and never will be** — its result isn't an
-    /// image, so it's carried in [`Analysis`] instead and can't be put in a chain.
+    /// photograph's own lightness), and lens blur (no graph: the depth of `source`, estimated first, and the
+    /// photograph's lens from its EXIF, rendered as a layered depth of field). **Detection is not among them and never
+    /// will be** — its result isn't an image, so it's carried in [`Analysis`] instead and can't be put in a chain.
     ///
     /// What can still refuse a run is [`InferenceError::Unsupported`], for a model whose declaration is
     /// incomplete (see [`UnsupportedReason`]), which no shipped variant is. That refusal is checked over the
@@ -812,6 +836,70 @@ impl Opai {
         options: Option<ExecuteOptions>,
     ) -> Result<Executed<Faces>, InferenceError> {
         inference::execute::execute(self, self.inner.cache.handle().as_ref(), source, analysis, options).await
+    }
+
+    /// Estimates how far from the camera every pixel of `source` is, in metres, and hands it back beside what it ran
+    /// on.
+    ///
+    /// [`execute`](Self::execute)'s sibling for the depth family, whose result is a [`DepthMap`] rather than faces:
+    /// the same driver, the same progress, the same cancellation, and the same store. `source` is left untouched.
+    ///
+    /// ```no_run
+    /// # async fn run(opai: &opai::Opai, picture: &opai::Picture) -> Result<(), opai::InferenceError> {
+    /// use opai::{Depth, Executed};
+    ///
+    /// let Executed { value: map, .. } = opai.estimate_depth(picture, &Depth::lisbon(), None).await?;
+    ///
+    /// println!("the centre is {} m away", map.focus_metres(0.5, 0.5));
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// The map is at the model's resolution — about 1280 pixels on the long side — in the photograph's own frame and
+    /// aspect. Lisbon has one graph per orientation and opens only the one `source` needs.
+    ///
+    /// **Estimated once per photograph and framing.** Served from the store on a repeat, as a detection is: under the
+    /// picture's identity, which a crop changes, so a cropped photograph is estimated again in its own coordinates.
+    ///
+    /// # Errors
+    ///
+    /// [`InferenceError`], and in every case **no map at all** — including
+    /// [`Unmeasurable`](InferenceError::Unmeasurable) where the model could place almost nothing of the photograph.
+    pub async fn estimate_depth(
+        &self,
+        source: &Picture,
+        depth: &Depth,
+        options: Option<ExecuteOptions>,
+    ) -> Result<Executed<DepthMap>, InferenceError> {
+        inference::execute::execute(self, self.inner.cache.handle().as_ref(), source, depth, options).await
+    }
+
+    /// Estimates how much of each pixel of `source` a subject covers, from the trimap `matting` was handed, and hands
+    /// it back beside what it ran on.
+    ///
+    /// [`execute`](Self::execute)'s sibling for the matting family, as [`estimate_depth`](Self::estimate_depth) is for
+    /// depth: the same driver, progress, cancellation and store. The model runs only over the 1024-pixel tiles that
+    /// hold an unknown pixel; a pixel the trimap marks as sure background or sure subject keeps that value exactly.
+    ///
+    /// The trimap is the library's own to hand: a lens blur builds one from its depth map around the plane of focus
+    /// and mattes it through [`process`](Self::process). Not public until a front end has a trimap of its own to hand;
+    /// the live tests run Porto through it.
+    ///
+    /// **Estimated once per photograph and trimap.** Served from the store on a repeat, under the picture's identity
+    /// and the trimap's signature.
+    ///
+    /// # Errors
+    ///
+    /// [`InferenceError`], and in every case **no matte at all** — including
+    /// [`Unsupported`](InferenceError::Unsupported) for a matting with no trimap.
+    #[cfg(test)]
+    pub(crate) async fn matte(
+        &self,
+        source: &Picture,
+        matting: &Matting,
+        options: Option<ExecuteOptions>,
+    ) -> Result<Executed<Matte>, InferenceError> {
+        inference::execute::execute(self, self.inner.cache.handle().as_ref(), source, matting, options).await
     }
 
     /// Analyses `source` and returns the enhancements that photograph calls for.

@@ -28,17 +28,18 @@
 //!                                  then each failure's 🧨 line where the view hid it
 //! ```
 //!
-//! A Ctrl-C stops the whole batch, keeping what was already written. The notes, the face report, what each image
-//! executed on and every path written go to the log, not to the terminal.
+//! A Ctrl-C stops the whole batch, keeping what was already written. The notes, the face and matte reports, what each
+//! image executed on and every path written go to the log, not to the terminal.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use opai::{
-    APP_NAME, CLI, CancellationToken, ChainFaces, Enhanced, ExecuteOptions, ExecutionProvider, FaceSelection,
-    InitOptions, Mask, OnInference, Opai, OutputDepth, Picture, ProcessOptions, ProviderVerdict, Remove, Suggestions,
-    default_face_selection, image,
+    APP_NAME, CLI, CancellationToken, ChainFaces, ChainMatte, Enhanced, ExecuteOptions, ExecutionProvider,
+    FaceSelection, InitOptions, Mask, OnInference, Opai, OutputDepth, Picture, ProcessOptions, ProviderVerdict, Remove,
+    Suggestions, default_face_selection, image,
 };
 
 use tracing::Instrument;
@@ -161,7 +162,13 @@ pub async fn run(args: Args, look: Look) -> Result<(), CliError> {
         let planner = match &autopilot {
             Some(models) => Planner::Autopilot(models),
             None => {
-                let plan = chain::plan(&args.selection, args.quality, source.width, source.height);
+                // An amount of blur is against the photograph's own aperture, so it comes to an f-number for each.
+                let lens = own_lens_asked(&args.selection, &source.path).await;
+                let (selection, amount_note) = args.selection.with_blur_amount_resolved(lens);
+                if let Some(note) = amount_note {
+                    tracing::info!("{}: {note}", source.path.display());
+                }
+                let plan = chain::plan(&selection, args.quality, source.width, source.height);
                 log_notes(&source.path, &plan);
                 Planner::Fixed(plan)
             }
@@ -449,6 +456,18 @@ fn plan_suggested(
     (plan, warning)
 }
 
+/// The lens the photograph at `path` was taken with, as its EXIF settles it, where the selection asks for a blur
+/// amount: an amount is against the photograph's own aperture. Nothing for a run that asks for none, which reads no
+/// file for it. Read on a blocking thread, as a RAW's header is probed whole.
+async fn own_lens_asked(selection: &Selection, path: &Path) -> Option<opai::OwnLens> {
+    selection.lens_blur_amount?;
+
+    let path = path.to_path_buf();
+
+    // A thread that did not come back is a photograph nothing is known of: the planner assumes the f/8 the library does.
+    tokio::task::spawn_blocking(move || opai::own_lens(&path, None)).await.ok()
+}
+
 /// Records `plan`'s notes about the image at `path` in the log.
 fn log_notes(path: &Path, plan: &Plan) {
     for note in &plan.notes {
@@ -477,8 +496,36 @@ async fn enhance(
             tracing::info!("{report}");
         }
     }
+    note_matte(&enhanced.matte, &MATTING_NOT_INSTALLED_NOTED);
 
     Ok(enhanced)
+}
+
+/// Whether this process has said that the matting model is not installed, which it says once however many images ask.
+static MATTING_NOT_INSTALLED_NOTED: AtomicBool = AtomicBool::new(false);
+
+/// Logs what matting the lens blurs' subjects came to: a failure as a warning, a model that is not installed once, as
+/// `noted` records, and quietly, since it is expected until the graph is published.
+fn note_matte(matte: &ChainMatte, noted: &AtomicBool) {
+    match matte_report(matte) {
+        Some(report) if matches!(matte, ChainMatte::Failed(_)) => tracing::warn!("{report}"),
+        Some(report) if !noted.swap(true, Ordering::Relaxed) => tracing::info!("{report}"),
+        _ => {}
+    }
+}
+
+/// What matting the lens blurs' subjects came to, as the log records it, or `None` where there is nothing to say: no
+/// lens blur asked, its subject was matted, or its blur was too small to need it.
+fn matte_report(matte: &ChainMatte) -> Option<String> {
+    match matte {
+        ChainMatte::NotAsked | ChainMatte::Matted | ChainMatte::Skipped => None,
+        ChainMatte::Unavailable(_) => Some(
+            "the matting model is not installed, so a lens blur's edges are rendered from the depth alone".to_string(),
+        ),
+        ChainMatte::Failed(error) => Some(format!(
+            "the lens blur's subject could not be matted, so its edges follow the depth alone: {error}"
+        )),
+    }
 }
 
 /// What the chain is asked for: `provider` at the source's depth, restoring the faces [`default_face_selection`] keeps,
@@ -653,6 +700,28 @@ mod tests {
 
         assert!(report.starts_with("face detection failed"), "{report}");
         assert!(report.ends_with(&expected), "{report}");
+    }
+
+    #[test]
+    fn a_failed_matte_warns_and_a_model_not_installed_is_noted_once() {
+        let failure = InferenceError::Shutdown;
+        let expected = failure.to_string();
+
+        let report = matte_report(&ChainMatte::Failed(failure)).expect("a failure is reported");
+        assert!(report.ends_with(&expected), "{report}");
+        for quiet in [ChainMatte::NotAsked, ChainMatte::Matted, ChainMatte::Skipped] {
+            assert_eq!(matte_report(&quiet), None, "{quiet:?}");
+        }
+
+        let noted = AtomicBool::new(false);
+        let (records, ()) = crate::test_support::recorded(|| {
+            for _ in 0..3 {
+                note_matte(&ChainMatte::Unavailable(InferenceError::Shutdown), &noted);
+            }
+            note_matte(&ChainMatte::Failed(InferenceError::Shutdown), &noted);
+        });
+        let levels: Vec<_> = records.events.iter().map(|record| record.level).collect();
+        assert_eq!(levels, [tracing::Level::INFO, tracing::Level::WARN]);
     }
 
     #[test]

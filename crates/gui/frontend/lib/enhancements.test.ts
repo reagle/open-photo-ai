@@ -1,22 +1,26 @@
 import { describe, expect, it, type Mock, vi } from "vitest";
-import { suggestedScale } from "@/ipc/autopilot";
+import { type Suggestion, suggestedScale } from "@/ipc/autopilot";
 import type { Family, FamilyEntry } from "@/ipc/catalogue";
 import type { CropInfo } from "@/ipc/crop";
 import type { Operation } from "@/ipc/enhance";
 import type { ImageRecord } from "@/ipc/images";
+import { lensInfo } from "@/ipc/lens";
 import { CATALOGUE, HOLIDAY } from "@/test/support";
 import {
     applyOrder,
     ENHANCEMENTS,
     type Enhancement,
+    F_NUMBER,
     familiesWhere,
     isPainted,
+    isSuggestible,
     modelChoice,
     newOperation,
     parameterOf,
     progressLabelKey,
     publishedRange,
     SETTABLE,
+    startingFNumber,
     startingScale,
     suggestedOperation,
     upscaleFactor,
@@ -27,7 +31,11 @@ import {
 // The ladder is the backend's; what is pinned here is what this side asks it and what it does with the answer.
 vi.mock("@/ipc/autopilot", () => ({ suggestedScale: vi.fn() }));
 
+// Likewise the photograph's own lens: it is `opai`'s, and what is pinned here is what this side asks and does with it.
+vi.mock("@/ipc/lens", () => ({ lensInfo: vi.fn() }));
+
 const asked = suggestedScale as unknown as Mock;
+const askedLens = lensInfo as unknown as Mock;
 
 const entry = (family: string) => CATALOGUE.find((published) => published.family === family);
 
@@ -52,8 +60,8 @@ describe("the order a chain runs in", () => {
 });
 
 describe("the enhancements this application presents", () => {
-    it("names eight", () => {
-        expect(ENHANCEMENTS).toHaveLength(8);
+    it("names nine", () => {
+        expect(ENHANCEMENTS).toHaveLength(9);
     });
 
     it("names only families the catalogue publishes", () => {
@@ -64,14 +72,16 @@ describe("the enhancements this application presents", () => {
         expect(ENHANCEMENTS.every(({ family }) => published.includes(family))).toBe(true);
     });
 
-    it("leaves detection out", () => {
-        // Published by the library on purpose, drawn by nothing: it is not an enhancement a user
-        // adds, and this is how it stays out without the catalogue being filtered on the wire.
+    it("leaves detection, depth and matting out", () => {
+        // Published by the library on purpose, drawn by nothing: neither is an enhancement a user
+        // adds, and this is how they stay out without the catalogue being filtered on the wire.
         // Read through the wider `Enhancement` type: the list's own literal types already rule
-        // `detection` out, and this is the runtime half of the same statement.
+        // them out, and this is the runtime half of the same statement.
         const presented: readonly Enhancement[] = ENHANCEMENTS;
 
         expect(presented.some(({ family }) => family === "detection")).toBe(false);
+        expect(presented.some(({ family }) => family === "depth")).toBe(false);
+        expect(presented.some(({ family }) => family === "matting")).toBe(false);
     });
 
     it("lists them in the order the menu offers them", () => {
@@ -84,7 +94,19 @@ describe("the enhancements this application presents", () => {
             "color_balance",
             "sharpen",
             "upscale",
+            "lens_blur",
         ]);
+    });
+
+    it("offers Autopilot's suggestions for every enhancement but the lens blur", () => {
+        // Where a photograph's focus should fall is the user's choice, and the analysis has no signal for it.
+        expect(ENHANCEMENTS.filter(({ family }) => !isSuggestible(family)).map(({ family }) => family)).toEqual([
+            "lens_blur",
+        ]);
+        expect(isSuggestible("upscale")).toBe(true);
+        // Not enhancements at all, so not suggestible either.
+        expect(isSuggestible("detection")).toBe(false);
+        expect(isSuggestible("depth")).toBe(false);
     });
 });
 
@@ -252,6 +274,8 @@ describe("what the progress chip calls the family a report carries", () => {
     const EVERY_FAMILY: Record<Family, true> = {
         remove: true,
         detection: true,
+        depth: true,
+        matting: true,
         denoise: true,
         face_recovery: true,
         light_adjustment: true,
@@ -259,6 +283,7 @@ describe("what the progress chip calls the family a report carries", () => {
         colorization: true,
         sharpen: true,
         upscale: true,
+        lens_blur: true,
     };
 
     it("answers a name for every family a report can carry", () => {
@@ -272,6 +297,17 @@ describe("what the progress chip calls the family a report carries", () => {
         // name a model nobody chose. What the user asked for is the face recovery. See design.md D8.
         expect(progressLabelKey("detection")).toBe("preview.progress.faceRecovery");
         expect(progressLabelKey("face_recovery")).toBe(progressLabelKey("detection"));
+    });
+
+    it("names a depth estimate after the enhancement that asked for it", () => {
+        // The same arrangement as the detection above: a depth map is estimated for a lens blur and nothing else.
+        expect(progressLabelKey("depth")).toBe("preview.progress.lensBlur");
+        expect(progressLabelKey("lens_blur")).toBe(progressLabelKey("depth"));
+    });
+
+    it("names a matte after the enhancement that asked for it", () => {
+        // A matte is estimated for a lens blur's subject and nothing else, as its depth is.
+        expect(progressLabelKey("matting")).toBe("preview.progress.lensBlur");
     });
 
     it("names every other family as itself", () => {
@@ -334,6 +370,63 @@ describe("the scale a new upscale arrives at", () => {
     });
 });
 
+describe("the f-number a new lens blur arrives at", () => {
+    const framing: CropInfo = {
+        left: 0,
+        top: 0,
+        width: 800,
+        height: 600,
+        millidegrees: 0,
+        flipHorizontal: false,
+        flipVertical: false,
+    };
+
+    it("is a blur amount of 50 on the photograph's own lens", async () => {
+        askedLens.mockReset().mockResolvedValue({ ownFNumber: 6, focal35mm: 36, cropFactor: 1.5, origin: "exif" });
+
+        // Halfway in blur (one over the f-number) between f/6 and f/1.4, not in stops.
+        await expect(startingFNumber(HOLIDAY, undefined)).resolves.toBe(2.27);
+        expect(askedLens).toHaveBeenCalledExactlyOnceWith(HOLIDAY.identity, undefined);
+    });
+
+    it("is asked about the photograph as it is framed", async () => {
+        askedLens.mockReset().mockResolvedValue({ ownFNumber: 12, focal35mm: 72, cropFactor: 3, origin: "exif" });
+
+        await expect(startingFNumber(HOLIDAY, framing)).resolves.toBe(2.507);
+        expect(askedLens).toHaveBeenCalledExactlyOnceWith(HOLIDAY.identity, framing);
+    });
+
+    it("is the photograph's own f-number where it is already as wide as a blur goes, which adds nothing", async () => {
+        askedLens.mockReset().mockResolvedValue({ ownFNumber: 1.2, focal35mm: 28, cropFactor: 1, origin: "exif" });
+
+        await expect(startingFNumber(HOLIDAY, undefined)).resolves.toBe(1.2);
+    });
+
+    it("is the amount against the assumed f/8 for a photograph with no lens information", async () => {
+        askedLens
+            .mockReset()
+            .mockResolvedValue({ ownFNumber: 8, focal35mm: null, cropFactor: null, origin: "assumed" });
+
+        await expect(startingFNumber(HOLIDAY, undefined)).resolves.toBe(2.383);
+    });
+
+    it("is the amount against the assumed f/8 for a file it has no identity to ask about, without asking", async () => {
+        askedLens.mockReset();
+        const unread: ImageRecord = { path: HOLIDAY.path, extension: "png" };
+
+        await expect(startingFNumber(unread, undefined)).resolves.toBe(2.383);
+        await expect(startingFNumber(undefined, undefined)).resolves.toBe(2.383);
+        expect(askedLens).not.toHaveBeenCalled();
+    });
+
+    it("is the amount against the assumed f/8 where the bridge fails to answer", async () => {
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        askedLens.mockReset().mockRejectedValue(new Error("the bridge went away"));
+
+        await expect(startingFNumber(HOLIDAY, undefined)).resolves.toBe(2.383);
+    });
+});
+
 describe("the operation a new enhancement carries", () => {
     const upscale = CATALOGUE.find((published) => published.family === "upscale");
 
@@ -343,6 +436,23 @@ describe("the operation a new enhancement carries", () => {
             codename: "kyoto",
             precision: "fp16",
             parameters: { scale: 4 },
+        });
+    });
+
+    it("gives a new lens blur Lisbon, the f-number it is asked for and the middle of the frame as its focus", () => {
+        const lensBlur = CATALOGUE.find((published) => published.family === "lens_blur");
+
+        expect(newOperation("lens_blur", lensBlur, undefined, 1, 2.27)).toEqual({
+            family: "lens_blur",
+            codename: "lisbon",
+            precision: "fp16",
+            parameters: { [F_NUMBER]: 2.27, focus_x: 0.5, focus_y: 0.5 },
+        });
+        // The catalogue's own default where no aperture was asked for: Lisbon's published f/2.8.
+        expect(newOperation("lens_blur", lensBlur, undefined)?.parameters).toEqual({
+            f_number: 2.8,
+            focus_x: 0.5,
+            focus_y: 0.5,
         });
     });
 
@@ -540,7 +650,7 @@ describe("how much larger a chain makes a photograph", () => {
 
 describe("the operation an Autopilot suggestion becomes", () => {
     // Each family's stored default, so "the user's model" is a choice rather than the catalogue's first entry.
-    const stored: Record<Exclude<Family, "detection">, string> = {
+    const stored: Record<Exclude<Family, "detection" | "depth" | "matting" | "lens_blur">, string> = {
         remove: "lima_fp32",
         denoise: "malmo_fp16",
         sharpen: "novgorod_fp32",
@@ -551,16 +661,20 @@ describe("the operation an Autopilot suggestion becomes", () => {
         upscale: "saitama_fp16",
     };
 
-    // Every family an analysis can suggest: never a painted one - see `SETTABLE`.
-    it.each(SETTABLE.map(({ family }) => family).filter((family) => family !== "upscale"))(
-        "is exactly what the add menu builds for %s, with the user's stored model",
-        (family) => {
-            const built = suggestedOperation({ family }, entry(family), stored[family]);
+    // Not the lens blur, which no analysis suggests, and never a painted one - see `SETTABLE`.
+    it.each(
+        SETTABLE.map(({ family }) => family).filter(
+            (
+                family,
+            ): family is Exclude<Family, "detection" | "depth" | "matting" | "upscale" | "lens_blur" | "remove"> =>
+                family !== "upscale" && isSuggestible(family),
+        ),
+    )("is exactly what the add menu builds for %s, with the user's stored model", (family) => {
+        const built = suggestedOperation({ family } as Suggestion, entry(family), stored[family]);
 
-            expect(built).toEqual(newOperation(family, entry(family), stored[family]));
-            expect(built?.codename).toBe(stored[family].split("_")[0]);
-        },
-    );
+        expect(built).toEqual(newOperation(family, entry(family), stored[family]));
+        expect(built?.codename).toBe(stored[family].split("_")[0]);
+    });
 
     it("carries the scale the analysis chose for an upscale", () => {
         const built = suggestedOperation({ family: "upscale", scale: 4 }, entry("upscale"), stored.upscale);

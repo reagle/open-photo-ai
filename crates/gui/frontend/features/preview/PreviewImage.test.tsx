@@ -11,6 +11,7 @@ import { useDrawerStore } from "@/stores/drawer";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useFacesStore } from "@/stores/faces";
 import { useFileStore } from "@/stores/files";
+import { useFocusPickStore } from "@/stores/focusPick";
 import { useMaskStore } from "@/stores/mask";
 import { usePreviewStore } from "@/stores/preview";
 import { type ImageTransform, useTransformStore } from "@/stores/transform";
@@ -1347,5 +1348,336 @@ describe("painting the mask", () => {
         magnify({ scale: 2, x: -100, y: -50 });
 
         expect(ring().style.width).toBe("90px");
+    });
+});
+
+describe("setting the focus of a lens blur by clicking the photograph", () => {
+    const id = HOLIDAY.identity ?? "";
+
+    /** A lens blur focused at the middle, on f/2.8. */
+    const lensBlur = (extra: Record<string, number> = {}) => ({
+        family: "lens_blur" as const,
+        codename: "lisbon",
+        precision: "fp16" as const,
+        parameters: { f_number: 2.8, focus_x: 0.5, focus_y: 0.5, ...extra },
+    });
+
+    const stackOf = () => useEnhancementStore.getState().enhancements.get(HOLIDAY.path);
+    const focusOf = () => ({ x: stackOf()?.[0]?.parameters.focus_x, y: stackOf()?.[0]?.parameters.focus_y });
+    const pane = (index = 0) => screen.getAllByRole("img", { name: "Preview" })[index]?.parentElement as HTMLElement;
+    const ring = () => document.querySelector("[data-slot='focus-ring']") as HTMLElement | null;
+    const hint = () => screen.queryByText("Click the photograph where it should be sharp. Esc to cancel.");
+
+    /** A press and release at one point, as a click is. HOLIDAY fills 900x600 of a 1000x600 pane, from x = 50. */
+    const click = (element: HTMLElement, clientX: number, clientY: number) => {
+        fireEvent.pointerDown(element, { pointerId: 1, button: 0, clientX, clientY });
+        fireEvent.pointerUp(element, { pointerId: 1, button: 0, clientX, clientY });
+    };
+
+    beforeEach(() => {
+        stubPaneGeometry();
+        useMaskStore.setState(useMaskStore.getInitialState(), true);
+        useFocusPickStore.setState(useFocusPickStore.getInitialState(), true);
+        useEnhancementStore.setState({ enhancements: new Map([[HOLIDAY.path, [lensBlur()]]]) });
+    });
+
+    afterEach(() => {
+        useFocusPickStore.setState(useFocusPickStore.getInitialState(), true);
+        useEnhancementStore.setState({ enhancements: new Map() });
+    });
+
+    it("takes a click for nothing while the preview is not armed", () => {
+        draw("full");
+
+        click(pane(), 320, 360);
+
+        expect(focusOf()).toEqual({ x: 0.5, y: 0.5 });
+        expect(hint()).toBeNull();
+        expect(ring()).toBeNull();
+        expect(pane().className).toContain("cursor-grab");
+    });
+
+    it("says what the next click does, and draws the cursor for it, once armed", () => {
+        draw("full");
+
+        act(() => useFocusPickStore.getState().arm(id));
+
+        expect(hint()).toBeInTheDocument();
+        expect(pane().className).toContain("cursor-crosshair");
+    });
+
+    it("sets the focus to the fractions of the photograph a click lands on, and leaves the mode", () => {
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        // 30 percent across the 900px photograph that starts at 50px, and 60 percent down its 600px.
+        click(pane(), 320, 360);
+
+        expect(focusOf()).toEqual({ x: 0.3, y: 0.6 });
+        expect(useFocusPickStore.getState().armed).toBe(false);
+        expect(hint()).toBeNull();
+        // The rest of the lens blur is as it was.
+        expect(stackOf()?.[0]?.parameters.f_number).toBe(2.8);
+    });
+
+    it("shows the ring at the current focus while armed, in percentages of the photograph", () => {
+        useEnhancementStore.setState({
+            enhancements: new Map([[HOLIDAY.path, [lensBlur({ focus_x: 0.25, focus_y: 0.75 })]]]),
+        });
+        draw("full");
+
+        expect(ring()).toBeNull();
+        act(() => useFocusPickStore.getState().arm(id));
+
+        expect(ring()).toHaveAttribute("aria-hidden", "true");
+        expect(ring()?.style.left).toBe("25%");
+        expect(ring()?.style.top).toBe("75%");
+        // In the box the photograph is drawn in, which is 900x600 and starts at x = 50.
+        const box = document.querySelector("[data-slot='focus-pick']") as HTMLElement;
+        expect(box.style.width).toBe("900px");
+        expect(box.style.height).toBe("600px");
+        expect(box.style.left).toBe("50px");
+    });
+
+    it("keeps the ring where the click set the focus for a couple of seconds, and then takes it away", () => {
+        vi.useFakeTimers();
+        try {
+            draw("full");
+            act(() => useFocusPickStore.getState().arm(id));
+            click(pane(), 320, 360);
+
+            expect(ring()?.style.left).toBe("30%");
+            expect(ring()?.style.top).toBe("60%");
+
+            act(() => vi.advanceTimersByTime(1900));
+            expect(ring()).not.toBeNull();
+
+            act(() => vi.advanceTimersByTime(200));
+            expect(ring()).toBeNull();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("does not take a drag for a click: the photograph pans, the focus stays and the mode stays", () => {
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        fireEvent.pointerDown(pane(), { pointerId: 1, button: 0, clientX: 500, clientY: 300 });
+        fireEvent.pointerMove(pane(), { pointerId: 1, clientX: 470, clientY: 280 });
+        fireEvent.pointerUp(pane(), { pointerId: 1, button: 0, clientX: 470, clientY: 280 });
+
+        expect(focusOf()).toEqual({ x: 0.5, y: 0.5 });
+        expect(useFocusPickStore.getState().armed).toBe(true);
+        expect(hint()).toBeInTheDocument();
+    });
+
+    it("takes a press that moves a pixel or two for a click, and one that comes back to where it started for a drag", () => {
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        fireEvent.pointerDown(pane(), { pointerId: 1, button: 0, clientX: 500, clientY: 300 });
+        fireEvent.pointerMove(pane(), { pointerId: 1, clientX: 400, clientY: 300 });
+        fireEvent.pointerMove(pane(), { pointerId: 1, clientX: 500, clientY: 300 });
+        fireEvent.pointerUp(pane(), { pointerId: 1, button: 0, clientX: 500, clientY: 300 });
+        expect(useFocusPickStore.getState().armed).toBe(true);
+
+        fireEvent.pointerDown(pane(), { pointerId: 1, button: 0, clientX: 500, clientY: 300 });
+        fireEvent.pointerMove(pane(), { pointerId: 1, clientX: 502, clientY: 301 });
+        fireEvent.pointerUp(pane(), { pointerId: 1, button: 0, clientX: 502, clientY: 301 });
+
+        expect(useFocusPickStore.getState().armed).toBe(false);
+        expect(focusOf().x).toBeCloseTo(0.5, 2);
+    });
+
+    it("ignores a click in the margin beside the photograph, and stays armed", () => {
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        // The photograph runs from x = 50 to 950 of the 1000px pane.
+        click(pane(), 20, 300);
+
+        expect(focusOf()).toEqual({ x: 0.5, y: 0.5 });
+        expect(useFocusPickStore.getState().armed).toBe(true);
+    });
+
+    it("ignores a press that is not the primary button", () => {
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        fireEvent.pointerDown(pane(), { pointerId: 1, button: 2, clientX: 320, clientY: 360 });
+        fireEvent.pointerUp(pane(), { pointerId: 1, button: 2, clientX: 320, clientY: 360 });
+
+        expect(focusOf()).toEqual({ x: 0.5, y: 0.5 });
+        expect(useFocusPickStore.getState().armed).toBe(true);
+    });
+
+    it("means the same point in a magnified photograph as in a fitted one", () => {
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        // The photograph is drawn 1800x1200 from (-100, -50): 600 across is 700 of 1800, and 350 down is 400 of 1200.
+        click(pane(), 600, 350);
+
+        expect(focusOf().x).toBeCloseTo(0.389, 3);
+        expect(focusOf().y).toBeCloseTo(0.333, 3);
+    });
+
+    it("sets the same point from either pane of the side by side comparison", () => {
+        draw("side");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        click(pane(0), 320, 360);
+
+        expect(focusOf()).toEqual({ x: 0.3, y: 0.6 });
+
+        act(() => useFocusPickStore.getState().arm(id));
+        click(pane(1), 590, 120);
+
+        expect(focusOf()).toEqual({ x: 0.6, y: 0.2 });
+    });
+
+    it("draws the hint and the ring once, not once for each pane", () => {
+        draw("side");
+
+        act(() => useFocusPickStore.getState().arm(id));
+
+        expect(screen.getAllByText("Click the photograph where it should be sharp. Esc to cancel.")).toHaveLength(1);
+        // A ring in each pane, so the focus is visible whichever half is being looked at.
+        expect(document.querySelectorAll("[data-slot='focus-ring']")).toHaveLength(2);
+    });
+
+    it("leaves the mode, with the focus as it was, on Escape", () => {
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        fireEvent.keyDown(window, { key: "Escape" });
+
+        expect(useFocusPickStore.getState().armed).toBe(false);
+        expect(hint()).toBeNull();
+        expect(focusOf()).toEqual({ x: 0.5, y: 0.5 });
+    });
+
+    it("keeps the mode on an Escape that something else has taken", () => {
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        // A dialog's own layer prevents the default of the Escape that closes it.
+        const taken = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
+        taken.preventDefault();
+        act(() => {
+            window.dispatchEvent(taken);
+        });
+
+        expect(useFocusPickStore.getState().armed).toBe(true);
+    });
+
+    it("keeps the mode on an Escape while a dialog is open over the photograph", () => {
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+        const dialog = document.body.appendChild(document.createElement("div"));
+        dialog.setAttribute("role", "dialog");
+        dialog.setAttribute("data-state", "open");
+
+        fireEvent.keyDown(window, { key: "Escape" });
+        expect(useFocusPickStore.getState().armed).toBe(true);
+
+        // One that is closing is not open.
+        dialog.setAttribute("data-state", "closed");
+        fireEvent.keyDown(window, { key: "Escape" });
+        expect(useFocusPickStore.getState().armed).toBe(false);
+
+        dialog.remove();
+    });
+
+    it("hides the ring from assistive technology, since the status line says what the mode is", () => {
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        expect(ring()).toHaveAttribute("aria-hidden", "true");
+        expect(screen.getByRole("status")).toHaveTextContent("Click the photograph");
+    });
+
+    it("leaves the mode when another photograph becomes the current one", () => {
+        openFiles(SUNSET);
+        useFileStore.getState().setCurrentIndex(0);
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        act(() => useFileStore.getState().setCurrentIndex(1));
+
+        expect(useFocusPickStore.getState().armed).toBe(false);
+    });
+
+    it("leaves the mode when the lens blur is taken off the stack", () => {
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        act(() => useEnhancementStore.setState({ enhancements: new Map([[HOLIDAY.path, []]]) }));
+
+        expect(useFocusPickStore.getState().armed).toBe(false);
+        expect(hint()).toBeNull();
+    });
+
+    it("is not armed for a photograph the Set focus button was not pressed over", () => {
+        draw("full");
+
+        act(() => useFocusPickStore.getState().arm(SUNSET.identity ?? ""));
+
+        expect(hint()).toBeNull();
+        expect(pane().className).toContain("cursor-grab");
+    });
+});
+
+describe("the brush and the focus pick", () => {
+    const id = HOLIDAY.identity ?? "";
+
+    beforeEach(() => {
+        stubPaneGeometry();
+        useMaskStore.setState(useMaskStore.getInitialState(), true);
+        useFocusPickStore.setState(useFocusPickStore.getInitialState(), true);
+        useEnhancementStore.setState({
+            enhancements: new Map([
+                [
+                    HOLIDAY.path,
+                    [
+                        {
+                            family: "lens_blur",
+                            codename: "lisbon",
+                            precision: "fp16",
+                            parameters: { f_number: 2.8, focus_x: 0.5, focus_y: 0.5 },
+                        },
+                    ],
+                ],
+            ]),
+        });
+    });
+
+    afterEach(() => {
+        useMaskStore.setState(useMaskStore.getInitialState(), true);
+        useFocusPickStore.setState(useFocusPickStore.getInitialState(), true);
+        useEnhancementStore.setState({ enhancements: new Map() });
+    });
+
+    it("leaves the mask's editing when the focus pick is armed", () => {
+        act(() => useMaskStore.getState().startEditing(HOLIDAY.path));
+        draw("full");
+
+        act(() => useFocusPickStore.getState().arm(id));
+
+        expect(useMaskStore.getState().editing).toBeUndefined();
+        expect(useFocusPickStore.getState().armed).toBe(true);
+    });
+
+    it("leaves the focus pick when the mask is edited", () => {
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        act(() => useMaskStore.getState().startEditing(HOLIDAY.path));
+
+        expect(useFocusPickStore.getState().armed).toBe(false);
+        expect(useMaskStore.getState().editing).toEqual({ path: HOLIDAY.path, target: "limit" });
     });
 });

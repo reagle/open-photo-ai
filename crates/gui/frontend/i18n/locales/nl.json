@@ -395,6 +395,20 @@
                 "osaka": "Gebruik dit model wanneer je de best mogelijke opschaalkwaliteit wilt. Het bouwt detail opnieuw op in plaats van het alleen te verscherpen en gaat het verst bij zachte of sterk gecomprimeerde foto's. Het is wel traag en heeft een krachtige GPU nodig om goed te draaien."
             }
         },
+        "lensBlur": {
+            "name": "Lensvervaging",
+            "models": {
+                "lisbon": "Gebruik dit model om een foto te vervagen zoals een grotere lensopening zou doen, met het punt dat je kiest scherp. Het schat hoe ver alles op de foto weg is (MoGe-2 ViT-B, 324 MB). Bij het eerste gebruik wordt het model gecompileerd voor je processor, wat op een Mac ongeveer een minuut duurt."
+            },
+            "blurAmount": "Vervaging",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} kleinbeeld)",
+            "readoutEquivalent": "≈ f/{{equivalent}} kleinbeeldequivalent",
+            "asTaken": "Zoals genomen",
+            "assumed": "Deze foto bevat geen lensinformatie; f/{{f}} aangenomen",
+            "cannotBlurMore": "Deze foto is genomen op f/{{f}} (kleinbeeldequivalent), zo open als het effect gaat; ze kan niet verder worden vervaagd.",
+            "setFocus": "Scherpstelling instellen",
+            "focusHint": "Klik op de foto waar het scherp moet zijn. Esc om te annuleren."
+        },
         "add": "Toevoegen",
         "remove": "Verbetering verwijderen",
         "modelSelector": "AI-model",
@@ -418,7 +432,8 @@
             "button": "Gezichten selecteren ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoLensBlur": "{{name}}, vervaging {{amount}}"
     },
     "preview": {
         "empty": {
@@ -440,6 +455,7 @@
             "colorBalance": "Kleur",
             "upscale": "Opschalen",
             "sharpen": "Verscherpen",
+            "lensBlur": "Lensvervaging",
             "enhancing": "Verbeteren"
         }
     },
@@ -457,6 +473,7 @@
         "autopilotFailed": "Er is iets misgegaan. Autopilot kon niet worden uitgevoerd.",
         "enhanceFailed": "Er is iets misgegaan. De afbeelding kon niet worden verbeterd.",
         "faceDetectFailed": "Er is iets misgegaan. Gezichten konden niet worden gedetecteerd.",
+        "matteFailed": "Er is iets misgegaan. Het onderwerp kon niet worden uitgesneden, dus de lensvervaging gebruikt alleen de diepte.",
         "showLogsFailed": "Kan het logbestand niet openen. Je vindt het in de configuratiemap van de app.",
         "revealFailed": "Kon de bestandsbeheerder niet openen. Het bestand staat nog steeds op de exportlocatie.",
         "revealFileFailed": "Kon de bestandsbeheerder niet openen.",

@@ -1,10 +1,23 @@
 import type { ParseKeys, TFunction } from "i18next";
-import { Bandage, type LucideIcon, Maximize2, Paintbrush, Palette, ScanFace, Sun, Triangle, Waves } from "lucide-react";
+import {
+    Aperture,
+    Bandage,
+    type LucideIcon,
+    Maximize2,
+    Paintbrush,
+    Palette,
+    ScanFace,
+    Sun,
+    Triangle,
+    Waves,
+} from "lucide-react";
 import { type Suggestion, suggestedScale } from "@/ipc/autopilot";
 import type { Family, FamilyEntry, ParameterEntry, Precision, VariantEntry } from "@/ipc/catalogue";
 import { type CropInfo, framedDimensions } from "@/ipc/crop";
 import type { Operation } from "@/ipc/enhance";
 import type { ImageRecord } from "@/ipc/images";
+import { type LensInfo, lensInfo } from "@/ipc/lens";
+import { ASSUMED_LENS, DEFAULT_AMOUNT, fNumberForAmount } from "@/lib/blurAmount";
 import { report } from "@/lib/report";
 
 /**
@@ -39,6 +52,12 @@ export type Enhancement = {
      * choice to paint, never an analysis's. Absent for the others.
      */
     painted?: true;
+    /**
+     * Present, and `true`, for an enhancement Autopilot never suggests: it is the user's choice about a
+     * photograph, never an automatic one, and the library's analysis has no signal for it. Its settings
+     * row draws its Autopilot switch off and unavailable.
+     */
+    manual?: true;
 };
 
 /**
@@ -54,10 +73,10 @@ export type Enhancement = {
  * its comment is that *"the add menu offering them in one order while the pipeline ran them in another
  * would be a silent inconsistency."* A test holds them to each other.
  *
- * **`detection` is named nowhere here.** The catalogue publishes it - deliberately, so that "which
- * model detects faces" is not something a front end restates - but it is not an enhancement a user
- * adds, so it gets no row. That is how the eighth family stays out of a dialog about enhancements
- * without the catalogue being filtered on the wire.
+ * **`detection`, `depth` and `matting` are named nowhere here.** The catalogue publishes them - deliberately, so
+ * that "which model detects faces" or "which model measures depth" is not something a front end restates - but
+ * they are not enhancements a user adds, so they get no row. That is how the three families stay out of a
+ * dialog about enhancements without the catalogue being filtered on the wire.
  */
 export const ENHANCEMENTS = [
     {
@@ -110,6 +129,13 @@ export const ENHANCEMENTS = [
         shortNameKey: "preview.progress.upscale",
         icon: Maximize2,
     },
+    {
+        family: "lens_blur",
+        nameKey: "enhancements.lensBlur.name",
+        shortNameKey: "preview.progress.lensBlur",
+        icon: Aperture,
+        manual: true,
+    },
 ] as const satisfies readonly Enhancement[];
 
 /**
@@ -148,6 +174,10 @@ export const familiesWhere = (keep: (family: Family) => boolean): Family[] =>
 /** Whether `family` is painted with the brush rather than set by a panel of options - see {@link Enhancement.painted}. */
 export const isPainted = (family: Family): boolean =>
     ENHANCEMENTS.some((entry: Enhancement) => entry.family === family && entry.painted === true);
+
+/** Whether Autopilot may ever suggest `family` - every enhancement but the ones marked `manual`. */
+export const isSuggestible = (family: Family): boolean =>
+    ENHANCEMENTS.some((entry) => entry.family === family && !("manual" in entry && entry.manual));
 
 /**
  * Nothing, or the compile error that the wire carries a family {@link ENHANCEMENTS} forgot.
@@ -433,9 +463,9 @@ export const withModel = (
  * The families a progress report can carry that are not enhancements a user adds, and the enhancement
  * each is reported **as**.
  *
- * One entry: a detection is run for a face recovery and nothing else, so what the user should read on
- * the chip is the enhancement they asked for. The detector is offered by no menu in this application
- * and named in no catalogue row, so naming it there would name a model nobody chose.
+ * Three entries: a detection is run for a face recovery, and a depth estimate and a matte for a lens blur, and nothing
+ * else, so what the user should read on the chip is the enhancement they asked for. The detector is offered by no menu
+ * in this application and named in no catalogue row, so naming it there would name a model nobody chose.
  *
  * **Honest on the wire, named here.** Rust sends `detection`, because the operation *is* a detection
  * and saying otherwise would make the report's own diagnostic (`New York (FP32)`) disagree with its
@@ -443,7 +473,11 @@ export const withModel = (
  * business - the same decision that keeps `detection` out of {@link ENHANCEMENTS} - so the mapping is
  * one entry beside that list rather than a lie on the wire. See design.md D8.
  */
-const REPORTED_AS: Partial<Record<Family, Operation["family"]>> = { detection: "face_recovery" };
+const REPORTED_AS: Partial<Record<Family, Operation["family"]>> = {
+    detection: "face_recovery",
+    depth: "lens_blur",
+    matting: "lens_blur",
+};
 
 /**
  * What the progress chip calls the family a report carries, or `undefined` where this application has
@@ -502,6 +536,49 @@ export const startingScale = async (file: ImageRecord | undefined, crop: CropInf
 };
 
 /**
+ * What the library calls a lens blur's aperture: its own `FNumber::NAME`, the name the catalogue publishes the range
+ * under and the operation carries the value under.
+ */
+export const F_NUMBER = "f_number";
+
+/** What the library calls the two fractions a lens blur's focus point is held as: `FOCUS_X` and `FOCUS_Y` there. */
+export const FOCUS_X = "focus_x";
+export const FOCUS_Y = "focus_y";
+
+/**
+ * The lens of the photograph `file` as it is framed by `crop`, from its EXIF alone and asked of the backend through
+ * {@link lensInfo}, which answers at once: the equivalent f-number is `opai`'s to work out, so the window and a run
+ * agree on it.
+ *
+ * One the backend cannot answer, or a file with no identity to ask about, is the f/8 the library assumes for a
+ * photograph it knows nothing of.
+ */
+export const ownLens = async (file: ImageRecord | undefined, crop: CropInfo | undefined): Promise<LensInfo> => {
+    if (file?.identity === undefined) return ASSUMED_LENS;
+
+    try {
+        return await lensInfo(file.identity, crop);
+    } catch (error) {
+        report("asking for the lens a lens blur is set against failed", error);
+        return ASSUMED_LENS;
+    }
+};
+
+/**
+ * The f-number a freshly added lens blur starts at, for the photograph `file` as it is framed by `crop`: a blur amount
+ * of {@link DEFAULT_AMOUNT} on the photograph's own lens. For a photograph that cannot be blurred more - already at
+ * f/1.4 equivalent or wider - that is its own f-number, which adds nothing.
+ *
+ * **The f-number stays what the operation carries**, as the library takes it and the cache keys it, and the amount is
+ * the window's way of choosing it: see `lib/blurAmount.ts`.
+ */
+export const startingFNumber = async (file: ImageRecord | undefined, crop: CropInfo | undefined): Promise<number> => {
+    const { ownFNumber } = await ownLens(file, crop);
+
+    return fNumberForAmount(DEFAULT_AMOUNT, ownFNumber);
+};
+
+/**
  * How much larger a chain makes the photograph it runs over: the upscale's own scale, or 1 where the
  * stack holds none.
  *
@@ -552,6 +629,7 @@ export const newOperation = (
     entry: FamilyEntry | undefined,
     stored: string | undefined,
     scale = 1,
+    fNumber?: number,
 ): Operation | undefined => {
     const { options, selected } = modelChoice(entry, stored);
     const option = options.find((candidate) => candidate.value === selected);
@@ -572,10 +650,13 @@ export const newOperation = (
      * finds them itself, and the choice is put in by `withChoice` on the way to `enhance`, so a framing
      * change rewrites no photograph's stack. See design.md D5.
      *
-     * The one value that is the photograph's rather than the catalogue's, an upscale's scale: see
-     * `startingScale`.
+     * The values that are the photograph's rather than the catalogue's: an upscale's scale, see `startingScale`, and a
+     * lens blur's f-number, see `startingFNumber` - the photograph's own, which is where it adds nothing. Its focus
+     * starts at the catalogue's published default, the middle.
      */
-    return family === "upscale" ? withParameter(operation, SCALE, scale) : operation;
+    if (family === "upscale") return withParameter(operation, SCALE, scale);
+
+    return family === "lens_blur" && fNumber !== undefined ? withParameter(operation, F_NUMBER, fNumber) : operation;
 };
 
 /**

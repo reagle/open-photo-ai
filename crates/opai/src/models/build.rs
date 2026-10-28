@@ -28,11 +28,16 @@ use super::catalogue::{VariantEntry, catalogue};
 use super::color_balance::{ColorBalance, ColorBalanceVariant};
 use super::colorization::{Colorization, ColorizationVariant};
 use super::denoise::{Denoise, DenoiseVariant};
+use super::depth::{Depth, DepthVariant};
 use super::detection::{Detection, DetectionVariant};
+use super::f_number::FNumber;
 use super::face::Faces;
 use super::face_recovery::{FaceRecovery, FaceRecoveryVariant};
 use super::fidelity::Fidelity;
+use super::fraction::Fraction;
+use super::lens_blur::{FOCUS_X, FOCUS_Y, LensBlur, LensBlurVariant};
 use super::light_adjustment::{LightAdjustment, LightAdjustmentVariant};
+use super::matting::{Matting, MattingVariant};
 use super::precision::Precision;
 use super::remove::{Remove, RemoveVariant};
 use super::scale::Scale;
@@ -40,6 +45,7 @@ use super::sharpen::{Sharpen, SharpenVariant};
 use super::strength::Strength;
 use super::upscale::{Upscale, UpscaleVariant};
 
+use super::operation::Analysis;
 use super::subject::Subject;
 
 use crate::mask::Mask;
@@ -103,11 +109,18 @@ pub struct ParameterValues {
     faces: Faces,
     /// What a removal takes out.
     mask: Arc<Mask>,
+    /// The equivalent f-number a lens blur opens the lens to.
+    f_number: FNumber,
+    /// Where a lens blur focuses, across the frame.
+    focus_x: Fraction,
+    /// And down it.
+    focus_y: Fraction,
 }
 
 impl ParameterValues {
     /// Every parameter at its neutral value: no enlargement, no strength, no lean, Athens' own default fidelity, no
-    /// faces and nothing to remove.
+    /// faces, nothing to remove, and a lens blur at its narrowest aperture, which adds the least, focused on the middle
+    /// of the frame.
     ///
     /// Neutral rather than arbitrary, so that a caller which forgot to set the parameter its variant takes gets the
     /// run that does the least rather than one it did not ask for. [`Fidelity`] is the exception and is
@@ -122,6 +135,9 @@ impl ParameterValues {
             fidelity: Fidelity::MAXIMUM,
             faces: Faces::empty(),
             mask: Arc::new(Mask::default()),
+            f_number: FNumber::clamped(FNumber::MAX),
+            focus_x: Fraction::CENTRE,
+            focus_y: Fraction::CENTRE,
         }
     }
 
@@ -171,6 +187,21 @@ impl ParameterValues {
         self
     }
 
+    /// The equivalent f-number a lens blur opens the lens to.
+    #[must_use]
+    pub fn with_f_number(mut self, f_number: FNumber) -> Self {
+        self.f_number = f_number;
+        self
+    }
+
+    /// Where a lens blur focuses, as fractions across and down the frame.
+    #[must_use]
+    pub fn with_focus(mut self, x: Fraction, y: Fraction) -> Self {
+        self.focus_x = x;
+        self.focus_y = y;
+        self
+    }
+
     /// Sets the parameter the catalogue publishes under `name` to `value`, **brought inside its range** rather than
     /// refused.
     ///
@@ -202,6 +233,12 @@ impl ParameterValues {
             Fidelity::NAME => {
                 self.fidelity = clamped_logged(Fidelity::NAME, value, Fidelity::MIN, Fidelity::MAX, Fidelity::clamped);
             }
+            FNumber::NAME => {
+                self.f_number = clamped_logged(FNumber::NAME, value, FNumber::MIN, FNumber::MAX, FNumber::clamped);
+            }
+            // Two parameters of one type, so named here rather than by the type: the focus point's two coordinates.
+            FOCUS_X => self.focus_x = clamped_logged(FOCUS_X, value, Fraction::MIN, Fraction::MAX, Fraction::clamped),
+            FOCUS_Y => self.focus_y = clamped_logged(FOCUS_Y, value, Fraction::MIN, Fraction::MAX, Fraction::clamped),
             name => return Err(BuildError::UnknownParameter { name: name.to_string() }),
         }
 
@@ -257,8 +294,8 @@ impl VariantEntry {
     /// row is what *knows*: the precisions it is published at and the parameters it takes are fields of it, so the
     /// check and the construction read the same data and there is nothing for a second table to disagree with.
     ///
-    /// A [`Subject`] rather than an [`Operation`](super::Operation), because the eight families are carried in two
-    /// values — the seven whose result is an image and the one whose result is not — and a caller walking the
+    /// A [`Subject`] rather than an [`Operation`](super::Operation), because the nine families are carried in two
+    /// values — the seven whose result is an image and the two whose result is not — and a caller walking the
     /// catalogue crosses both. A caller that knows it asked an enhancement family matches
     /// [`Subject::Enhancement`] and has the operation [`Opai::process`](crate::Opai::process) takes.
     ///
@@ -266,6 +303,11 @@ impl VariantEntry {
     /// constructor for the variant its `from_codename` resolved, so the precision domain is known statically at the
     /// one place that calls it. Osaka having no FP32 build is stated once, by the row, and is refused below by the
     /// same `contains` every other variant is refused by.
+    ///
+    /// A depth row builds an [`Analysis::Depth`] like detection's [`Analysis::Detection`]; it is run through
+    /// [`Opai::estimate_depth`](crate::Opai::estimate_depth), not [`Opai::execute`](crate::Opai::execute), which
+    /// refuses it. A matting row builds an [`Analysis::Matting`] with no trimap (Bilbao takes none), run through
+    /// [`Opai::matte`](crate::Opai::matte) once one is handed it.
     ///
     /// # Errors
     ///
@@ -284,13 +326,28 @@ impl VariantEntry {
         let codename = self.codename;
 
         let enhancement = match self.family {
-            // The one family on the other run path, and the only arm that does not produce an `Operation`.
+            // The three families on the other run path, and the only arms that do not produce an `Operation`.
             Family::Detection => {
                 let variant = DetectionVariant::from_codename(codename, precision).ok_or_else(unpublished)?;
 
                 return Ok(Subject::Analysis(match variant {
                     DetectionVariant::NewYork(precision) => Detection::newyork(precision),
                 }));
+            }
+            Family::Depth => {
+                let variant = DepthVariant::from_codename(codename, precision).ok_or_else(unpublished)?;
+
+                return Ok(Subject::Analysis(Analysis::Depth(match variant {
+                    DepthVariant::Lisbon(_) => Depth::lisbon(),
+                })));
+            }
+            Family::Matting => {
+                let variant = MattingVariant::from_codename(codename, precision).ok_or_else(unpublished)?;
+
+                return Ok(Subject::Analysis(Analysis::Matting(match variant {
+                    MattingVariant::Porto(_) => Matting::porto(),
+                    MattingVariant::Bilbao(_) => Matting::bilbao(),
+                })));
             }
             Family::Denoise => match DenoiseVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
                 DenoiseVariant::Stockholm(precision) => Denoise::stockholm(precision, values.strength),
@@ -342,6 +399,10 @@ impl VariantEntry {
                 UpscaleVariant::Kyoto(precision) => Upscale::kyoto(precision, values.scale),
                 UpscaleVariant::Saitama(precision) => Upscale::saitama(precision, values.scale),
                 UpscaleVariant::Osaka(precision) => Upscale::osaka(precision, values.scale),
+            },
+            // Built with nothing injected: the chain it runs in hands it the depth map and the lens.
+            Family::LensBlur => match LensBlurVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
+                LensBlurVariant::Lisbon(_) => LensBlur::lisbon(values.f_number, values.focus_x, values.focus_y),
             },
         };
 
@@ -430,7 +491,15 @@ mod tests {
     #[test]
     fn a_value_set_by_its_published_name_is_the_value_the_typed_builder_would_carry() {
         let mut named = ParameterValues::new();
-        for (name, value) in [("scale", 2.5), ("strength", 0.25), ("bias", -0.35), ("fidelity", 0.05)] {
+        for (name, value) in [
+            ("scale", 2.5),
+            ("strength", 0.25),
+            ("bias", -0.35),
+            ("fidelity", 0.05),
+            ("f_number", 1.4),
+            ("focus_x", 0.55),
+            ("focus_y", 0.3),
+        ] {
             named.set(name, value).expect("every range the catalogue publishes can be set by its name");
         }
 
@@ -438,7 +507,9 @@ mod tests {
             .with_scale(Scale::clamped(2.5))
             .with_strength(Strength::clamped(0.25))
             .with_bias(Bias::clamped(-0.35))
-            .with_fidelity(Fidelity::clamped(0.05));
+            .with_fidelity(Fidelity::clamped(0.05))
+            .with_f_number(FNumber::clamped(1.4))
+            .with_focus(Fraction::clamped(0.55), Fraction::clamped(0.3));
 
         assert_eq!(named, typed);
     }

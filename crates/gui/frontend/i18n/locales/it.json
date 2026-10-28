@@ -403,6 +403,20 @@
                 "osaka": "Usalo quando vuoi l'ingrandimento della migliore qualità possibile. Ricostruisce i dettagli invece di limitarsi ad aumentare la nitidezza, ottenendo il massimo su foto morbide o molto compresse. È però lento e richiede una GPU potente per funzionare bene."
             }
         },
+        "lensBlur": {
+            "name": "Sfocatura da obiettivo",
+            "models": {
+                "lisbon": "Usa questo modello per sfocare una fotografia come farebbe un'apertura di obiettivo più ampia, mantenendo nitido il punto che scegli. Stima la distanza di ogni elemento della fotografia (MoGe-2 ViT-B, 324 MB). Al primo utilizzo il modello viene compilato per il processore, operazione che su Mac richiede circa un minuto."
+            },
+            "blurAmount": "Sfocatura",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} pieno formato)",
+            "readoutEquivalent": "≈ f/{{equivalent}} equivalente a pieno formato",
+            "asTaken": "Originale",
+            "assumed": "Questa fotografia non ha informazioni sull'obiettivo; f/{{f}} ipotizzato",
+            "cannotBlurMore": "Questa fotografia è stata scattata a f/{{f}} (equivalente a pieno formato), tanto aperto quanto arriva l'effetto; non può essere sfocata di più.",
+            "setFocus": "Imposta fuoco",
+            "focusHint": "Fai clic sulla fotografia nel punto che deve risultare nitido. Esc per annullare."
+        },
         "add": "Aggiungi miglioramento",
         "remove": "Rimuovi miglioramento",
         "modelSelector": "Modello IA",
@@ -428,7 +442,8 @@
             "button": "Seleziona volti ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoLensBlur": "{{name}}, sfocatura {{amount}}"
     },
     "preview": {
         "empty": {
@@ -450,6 +465,7 @@
             "colorBalance": "Bilanc. colore",
             "upscale": "Ingrandimento",
             "sharpen": "Nitidezza",
+            "lensBlur": "Sfocatura",
             "enhancing": "Miglioramento"
         }
     },
@@ -467,6 +483,7 @@
         "autopilotFailed": "Si è verificato un problema. Impossibile eseguire l'Autopilota.",
         "enhanceFailed": "Si è verificato un problema. Impossibile migliorare l'immagine.",
         "faceDetectFailed": "Si è verificato un problema. Impossibile rilevare i volti.",
+        "matteFailed": "Si è verificato un problema. Impossibile scontornare il soggetto, quindi la sfocatura da obiettivo usa solo la profondità.",
         "showLogsFailed": "Impossibile aprire il file di log. Puoi trovarlo nella cartella di configurazione dell'app.",
         "revealFailed": "Impossibile aprire il file manager. Il file è comunque salvato nella posizione di esportazione.",
         "revealFileFailed": "Impossibile aprire il file manager.",

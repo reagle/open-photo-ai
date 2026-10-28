@@ -69,9 +69,9 @@ pub enum SelectionError {
     Parameter(#[from] UnknownParameter),
 
     // This harness measures one entry point — the enhancement chain — and an operation whose result is a set of faces
-    // rather than a picture is not carried in what that entry point takes. It is not a model this binary declines to
-    // run: it is a run of a different kind, on a path nothing here measures yet. Reported when named for the reason
-    // `Unpublished` is: you asked for it by name, so you find out why you are not getting it.
+    // or a depth map rather than a picture is not carried in what that entry point takes. It is not a model this binary
+    // declines to run: it is a run of a different kind, on a path nothing here measures yet. Reported when named for
+    // the reason `Unpublished` is: you asked for it by name, so you find out why you are not getting it.
     /// A codename the catalogue publishes for a family whose result is not an image.
     ///
     /// Reported rather than silently skipped when the codename was named explicitly.
@@ -86,6 +86,13 @@ pub enum SelectionError {
     /// A removal, which takes a painted region this harness has none of.
     #[error("{codename} removes a painted region, and this harness paints none")]
     NeedsMask {
+        /// The codename, as the catalogue spells it.
+        codename: &'static str,
+    },
+
+    /// An enhancement that runs no model of its own — a lens blur, driven by a depth estimate — named explicitly.
+    #[error("{codename} runs no model of its own, and this harness measures one model at a time")]
+    NoModel {
         /// The codename, as the catalogue spells it.
         codename: &'static str,
     },
@@ -132,9 +139,13 @@ fn every_published(options: &Options) -> Result<Vec<Selected>, SelectionError> {
 
     for entry in catalogue() {
         // Dropped for the same reason and on the same terms as an unpublished precision below: this harness measures
-        // the enhancement chain, a caller who named nothing did not ask for a detection run, and naming one explicitly
-        // reports `SelectionError::NotAnEnhancement`.
-        if matches!(entry.family, Family::Detection | Family::Remove) {
+        // the enhancement chain, a caller who named nothing did not ask for a detection or a depth run, and naming one
+        // explicitly reports `SelectionError::NotAnEnhancement`. A lens blur runs no model of its own: what it costs is
+        // its depth estimate, measured as depth, and a render. A removal needs a mask this harness has none of.
+        if matches!(
+            entry.family,
+            Family::Detection | Family::Depth | Family::Matting | Family::LensBlur | Family::Remove
+        ) {
             continue;
         }
 
@@ -174,12 +185,16 @@ fn select(entry: &FamilyEntry, variant: &VariantEntry, options: &Options) -> Res
     // two places that have to be found.
     let precision = options.precision();
 
-    if entry.family == Family::Detection {
+    if matches!(entry.family, Family::Detection | Family::Depth | Family::Matting) {
         return Err(SelectionError::NotAnEnhancement { codename: variant.codename });
     }
 
     if entry.family == Family::Remove {
         return Err(SelectionError::NeedsMask { codename: variant.codename });
+    }
+
+    if entry.family == Family::LensBlur {
+        return Err(SelectionError::NoModel { codename: variant.codename });
     }
 
     let operation = build(variant, precision, options)?
@@ -201,8 +216,8 @@ pub fn needs_faces(selection: &[Selected]) -> bool {
 
 /// `selection` with every face-recovery row handed `faces`, or blocked with the reason there are none.
 ///
-/// Through [`opai::FaceRecovery::with_faces`], which swaps the faces and nothing else — the variant, its precision and its
-/// fidelity are the ones the row was selected with — so a row measures the operation a caller would have built, and
+/// Through [`opai::FaceRecovery::with_faces`], which swaps the faces and nothing else — the variant, its precision and
+/// its fidelity are the ones the row was selected with — so a row measures the operation a caller would have built, and
 /// nothing here matches on a model to rebuild it. That is the reference harness's `faceEntry`, using only the public
 /// API.
 ///
@@ -379,9 +394,12 @@ mod tests {
             for variant in &entry.variants {
                 let published = variant.parameters.iter().any(|parameter| parameter.kind == ParameterKind::Faces);
 
-                // Detection is not an enhancement and a removal needs a mask, so neither reaches a selection at all,
-                // and there is no row of either to compare against.
-                if matches!(entry.family, Family::Detection | Family::Remove) {
+                // Detection and depth are not enhancements and a removal needs a mask, so none reaches a selection at
+                // all, and there is no row of any to compare against.
+                if matches!(
+                    entry.family,
+                    Family::Detection | Family::Depth | Family::Matting | Family::LensBlur | Family::Remove
+                ) {
                     continue;
                 }
 
@@ -502,14 +520,19 @@ mod tests {
     /// Every codename the catalogue publishes at `precision` whose result is an image, in catalogue order —
     /// computed here from the catalogue so the assertion cannot pass by agreeing with the resolution's own traversal.
     ///
-    /// Detection is excluded because its result is not a picture, so it is not carried in what this harness's one
-    /// entry point takes. That is a property of the *path*, decided by the library's type, and not the "which models
-    /// will actually run" this module keeps no opinion about. A removal is excluded because it needs a painted region
-    /// the harness has none of.
+    /// Detection and depth are excluded because their result is not a picture, so neither is carried in what this
+    /// harness's one entry point takes. That is a property of the *path*, decided by the library's type, and not the
+    /// "which models will actually run" this module keeps no opinion about. A removal is excluded because it needs a
+    /// painted region the harness has none of.
     fn published_at(precision: Precision) -> Vec<&'static str> {
         catalogue()
             .iter()
-            .filter(|entry| !matches!(entry.family, Family::Detection | Family::Remove))
+            .filter(|entry| {
+                !matches!(
+                    entry.family,
+                    Family::Detection | Family::Depth | Family::Matting | Family::LensBlur | Family::Remove
+                )
+            })
             .flat_map(|entry| &entry.variants)
             .filter(|variant| variant.precisions.contains(&precision))
             .map(|variant| variant.codename)
@@ -581,9 +604,15 @@ mod tests {
 
     #[test]
     fn a_name_is_resolved_without_a_family_qualifier_and_case_and_space_insensitively() {
-        // No codename is published by two families, which is what makes the bare name unambiguous — asserted here
-        // rather than assumed.
-        let mut seen: Vec<&str> = catalogue().iter().flat_map(|entry| &entry.variants).map(|v| v.codename).collect();
+        // No codename is published by two families this harness measures, which is what makes the bare name
+        // unambiguous — asserted here rather than assumed. A lens blur is named for the depth model it is driven by,
+        // and is never measured.
+        let mut seen: Vec<&str> = catalogue()
+            .iter()
+            .filter(|entry| entry.family != Family::LensBlur)
+            .flat_map(|entry| &entry.variants)
+            .map(|v| v.codename)
+            .collect();
         let published = seen.len();
         seen.sort_unstable();
         seen.dedup();

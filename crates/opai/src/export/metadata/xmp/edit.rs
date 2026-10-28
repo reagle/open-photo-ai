@@ -376,6 +376,29 @@ impl Xmp {
         self.add_to_first(ns, local, |_, rdf| array(kind, items, rdf), &[], false);
     }
 
+    /// The decoded text of each item of the ordered array `ns:local`, in order: `None` if it is absent, is not an
+    /// `rdf:Seq`, or holds an item that is not plain text.
+    pub(crate) fn seq_values(&self, ns: &str, local: &str) -> Option<Vec<String>> {
+        for (description, scope) in self.descriptions() {
+            for child in description.elements() {
+                let inner = scope.with(child.attributes());
+                if inner.element(&child.name) != Some((ns, local)) {
+                    continue;
+                }
+                let seq = child.elements().find(|element| {
+                    inner.with(element.attributes()).element(&element.name) == Some((ns::RDF, "Seq"))
+                })?;
+                let seq_scope = inner.with(seq.attributes());
+                return seq
+                    .elements()
+                    .filter(|li| seq_scope.with(li.attributes()).element(&li.name) == Some((ns::RDF, "li")))
+                    .map(simple_text)
+                    .collect();
+            }
+        }
+        None
+    }
+
     /// How many items the array `ns:local` holds as an element of a description: `None` if it is absent or is not an
     /// `rdf:Seq`, `rdf:Bag` or `rdf:Alt`.
     pub(crate) fn array_len(&self, ns: &str, local: &str) -> Option<usize> {

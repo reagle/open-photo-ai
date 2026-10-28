@@ -2,7 +2,8 @@
 //!
 //! [`fn@plan`] decides what a chain will do and refuses what it cannot serve; [`run`] carries it out;
 //! [`identity_after`] names what came out. [`process`] is the three of them together, after finding the faces a chain's
-//! face recoveries restore where it was asked to, and is the whole body of [`Opai::process`](crate::Opai::process).
+//! face recoveries restore where it was asked to and the depth and lens its lens blurs are driven by, and is the whole
+//! body of [`Opai::process`](crate::Opai::process).
 
 // What a run leaves in the log. `process` brackets the run with a pair of records at `info` — what it was asked to
 // apply, the source's identity and the resolved depth on the way in; the elapsed time and whether it succeeded on the
@@ -35,6 +36,7 @@ use tokio_util::sync::CancellationToken;
 use std::future::Future;
 
 use super::acquire;
+use super::depth_map::{ChainMatte, depth_asked, find_chain_depth, find_chain_matte, mattes_asked};
 use super::execute::{ExecuteOptions, execute};
 use super::faces::{ChainFaces, FaceSelection, FacedChain, find_chain_faces};
 use super::handover::Handover;
@@ -44,7 +46,7 @@ use crate::error::InferenceError;
 use crate::image::{GainMap, Picture};
 use crate::mask::Mask;
 use crate::models::remove::RemovedAt;
-use crate::models::{Detection, Faces, Family, Operation, Remove};
+use crate::models::{Depth, DepthMap, Detection, Faces, Family, Matte, Matting, Operation, Remove};
 use crate::pipeline::{Backend, Shared};
 use crate::providers::ExecutionProvider;
 use crate::sessions::SessionHandle;
@@ -99,28 +101,52 @@ pub(crate) async fn process<B: Backend>(
     operations: &[Operation],
     options: Option<ProcessOptions>,
 ) -> Result<Enhanced, InferenceError> {
-    process_with(backend, cache, source, operations, options, |options| async move {
-        execute(backend, cache, source, &Detection::for_face_recovery(), options)
-            .await
-            .map(|executed| executed.value)
-    })
+    process_with(
+        backend,
+        cache,
+        source,
+        operations,
+        options,
+        |options| async move {
+            execute(backend, cache, source, &Detection::for_face_recovery(), options)
+                .await
+                .map(|executed| executed.value)
+        },
+        |depth, options| async move {
+            execute(backend, cache, source, &depth, options).await.map(|executed| executed.value)
+        },
+        |matting, options| async move {
+            execute(backend, cache, source, &matting, options).await.map(|executed| executed.value)
+        },
+    )
     .await
 }
 
-/// [`process`] over any face detection: `detect` is called at most once, and only where
-/// [`ProcessOptions::faces`] asks for one and the chain carries a face recovery.
-pub(crate) async fn process_with<B, D, F>(
+/// [`process`] over any face detection, depth estimate and matting: `detect` is called at most once, and only where
+/// [`ProcessOptions::faces`] asks for one and the chain carries a face recovery; `estimate` is called at most once, and
+/// only where the chain carries a lens blur; `matte` once for each lens blur whose subject is worth matting.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the arguments of `process`, and the three analyses a chain may need"
+)]
+pub(crate) async fn process_with<B, D, F, E, G, M, H>(
     backend: &B,
     cache: Option<&Memo>,
     source: &Picture,
     operations: &[Operation],
     options: Option<ProcessOptions>,
     detect: D,
+    estimate: E,
+    matte: M,
 ) -> Result<Enhanced, InferenceError>
 where
     B: Backend,
     D: FnOnce(Option<ExecuteOptions>) -> F,
     F: Future<Output = Result<Faces, InferenceError>>,
+    E: FnOnce(Depth, Option<ExecuteOptions>) -> G,
+    G: Future<Output = Result<DepthMap, InferenceError>>,
+    M: Fn(Matting, Option<ExecuteOptions>) -> H,
+    H: Future<Output = Result<Matte, InferenceError>>,
 {
     let mut options = options.unwrap_or_default();
 
@@ -158,6 +184,45 @@ where
     // face over the fill. They are dropped from every recovery's selection before the plan, so the keys say so.
     let (width, height) = source.dimensions();
     let operations = sparing_removed_faces(operations, width, height);
+
+    // Beside the faces and for the same reason: the depth map and the lens every lens blur carries are part of every
+    // cache key the run derives. Estimated on `source`, the chain's input, so no earlier enhancement and no change of
+    // focus or aperture estimates it again — the cached run serves it. Its progress shares the first slot as the
+    // detection's does; one served from the store reports nothing. The matte of a lens blur's subject follows it, on
+    // the same input and through the same cached run, keyed by its trimap: a change of focus mattes again, a change of
+    // aperture does not. The depth and each matte that may be asked for share the slot's head in turn, each from where
+    // the last left off, and the chain starts where the last of them did.
+    let (operations, matte) = match depth_asked(&operations) {
+        None => (operations, ChainMatte::NotAsked),
+        Some(_) => {
+            let handover = options.on_progress.as_ref().map(|on_progress| Handover::new(on_progress, &operations));
+            let analysis = |remaining: usize| {
+                Some(ExecuteOptions {
+                    provider: options.provider,
+                    on_progress: handover.as_ref().map(|handover| handover.next_analysis(remaining)),
+                    cancel: options.cancel.clone(),
+                    cache: options.cache,
+                })
+            };
+
+            let mattes = mattes_asked(&operations);
+            let filled = find_chain_depth(
+                operations.into_owned(),
+                source.path(),
+                source.dimensions(),
+                analysis(1 + mattes),
+                estimate,
+            )
+            .await?;
+            let (filled, matte) = find_chain_matte(filled, source, analysis, matte).await?;
+
+            if let Some(handover) = &handover {
+                options.on_progress = Some(handover.chain());
+            }
+
+            (std::borrow::Cow::Owned(filled), matte)
+        }
+    };
 
     // Before everything else — the plan, the identity, every cache key and every report — so all of them describe the
     // chain that actually runs. A chain already in order is borrowed as it is, so its cache keys are the ones it has
@@ -241,15 +306,16 @@ where
     // After the chain and before the closing record, so the record's time and outcome are the whole run's, a stop
     // during the blend included.
     let outcome = match (outcome, &mask) {
-        // The gain map is the chain's whatever the mask: only a removal rewrites it, and a removal is inside what the
-        // mask blends with, so its fill is in the photograph the mask brings back as well as in the result.
+        // The mask limits only what follows the removals: a removal is inside what it blends with, so the photograph it
+        // brings back, and that photograph's gain map, are as the removals left them — the fill and the gain a
+        // removal wrote under it included. A gain map only a removal rewrote is the chain's whatever the mask.
         (Ok(Ran { pixels, gain_map, providers, kept }), Some(mask)) => {
-            let photograph = kept.unwrap_or_else(|| source.shared_pixels());
+            let (photograph, original) = kept.unwrap_or_else(|| (source.shared_pixels(), source.shared_gain_map()));
 
-            masked(photograph, pixels, mask, depth, &options.cancel)
+            masked(photograph, original, pixels, gain_map, mask, depth, &options.cancel)
                 .instrument(span.clone())
                 .await
-                .map(|pixels| (pixels, gain_map, providers))
+                .map(|(pixels, gain_map)| (pixels, gain_map, providers))
                 .map_err(RunFailure::from)
         }
         (outcome, _) => outcome.map(|ran| (ran.pixels, ran.gain_map, ran.providers)),
@@ -314,22 +380,27 @@ where
     };
     let picture = source.derive(pixels, named).with_shared_gain_map(gain_map);
 
-    Ok(Enhanced { picture, providers, faces })
+    Ok(Enhanced { picture, providers, faces, matte })
 }
 
 /// `pixels`, the chain's result, limited to `mask`: blended with `photograph` — the chain's input after its removals —
 /// through the mask's weight at the photograph's size, the photograph enlarged with Lanczos3 first where the chain
 /// changed the size.
 ///
+/// The chain's `gain_map` is limited to the mask likewise, against `original`, the photograph's gain map as the
+/// removals left it, where a step after them rewrote it: see [`masked_gain_map`].
+///
 /// Not a step: it reports no progress and is never stored, since redoing it costs less than reading it back. A stop
 /// is honoured before it begins; it is quick enough not to need one inside.
 async fn masked(
     photograph: Arc<DynamicImage>,
+    original: Option<Arc<GainMap>>,
     pixels: Arc<DynamicImage>,
+    gain_map: Option<Arc<GainMap>>,
     mask: &Arc<Mask>,
     depth: ChannelDepth,
     cancel: &CancellationToken,
-) -> Result<Arc<DynamicImage>, InferenceError> {
+) -> Result<(Arc<DynamicImage>, Option<Arc<GainMap>>), InferenceError> {
     if cancel.is_cancelled() {
         return Err(InferenceError::Cancelled);
     }
@@ -339,8 +410,11 @@ async fn masked(
 
     // Off the runtime, as every full-resolution pass is: a rasterisation and a blend at 24 megapixels, and under an
     // upscale a Lanczos enlargement the size of the result.
-    let blended =
-        spawn_blocking::<_, InferenceError, _>(move || blend(&photograph, pixels, &applying, depth)).await??;
+    let blended = spawn_blocking::<_, InferenceError, _>(move || {
+        let pixels = blend(&photograph, pixels, &applying, depth)?;
+        Ok::<_, InferenceError>((pixels, masked_gain_map(original, gain_map, &applying)))
+    })
+    .await??;
 
     // `debug`, with the per-step records: a user painting a mask redoes this on every stroke.
     tracing::debug!(
@@ -350,6 +424,53 @@ async fn masked(
     );
 
     Ok(blended)
+}
+
+/// The gain map of a masked result: the chain's `result` where the mask is white and the photograph's `original` where
+/// it is black, so the pixels the mask kept from the photograph keep the photograph's HDR rendition.
+///
+/// Only a gain map a step after the removals rewrote — the lens blur's — is blended. One carried through unchanged is the photograph's
+/// already, one a step dropped stays dropped, and one that is not the original's size is left as the chain made it.
+/// The stored values are blended as they are: exact where the weight is 0 or 1, an approximation on a soft edge.
+fn masked_gain_map(original: Option<Arc<GainMap>>, result: Option<Arc<GainMap>>, mask: &Mask) -> Option<Arc<GainMap>> {
+    let (Some(original), Some(rewritten)) = (&original, &result) else {
+        return result;
+    };
+    let (from, to) = (original.pixels(), rewritten.pixels());
+    if Arc::ptr_eq(original, rewritten) || (from.width(), from.height()) != (to.width(), to.height()) {
+        return result;
+    }
+
+    let weight = mask.rasterised(to.width(), to.height());
+    let mixed = |old: &[u8], new: &[u8], channels: usize| -> Vec<u8> {
+        old.chunks_exact(channels)
+            .zip(new.chunks_exact(channels))
+            .zip(weight.as_slice())
+            .flat_map(|((old, new), weight)| {
+                let weight = if weight.is_nan() { 0.0 } else { weight.clamp(0.0, 1.0) };
+                old.iter().zip(new).map(move |(old, new)| {
+                    let (old, new) = (f32::from(*old), f32::from(*new));
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "between two bytes")]
+                    let value = (old + (new - old) * weight).round() as u8;
+                    value
+                })
+            })
+            .collect()
+    };
+
+    let (width, height) = (to.width(), to.height());
+    let pixels = match to {
+        DynamicImage::ImageLuma8(new) => DynamicImage::ImageLuma8(
+            image::GrayImage::from_vec(width, height, mixed(from.to_luma8().as_raw(), new.as_raw(), 1))
+                .expect("one a pixel"),
+        ),
+        _ => DynamicImage::ImageRgb8(
+            image::RgbImage::from_vec(width, height, mixed(from.to_rgb8().as_raw(), to.to_rgb8().as_raw(), 3))
+                .expect("three a pixel"),
+        ),
+    };
+
+    Some(Arc::new(rewritten.rewritten(pixels)))
 }
 
 /// [`masked`]'s pixel work, on the calling thread.
@@ -521,8 +642,9 @@ pub(crate) struct Ran {
     pub(crate) gain_map: Option<Arc<GainMap>>,
     /// What every step ran on.
     pub(crate) providers: ProviderReport,
-    /// The picture after the first [`Steps::keep`] steps, or `None` where none was asked for.
-    pub(crate) kept: Option<Arc<DynamicImage>>,
+    /// The picture after the first [`Steps::keep`] steps, with its gain map as they left it, or `None` where none was
+    /// asked for.
+    pub(crate) kept: Option<(Arc<DynamicImage>, Option<Arc<GainMap>>)>,
 }
 
 /// Runs `source` through the `planned` chain in order, each operation over the result of the one before it, at
@@ -700,7 +822,7 @@ pub(crate) async fn run<B: Backend>(
                 match materialize(pending.take().expect("stored just above")).await? {
                     Some(image) => {
                         current = Arc::new(image);
-                        kept = Some(Arc::clone(&current));
+                        kept = Some((Arc::clone(&current), current_map.clone()));
                     }
                     None => {
                         tracing::warn!(
@@ -900,7 +1022,7 @@ pub(crate) async fn run<B: Backend>(
         index += 1;
 
         if index == keep {
-            kept = Some(Arc::clone(&current));
+            kept = Some((Arc::clone(&current), current_map.clone()));
         }
     }
 

@@ -395,6 +395,20 @@
                 "osaka": "Usa este modelo cuando quieras la mejor calidad de escalado posible. Reconstruye el detalle en lugar de limitarse a afilarlo, y es el que más lejos llega en fotos suaves o muy comprimidas. Eso sí, es lento y necesita una GPU potente para funcionar bien."
             }
         },
+        "lensBlur": {
+            "name": "Desenfoque de lente",
+            "models": {
+                "lisbon": "Usa este modelo para desenfocar una fotografía como lo haría una apertura de objetivo más amplia, manteniendo nítido el punto que elijas. Estima la distancia de cada parte de la imagen (MoGe-2 ViT-B, 324 MB). El primer uso compila el modelo para tu procesador, lo que tarda alrededor de un minuto en un Mac."
+            },
+            "blurAmount": "Desenfoque",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} pleno formato)",
+            "readoutEquivalent": "≈ f/{{equivalent}} equivalente a pleno formato",
+            "asTaken": "Original",
+            "assumed": "Esta fotografía no tiene información del objetivo; se asume f/{{f}}",
+            "cannotBlurMore": "Esta fotografía se tomó a f/{{f}} (equivalente a pleno formato), tan abierto como llega el efecto; no se puede desenfocar más.",
+            "setFocus": "Definir enfoque",
+            "focusHint": "Haga clic en la fotografía donde debe quedar nítido. Esc para cancelar."
+        },
         "add": "Añadir mejora",
         "remove": "Quitar mejora",
         "modelSelector": "Modelo de IA",
@@ -418,7 +432,8 @@
             "button": "Seleccionar rostros ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoLensBlur": "{{name}}, desenfoque {{amount}}"
     },
     "preview": {
         "empty": {
@@ -440,6 +455,7 @@
             "colorBalance": "Balance color",
             "upscale": "Escalar",
             "sharpen": "Enfocar",
+            "lensBlur": "Desenfoque",
             "enhancing": "Mejorando"
         }
     },
@@ -457,6 +473,7 @@
         "autopilotFailed": "Algo ha ido mal. No se ha podido ejecutar el piloto automático.",
         "enhanceFailed": "Algo ha ido mal. No se ha podido mejorar la imagen.",
         "faceDetectFailed": "Algo ha ido mal. No se han podido detectar rostros.",
+        "matteFailed": "Algo ha ido mal. No se ha podido recortar el sujeto, así que el desenfoque de lente usa solo la profundidad.",
         "showLogsFailed": "No se pudo abrir el archivo de registro. Lo encontrarás en la carpeta de configuración de la app.",
         "revealFailed": "No se pudo abrir el gestor de archivos. El archivo sigue guardado en su ubicación de exportación.",
         "revealFileFailed": "No se pudo abrir el gestor de archivos.",

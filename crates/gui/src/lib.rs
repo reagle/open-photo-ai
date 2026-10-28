@@ -18,6 +18,7 @@ mod export;
 mod faces;
 mod frontend;
 mod images;
+mod lens;
 mod links;
 mod logs;
 mod mask;
@@ -156,6 +157,7 @@ pub fn run(prepared: Result<(), opai::InitError>) {
             enhance::release_enhanced,
             enhance::release_all_enhanced,
             faces::detect_faces,
+            lens::lens_info,
             autopilot::suggest,
             autopilot::cancel_suggest,
             autopilot::suggested_scale,

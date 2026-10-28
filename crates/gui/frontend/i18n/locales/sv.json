@@ -395,6 +395,20 @@
                 "osaka": "Använd den här modellen när du vill ha bästa möjliga uppskalningskvalitet. Den bygger upp detaljer på nytt i stället för att bara skärpa dem, och går längst på mjuka eller hårt komprimerade foton. Den är dock långsam och kräver ett kraftfullt grafikkort för att fungera bra."
             }
         },
+        "lensBlur": {
+            "name": "Objektivoskärpa",
+            "models": {
+                "lisbon": "Använd den här modellen för att göra ett foto suddigt som en objektivöppning med större bländare skulle göra, medan punkten du väljer hålls skarp. Den uppskattar hur långt bort allt på fotografiet är (MoGe-2 ViT-B, 324 MB). Första användningen kompilerar modellen för din processor, vilket tar cirka en minut på en Mac."
+            },
+            "blurAmount": "Oskärpa",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} fullformat)",
+            "readoutEquivalent": "≈ f/{{equivalent}} fullformatsekvivalent",
+            "asTaken": "Original",
+            "assumed": "Fotografiet saknar objektivinformation; f/{{f}} antas",
+            "cannotBlurMore": "Fotografiet är taget vid f/{{f}} (fullformatsekvivalent), så öppet som effekten går; det kan inte göras mer oskarpt.",
+            "setFocus": "Ställ in fokus",
+            "focusHint": "Klicka på fotografiet där det ska vara skarpt. Esc för att avbryta."
+        },
         "add": "Lägg till förbättring",
         "remove": "Ta bort förbättring",
         "modelSelector": "AI-modell",
@@ -418,7 +432,8 @@
             "button": "Välj ansikten ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoLensBlur": "{{name}}, oskärpa {{amount}}"
     },
     "preview": {
         "empty": {
@@ -440,6 +455,7 @@
             "colorBalance": "Färgbalans",
             "upscale": "Uppskalning",
             "sharpen": "Skärpa",
+            "lensBlur": "Oskärpa",
             "enhancing": "Förbättrar"
         }
     },
@@ -457,6 +473,7 @@
         "autopilotFailed": "Något gick fel. Kunde inte köra autopiloten.",
         "enhanceFailed": "Något gick fel. Kunde inte förbättra bilden.",
         "faceDetectFailed": "Något gick fel. Kunde inte hitta några ansikten.",
+        "matteFailed": "Något gick fel. Kunde inte frilägga motivet, så objektivoskärpan använder bara djupet.",
         "showLogsFailed": "Det gick inte att öppna loggfilen. Du hittar den i appens konfigurationsmapp.",
         "revealFailed": "Det gick inte att öppna filhanteraren. Filen finns kvar på sin exportplats.",
         "revealFileFailed": "Det gick inte att öppna filhanteraren.",

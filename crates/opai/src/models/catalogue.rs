@@ -10,13 +10,19 @@ use serde::Serialize;
 
 use super::artifact::Family;
 use super::bias::Bias;
+use super::f_number::FNumber;
 use super::fidelity::Fidelity;
+use super::fraction::Fraction;
+use super::lens_blur::{FOCUS_X, FOCUS_Y};
 use super::precision::{FloatPrecision, Precision};
 use super::scale::Scale;
 use super::simple::SimpleVariant;
 use super::strength::Strength;
 use super::upscale;
-use super::{color_balance, colorization, denoise, detection, face_recovery, light_adjustment, remove, sharpen};
+use super::{
+    color_balance, colorization, denoise, depth, detection, face_recovery, lens_blur, light_adjustment, matting,
+    remove, sharpen,
+};
 
 /// One model a user can choose, and what building it takes.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -147,6 +153,13 @@ const SCALE_DEFAULT: f64 = Scale::MIN;
 /// [`Fidelity::MAXIMUM`] names.
 const FIDELITY_DEFAULT: f64 = Fidelity::MAX;
 
+/// What a new lens blur opens the lens to: f/2.8, a fast lens's look. A front end that knows the photograph's own
+/// f-number starts there instead, so adding the enhancement changes nothing until the control moves.
+const F_NUMBER_DEFAULT: f64 = 2.8;
+
+/// Where a new lens blur focuses: the middle of the frame.
+const FOCUS_DEFAULT: f64 = 0.5;
+
 /// The strength denoise and sharpen take, from the same constants `Strength::new` enforces.
 pub(crate) const STRENGTH_PARAMETER: [ParameterEntry; 1] = [ParameterEntry {
     name: Strength::NAME,
@@ -165,6 +178,23 @@ pub(crate) const SCALE_PARAMETER: [ParameterEntry; 1] = [ParameterEntry {
     name: Scale::NAME,
     kind: ParameterKind::Range { min: Scale::MIN, max: Scale::MAX, default: SCALE_DEFAULT },
 }];
+
+/// What a lens blur takes: the equivalent f-number to simulate and the focus point, as fractions across and down the
+/// frame, from the same constants `FNumber::new` and `Fraction::new` enforce.
+pub(crate) const LENS_BLUR_PARAMETERS: [ParameterEntry; 3] = [
+    ParameterEntry {
+        name: FNumber::NAME,
+        kind: ParameterKind::Range { min: FNumber::MIN, max: FNumber::MAX, default: F_NUMBER_DEFAULT },
+    },
+    ParameterEntry {
+        name: FOCUS_X,
+        kind: ParameterKind::Range { min: Fraction::MIN, max: Fraction::MAX, default: FOCUS_DEFAULT },
+    },
+    ParameterEntry {
+        name: FOCUS_Y,
+        kind: ParameterKind::Range { min: Fraction::MIN, max: Fraction::MAX, default: FOCUS_DEFAULT },
+    },
+];
 
 /// What Santorini takes: the faces, and nothing a control can set.
 pub(crate) const FACES_PARAMETER: [ParameterEntry; 1] =
@@ -211,6 +241,14 @@ static CATALOGUE: LazyLock<Vec<FamilyEntry>> = LazyLock::new(|| {
         // no control for, which is already how colorization is read.
         simple_family(Family::Detection, &detection::ALL),
         simple_family(Family::FaceRecovery, &face_recovery::ALL),
+        // Listed for detection's reason: which model estimates depth is model vocabulary. No order and no parameter,
+        // so no front end draws it as an enhancement.
+        depth_family(),
+        // Appended, as each family after the first six was. Lisbon at its depth model's one precision.
+        lens_blur_family(),
+        // Listed for depth's reason, and like it with no order and no parameter: the trimap a matting runs over is
+        // injected by its caller, never set by a control.
+        matting_family(),
         // Listed last, though it runs first: where an entry is listed is a presentation decision, and `order` is what
         // says where it runs.
         remove_family(),
@@ -240,6 +278,60 @@ fn simple_family(family: Family, rows: &[SimpleVariant]) -> FamilyEntry {
                 codename: row.codename,
                 label: row.label,
                 precisions: &FloatPrecision::PRECISIONS,
+                parameters: row.parameters,
+            })
+            .collect(),
+    }
+}
+
+/// The depth family's entry: [`simple_family`]'s shape, at the one precision Lisbon is published in.
+fn depth_family() -> FamilyEntry {
+    FamilyEntry {
+        family: Family::Depth,
+        order: Family::Depth.applied_at(),
+        variants: depth::ALL
+            .iter()
+            .map(|row| VariantEntry {
+                family: Family::Depth,
+                codename: row.codename,
+                label: row.label,
+                precisions: &depth::variant::PRECISIONS,
+                parameters: row.parameters,
+            })
+            .collect(),
+    }
+}
+
+/// The lens blur family's entry: [`depth_family`]'s shape, at the precision of the depth model it is driven by.
+fn lens_blur_family() -> FamilyEntry {
+    FamilyEntry {
+        family: Family::LensBlur,
+        order: Family::LensBlur.applied_at(),
+        variants: lens_blur::ALL
+            .iter()
+            .map(|row| VariantEntry {
+                family: Family::LensBlur,
+                codename: row.codename,
+                label: row.label,
+                precisions: &lens_blur::variant::PRECISIONS,
+                parameters: row.parameters,
+            })
+            .collect(),
+    }
+}
+
+/// The matting family's entry: [`depth_family`]'s shape, each row at the one precision it is published in.
+fn matting_family() -> FamilyEntry {
+    FamilyEntry {
+        family: Family::Matting,
+        order: Family::Matting.applied_at(),
+        variants: matting::ALL
+            .iter()
+            .map(|row| VariantEntry {
+                family: Family::Matting,
+                codename: row.codename,
+                label: row.label,
+                precisions: matting::variant::precisions(row.codename),
                 parameters: row.parameters,
             })
             .collect(),
@@ -299,12 +391,54 @@ mod tests {
 
     /// The families published as one graph per variant per precision, all sharing one shape. Derived from
     /// [`Family::ALL`] rather than transcribed, so a family added later is covered here without being remembered:
-    /// upscale is left out, because Osaka's precisions are its own, and remove, published at FP32 alone.
+    /// upscale is left out, because Osaka's precisions are its own, depth, because Lisbon is published at FP16 alone
+    /// and two graphs at that, matting, because Porto is published at FP32 alone and Bilbao at FP16, and remove,
+    /// published at FP32 alone.
     fn single_graph_families() -> Vec<Family> {
         Family::ALL
             .into_iter()
-            .filter(|family| !matches!(family, Family::Upscale | Family::Remove))
+            .filter(|family| {
+                !matches!(family, Family::Upscale | Family::Depth | Family::Matting | Family::LensBlur | Family::Remove)
+            })
             .collect()
+    }
+
+    #[test]
+    fn lens_blur_is_published_last_as_lisbon_with_an_f_number_and_a_focus_point() {
+        let entry = family_entry(Family::LensBlur);
+
+        assert_eq!(variants(Family::LensBlur), vec![("lisbon", "Lisbon")]);
+        assert_eq!(entry.variants[0].precisions, [Precision::Fp16]);
+        assert_eq!(entry.order, Some(Family::APPLY_ORDER.len() - 1));
+        assert_eq!(
+            variant_parameters(Family::LensBlur, "lisbon"),
+            vec![
+                ("f_number", ParameterKind::Range { min: 1.0, max: 32.0, default: 2.8 }),
+                ("focus_x", ParameterKind::Range { min: 0.0, max: 1.0, default: 0.5 }),
+                ("focus_y", ParameterKind::Range { min: 0.0, max: 1.0, default: 0.5 }),
+            ]
+        );
+    }
+
+    #[test]
+    fn depth_is_published_as_lisbon_at_half_precision_alone_with_no_parameter_and_no_order() {
+        let entry = family_entry(Family::Depth);
+
+        assert_eq!(variants(Family::Depth), vec![("lisbon", "Lisbon")]);
+        assert_eq!(entry.variants[0].precisions, [Precision::Fp16]);
+        assert!(entry.variants[0].parameters.is_empty());
+        assert_eq!(entry.order, None, "depth was published as an enhancement a chain applies");
+    }
+
+    #[test]
+    fn matting_is_published_as_porto_at_full_precision_and_bilbao_at_half_with_no_parameter_and_no_order() {
+        let entry = family_entry(Family::Matting);
+
+        assert_eq!(variants(Family::Matting), vec![("porto", "Porto"), ("bilbao", "Bilbao")]);
+        assert_eq!(entry.variants[0].precisions, [Precision::Fp32]);
+        assert_eq!(entry.variants[1].precisions, [Precision::Fp16]);
+        assert!(entry.variants.iter().all(|variant| variant.parameters.is_empty()));
+        assert_eq!(entry.order, None, "matting was published as an enhancement a chain applies");
     }
 
     fn family_entry(family: Family) -> &'static FamilyEntry {
@@ -420,8 +554,11 @@ mod tests {
         /// A published parameter paired with the constructor that enforces it: name, bounds, and the acceptance test.
         type Enforced = (&'static str, f64, f64, fn(f64) -> bool);
 
-        let accepts: [Enforced; 4] = [
+        let accepts: [Enforced; 7] = [
             (Scale::NAME, Scale::MIN, Scale::MAX, |value| Scale::new(value).is_ok()),
+            (FNumber::NAME, FNumber::MIN, FNumber::MAX, |value| FNumber::new(value).is_ok()),
+            (FOCUS_X, Fraction::MIN, Fraction::MAX, |value| Fraction::new(value).is_ok()),
+            (FOCUS_Y, Fraction::MIN, Fraction::MAX, |value| Fraction::new(value).is_ok()),
             (Strength::NAME, Strength::MIN, Strength::MAX, |value| Strength::new(value).is_ok()),
             (Bias::NAME, Bias::MIN, Bias::MAX, |value| Bias::new(value).is_ok()),
             (Fidelity::NAME, Fidelity::MIN, Fidelity::MAX, |value| Fidelity::new(value).is_ok()),
@@ -486,6 +623,9 @@ mod tests {
             Strength::NAME => values.with_strength(Strength::clamped(Strength::MAX)),
             Bias::NAME => values.with_bias(Bias::clamped(Bias::MAX)),
             Fidelity::NAME => values.with_fidelity(Fidelity::clamped(Fidelity::MIN)),
+            FNumber::NAME => values.with_f_number(FNumber::clamped(FNumber::MIN)),
+            FOCUS_X => values.with_focus(Fraction::clamped(Fraction::MAX), Fraction::CENTRE),
+            FOCUS_Y => values.with_focus(Fraction::CENTRE, Fraction::clamped(Fraction::MAX)),
             other => panic!("nothing here moves a {other}"),
         }
     }
@@ -510,7 +650,7 @@ mod tests {
                     .build(precision, &neutral)
                     .unwrap_or_else(|error| panic!("{} at {precision}: {error}", variant.codename));
 
-                for name in [Scale::NAME, Strength::NAME, Bias::NAME, Fidelity::NAME] {
+                for name in [Scale::NAME, Strength::NAME, Bias::NAME, Fidelity::NAME, FNumber::NAME, FOCUS_X, FOCUS_Y] {
                     let published = variant.parameters.iter().any(|parameter| parameter.name == name);
                     let built = variant
                         .build(precision, &moved(name, neutral.clone()))
@@ -574,6 +714,9 @@ mod tests {
                 Family::Upscale,
                 Family::Detection,
                 Family::FaceRecovery,
+                Family::Depth,
+                Family::LensBlur,
+                Family::Matting,
                 Family::Remove,
             ]
         );

@@ -17,9 +17,12 @@ const SUGGESTED_SCALE_COMMAND = "suggested_scale";
  * a precision: which model runs is the user's standing preference, which this side holds. Only an upscale
  * carries a value, the scale the photograph's size calls for.
  *
- * Never `detection`, which is not an enhancement anybody applies.
+ * Never `detection`, `depth` or `matting`, which are not enhancements anybody applies, and never `lens_blur`, which an
+ * analysis does not suggest: where a photograph's focus should fall is the user's choice.
  */
-export type Suggestion = { family: "upscale"; scale: number } | { family: Exclude<Family, "detection" | "upscale"> };
+export type Suggestion =
+    | { family: "upscale"; scale: number }
+    | { family: Exclude<Family, "detection" | "depth" | "matting" | "upscale" | "lens_blur"> };
 
 /**
  * Why the `suggest` command rejected.

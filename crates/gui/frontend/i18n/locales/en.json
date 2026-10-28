@@ -395,6 +395,20 @@
                 "osaka": "Use when you want the best possible quality upscale available. It rebuilds detail rather than just sharpening it, going furthest on photos that are soft or heavily compressed. It's slow, though, and needs a powerful GPU to run well."
             }
         },
+        "lensBlur": {
+            "name": "Lens Blur",
+            "models": {
+                "lisbon": "Use this model to blur a photograph as a wider lens aperture would, keeping the point you choose sharp. It estimates how far away everything is (MoGe-2 ViT-B, 324 MB). The first use compiles the model for your processor, which takes about a minute on a Mac."
+            },
+            "blurAmount": "Blur amount",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} full-frame)",
+            "readoutEquivalent": "≈ f/{{equivalent}} full-frame equivalent",
+            "asTaken": "As taken",
+            "assumed": "This photograph has no lens information; f/{{f}} assumed",
+            "cannotBlurMore": "This photograph was taken at f/{{f}} (full-frame equivalent), as wide as the blur goes, so it cannot be blurred more.",
+            "setFocus": "Set focus",
+            "focusHint": "Click the photograph where it should be sharp. Esc to cancel."
+        },
         "add": "Add enhancement",
         "remove": "Remove enhancement",
         "modelSelector": "AI Model",
@@ -418,7 +432,8 @@
             "button": "Select faces ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoLensBlur": "{{name}}, blur {{amount}}"
     },
     "preview": {
         "empty": {
@@ -440,6 +455,7 @@
             "colorBalance": "Color Balance",
             "upscale": "Upscale",
             "sharpen": "Sharpen",
+            "lensBlur": "Lens Blur",
             "enhancing": "Enhancing"
         }
     },
@@ -457,6 +473,7 @@
         "autopilotFailed": "Something went wrong. Failed to run autopilot.",
         "enhanceFailed": "Something went wrong. Failed to enhance image.",
         "faceDetectFailed": "Something went wrong. Failed to detect faces.",
+        "matteFailed": "Something went wrong. Failed to matte the subject, so the Lens Blur uses the depth alone.",
         "showLogsFailed": "Couldn't open the log file. You can find it in the app's configuration folder.",
         "revealFailed": "Couldn't open the file manager. The file is still saved at its export location.",
         "revealFileFailed": "Couldn't open the file manager.",

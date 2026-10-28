@@ -11,7 +11,7 @@ import {
 import { familyEntry, useCatalogue } from "@/hooks/useCatalogue";
 import type { Operation } from "@/ipc/enhance";
 import { ADD_MENU_GAP, SIDEBAR_PADDING } from "@/lib/constants";
-import { applyOrder, ENHANCEMENTS, isPainted, newOperation, startingScale } from "@/lib/enhancements";
+import { applyOrder, ENHANCEMENTS, isPainted, newOperation, startingFNumber, startingScale } from "@/lib/enhancements";
 import { track } from "@/lib/faro";
 import { useImageCrop } from "@/stores/crop";
 import { useEnhancementStore, useFileEnhancements } from "@/stores/enhancements";
@@ -61,6 +61,8 @@ export const AddEnhancement = () => {
         // Asked of the backend, for the photograph as it is framed now: the ladder is `opai`'s. Only an
         // upscale reads it, so nothing else waits on the bridge.
         const scale = family === "upscale" ? await startingScale(file, crop) : undefined;
+        // Likewise a lens blur's aperture, which starts where it adds no blur: the photograph's own, as it is framed.
+        const fNumber = family === "lens_blur" ? await startingFNumber(file, crop) : undefined;
 
         /*
          * Built here rather than in the store, because what a *new* enhancement carries is a
@@ -70,7 +72,7 @@ export const AddEnhancement = () => {
          * no model for, which is the render before the catalogue has arrived: the press adds
          * nothing rather than adding an operation naming no model.
          */
-        const operation = newOperation(family, familyEntry(families, family), models[family], scale);
+        const operation = newOperation(family, familyEntry(families, family), models[family], scale, fNumber);
 
         if (!operation) return;
 

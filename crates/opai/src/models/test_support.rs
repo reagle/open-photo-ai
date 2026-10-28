@@ -10,9 +10,10 @@
 //! build cannot ask for.
 
 use super::{
-    Analysis, Bias, ColorBalance, Colorization, Denoise, Detection, FaceRecovery, Faces, Fidelity, LightAdjustment,
-    Operation, ParameterValues, Scale, Sharpen, Strength, Upscale, catalogue, color_balance, colorization, denoise,
-    detection, face, light_adjustment, remove, sharpen, upscale,
+    Analysis, Bias, ColorBalance, Colorization, Denoise, Depth, Detection, FNumber, FOCUS_X, FOCUS_Y, FaceRecovery,
+    Faces, Fidelity, Fraction, LightAdjustment, Matting, Operation, ParameterValues, Scale, Sharpen, Strength, Upscale,
+    catalogue, color_balance, colorization, denoise, depth, detection, face, lens_blur, light_adjustment, matting,
+    remove, sharpen, upscale,
 };
 
 /// The values a front end would hand back for the controls one published row told it to draw.
@@ -41,6 +42,11 @@ pub(crate) fn published_values(variant: &catalogue::VariantEntry) -> ParameterVa
                     Strength::NAME => values.with_strength(Strength::clamped(midpoint)),
                     Bias::NAME => values.with_bias(Bias::clamped(midpoint)),
                     Fidelity::NAME => values.with_fidelity(Fidelity::clamped(midpoint)),
+                    FNumber::NAME | FOCUS_X | FOCUS_Y => {
+                        let mut values = values;
+                        values.set(parameter.name, midpoint).expect("a lens blur parameter");
+                        values
+                    }
                     other => panic!("{} publishes a range no value here is supplied for: {other}", variant.codename),
                 }
             }
@@ -155,17 +161,48 @@ pub(crate) fn every_operation() -> Vec<Operation> {
         }
     }
 
+    // Injected, as a chain hands them over, so each plans: three apertures, two focus points, and the two-plane map
+    // and lens the family's own tests use.
+    for f_number in [1.4, 2.8, 8.0] {
+        for (x, y) in [(0.5, 0.5), (0.55, 0.3)] {
+            for variant in lens_blur::variant::tests::every_variant() {
+                let blur = lens_blur::tests::injected(1.4);
+                let blur = lens_blur::LensBlur::new(
+                    variant,
+                    FNumber::new(f_number).expect("in range"),
+                    Fraction::new(x).expect("in range"),
+                    Fraction::new(y).expect("in range"),
+                )
+                .with_depth(std::sync::Arc::new(blur.depth().expect("injected").clone()))
+                .with_lens(blur.lens().expect("injected"));
+
+                operations.push(Operation::LensBlur(blur));
+            }
+        }
+    }
+
     operations
 }
 
 /// Every operation whose result is not an image, carried as [`Analysis`].
 ///
-/// [`every_operation`]'s counterpart on the other run path, and the other half of "all eight families" for the
-/// checks that need it. One family and no per-run parameter, so the spread is its published precisions.
+/// [`every_operation`]'s counterpart on the other run path, and the other half of "all eleven families" for the
+/// checks that need it. Three families and no per-run parameter, so the spread is their published precisions; a
+/// matting's trimap is injected rather than chosen, so it is spread without one.
 pub(crate) fn every_analysis() -> Vec<Analysis> {
     detection::variant::tests::every_variant()
         .into_iter()
         .map(|variant| Analysis::Detection(Detection::new(variant)))
+        .chain(
+            depth::variant::tests::every_variant()
+                .into_iter()
+                .map(|variant| Analysis::Depth(Depth::new(variant))),
+        )
+        .chain(
+            matting::variant::tests::every_variant()
+                .into_iter()
+                .map(|variant| Analysis::Matting(Matting::new(variant))),
+        )
         .collect()
 }
 

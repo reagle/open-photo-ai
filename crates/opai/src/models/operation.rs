@@ -1,11 +1,11 @@
 //! The values that carry an operation of any family, so that holding, storing, sending or dispatching on one does not
 //! mean knowing which family it is.
 //!
-//! **Two of them, one per run path.** [`Operation`] carries the seven families whose result is an image and is what
-//! [`Opai::process`](crate::Opai::process) takes; [`Analysis`] carries the one family whose result is not and is what
-//! [`Opai::execute`](crate::Opai::execute) takes. Which of the two an operation is carried in follows from the model
-//! being named — every model's constructor returns the carrier for the path it runs on — so a caller naming a model
-//! is never also asked which path it runs on and can never answer wrongly.
+//! **Two of them, one per run path.** [`Operation`] carries the eight families whose result is an image and is what
+//! [`Opai::process`](crate::Opai::process) takes; [`Analysis`] carries the two families whose result is not, and is
+//! what [`Opai::execute`](crate::Opai::execute) takes for a detection. Which of the two an operation is carried in
+//! follows from the model being named — every model's constructor returns the carrier for the path it runs on — so a
+//! caller naming a model is never also asked which path it runs on and can never answer wrongly.
 //!
 //! The split is what makes both pairings unwritable rather than refused: an upscale cannot reach `execute`, and a
 //! detection cannot be placed in a chain.
@@ -13,7 +13,7 @@
 // Neither pairing is a refusal reported at run time, which is the whole point — a system that decided this while the
 // model was already loaded would report as an error what was never a legitimate request.
 //
-// A file directly under `models/` because it belongs to no family: it is the seam over all eight. What neither
+// A file directly under `models/` because it belongs to no family: it is the seam over all nine. What neither
 // carrier is is a ninth shape. Each arm holds that family's own type, unchanged, so a family that later diverges grows
 // its own type rather than widening a shape the others share.
 
@@ -23,10 +23,13 @@ use super::artifact::{ArtifactId, Family};
 use super::color_balance::ColorBalance;
 use super::colorization::Colorization;
 use super::denoise::Denoise;
+use super::depth::{Depth, DepthMap, DepthVariant};
 use super::detection::{Detection, DetectionVariant};
 use super::face::Faces;
 use super::face_recovery::FaceRecovery;
+use super::lens_blur::LensBlur;
 use super::light_adjustment::LightAdjustment;
+use super::matting::{Matte, Matting, MattingVariant};
 use super::precision::Precision;
 use super::remove::Remove;
 use super::sharpen::Sharpen;
@@ -90,6 +93,8 @@ pub enum Operation {
     Sharpen(Sharpen),
     /// An upscale run.
     Upscale(Upscale),
+    /// A lens blur, driven by the depth of the chain's input, which a chain runs last.
+    LensBlur(LensBlur),
 }
 
 // The five methods below differ in nothing but the name of the method they call, and writing the seven arms out five
@@ -110,6 +115,7 @@ macro_rules! forward {
             Self::Colorization(operation) => operation.$question(),
             Self::Sharpen(operation) => operation.$question(),
             Self::Upscale(operation) => operation.$question(),
+            Self::LensBlur(operation) => operation.$question(),
         }
     };
 }
@@ -128,6 +134,7 @@ impl Operation {
             Self::Colorization(_) => Family::Colorization,
             Self::Sharpen(_) => Family::Sharpen,
             Self::Upscale(_) => Family::Upscale,
+            Self::LensBlur(_) => Family::LensBlur,
         }
     }
 
@@ -160,8 +167,14 @@ impl Operation {
     ///
     /// The name of the first artifact it needs, so a strength or a requested scale never reaches it and two operations
     /// differing only in one share it. An upscale whose scale selects the weights names the native scale of its first
-    /// pass. The values are the published catalogue's, never [`cache_tag`](Self::cache_tag)'s.
+    /// pass. A lens blur, which runs no graph of its own, has a name of its own (`lb_lisbon_fp16`) rather than the
+    /// depth model's, which its depth estimate is measured under. The values are the published catalogue's, never
+    /// [`cache_tag`](Self::cache_tag)'s.
     pub(crate) fn model_tag(&self) -> String {
+        if let Self::LensBlur(blur) = self {
+            return blur.model_tag();
+        }
+
         // Every operation needs at least one artifact, so the empty fallback is never reached.
         self.required_artifacts()
             .into_iter()
@@ -232,6 +245,9 @@ impl Operation {
             // One variant and one contract, and a mask that marks nothing is answered with the photograph rather than
             // refused, so there is nothing for this seam to refuse.
             Self::Remove(removal) => Ok(removal.pipeline::<B>()),
+            // Kept as a `Result` for a real guard: a lens blur runs only once a chain has handed it the depth map and
+            // the lens it is driven by, and one planned by hand without them is refused before anything is installed.
+            Self::LensBlur(blur) => blur.pipeline::<B>(),
         }
     }
 }
@@ -239,8 +255,8 @@ impl Operation {
 /// An operation of any family whose result is **not** an image, and what [`Opai::execute`](crate::Opai::execute)
 /// takes.
 ///
-/// [`Operation`]'s counterpart. [`Detection::newyork`] returns one of these;
-/// the other nineteen constructors return an [`Operation`].
+/// [`Operation`]'s counterpart. [`Detection::newyork`] returns one of these; [`Depth::lisbon`] returns the [`Depth`]
+/// this carries, because depth has an entry point of its own; the other nineteen constructors return an [`Operation`].
 ///
 /// # What it reports
 ///
@@ -262,19 +278,26 @@ impl Operation {
 /// // unsatisfied bound: what refuses it is that the two carriers are two types, with nothing converting either way.
 /// let chain: Vec<Operation> = vec![Detection::newyork(FloatPrecision::Fp32)];
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+// `Clone` rather than `Copy` since matting: its operation holds the trimap it was handed, behind an `Arc`, as a face
+// recovery holds its faces.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "family", rename_all = "snake_case")]
 pub enum Analysis {
-    // One arm, and not speculative structure: it is not here for a second family whose result is not an image. It is
-    // what lets every model's constructor return "the carrier for the path it runs on" without detection reading as an
+    // What lets every model's constructor return "the carrier for the path it runs on" without detection reading as an
     // exception: `Operation` could not be `execute`'s parameter, because one result type for seven image families is
-    // either wrong or an enum, and an `Operation` carrying an `Upscale` would reach `execute` freely. The alternatives
-    // are an eighth family that reads differently from the other seven, or a refusal reported at run time.
+    // either wrong or an enum, and an `Operation` carrying an `Upscale` would reach `execute` freely.
     //
-    // A second arm here would force `execute`'s return to become an enum the caller matches on, or force a generic
-    // bound back onto it. That cost is deferred rather than avoided.
+    // The second arm does not make `execute`'s return an enum. The data-model contract is each typed operation's own —
+    // a `Detection` produces `Faces`, a `Depth` a `DepthMap` — and the driver is generic over it, so this carrier is
+    // what names a run in progress, in the required artifacts and in the cache, while `Opai::execute` keeps returning
+    // faces and depth is run through `Opai::estimate_depth`. A depth `Analysis` reaches `execute` all the same, from
+    // `VariantEntry::build` or from a caller wrapping one, and is refused there rather than run.
     /// A face-detection run, whose result is the set of [`Faces`] found.
     Detection(Detection),
+    /// A depth-estimation run, whose result is a [`DepthMap`].
+    Depth(Depth),
+    /// A matting run, whose result is a [`Matte`].
+    Matting(Matting),
 }
 
 impl Analysis {
@@ -283,6 +306,8 @@ impl Analysis {
         // A match over the arms rather than a field, for the reason `Operation::family` gives.
         match self {
             Self::Detection(_) => Family::Detection,
+            Self::Depth(_) => Family::Depth,
+            Self::Matting(_) => Family::Matting,
         }
     }
 
@@ -290,13 +315,17 @@ impl Analysis {
     pub fn precision(&self) -> Precision {
         match self {
             Self::Detection(operation) => operation.precision(),
+            Self::Depth(operation) => operation.precision(),
+            Self::Matting(operation) => operation.precision(),
         }
     }
 
-    /// The name a user interface shows for this operation: `New York (FP32)`.
+    /// The name a user interface shows for this operation: `New York (FP32)`, `Lisbon (FP16)`, `Porto (FP32)`.
     pub fn display_name(&self) -> String {
         match self {
             Self::Detection(operation) => operation.display_name(),
+            Self::Depth(operation) => operation.display_name(),
+            Self::Matting(operation) => operation.display_name(),
         }
     }
 
@@ -304,6 +333,8 @@ impl Analysis {
     pub fn required_artifacts(&self) -> Vec<ArtifactId> {
         match self {
             Self::Detection(operation) => operation.required_artifacts(),
+            Self::Depth(operation) => operation.required_artifacts(),
+            Self::Matting(operation) => operation.required_artifacts(),
         }
     }
 
@@ -312,6 +343,8 @@ impl Analysis {
     pub fn cache_tag(&self) -> String {
         match self {
             Self::Detection(operation) => operation.cache_tag(),
+            Self::Depth(operation) => operation.cache_tag(),
+            Self::Matting(operation) => operation.cache_tag(),
         }
     }
     /// The execution-provider tuning measured for the model this operation runs: [`Operation::profile`]'s
@@ -328,6 +361,8 @@ impl Analysis {
         // configures a session with, not something a front end offers or stores.
         match self {
             Self::Detection(operation) => operation.profile(),
+            Self::Depth(operation) => operation.profile(),
+            Self::Matting(operation) => operation.profile(),
         }
     }
 }
@@ -355,11 +390,11 @@ pub(crate) mod sealed {
         // `Send + 'static` is part of the same statement: the result crosses to a blocking thread to be produced and
         // again to be written, and a type that could not make that crossing could not be produced on this path at all.
         /// What one run of this operation produces. [`Detection`](super::Detection) names
-        /// [`Faces`](super::Faces).
+        /// [`Faces`](super::Faces), and [`Depth`](super::Depth) a [`DepthMap`](super::DepthMap).
         type Output: serde::Serialize + serde::de::DeserializeOwned + Send + 'static;
 
-        // The one place the two spellings meet. The bar's label and the log's fields name a run through `Subject`, which
-        // carries an operation of either path — so a detection reports exactly as an upscale does, and neither
+        // The one place the two spellings meet. The bar's label and the log's fields name a run through `Subject`,
+        // which carries an operation of either path — so a detection reports exactly as an upscale does, and neither
         // reporting seam had to learn a second vocabulary for one idea.
         /// This operation as the value everything that reports on a run speaks.
         fn as_subject(&self) -> crate::models::Subject;
@@ -367,8 +402,12 @@ pub(crate) mod sealed {
         // A **generic** method rather than an object-safe one, unlike `Operation::pipeline`: nothing here is held as a
         // trait object, because `execute` is monomorphised per operation type, which is what makes the binding between
         // an operation and its result type a compile-time one in the first place.
-        /// The pipeline this operation runs — the family's contract seam, and the whole of what the execute driver
-        /// knows about models.
+        //
+        // Told the picture's dimensions, unlike an image pipeline, because one model chooses its graph by them: Lisbon
+        // has one graph per orientation and opens only the one a photograph needs, and which sessions to open is asked
+        // of the pipeline before it runs. Detection ignores them.
+        /// The pipeline this operation runs over a picture of `dimensions` — the family's contract seam, and the whole
+        /// of what the execute driver knows about models.
         ///
         /// # Errors
         ///
@@ -378,7 +417,13 @@ pub(crate) mod sealed {
             private_interfaces,
             reason = "the seal is the point: this method speaks the crate-private `pipeline` vocabulary and is unreachable outside it"
         )]
-        fn pipeline<B: Backend>(&self) -> Result<SharedData<B, Self::Output>, InferenceError>;
+        fn pipeline<B: Backend>(&self, dimensions: (u32, u32)) -> Result<SharedData<B, Self::Output>, InferenceError>;
+
+        /// The provider this operation is run on when `requested` is asked for: `requested`, but for a model a
+        /// provider is known to be unable to compile, which is moved off it before anything is opened.
+        fn provider(&self, requested: crate::providers::ExecutionProvider) -> crate::providers::ExecutionProvider {
+            requested
+        }
     }
 }
 
@@ -399,20 +444,21 @@ pub(crate) mod sealed {
 /// only_data(&Upscale::kyoto(FloatPrecision::Fp32, Scale::new(4.0).unwrap()));
 /// ```
 ///
-/// [`Analysis`] is the only implementor, with `Output = `[`Faces`].
+/// Three implementors: [`Detection`] (`Output = `[`Faces`]), [`Depth`] (`Output = `[`DepthMap`]), and [`Analysis`],
+/// whose `Output` is [`Faces`] for [`Opai::execute`](crate::Opai::execute)'s sake.
 ///
 /// It renders in rustdoc with a supertrait from a private module and no visible methods. What an implementing type
 /// provides is: the result type a run of it produces, the [`Subject`](crate::Subject) it is reported as, and the
 /// pipeline that runs it.
 //
-// The implementor is the carrier rather than `Detection` itself, which is what makes `execute`'s parameter one type
-// per path rather than one type per family. The rustdoc rendering is the cost of not making the whole inference seam
-// public to avoid the seal.
+// The typed operations implement it, each naming its own result, and the carrier implements it for detection's sake:
+// `Opai::execute` takes an `Analysis` and returns faces, and that signature predates depth. The rustdoc rendering is
+// the cost of not making the whole inference seam public to avoid the seal.
 pub trait DataOperation: sealed::DataModel {}
 
 impl<T: sealed::DataModel> DataOperation for T {}
 
-// The lint fires on every method of this impl, and both spellings of the seal fire it: a sealed trait whose methods
+// The lint fires on every method of these impls, and both spellings of the seal fire it: a sealed trait whose methods
 // speak this crate's own inference vocabulary — `Backend`, `SharedData` — puts `pub(crate)` types into a trait rustc
 // computes as reachable at `pub`, because `Detection` is public and the trait is a `pub` item inside a `pub(crate)`
 // module. Collapsing the two traits into one moves the same warning onto `DataOperation`'s supertrait bound rather
@@ -426,25 +472,104 @@ impl<T: sealed::DataModel> DataOperation for T {}
     private_interfaces,
     reason = "the seal is the point: these methods speak the crate-private `pipeline` vocabulary and are unreachable outside it"
 )]
+impl sealed::DataModel for Detection {
+    /// A set of faces — the [`DetectionOutput`](super::face::DetectionOutput).
+    type Output = Faces;
+
+    fn as_subject(&self) -> crate::models::Subject {
+        crate::models::Subject::Analysis(Analysis::Detection(*self))
+    }
+
+    /// The family's model, through the family's one contract.
+    fn pipeline<B: Backend>(&self, _dimensions: (u32, u32)) -> Result<SharedData<B, Self::Output>, InferenceError> {
+        // The counterpart of `Operation::pipeline`'s upscale arm: the family's match names the pipeline. A second
+        // detection model is one arm here and a directory of its own.
+        match self.variant() {
+            DetectionVariant::NewYork(_) => Ok(super::detection::newyork::pipeline::<B>(*self)),
+        }
+    }
+}
+
+#[expect(
+    private_bounds,
+    private_interfaces,
+    reason = "the seal is the point: these methods speak the crate-private `pipeline` vocabulary and are unreachable outside it"
+)]
+impl sealed::DataModel for Depth {
+    /// The distance of every pixel from the camera.
+    type Output = DepthMap;
+
+    fn as_subject(&self) -> crate::models::Subject {
+        crate::models::Subject::Analysis(Analysis::Depth(*self))
+    }
+
+    /// The family's model, at the graph the picture's orientation needs.
+    fn pipeline<B: Backend>(&self, dimensions: (u32, u32)) -> Result<SharedData<B, Self::Output>, InferenceError> {
+        match self.variant() {
+            DepthVariant::Lisbon(_) => Ok(super::depth::lisbon::pipeline::<B>(*self, dimensions)),
+        }
+    }
+}
+
+#[expect(
+    private_bounds,
+    private_interfaces,
+    reason = "the seal is the point: these methods speak the crate-private `pipeline` vocabulary and are unreachable outside it"
+)]
+impl sealed::DataModel for Matting {
+    /// How much of each pixel the subject covers.
+    type Output = Matte;
+
+    fn as_subject(&self) -> crate::models::Subject {
+        crate::models::Subject::Analysis(Analysis::Matting(self.clone()))
+    }
+
+    /// The family's model over the trimap it was handed, or a refusal where Porto was handed none; Bilbao takes none.
+    fn pipeline<B: Backend>(&self, _dimensions: (u32, u32)) -> Result<SharedData<B, Self::Output>, InferenceError> {
+        match self.variant() {
+            MattingVariant::Porto(_) => super::matting::porto::pipeline::<B>(self),
+            MattingVariant::Bilbao(_) => Ok(super::matting::bilbao::pipeline::<B>(self)),
+        }
+    }
+
+    /// Bilbao on the CPU wherever Core ML would be asked for: see `bilbao::provider`.
+    fn provider(&self, requested: crate::providers::ExecutionProvider) -> crate::providers::ExecutionProvider {
+        match self.variant() {
+            MattingVariant::Porto(_) => requested,
+            MattingVariant::Bilbao(_) => super::matting::bilbao::provider(requested),
+        }
+    }
+}
+
+#[expect(
+    private_bounds,
+    private_interfaces,
+    reason = "the seal is the point: these methods speak the crate-private `pipeline` vocabulary, unreachable outside"
+)]
 impl sealed::DataModel for Analysis {
-    // One arm, so one concrete type. A second arm is what would force this to become an enum — see `Analysis`.
-    /// A set of faces — the [`DetectionOutput`](super::face::DetectionOutput) of the one family this carrier holds —
+    // Faces whichever arm is carried, because this impl exists for `Opai::execute`, whose result has always been a set
+    // of faces. A depth run has its own entry point and reaches the driver through `Depth`'s impl above, never this
+    // one.
+    /// A set of faces — the [`DetectionOutput`](super::face::DetectionOutput) of the detection this carrier holds —
     /// so a caller's `execute` result is a [`Faces`] with nothing to state and nothing to unwrap.
     type Output = Faces;
 
     fn as_subject(&self) -> crate::models::Subject {
-        crate::models::Subject::Analysis(*self)
+        crate::models::Subject::Analysis(self.clone())
     }
 
-    /// The family's model, through the family's one contract.
-    fn pipeline<B: Backend>(&self) -> Result<SharedData<B, Self::Output>, InferenceError> {
-        // The counterpart of `Operation::pipeline`'s upscale arm, at one remove: this carrier's arm hands to the
-        // family, and the family's match names the pipeline. A second detection model is one arm in that inner match
-        // and a directory of its own, and the outer match over the carrier does not change.
+    /// The detection's pipeline, or a refusal for a depth estimate handed to the entry point that returns faces.
+    fn pipeline<B: Backend>(&self, dimensions: (u32, u32)) -> Result<SharedData<B, Self::Output>, InferenceError> {
         match self {
-            Self::Detection(detection) => match detection.variant() {
-                DetectionVariant::NewYork(_) => Ok(super::detection::newyork::pipeline::<B>(*detection)),
-            },
+            Self::Detection(detection) => sealed::DataModel::pipeline::<B>(detection, dimensions),
+            Self::Depth(depth) => Err(InferenceError::Unsupported {
+                operation: depth.display_name(),
+                reason: crate::error::UnsupportedReason::OtherResult { produces: "a depth map" },
+            }),
+            Self::Matting(matting) => Err(InferenceError::Unsupported {
+                operation: matting.display_name(),
+                reason: crate::error::UnsupportedReason::OtherResult { produces: "a matte" },
+            }),
         }
     }
 }
@@ -487,6 +612,35 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_depth_estimate_produces_a_depth_map_and_is_refused_by_the_entry_point_that_returns_faces() {
+        // D4: the contract is the typed operation's own, so depth names its map; the carrier keeps faces for
+        // `Opai::execute`, and a depth estimate wrapped into it by hand is refused rather than run.
+        fn map_of<O: DataOperation<Output = DepthMap>>(_operation: &O) {}
+        map_of(&Depth::lisbon());
+
+        for dimensions in [(640, 480), (480, 640)] {
+            assert!(sealed::DataModel::pipeline::<NoBackend>(&Depth::lisbon(), dimensions).is_ok());
+        }
+
+        let wrapped = Analysis::Depth(Depth::lisbon());
+        let Err(InferenceError::Unsupported { operation, reason }) =
+            sealed::DataModel::pipeline::<NoBackend>(&wrapped, (640, 480))
+        else {
+            panic!("a depth estimate reached the entry point that returns faces");
+        };
+        assert_eq!(operation, "Lisbon (FP16)");
+        assert_eq!(reason, crate::error::UnsupportedReason::OtherResult { produces: "a depth map" });
+
+        // Reported as the analysis it is, whichever value it is asked of.
+        assert_eq!(
+            sealed::DataModel::as_subject(&Depth::lisbon()),
+            crate::models::Subject::Analysis(wrapped.clone())
+        );
+        assert_eq!(wrapped.family(), Family::Depth);
+        assert_eq!(wrapped.cache_tag(), "dp-lisbon-fp16");
+    }
+
+    #[test]
     fn naming_a_model_decides_which_path_it_runs_on() {
         // The requirement `data-inference` states as "naming a model decides its path". A caller names New York and
         // gets the carrier `execute` takes; it names Kyoto and gets the carrier `process` takes. There is no third
@@ -506,7 +660,7 @@ pub(crate) mod tests {
         // `Subject`, so the driver needs this and must get the value carrying the very operation it was handed.
         let detection = Detection::newyork(FloatPrecision::Fp16);
 
-        assert_eq!(sealed::DataModel::as_subject(&detection), crate::models::Subject::Analysis(detection));
+        assert_eq!(sealed::DataModel::as_subject(&detection), crate::models::Subject::Analysis(detection.clone()));
         assert_eq!(sealed::DataModel::as_subject(&detection).cache_tag(), detection.cache_tag());
     }
 
@@ -547,9 +701,10 @@ pub(crate) mod tests {
 
     #[test]
     fn one_rio_session_serves_every_bias() {
-        // The `color-balance` spec's own scenario, at the seam that would break it: the bias is applied after everything the model
-        // contributed, so dragging a control through a range of values must reach one artifact under one profile.
-        // A pipeline that had folded the bias into the model's identity would reload the weights per drag frame.
+        // The `color-balance` spec's own scenario, at the seam that would break it: the bias is applied after
+        // everything the model contributed, so dragging a control through a range of values must reach one artifact
+        // under one profile. A pipeline that had folded the bias into the model's identity would reload the weights per
+        // drag frame.
         let artifacts: std::collections::BTreeSet<String> = [-1.0, -0.25, 0.0, 0.5, 1.0]
             .into_iter()
             .map(|value| {
@@ -574,9 +729,10 @@ pub(crate) mod tests {
     #[test]
     fn a_chain_can_carry_no_operation_that_produces_something_other_than_an_image() {
         // A chain is a `[Operation]`, and the one family whose result is not an image is carried in `Analysis`, so
-        // there is nothing to put in a chain and no refusal for `plan` to report. The statement the compiler makes is `plan`'s parameter type; what is left
-        // to check here is that nothing the carrier *can* hold produces anything but a picture — a family added to
-        // `Operation` whose result was not an image would have to fail somewhere, and this is where.
+        // there is nothing to put in a chain and no refusal for `plan` to report. The statement the compiler makes is
+        // `plan`'s parameter type; what is left to check here is that nothing the carrier *can* hold produces anything
+        // but a picture — a family added to `Operation` whose result was not an image would have to fail somewhere, and
+        // this is where.
         //
         // Asked of the whole spread rather than of one arm, so an eighth image family is covered by existing.
         for operation in every_operation() {
@@ -594,10 +750,10 @@ pub(crate) mod tests {
         Fidelity::new(Fidelity::MAX).expect("the maximum is in range")
     }
 
-    /// One operation of each of the eight families this carrier holds, paired with the family it belongs to.
+    /// One operation of each of the nine families this carrier holds, paired with the family it belongs to.
     ///
-    /// Eight rather than nine: detection is carried in [`Analysis`], and the tests that need all eight say so by
-    /// reaching across both carriers — see `every_family_can_be_carried_by_the_carrier_for_its_own_path`.
+    /// Nine rather than twelve: detection, depth and matting are carried in [`Analysis`], and the tests that need all
+    /// twelve say so by reaching across both carriers — see `every_family_can_be_carried_by_the_carrier_for_its_own_path`.
     fn one_of_each() -> Vec<(Operation, Family)> {
         let strength = Strength::new(0.5).expect("the test supplied a strength in range");
         let bias = Bias::new(-0.5).expect("the test supplied a bias in range");
@@ -633,6 +789,7 @@ pub(crate) mod tests {
                 Family::Upscale,
             ),
             (super::super::remove::Remove::lima(super::super::remove::tests::dot(0.5, 0.5)), Family::Remove),
+            (Operation::LensBlur(crate::models::lens_blur::tests::injected(1.4)), Family::LensBlur),
         ]
     }
 
@@ -642,14 +799,13 @@ pub(crate) mod tests {
             assert_eq!(operation.family(), family, "{operation:?} reported a family it does not belong to");
         }
 
-        // Every family, and each of them once, **across both carriers**: the seven whose result is an image and the
-        // one whose result is not. A list that had drifted or repeated an arm would pass the per-operation check
+        // Every family, and each of them once, **across both carriers**: the eight whose result is an image and the
+        // two whose result is not. A list that had drifted or repeated an arm would pass the per-operation check
         // above and still leave a family uncarried.
-        let mut carried: Vec<Family> = one_of_each()
-            .iter()
-            .map(|(operation, _)| operation.family())
-            .chain(every_analysis().iter().map(Analysis::family).take(1))
-            .collect();
+        let mut analysed: Vec<Family> = every_analysis().iter().map(Analysis::family).collect();
+        analysed.dedup();
+        let mut carried: Vec<Family> =
+            one_of_each().iter().map(|(operation, _)| operation.family()).chain(analysed).collect();
         let mut declared = Family::ALL.to_vec();
         carried.sort_unstable_by_key(|family| format!("{family:?}"));
         declared.sort_unstable_by_key(|family| format!("{family:?}"));
@@ -675,6 +831,7 @@ pub(crate) mod tests {
         let colorization = Colorization::new(ColorizationVariant::Delhi(FloatPrecision::Fp32));
         let sharpen = Sharpen::new(SharpenVariant::Moscow(FloatPrecision::Fp32), strength);
         let upscale = Upscale::new(UpscaleVariant::Osaka(OsakaPrecision::Int8), scale);
+        let blur = crate::models::lens_blur::tests::injected(1.4);
 
         macro_rules! forwards {
             ($operation:expr, $arm:expr) => {{
@@ -699,6 +856,7 @@ pub(crate) mod tests {
         forwards!(colorization, Operation::Colorization(colorization));
         forwards!(sharpen, Operation::Sharpen(sharpen));
         forwards!(upscale, Operation::Upscale(upscale));
+        forwards!(blur, Operation::LensBlur(blur.clone()));
     }
 
     #[test]
@@ -713,6 +871,12 @@ pub(crate) mod tests {
                 "{operation:?} reported the cache tag {} under another family's prefix",
                 operation.cache_tag()
             );
+
+            // A lens blur runs no graph of its own: what it needs on disk is the depth model it is driven by.
+            let prefix = match operation.family() {
+                Family::LensBlur => Family::Depth.prefix(),
+                _ => prefix,
+            };
 
             for artifact in operation.required_artifacts() {
                 assert!(
@@ -759,6 +923,17 @@ pub(crate) mod tests {
         operations.push(FaceRecovery::athens(FloatPrecision::Fp16, faces, fidelity()));
 
         for operation in operations {
+            // What a chain injects is skipped: a lens blur carries its parameters across, and the chain it runs in
+            // hands it its depth and lens again. So it round-trips to the blur as it was before the injection.
+            let operation = match operation {
+                Operation::LensBlur(blur) => Operation::LensBlur(crate::models::lens_blur::LensBlur::new(
+                    blur.variant(),
+                    blur.f_number(),
+                    blur.focus().0,
+                    blur.focus().1,
+                )),
+                other => other,
+            };
             let json = serde_json::to_string(&operation).expect("an operation serializes");
             let back: Operation = serde_json::from_str(&json).expect("an operation deserializes");
 
@@ -882,7 +1057,7 @@ pub(crate) mod tests {
             }
         }
 
-        assert_eq!(families.len(), 9, "the spread did not reach all nine families: {families:?}");
+        assert_eq!(families.len(), 12, "the spread did not reach all twelve families: {families:?}");
     }
 
     #[test]
@@ -941,8 +1116,9 @@ pub(crate) mod tests {
 
         // New York is measured at **both** precisions, unlike every upscale arm below — which is the whole of what
         // makes it a traversal of its own carrier rather than an arm in the one below. See `DetectionVariant::profile`
-        // for why the layout is declared at FP32 as well as FP16.
-        for analysis in every_analysis() {
+        // for why the layout is declared at FP32 as well as FP16. Porto, at FP32 alone, runs on the provider defaults,
+        // which its measurement settled (see `porto::profile`).
+        for analysis in every_analysis().into_iter().filter(|analysis| analysis.family() != Family::Matting) {
             assert_ne!(
                 analysis.profile(),
                 EpProfile::default(),
@@ -1015,6 +1191,8 @@ pub(crate) mod tests {
                 // All three at FP16 only, ported from the reference. Delhi's is the reference's declaration beside
                 // Mumbai's rather than a measurement of its own graph; see `delhi`.
                 Operation::Colorization(colorization) => colorization.precision() == Precision::Fp16,
+                // The depth model's, whose graphs are what it requires: the blur itself opens no session.
+                Operation::LensBlur(_) => true,
             };
 
             if measured_arm {

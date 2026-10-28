@@ -102,6 +102,8 @@ pub fn format_list(paths: &[&Path]) -> String {
 fn family_name(family: Family) -> &'static str {
     match family {
         Family::Detection => "detection",
+        Family::Depth => "depth",
+        Family::Matting => "matting",
         Family::Remove => "remove",
         Family::Denoise => "denoise",
         Family::FaceRecovery => "face_recovery",
@@ -110,6 +112,7 @@ fn family_name(family: Family) -> &'static str {
         Family::ColorBalance => "color_balance",
         Family::Sharpen => "sharpen",
         Family::Upscale => "upscale",
+        Family::LensBlur => "lens_blur",
     }
 }
 
@@ -198,6 +201,7 @@ mod tests {
             Family::Colorization,
             Family::Sharpen,
             Family::Upscale,
+            Family::LensBlur,
             Family::Remove,
         ]
         .map(family_name)
@@ -215,6 +219,7 @@ mod tests {
                 "colorization",
                 "sharpen",
                 "upscale",
+                "lens_blur",
                 "remove"
             ]
         );

@@ -1,8 +1,8 @@
 //! Values filled in where a weight says they are unknown, from the known values around them, by a push-pull pyramid.
 //!
-//! The caller here is Remove's gain-map rewrite (`models::remove`): the gain an Ultra HDR JPEG records under a removed
-//! object, filled from the gain around it, so the removed object's highlights are not lifted over its fill. (On the
-//! lens-blur line the same fill gives the background behind a matted subject.)
+//! The first caller is the lens blur's matte (`models::lens_blur`): the background behind a matted subject, its colour
+//! and its depth, as if the subject were not there, so that the render blurs the background without the subject in
+//! it and the subject is composited over the result.
 
 // Push-pull (Gortler, Grzeszczuk, Szeliski and Cohen, "The Lumigraph", 1996): down a pyramid of weighted means, each
 // level the 2x2 box reduction of the weighted values and of the weights, then back up, each level's pixel taking its
@@ -11,7 +11,8 @@
 // no seams and no diffusion to converge.
 //
 // The reductions are `boxes`', whose blocks along the right and bottom edges are as wide as what is left, so a hole at
-// the frame's edge fills like any other; the enlargement is the align-centres bilinear read at exactly two. The pyramid goes down to one pixel: a hole is filled from the nearest
+// the frame's edge fills like any other; the enlargement is the align-centres bilinear read at exactly two, as the
+// defocus render enlarges its reduced layers. The pyramid goes down to one pixel: a hole is filled from the nearest
 // level that has a weight above 0 under it, and a block's weight is the mean of its pixels' weights, so no level has
 // every weight at 1 while a hole is left in the finest.
 //
@@ -21,7 +22,7 @@
 // that is then blurred; not an inpainting.
 
 use crate::bilinear::Axis;
-use crate::boxes::{reduced, reduced_with};
+use crate::boxes::{box_mean, reduced, reduced_with};
 use crate::plane::Plane;
 use crate::rows::for_each_row;
 
@@ -56,6 +57,121 @@ pub fn filled(values: &[f32], channels: usize, width: u32, height: u32, weight: 
         4 => pushed_pulled::<4, 5>(values, columns, rows, weight.as_slice()),
         _ => panic!("{channels} channels: the fill takes 1 to 4"),
     }
+}
+
+/// `values` as [`filled`] takes them, filled in where `weight` is under 1 with the values of the nearest pixel whose
+/// weight is a half or more, smoothed over the known pixels within `smoothing` of it.
+///
+/// Push-pull draws a wide hole's fill towards the means of wider surroundings; behind a thick branch over a dark
+/// street with pale tiles below, its fill came out grey, and a blur spread that grey out past the branch's edge as a
+/// light halo. The nearest known value continues what lies just outside each edge, so near an edge the fill is the
+/// background beside it. Where nothing is known, the fill is [`filled`]'s.
+///
+/// # Panics
+///
+/// As [`filled`].
+pub fn nearest_filled(
+    values: &[f32],
+    channels: usize,
+    width: u32,
+    height: u32,
+    weight: &Plane,
+    smoothing: u32,
+) -> Vec<f32> {
+    let (columns, rows) = (width as usize, height as usize);
+    assert_eq!(
+        values.len(),
+        channels * columns * rows,
+        "the values are not {channels} for each of {width}x{height}"
+    );
+    assert_eq!((weight.width(), weight.height()), (width, height), "the weight plane is not the values' size");
+
+    let weight = weight.as_slice();
+    let seed = |index: usize| known(weight[index]) >= 0.5;
+    if !(0..weight.len()).any(seed) {
+        return filled(
+            values,
+            channels,
+            width,
+            height,
+            &Plane::from_vec(width, height, weight.to_vec()).expect("a plane"),
+        );
+    }
+
+    let nearest = nearest_seeds(columns, rows, seed);
+
+    // The known values smoothed over the known alone, so a seed's noise is not drawn out in streaks across a hole.
+    let mask: Vec<f32> = (0..weight.len()).map(|index| f32::from(u8::from(seed(index)))).collect();
+    let weighted: Vec<f32> = values
+        .iter()
+        .enumerate()
+        .map(|(i, v)| if mask[i / channels] > 0.0 { *v } else { 0.0 })
+        .collect();
+    let (sums, counts) = (
+        box_mean(&weighted, channels, columns, rows, smoothing as usize),
+        box_mean(&mask, 1, columns, rows, smoothing as usize),
+    );
+
+    let mut out = vec![0.0_f32; values.len()];
+    for_each_row(&mut out, channels * columns, rows, |y, out| {
+        for (x, value) in out.chunks_exact_mut(channels).enumerate() {
+            let pixel = y * columns + x;
+            let own = known(weight[pixel]);
+            let from = nearest[pixel] as usize;
+            for (channel, value) in value.iter_mut().enumerate() {
+                let fill = sums[channels * from + channel] / counts[from].max(f32::MIN_POSITIVE);
+                *value = if own >= 1.0 {
+                    values[channels * pixel + channel]
+                } else {
+                    own * values[channels * pixel + channel] + (1.0 - own) * fill
+                };
+            }
+        }
+    });
+    out
+}
+
+/// For every pixel of a `columns` x `rows` grid, the index of the nearest pixel `seed` says is one, by two passes of
+/// the eight neighbours' nearest (an approximate Euclidean distance transform, exact but for rare ties far from any
+/// seed). At least one pixel must be a seed.
+fn nearest_seeds(columns: usize, rows: usize, seed: impl Fn(usize) -> bool) -> Vec<u32> {
+    const NONE: u32 = u32::MAX;
+    let mut nearest: Vec<u32> =
+        (0..columns * rows).map(|index| if seed(index) { index as u32 } else { NONE }).collect();
+    let distance = |from: u32, x: usize, y: usize| {
+        let (fx, fy) = ((from as usize % columns) as i64, (from as usize / columns) as i64);
+        (fx - x as i64).pow(2) + (fy - y as i64).pow(2)
+    };
+    let visit = |nearest: &mut Vec<u32>, x: usize, y: usize, neighbours: &[(isize, isize)]| {
+        let index = y * columns + x;
+        let mut best = nearest[index];
+        let mut best_distance = if best == NONE { i64::MAX } else { distance(best, x, y) };
+        for &(dx, dy) in neighbours {
+            let (nx, ny) = (x as isize + dx, y as isize + dy);
+            if nx < 0 || ny < 0 || nx >= columns as isize || ny >= rows as isize {
+                continue;
+            }
+            let candidate = nearest[ny as usize * columns + nx as usize];
+            if candidate != NONE {
+                let d = distance(candidate, x, y);
+                if d < best_distance {
+                    (best, best_distance) = (candidate, d);
+                }
+            }
+        }
+        nearest[index] = best;
+    };
+    for y in 0..rows {
+        for x in 0..columns {
+            visit(&mut nearest, x, y, &[(-1, 0), (-1, -1), (0, -1), (1, -1)]);
+        }
+    }
+    for y in (0..rows).rev() {
+        for x in (0..columns).rev() {
+            visit(&mut nearest, x, y, &[(1, 0), (1, 1), (0, 1), (-1, 1)]);
+        }
+    }
+    nearest
 }
 
 /// A weight as the fill reads it: in `[0, 1]`, and 0 where it is not a number.
@@ -172,8 +288,8 @@ fn pulled<const C: usize, const N: usize>(
     coarse_height: usize,
     own: impl Fn(usize, usize) -> ([f32; C], f32) + Sync,
 ) -> Vec<f32> {
-    // Over twice the coarse extent and only the first `width` entries read: an odd side's last coarse pixel stands for
-    // one pixel, not two.
+    // Over twice the coarse extent and only the first `width` entries read, as `guided::upsampled` does and for its
+    // reason: an odd side's last coarse pixel stands for one pixel, not two.
     let across = Axis::new(coarse_width as u32, 2 * coarse_width as u32);
     let down = Axis::new(coarse_height as u32, 2 * coarse_height as u32);
 
@@ -322,5 +438,30 @@ mod tests {
 
         assert_eq!(filled(&values, 1, 12, 5, &Plane::new(12, 5, 1.0)), values);
         assert_eq!(filled(&[], 3, 0, 0, &Plane::new(0, 0, 0.0)), Vec::<f32>::new());
+    }
+
+    #[test]
+    fn the_nearest_fill_continues_the_background_beside_each_edge_and_not_a_brighter_one_further_off() {
+        // A 100 px hole (a branch) over a dark street, the column right of it at 0.1, with pale tiles at 0.9 below the
+        // street; push-pull draws the hole's fill towards the tiles, the nearest fill keeps the street beside the edge.
+        let (width, height) = (300, 300);
+        let weight = holed(width, height, 100, 0, 100);
+        let values: Vec<f32> = (0..width * height).map(|index| if index / width < 150 { 0.1 } else { 0.9 }).collect();
+
+        let nearest = nearest_filled(&values, 1, width, height, &weight, 2);
+        let pyramid = filled(&values, 1, width, height, &weight);
+
+        let at = |x: u32, y: u32| (y * width + x) as usize;
+        assert!(
+            (nearest[at(195, 20)] - 0.1).abs() < 1e-5,
+            "beside the edge, the street: {}",
+            nearest[at(195, 20)]
+        );
+        assert!(
+            pyramid[at(195, 20)] > 0.11,
+            "push-pull is drawn towards the tiles there: {}",
+            pyramid[at(195, 20)]
+        );
+        assert_eq!(nearest[at(20, 20)], 0.1, "a known value is its own");
     }
 }

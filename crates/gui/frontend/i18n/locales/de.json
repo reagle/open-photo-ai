@@ -395,6 +395,20 @@
                 "osaka": "Verwenden Sie dieses Modell, wenn Sie die bestmögliche Hochskalierungsqualität wollen. Es baut Details neu auf, statt sie nur nachzuschärfen, und geht bei weichen oder stark komprimierten Fotos am weitesten. Es ist allerdings langsam und braucht eine leistungsstarke GPU, um gut zu laufen."
             }
         },
+        "lensBlur": {
+            "name": "Objektivunschärfe",
+            "models": {
+                "lisbon": "Verwenden Sie dieses Modell, um ein Foto so unscharf zu machen, wie es ein weiter geöffnetes Objektiv täte, während der von Ihnen gewählte Punkt scharf bleibt. Es schätzt dafür die Entfernung aller Bildteile (MoGe-2 ViT-B, 324 MB). Bei der ersten Verwendung wird das Modell für Ihren Prozessor kompiliert, was auf einem Mac etwa eine Minute dauert."
+            },
+            "blurAmount": "Unschärfe",
+            "readout": "≈ f/{{real}} (f/{{equivalent}} Kleinbild)",
+            "readoutEquivalent": "≈ f/{{equivalent}} Kleinbildäquivalent",
+            "asTaken": "Wie aufgenommen",
+            "assumed": "Dieses Foto enthält keine Objektivinformationen; f/{{f}} angenommen",
+            "cannotBlurMore": "Dieses Foto wurde mit f/{{f}} (Kleinbildäquivalent) aufgenommen, so offen wie der Effekt reicht; es lässt sich nicht weiter verwischen.",
+            "setFocus": "Fokus setzen",
+            "focusHint": "Klicken Sie auf die Stelle des Fotos, die scharf sein soll. Esc zum Abbrechen."
+        },
         "add": "Hinzufügen",
         "remove": "Verbesserung entfernen",
         "modelSelector": "KI-Modell",
@@ -418,7 +432,8 @@
             "button": "Gesichter auswählen ({{count}})"
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
-        "infoScale": "{{name}}, {{scale}}x, {{quality}}"
+        "infoScale": "{{name}}, {{scale}}x, {{quality}}",
+        "infoLensBlur": "{{name}}, Unschärfe {{amount}}"
     },
     "preview": {
         "empty": {
@@ -440,6 +455,7 @@
             "colorBalance": "Farbbalance",
             "upscale": "Hochskalieren",
             "sharpen": "Schärfen",
+            "lensBlur": "Unschärfe",
             "enhancing": "Wird verbessert"
         }
     },
@@ -457,6 +473,7 @@
         "autopilotFailed": "Etwas ist schiefgelaufen. Der Autopilot konnte nicht ausgeführt werden.",
         "enhanceFailed": "Etwas ist schiefgelaufen. Das Bild konnte nicht verbessert werden.",
         "faceDetectFailed": "Etwas ist schiefgelaufen. Gesichter konnten nicht erkannt werden.",
+        "matteFailed": "Etwas ist schiefgelaufen. Das Motiv konnte nicht freigestellt werden, daher nutzt die Objektivunschärfe nur die Tiefe.",
         "showLogsFailed": "Die Protokolldatei konnte nicht geöffnet werden. Sie befindet sich im Konfigurationsordner der App.",
         "revealFailed": "Der Dateimanager konnte nicht geöffnet werden. Die Datei liegt weiterhin am Exportort.",
         "revealFileFailed": "Der Dateimanager konnte nicht geöffnet werden.",

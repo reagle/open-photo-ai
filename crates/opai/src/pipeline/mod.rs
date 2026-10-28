@@ -121,14 +121,14 @@ pub(crate) trait ImagePipeline<B: Backend>: Model<B> {
         cancelled: &dyn Fn() -> bool,
     ) -> Result<DynamicImage, InferenceError>;
 
-    // A gain map is the one thing a picture carries that a step can make untrue by changing what the photograph shows.
-    // Every step but a removal leaves it as it is, which is why both methods have a default: the chain keeps the
+    // A gain map is the one thing a picture carries that a step can make untrue by moving light around the frame. Every
+    // step but the lens blur and a removal leaves it as it is, which is why both methods have a default: the chain keeps the
     // picture's gain map, shared, across a step that answers `false` here.
     //
-    // One call for the pixels and the gain map rather than a second method called after `run`: a removal's rewrite
-    // uses the regions and distances its colour paste computed, and only inside one call can it reuse them without
-    // holding a copy on the shared pipeline between calls, and give the rewrite its own share of the bar. (The
-    // lens-blur line adds the same two methods, of the same shape, for its blur.)
+    // One call for the pixels and the gain map rather than a second method called after `run`: the lens blur's rewrite
+    // needs what its render computed — the radii from a full-resolution guided filter, the photograph in linear light
+    // and, for a gain map of the photograph's size, the blurred SDR itself — and only inside one call can it reuse them
+    // without holding a copy on the shared pipeline between calls, and give the rewrite its own share of the bar.
 
     /// Whether this step changes `gain_map` when it runs, rewriting it or dropping it: the question the run cache asks
     /// of a step it serves, whose stored result is only whole with what became of the gain map stored beside it.
