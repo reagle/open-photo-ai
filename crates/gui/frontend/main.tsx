@@ -19,6 +19,7 @@ import { mirrorAnalytics } from "@/lib/analytics";
 import { suppressContextMenu } from "@/lib/contextMenu";
 import { startFaro } from "@/lib/faro";
 import { mirrorGuiSettings } from "@/lib/guiSettings";
+import { watchRecent } from "@/lib/recent";
 import { report } from "@/lib/report";
 import { watchUnhandled } from "@/lib/unhandled";
 import { useSettingsStore } from "@/stores/settings";
@@ -48,6 +49,10 @@ mirrorAnalytics();
 // Beside it, for the same reasons: the preferences the command line can follow are published from the
 // store, at boot and on every Save that changes one. Never unsubscribed.
 mirrorGuiSettings();
+
+// Before the app mounts, so no photograph enters the gallery unnoted - a file handed over at launch included - and
+// the Open Recent list is filled from Rust's. Never unsubscribed.
+watchRecent();
 
 // Before the app mounts too, so a failure in the first render's own effects is recorded. Never removed,
 // for the same reason.

@@ -21,6 +21,10 @@ vi.mock("@/ipc/menu", () => ({
     onMenuItem: vi.fn(() => Promise.resolve(() => {})),
 }));
 vi.mock("@/ipc/setup", () => ({ quit: vi.fn(() => Promise.resolve()) }));
+// The recent images' wire is pinned by `ipc/recent.test.ts`, and opening one by `lib/recent.test.ts`; here, that a
+// menu entry reaches it.
+vi.mock("@/ipc/recent", () => ({ onOpenRecent: vi.fn(() => Promise.resolve(() => {})) }));
+vi.mock("@/lib/recent", () => ({ openRecent: vi.fn(() => Promise.resolve()) }));
 vi.mock("@/ipc/images", async (original) => ({
     ...(await original<typeof import("@/ipc/images")>()),
     openImages: vi.fn(() => Promise.resolve<ImageRecord[]>([])),
@@ -33,6 +37,8 @@ vi.mock("@/ipc/enhance", async (importOriginal) => ({
 }));
 
 const { openImages } = await import("@/ipc/images");
+const { onOpenRecent } = await import("@/ipc/recent");
+const { openRecent } = await import("@/lib/recent");
 const picker = openImages as Mock;
 
 /** Presses a key at `target`, bubbling to the window, and answers the dispatched event. */
@@ -69,6 +75,8 @@ beforeEach(() => {
     vi.mocked(onMenuItem).mockClear();
     vi.mocked(configureMenu).mockClear();
     vi.mocked(quit).mockClear();
+    vi.mocked(onOpenRecent).mockClear();
+    vi.mocked(openRecent).mockClear();
     picker.mockClear();
     resetFileStore();
     openFiles(HOLIDAY, SUNSET);
@@ -199,6 +207,7 @@ describe.each([
 
         expect(configureMenu).not.toHaveBeenCalled();
         expect(onMenuItem).not.toHaveBeenCalled();
+        expect(onOpenRecent).not.toHaveBeenCalled();
     });
 });
 
@@ -249,6 +258,19 @@ describe("useAppActions from the macOS menu", () => {
 
         choose("closeAll");
         expect(paths()).toEqual([]);
+    });
+
+    it("opens an Open Recent entry by the path it carries, and not under an open dialog", () => {
+        mount();
+        const chooseRecent = (path: unknown) => act(() => vi.mocked(onOpenRecent).mock.calls.at(-1)?.[0](path));
+
+        chooseRecent("/photos/beach.jpg");
+        chooseRecent(3);
+        expect(openRecent).toHaveBeenCalledExactlyOnceWith("/photos/beach.jpg");
+
+        openDialog();
+        chooseRecent("/photos/dune.jpg");
+        expect(openRecent).toHaveBeenCalledTimes(1);
     });
 
     it("ignores an id that is not one of its actions", () => {
