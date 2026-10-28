@@ -196,6 +196,7 @@
     },
     "drawer": {
         "addImages": "Προσθήκη εικόνων",
+        "openRecent": "Άνοιγμα πρόσφατου",
         "showImages": "Εμφάνιση εικόνων",
         "hideImages": "Απόκρυψη εικόνων",
         "selectAll": "Επιλογή όλων",
@@ -398,7 +399,8 @@
     },
     "toasts": {
         "unsupportedFiles_one": "Το αρχείο «{{names}}» δεν υποστηρίζεται.",
-        "unsupportedFiles_other": "{{count}} αρχεία δεν υποστηρίζονται: {{names}}"
+        "unsupportedFiles_other": "{{count}} αρχεία δεν υποστηρίζονται: {{names}}",
+        "recentMissing": "Το «{{name}}» δεν βρέθηκε. Ίσως μετακινήθηκε ή διαγράφηκε."
     },
     "enhancements": {
         "removal": {
@@ -558,6 +560,8 @@
             "quit": "Τερματισμός {{name}}",
             "file": "Αρχείο",
             "open": "Άνοιγμα…",
+            "openRecent": "Άνοιγμα πρόσφατου",
+            "clearRecent": "Εκκαθάριση μενού",
             "export": "Εξαγωγή…",
             "closeImage": "Κλείσιμο εικόνας",
             "closeAll": "Κλείσιμο όλων των εικόνων",

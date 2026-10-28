@@ -9,6 +9,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(() => Promise.resolve()) 
 vi.mock("@/ipc/window", () => ({ windowReady: vi.fn(() => Promise.resolve()) }));
 vi.mock("@/lib/analytics", () => ({ mirrorAnalytics: vi.fn() }));
 vi.mock("@/lib/guiSettings", () => ({ mirrorGuiSettings: vi.fn() }));
+vi.mock("@/lib/recent", () => ({ watchRecent: vi.fn() }));
 vi.mock("./App", () => ({
     default: () => {
         throw new Error("the first render failed");

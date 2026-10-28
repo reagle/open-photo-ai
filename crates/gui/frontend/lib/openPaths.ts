@@ -6,8 +6,8 @@ import { track } from "@/lib/faro";
 import { extensionOf, fileName } from "@/lib/paths";
 import { useFileStore } from "@/stores/files";
 
-/** How paths from outside the window reached it: a drop on the canvas, or the platform asking (Open With). */
-export type PathSource = "drop" | "open_with";
+/** How paths from outside the window reached it: a drop on the canvas, the platform asking (Open With), or Open Recent. */
+export type PathSource = "drop" | "open_with" | "recent";
 
 /**
  * Opens the images among `paths`, and names the files it will not open.

@@ -195,6 +195,7 @@
     },
     "drawer": {
         "addImages": "画像を追加",
+        "openRecent": "最近使った項目を開く",
         "showImages": "画像を表示",
         "hideImages": "画像を非表示",
         "selectAll": "すべて選択",
@@ -390,7 +391,8 @@
         }
     },
     "toasts": {
-        "unsupportedFiles_other": "{{count}} 件のファイルは対応していません：{{names}}"
+        "unsupportedFiles_other": "{{count}} 件のファイルは対応していません：{{names}}",
+        "recentMissing": "「{{name}}」が見つかりません。移動または削除された可能性があります。"
     },
     "enhancements": {
         "removal": {
@@ -547,6 +549,8 @@
             "quit": "{{name}}を終了",
             "file": "ファイル",
             "open": "開く…",
+            "openRecent": "最近使った項目を開く",
+            "clearRecent": "メニューを消去",
             "export": "書き出す…",
             "closeImage": "画像を閉じる",
             "closeAll": "すべての画像を閉じる",

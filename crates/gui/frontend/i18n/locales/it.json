@@ -197,6 +197,7 @@
     },
     "drawer": {
         "addImages": "Aggiungi immagini",
+        "openRecent": "Apri recenti",
         "showImages": "Mostra immagini",
         "hideImages": "Nascondi immagini",
         "selectAll": "Seleziona tutto",
@@ -406,7 +407,8 @@
     "toasts": {
         "unsupportedFiles_one": "Il file \"{{names}}\" non è supportato.",
         "unsupportedFiles_many": "{{count}} file non sono supportati: {{names}}",
-        "unsupportedFiles_other": "{{count}} file non sono supportati: {{names}}"
+        "unsupportedFiles_other": "{{count}} file non sono supportati: {{names}}",
+        "recentMissing": "Impossibile trovare \"{{name}}\". Potrebbe essere stato spostato o eliminato."
     },
     "enhancements": {
         "removal": {
@@ -569,6 +571,8 @@
             "quit": "Esci da {{name}}",
             "file": "File",
             "open": "Apri…",
+            "openRecent": "Apri recenti",
+            "clearRecent": "Cancella menu",
             "export": "Esporta…",
             "closeImage": "Chiudi immagine",
             "closeAll": "Chiudi tutte le immagini",

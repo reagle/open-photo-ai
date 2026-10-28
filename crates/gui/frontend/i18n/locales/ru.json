@@ -198,6 +198,7 @@
     },
     "drawer": {
         "addImages": "Добавить изображения",
+        "openRecent": "Открыть недавние",
         "showImages": "Показать изображения",
         "hideImages": "Скрыть изображения",
         "selectAll": "Выбрать все",
@@ -414,7 +415,8 @@
         "unsupportedFiles_one": "Файл «{{names}}» не поддерживается.",
         "unsupportedFiles_few": "{{count}} файла не поддерживаются: {{names}}",
         "unsupportedFiles_many": "{{count}} файлов не поддерживаются: {{names}}",
-        "unsupportedFiles_other": "{{count}} файлов не поддерживаются: {{names}}"
+        "unsupportedFiles_other": "{{count}} файлов не поддерживаются: {{names}}",
+        "recentMissing": "Файл «{{name}}» не найден. Возможно, он перемещён или удалён."
     },
     "enhancements": {
         "removal": {
@@ -580,6 +582,8 @@
             "quit": "Завершить {{name}}",
             "file": "Файл",
             "open": "Открыть…",
+            "openRecent": "Открыть недавние",
+            "clearRecent": "Очистить меню",
             "export": "Экспортировать…",
             "closeImage": "Закрыть изображение",
             "closeAll": "Закрыть все изображения",

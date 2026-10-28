@@ -196,6 +196,7 @@
     },
     "drawer": {
         "addImages": "छवियाँ जोड़ें",
+        "openRecent": "हाल का खोलें",
         "showImages": "छवियाँ दिखाएँ",
         "hideImages": "छवियाँ छिपाएँ",
         "selectAll": "सभी चुनें",
@@ -398,7 +399,8 @@
     },
     "toasts": {
         "unsupportedFiles_one": "फ़ाइल \"{{names}}\" समर्थित नहीं है।",
-        "unsupportedFiles_other": "{{count}} फ़ाइलें समर्थित नहीं हैं: {{names}}"
+        "unsupportedFiles_other": "{{count}} फ़ाइलें समर्थित नहीं हैं: {{names}}",
+        "recentMissing": "\"{{name}}\" नहीं मिला। हो सकता है इसे हटा दिया गया हो या कहीं और ले जाया गया हो।"
     },
     "enhancements": {
         "removal": {
@@ -558,6 +560,8 @@
             "quit": "{{name}} बंद करें",
             "file": "फ़ाइल",
             "open": "खोलें…",
+            "openRecent": "हाल का खोलें",
+            "clearRecent": "मेनू साफ़ करें",
             "export": "निर्यात करें…",
             "closeImage": "छवि बंद करें",
             "closeAll": "सभी छवियाँ बंद करें",

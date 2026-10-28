@@ -196,6 +196,7 @@
     },
     "drawer": {
         "addImages": "Bilder hinzufügen",
+        "openRecent": "Zuletzt geöffnet",
         "showImages": "Bilder anzeigen",
         "hideImages": "Bilder ausblenden",
         "selectAll": "Alle auswählen",
@@ -398,7 +399,8 @@
     },
     "toasts": {
         "unsupportedFiles_one": "Die Datei „{{names}}“ wird nicht unterstützt.",
-        "unsupportedFiles_other": "{{count}} Dateien werden nicht unterstützt: {{names}}"
+        "unsupportedFiles_other": "{{count}} Dateien werden nicht unterstützt: {{names}}",
+        "recentMissing": "„{{name}}“ wurde nicht gefunden. Möglicherweise wurde die Datei verschoben oder gelöscht."
     },
     "enhancements": {
         "removal": {
@@ -558,6 +560,8 @@
             "quit": "{{name}} beenden",
             "file": "Ablage",
             "open": "Öffnen …",
+            "openRecent": "Zuletzt geöffnet",
+            "clearRecent": "Einträge löschen",
             "export": "Exportieren …",
             "closeImage": "Bild schließen",
             "closeAll": "Alle Bilder schließen",

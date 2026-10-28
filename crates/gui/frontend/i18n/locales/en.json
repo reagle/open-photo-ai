@@ -196,6 +196,7 @@
     },
     "drawer": {
         "addImages": "Add images",
+        "openRecent": "Open recent",
         "showImages": "Show images",
         "hideImages": "Hide images",
         "selectAll": "Select all",
@@ -398,7 +399,8 @@
     },
     "toasts": {
         "unsupportedFiles_one": "The file \"{{names}}\" is not supported.",
-        "unsupportedFiles_other": "{{count}} files are not supported: {{names}}"
+        "unsupportedFiles_other": "{{count}} files are not supported: {{names}}",
+        "recentMissing": "\"{{name}}\" could not be found. It may have been moved or deleted."
     },
     "enhancements": {
         "removal": {
@@ -558,6 +560,8 @@
             "quit": "Quit {{name}}",
             "file": "File",
             "open": "Open…",
+            "openRecent": "Open Recent",
+            "clearRecent": "Clear Menu",
             "export": "Export…",
             "closeImage": "Close Image",
             "closeAll": "Close All Images",

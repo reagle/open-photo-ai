@@ -196,6 +196,7 @@
     },
     "drawer": {
         "addImages": "Afbeeldingen toevoegen",
+        "openRecent": "Recent openen",
         "showImages": "Afbeeldingen tonen",
         "hideImages": "Afbeeldingen verbergen",
         "selectAll": "Alles selecteren",
@@ -398,7 +399,8 @@
     },
     "toasts": {
         "unsupportedFiles_one": "Het bestand \"{{names}}\" wordt niet ondersteund.",
-        "unsupportedFiles_other": "{{count}} bestanden worden niet ondersteund: {{names}}"
+        "unsupportedFiles_other": "{{count}} bestanden worden niet ondersteund: {{names}}",
+        "recentMissing": "\"{{name}}\" is niet gevonden. Het is misschien verplaatst of verwijderd."
     },
     "enhancements": {
         "removal": {
@@ -558,6 +560,8 @@
             "quit": "Stop {{name}}",
             "file": "Archief",
             "open": "Open…",
+            "openRecent": "Open recent",
+            "clearRecent": "Wis menu",
             "export": "Exporteren…",
             "closeImage": "Afbeelding sluiten",
             "closeAll": "Alle afbeeldingen sluiten",

@@ -196,6 +196,7 @@
     },
     "drawer": {
         "addImages": "Lägg till bilder",
+        "openRecent": "Öppna senaste",
         "showImages": "Visa bilder",
         "hideImages": "Dölj bilder",
         "selectAll": "Markera alla",
@@ -398,7 +399,8 @@
     },
     "toasts": {
         "unsupportedFiles_one": "Filen \"{{names}}\" stöds inte.",
-        "unsupportedFiles_other": "{{count}} filer stöds inte: {{names}}"
+        "unsupportedFiles_other": "{{count}} filer stöds inte: {{names}}",
+        "recentMissing": "\"{{name}}\" hittades inte. Den kan ha flyttats eller raderats."
     },
     "enhancements": {
         "removal": {
@@ -558,6 +560,8 @@
             "quit": "Avsluta {{name}}",
             "file": "Arkiv",
             "open": "Öppna…",
+            "openRecent": "Öppna senaste",
+            "clearRecent": "Rensa menyn",
             "export": "Exportera…",
             "closeImage": "Stäng bild",
             "closeAll": "Stäng alla bilder",

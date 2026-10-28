@@ -195,6 +195,7 @@
     },
     "drawer": {
         "addImages": "Tambah gambar",
+        "openRecent": "Buka terbaru",
         "showImages": "Tampilkan gambar",
         "hideImages": "Sembunyikan gambar",
         "selectAll": "Pilih semua",
@@ -390,7 +391,8 @@
         }
     },
     "toasts": {
-        "unsupportedFiles_other": "{{count}} file tidak didukung: {{names}}"
+        "unsupportedFiles_other": "{{count}} file tidak didukung: {{names}}",
+        "recentMissing": "\"{{name}}\" tidak ditemukan. Mungkin telah dipindahkan atau dihapus."
     },
     "enhancements": {
         "removal": {
@@ -547,6 +549,8 @@
             "quit": "Keluar dari {{name}}",
             "file": "File",
             "open": "Buka…",
+            "openRecent": "Buka Terbaru",
+            "clearRecent": "Bersihkan Menu",
             "export": "Ekspor…",
             "closeImage": "Tutup gambar",
             "closeAll": "Tutup semua gambar",

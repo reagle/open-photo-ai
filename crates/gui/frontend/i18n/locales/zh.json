@@ -195,6 +195,7 @@
     },
     "drawer": {
         "addImages": "添加图片",
+        "openRecent": "打开最近使用",
         "showImages": "显示图片",
         "hideImages": "隐藏图片",
         "selectAll": "全选",
@@ -390,7 +391,8 @@
         }
     },
     "toasts": {
-        "unsupportedFiles_other": "有 {{count}} 个文件不受支持：{{names}}"
+        "unsupportedFiles_other": "有 {{count}} 个文件不受支持：{{names}}",
+        "recentMissing": "找不到“{{name}}”。它可能已被移动或删除。"
     },
     "enhancements": {
         "removal": {
@@ -547,6 +549,8 @@
             "quit": "退出 {{name}}",
             "file": "文件",
             "open": "打开…",
+            "openRecent": "打开最近使用",
+            "clearRecent": "清除菜单",
             "export": "导出…",
             "closeImage": "关闭图片",
             "closeAll": "关闭所有图片",

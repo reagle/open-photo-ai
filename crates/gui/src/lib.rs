@@ -25,6 +25,7 @@ mod logs;
 mod mask;
 mod menu;
 mod opened;
+mod recent;
 mod reveal;
 mod setup;
 mod single_instance;
@@ -141,6 +142,9 @@ pub fn run(prepared: Result<(), opai::InitError>) {
         // `src/opened.rs`); filled from the first launch's arguments below, a second launch's, and macOS's
         // `RunEvent::Opened`.
         .manage(opened::Inbox::default())
+        // The photographs opened most recently (`src/recent.rs`), read from the state file here rather than in `setup`, so
+        // the list is in place before the page can ask for it and before the menu that shows it is built.
+        .manage(recent::Recents::load())
         // Serves opened images' pixels over a custom scheme instead of base64-over-IPC. Async, so large images decode
         // off the window thread. `images::SCHEME` is a constant, not a literal, because `tauri.conf.json`'s `img-src`
         // must list both its platform forms - see the drift guard test below.
@@ -181,6 +185,10 @@ pub fn run(prepared: Result<(), opai::InitError>) {
             setup::quit,
             logs::reveal_log,
             menu::configure_menu,
+            recent::recent_images,
+            recent::note_recent,
+            recent::check_recent,
+            recent::clear_recent,
             links::open_link,
             update::is_outdated,
             catalogue::catalogue,

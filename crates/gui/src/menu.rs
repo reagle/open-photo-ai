@@ -12,8 +12,15 @@
 //!
 //! The menu is built in English and relabelled by [`configure_menu`] with the window's catalogue, which is also how
 //! `open_images` gets the picker's wording: the backend has no translations of its own.
+//!
+//! File > Open Recent is the one part that changes while the application runs: its entries are `crate::recent`'s list,
+//! rebuilt by [`show_recent`] on every change, and a click on one is resolved here to its path and forwarded as
+//! [`OPEN_RECENT`] - the path rather than the position, so a list that changed between the click and the window's
+//! answer cannot open the wrong photograph. Clear Menu needs nothing from the window and is acted on here.
 
 use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Mutex;
 
 use tauri::menu::{
     AboutMetadata, HELP_SUBMENU_ID, IsMenuItem, Menu, MenuEvent, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu,
@@ -22,11 +29,26 @@ use tauri::menu::{
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::command::{Traceparent, command_span, traced_sync};
+use crate::sync::lock;
 
 /// The event an item of this application's own is forwarded to the window as, with the item's id as its payload.
 ///
 /// Written once more in `frontend/hooks/useAppActions.ts`.
 pub(crate) const EVENT: &str = "app-menu";
+
+/// The event a click on an Open Recent entry is forwarded to the window as, with the photograph's path as its payload.
+///
+/// Written once more in `frontend/ipc/recent.ts`.
+pub(crate) const OPEN_RECENT: &str = "open-recent";
+
+/// The id, and the label key, of Open Recent's Clear Menu.
+const CLEAR_RECENT: &str = "clearRecent";
+
+/// The label key of the Open Recent submenu.
+const OPEN_RECENT_KEY: &str = "openRecent";
+
+/// What an Open Recent entry's id starts with; the rest is its position in the list.
+const RECENT_PREFIX: &str = "recent:";
 
 /// An item the window acts on: its id, which is also the action's name in `frontend/lib/shortcuts.ts`'s
 /// `APP_ACTIONS` and the key of its label, its English label, and its key.
@@ -118,6 +140,8 @@ enum Entry {
     /// An item of this application's own, by its id in [`ACTIONS`].
     Action(&'static str),
     System(System),
+    /// File > Open Recent: the submenu of `crate::recent`'s list, with Clear Menu.
+    Recent,
     Separator,
 }
 
@@ -158,6 +182,7 @@ const SECTIONS: &[Section] = &[
         id: None,
         entries: &[
             Entry::Action("open"),
+            Entry::Recent,
             Entry::Separator,
             Entry::Action("export"),
             Entry::Separator,
@@ -201,11 +226,47 @@ fn action_for(id: &str) -> Option<&'static str> {
     ACTIONS.iter().map(|action| action.id).find(|&action| action == id)
 }
 
-/// The menu's items that the window relabels, by the key of their label.
+/// Where an Open Recent entry's id names a position in the list, that position.
+fn recent_index(id: &str) -> Option<usize> {
+    id.strip_prefix(RECENT_PREFIX)?.parse().ok()
+}
+
+/// The labels of the Open Recent entries for `paths`: each file's name, with its folder's name after it where two share
+/// a name, as Finder tells them apart.
+fn recent_labels(paths: &[String]) -> Vec<String> {
+    let name = |path: &String| {
+        Path::new(path)
+            .file_name()
+            .map_or_else(|| path.clone(), |name| name.to_string_lossy().into_owned())
+    };
+    let names: Vec<String> = paths.iter().map(name).collect();
+
+    paths
+        .iter()
+        .zip(&names)
+        .map(|(path, label)| {
+            if names.iter().filter(|other| *other == label).count() < 2 {
+                return label.clone();
+            }
+            let folder = Path::new(path).parent().and_then(Path::file_name);
+            folder.map_or_else(|| label.clone(), |folder| format!("{label} \u{2014} {}", folder.to_string_lossy()))
+        })
+        .collect()
+}
+
+/// File > Open Recent: the submenu, its Clear Menu, and the entries shown above them now.
+struct RecentMenu<R: Runtime> {
+    submenu: Submenu<R>,
+    clear: MenuItem<R>,
+    entries: Mutex<Vec<MenuItem<R>>>,
+}
+
+/// The menu's items that the window relabels, by the key of their label, and Open Recent.
 ///
 /// Held as application state because AppKit's own items carry no id of ours to find them by again.
 pub(crate) struct AppMenu<R: Runtime> {
     labelled: Vec<(&'static str, MenuItemKind<R>)>,
+    recent: Option<RecentMenu<R>>,
 }
 
 impl<R: Runtime> AppMenu<R> {
@@ -257,10 +318,11 @@ fn plan<'a>(key: &str, labels: &'a HashMap<String, String>, now: Availability) -
 #[cfg(test)]
 fn label_keys() -> impl Iterator<Item = &'static str> {
     SECTIONS.iter().flat_map(|section| {
-        let entries = section.entries.iter().filter_map(|entry| match *entry {
-            Entry::Action(id) => Some(id),
-            Entry::System(item) => Some(item.label().0),
-            Entry::Separator => None,
+        let entries = section.entries.iter().flat_map(|entry| match *entry {
+            Entry::Action(id) => vec![id],
+            Entry::System(item) => vec![item.label().0],
+            Entry::Recent => vec![OPEN_RECENT_KEY, CLEAR_RECENT],
+            Entry::Separator => vec![],
         });
         // The application's menu keeps its name: macOS shows the process's whatever the title says.
         entries.chain((section.key != "app").then_some(section.key))
@@ -319,6 +381,7 @@ fn system<R: Runtime>(app: &AppHandle<R>, item: System) -> tauri::Result<Predefi
 fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, AppMenu<R>)> {
     let mut labelled = Vec::new();
     let mut sections = Vec::new();
+    let mut recent = None;
 
     for section in SECTIONS {
         let title = if section.key == "app" { app.package_info().name.as_str() } else { section.title };
@@ -341,6 +404,17 @@ fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, AppMenu<R>)>
                     labelled.push((item.label().0, built.kind()));
                     built.kind()
                 }
+                Entry::Recent => {
+                    // Unavailable until `show_recent` says there is something to clear.
+                    let clear = MenuItem::with_id(app, CLEAR_RECENT, "Clear Menu", false, None::<&str>)?;
+                    let submenu =
+                        Submenu::with_items(app, "Open Recent", true, &[&PredefinedMenuItem::separator(app)?, &clear])?;
+                    labelled.push((OPEN_RECENT_KEY, submenu.kind()));
+                    labelled.push((CLEAR_RECENT, clear.kind()));
+                    let kind = submenu.kind();
+                    recent = Some(RecentMenu { submenu, clear, entries: Mutex::new(Vec::new()) });
+                    kind
+                }
                 Entry::Separator => PredefinedMenuItem::separator(app)?.kind(),
             };
             submenu.append(&item)?;
@@ -358,7 +432,7 @@ fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<(Menu<R>, AppMenu<R>)>
         menu.append(submenu)?;
     }
 
-    Ok((menu, AppMenu { labelled }))
+    Ok((menu, AppMenu { labelled, recent }))
 }
 
 /// Puts this application's menu in place of Tauri's default and keeps its items for [`configure_menu`].
@@ -371,14 +445,67 @@ pub(crate) fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     app.set_menu(menu)?;
     app.manage(labelled);
 
+    if let Some(recents) = app.try_state::<crate::recent::Recents>() {
+        show_recent(app, &recents.paths());
+    }
+
     Ok(())
+}
+
+/// Shows `paths`, newest first, as File > Open Recent's entries, and makes Clear Menu available only with some.
+///
+/// A failure is logged and the rest are still shown. Without a menu - on Windows and Linux - nothing happens.
+pub(crate) fn show_recent<R: Runtime>(app: &AppHandle<R>, paths: &[String]) {
+    let Some(menu) = app.try_state::<AppMenu<R>>() else {
+        return;
+    };
+    let Some(recent) = &menu.recent else {
+        return;
+    };
+
+    let mut entries = lock(&recent.entries);
+    for entry in entries.drain(..) {
+        if let Err(error) = recent.submenu.remove(&entry) {
+            tracing::warn!(%error, "could not take an entry out of Open Recent");
+        }
+    }
+
+    for (index, label) in recent_labels(paths).into_iter().enumerate() {
+        let added = MenuItem::with_id(app, format!("{RECENT_PREFIX}{index}"), label, true, None::<&str>)
+            .and_then(|item| recent.submenu.insert(&item, index).map(|()| item));
+        match added {
+            Ok(item) => entries.push(item),
+            Err(error) => tracing::warn!(%error, "could not put an entry in Open Recent"),
+        }
+    }
+
+    if let Err(error) = recent.clear.set_enabled(!paths.is_empty()) {
+        tracing::warn!(%error, "could not enable or disable Clear Menu");
+    }
 }
 
 /// Forwards a click on an item of this application's own to the window, as [`EVENT`] naming it.
 ///
 /// AppKit's own items reach here too, after AppKit has acted on them, and are not forwarded.
 pub(crate) fn forward<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
-    let Some(action) = action_for(event.id().as_ref()) else {
+    let id = event.id().as_ref();
+
+    if id == CLEAR_RECENT {
+        crate::recent::clear(app);
+        return;
+    }
+
+    if let Some(index) = recent_index(id) {
+        let path = app.try_state::<crate::recent::Recents>().and_then(|recents| recents.path_at(index));
+        if let Some(path) = path
+            && let Err(error) = app.emit_to("main", OPEN_RECENT, &path)
+        {
+            tracing::warn!(%error, "could not forward an Open Recent entry to the window");
+        }
+        return;
+    }
+
+    let Some(action) = action_for(id) else {
         return;
     };
 
@@ -489,12 +616,8 @@ mod tests {
     /// Every label key is distinct, so one key never relabels two items.
     #[test]
     fn every_label_key_is_distinct() {
-        let mut keys: Vec<&str> = SECTIONS.iter().map(|section| section.key).collect();
-        keys.extend(entries().filter_map(|entry| match entry {
-            Entry::Action(id) => Some(id),
-            Entry::System(item) => Some(item.label().0),
-            Entry::Separator => None,
-        }));
+        // The menus' own keys are among them, but for the application's, which keeps its name.
+        let keys: Vec<&str> = label_keys().chain(["app"]).collect();
 
         let distinct: BTreeSet<&str> = keys.iter().copied().collect();
         assert_eq!(distinct.len(), keys.len(), "a label key is used twice: {keys:?}");
@@ -541,8 +664,42 @@ mod tests {
         }
 
         // What `PredefinedMenuItem`s are given: generated ids, never one of ours.
-        for other in ["1", "quit", "close_window", "", "CloseImage"] {
+        for other in ["1", "quit", "close_window", "", "CloseImage", CLEAR_RECENT, "recent:0"] {
             assert_eq!(action_for(other), None, "{other:?} was forwarded");
         }
+    }
+
+    /// File holds Open Recent right below Open, and it is labelled - its title and Clear Menu - like any other item.
+    #[test]
+    fn open_recent_is_below_open_and_is_relabelled() {
+        let file = SECTIONS.iter().find(|section| section.key == "file").expect("a File menu");
+        assert_eq!(file.entries[..2], [Entry::Action("open"), Entry::Recent]);
+
+        let held: Vec<&str> = label_keys().collect();
+        assert!(held.contains(&OPEN_RECENT_KEY) && held.contains(&CLEAR_RECENT));
+
+        let labels = HashMap::from([("clearRecent".to_string(), "Effacer le menu".to_string())]);
+        let none = Availability { has_files: false, can_export: false };
+        assert_eq!(plan(CLEAR_RECENT, &labels, none), (Some("Effacer le menu"), None), "`show_recent` enables it");
+    }
+
+    /// An entry's id names its position, and nothing else is read as one.
+    #[test]
+    fn an_open_recent_entry_is_known_by_its_position() {
+        assert_eq!(recent_index("recent:0"), Some(0));
+        assert_eq!(recent_index("recent:9"), Some(9));
+
+        for other in ["recent:", "recent:-1", "recent:x", "open", CLEAR_RECENT, "0"] {
+            assert_eq!(recent_index(other), None, "{other:?} was read as an entry");
+        }
+    }
+
+    /// Entries are labelled with the file's name, and two of one name with their folders as well.
+    #[test]
+    fn an_entry_is_labelled_by_its_name_and_its_folder_where_two_share_one() {
+        let paths = ["/trips/rome/a.jpg", "/trips/paris/a.jpg", "/home/b.png"].map(String::from);
+
+        assert_eq!(recent_labels(&paths), ["a.jpg \u{2014} rome", "a.jpg \u{2014} paris", "b.png"]);
+        assert!(recent_labels(&[]).is_empty());
     }
 }
