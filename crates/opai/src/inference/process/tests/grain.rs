@@ -123,6 +123,53 @@ async fn a_grain_draws_the_same_pixels_on_every_run_and_opens_no_session() {
     assert_eq!(acquired, vec!["sh_moscow_fp32"], "the grain opened a session");
 }
 
+/// A mask whose left half is white and right half black, over a `width` x `height` plane.
+fn left_half(width: u32, height: u32) -> crate::mask::Mask {
+    use crate::mask::{Base, Mask, Plane};
+
+    let values = (0..width * height).map(|index| if index % width < width / 2 { 1.0 } else { 0.0 }).collect();
+    Mask { base: Some(Base::new(Plane::from_vec(width, height, values).unwrap())), ..Mask::default() }
+}
+
+/// `chain` over a grainy photograph, limited to the left half.
+async fn limited(chain: &[Operation]) -> DynamicImage {
+    let source = Picture::new("/pictures/grainy.jpg", grainy(256, 192), "0123456789abcdef");
+    let options = ProcessOptions { mask: Some(Arc::new(left_half(256, 192))), ..Default::default() };
+
+    process(&smoothing(), None, &source, chain, Some(options))
+        .await
+        .unwrap()
+        .picture
+        .pixels()
+        .clone()
+}
+
+#[tokio::test]
+async fn a_grain_after_a_limiting_mask_puts_the_noise_back_only_where_the_mask_let_a_smoothing_through() {
+    // The grain runs over the blend rather than being limited by it: the left half was smoothed and gets the
+    // photograph's grain back, the right half is the photograph with its own and gets next to nothing.
+    let source = grainy(256, 192);
+    let smoothed = limited(&[sharpen()]).await;
+    let grained = limited(&[sharpen(), grain()]).await;
+    let half = |picture: &DynamicImage, x: u32| residual(&picture.crop_imm(x, 0, 128, 192));
+
+    assert!(half(&smoothed, 0) < 0.1 * half(&source, 0), "the left half was not smoothed");
+    let (got, had) = (half(&grained, 0), half(&source, 0));
+    assert!((got - had).abs() / had < 0.15, "the smoothed half was given {got} of the photograph's {had}");
+    let (got, had) = (half(&grained, 128), half(&source, 128));
+    assert!(got / had < 1.1, "the photograph's own half went from {had} to {got}");
+}
+
+#[tokio::test]
+async fn a_grain_after_a_limiting_mask_matches_the_denoise_before_the_blend() {
+    // The head hands the tail what its denoise made, so the grain does not put back what the denoise took away inside
+    // the mask; outside it is the photograph, which has its own.
+    let denoised = limited(&[denoise()]).await;
+    let grained = limited(&[denoise(), grain()]).await;
+
+    assert_eq!(grained.as_bytes(), denoised.as_bytes(), "the grain undid the masked denoise");
+}
+
 #[tokio::test]
 async fn a_stored_denoise_that_will_not_decode_is_run_again_for_the_grain_after_it() {
     let backend = smoothing();

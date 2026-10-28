@@ -27,11 +27,16 @@ export type Stroke = {
  * A mask over the framed photograph, in the wire's spelling: `opai::Mask` without the base, which never crosses it.
  *
  * Strokes are painted and erased in order. `inverted` turns the finished weight over. White - weight one - is where a
- * run's enhancements apply, and black is where the photograph is left as it was.
+ * run's enhancements apply, and black is where the photograph is left as it was; under a lens blur, white is also what
+ * is kept in focus. Either use can be switched off.
  */
 export type Mask = {
     strokes: Stroke[];
     inverted: boolean;
+    /** Whether the enhancements apply only where the mask is white. Rust reads it absent as `true`. */
+    limitsEnhancements?: boolean;
+    /** Whether a lens blur keeps what the mask covers in focus. Rust reads it absent as `true`. */
+    keepsSharp?: boolean;
 };
 
 /**

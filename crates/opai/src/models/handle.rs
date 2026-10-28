@@ -23,6 +23,13 @@ impl PlaneHandle {
         Self { plane, signature }
     }
 
+    /// `plane`, signed by the caller with `signature`: one that already names what the plane was drawn from, as a
+    /// mask's does, so its millions of values need not be hashed again. Two planes share one exactly when they are
+    /// equal, as with [`new`](Self::new), only where the caller's signature is that good.
+    pub(crate) fn signed(plane: Arc<Plane>, signature: u64) -> Self {
+        Self { plane, signature }
+    }
+
     /// The plane itself.
     pub(crate) fn plane(&self) -> &Arc<Plane> {
         &self.plane

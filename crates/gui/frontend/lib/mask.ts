@@ -9,7 +9,25 @@ import { clampTo } from "@/lib/utils";
  * Nothing in it is a pixel. The strokes are fractions of the framed photograph, so the same value is the right mask at
  * any size - the preview's, the export's, and the picture Rust draws for the tint.
  */
-export type Snapshot = { strokes: Stroke[]; inverted: boolean };
+export type Snapshot = { strokes: Stroke[]; inverted: boolean } & Uses;
+
+/**
+ * What a mask is for under a lens blur, each on unless set to `false`: limiting the enhancements to it, and keeping it
+ * in focus. Left out of a mask that has never been switched, which is a mask with both on.
+ */
+export type Uses = { limitsEnhancements?: boolean; keepsSharp?: boolean };
+
+/** Which of a mask's two uses: limiting the enhancements, or keeping the painted part in focus under a lens blur. */
+export type Use = keyof Uses;
+
+/** Whether `snapshot` is used for `use`: on unless switched off. */
+export const isUsedFor = (snapshot: Uses | undefined, use: Use): boolean => snapshot?.[use] !== false;
+
+/** The uses `snapshot` has been switched to, and no others, for a copy of it to carry. */
+export const usesOf = (snapshot: Uses | undefined): Uses => ({
+    ...(snapshot?.limitsEnhancements !== undefined && { limitsEnhancements: snapshot.limitsEnhancements }),
+    ...(snapshot?.keepsSharp !== undefined && { keepsSharp: snapshot.keepsSharp }),
+});
 
 /** How many steps of undo a photograph's mask keeps. The oldest is dropped past this. */
 export const HISTORY_LIMIT = 100;
@@ -100,7 +118,8 @@ const COORDINATE_STEP = 1e5;
  * `snapshot` as the mask a run is sent, or `undefined` for one that paints nothing.
  *
  * An empty mask is no mask, and Rust reads it so as well: a photograph the user has not painted - or has undone back to
- * nothing - runs and is identified exactly as it did before there was a brush.
+ * nothing - runs and is identified exactly as it did before there was a brush. A use switched off is sent as `false`;
+ * one left on is not sent, so a mask with both on is sent as it was before masks had uses.
  *
  * **The points are rounded to a hundred-thousandth.** A pointer reports positions to the float's last digit, and a long
  * stroke is a few hundred of them: sent as they are, each is eighteen characters of JSON for a place no screen can tell
@@ -114,6 +133,9 @@ export const toWire = (snapshot: Snapshot | undefined): Mask | undefined =>
                   points: stroke.points.map((point) => Math.round(point * COORDINATE_STEP) / COORDINATE_STEP),
               })),
               inverted: snapshot.inverted,
+              // Sent only switched off: Rust reads a use it is not sent as on.
+              ...(!isUsedFor(snapshot, "limitsEnhancements") && { limitsEnhancements: false }),
+              ...(!isUsedFor(snapshot, "keepsSharp") && { keepsSharp: false }),
           }
         : undefined;
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Operation } from "@/ipc/enhance";
 import {
     isEmpty,
+    isUsedFor,
     keepsPoint,
     PREVIEW_EDGE_MAX,
     pngDataUrl,
@@ -92,6 +93,26 @@ describe("emptiness and the wire", () => {
         expect(toWire(undefined)).toBeUndefined();
         expect(toWire({ strokes: [], inverted: true })).toBeUndefined();
         expect(toWire({ strokes: [STROKE], inverted: true })).toEqual({ strokes: [STROKE], inverted: true });
+    });
+
+    it("sends a use only switched off, and a mask that paints nothing not at all whatever its uses", () => {
+        expect(toWire({ strokes: [STROKE], inverted: false, limitsEnhancements: true, keepsSharp: true })).toEqual({
+            strokes: [STROKE],
+            inverted: false,
+        });
+        expect(toWire({ strokes: [STROKE], inverted: false, keepsSharp: false })).toEqual({
+            strokes: [STROKE],
+            inverted: false,
+            keepsSharp: false,
+        });
+        expect(toWire({ strokes: [STROKE], inverted: false, limitsEnhancements: false })).toEqual({
+            strokes: [STROKE],
+            inverted: false,
+            limitsEnhancements: false,
+        });
+        expect(toWire({ strokes: [], inverted: false, keepsSharp: false })).toBeUndefined();
+        expect(isUsedFor(undefined, "keepsSharp")).toBe(true);
+        expect(isUsedFor({ keepsSharp: false }, "keepsSharp")).toBe(false);
     });
 
     it("rounds the points to a hundred-thousandth and nothing else", () => {

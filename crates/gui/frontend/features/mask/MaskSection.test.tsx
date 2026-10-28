@@ -289,3 +289,67 @@ describe("the brush for Remove", () => {
         expect(store().editing).toBeUndefined();
     });
 });
+
+describe("the uses of a mask under a lens blur", () => {
+    const blur: Operation = {
+        family: "lens_blur",
+        codename: "lisbon",
+        precision: "fp16",
+        parameters: { f_number: 1.4, focus_x: 0.5, focus_y: 0.5 },
+    };
+    const remove: Operation = { family: "remove", codename: "lima", precision: "fp32", parameters: {} };
+
+    const holding = (...operations: Operation[]) =>
+        act(() => useEnhancementStore.setState({ enhancements: new Map([[HOLIDAY.path, operations]]) }));
+
+    const limits = () => screen.queryByRole("switch", { name: "Limit the enhancements" });
+    const keepsSharp = () => screen.queryByRole("switch", { name: "Keep the mask in focus" });
+
+    beforeEach(() => store().startEditing(HOLIDAY.path));
+
+    it("are not offered without a lens blur", () => {
+        holding(sharpen);
+        render(<MaskSection />);
+
+        expect(limits()).toBeNull();
+        expect(keepsSharp()).toBeNull();
+    });
+
+    it("are both offered, both on, with a lens blur and another enhancement", () => {
+        holding(sharpen, blur);
+        render(<MaskSection />);
+
+        expect(limits()).toHaveAttribute("aria-checked", "true");
+        expect(keepsSharp()).toHaveAttribute("aria-checked", "true");
+    });
+
+    it("leave out the limit where the lens blur has nothing before it to limit", () => {
+        for (const stack of [[blur], [remove, blur]]) {
+            holding(...stack);
+            const { unmount } = render(<MaskSection />);
+
+            expect(limits()).toBeNull();
+            expect(keepsSharp()).toHaveAttribute("aria-checked", "true");
+            unmount();
+        }
+    });
+
+    it("switch the mask's use as a step Undo takes back, and Clear keeps it", () => {
+        holding(sharpen, blur);
+        paint();
+        render(<MaskSection />);
+
+        fireEvent.click(limits() as HTMLElement);
+        expect(store().masks.get(HOLIDAY.path)?.limitsEnhancements).toBe(false);
+        expect(limits()).toHaveAttribute("aria-checked", "false");
+
+        fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+        expect(store().masks.get(HOLIDAY.path)?.limitsEnhancements).toBe(false);
+
+        fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+        fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+        expect(store().masks.get(HOLIDAY.path)?.limitsEnhancements).toBeUndefined();
+        expect(limits()).toHaveAttribute("aria-checked", "true");
+        expect(store().masks.get(HOLIDAY.path)?.strokes).toHaveLength(1);
+    });
+});
