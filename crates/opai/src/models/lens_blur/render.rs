@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use image::{DynamicImage, GenericImageView as _};
 use imaging::ChannelDepth;
 use imaging::defocus::{Defocus, Spacing, Subject, defocus};
-use imaging::fill::filled;
+use imaging::fill::{filled, nearest_filled};
 use imaging::fusion::foreground;
 use imaging::guided::{dilated_nearer, upsampled};
 use imaging::linear::{decoded_linear, encoded};
@@ -58,6 +58,9 @@ const MATTED_SPACING: Spacing = Spacing::Geometric { first: 1.0, ratio: 1.4 };
 
 /// The coverage above which a pixel is part of the subject, and has the background filled in behind it.
 const COVERED: f32 = 0.004;
+
+/// The radius, in pixels, over which the background's colour is smoothed before it is carried in behind the subject.
+const FILL_SMOOTHING: u32 = 2;
 
 // Not the radius of the subject's median distance, which the design proposed: on a long lens the band of distances is
 // deep in radius (at 181 mm f/1.4 a street portrait's spans -20 to +20 px), and its median, pulled back by the hair,
@@ -254,7 +257,7 @@ impl Cutout {
         let mut colour = foreground(&image, &self.alpha, width, height, &self.radii);
         // In the rendition's own light, which the peak's scaling leaves the ratio of unchanged.
         let share = held(&self.alpha, &image, &colour);
-        let filled_colour = filled(&image, 3, width, height, &self.known);
+        let filled_colour = nearest_filled(&image, 3, width, height, &self.known, FILL_SMOOTHING);
         let (coverage, kept) = (self.alpha.as_slice(), self.kept.as_slice());
         // Filled only for the subject's share of a pixel: the photograph is `a F + (1 - a) B`, so what is left of it
         // with the subject's own colour taken out is the background's own share, which is kept. Filled whole, a faint
@@ -983,7 +986,9 @@ mod tests {
             blues.iter().max().unwrap() - blues.iter().min().unwrap()
         };
         assert!(spread(&input) >= 40, "{}", spread(&input));
-        assert!(3 * spread(&matted) < spread(&input), "{} against {}", spread(&matted), spread(&input));
+        // At most half: the fill behind the subject carries the nearest squares up to the strands, so a little of the
+        // pattern is left after the blur.
+        assert!(2 * spread(&matted) < spread(&input), "{} against {}", spread(&matted), spread(&input));
         assert!(spread(&matted) < spread(&plain), "{} against {}", spread(&matted), spread(&plain));
 
         // Half the strand pixel is the subject's red.
