@@ -49,7 +49,7 @@ output back with a bicubic resize, and paste through a Gaussian (sigma 4) of the
 |---|---|---|---|---|---|
 | 1 | `add-remove-1-core` | The Remove family, Lima, the region pipeline, CPU on Auto, the cache tag, the limiting mask and faces rules, CLI `--remove` | - | merge of `add-masking-2-brush` and `fork-model-listing` | **this change** |
 | 2 | `add-remove-2-gui` | GUI: Remove as an enhancement with its own brush (the masking brush, a second tint), sent in the operation; i18n | 1 | 1 | proposed |
-| 3 | `add-remove-3-hdr-gainmap` | An Ultra HDR gain map filled under the removed region from its own surroundings (D12) | 1, `add-color-4-ultra-hdr-gainmap` | merge | pending, not proposed |
+| 3 | `add-remove-3-hdr-gainmap` | An Ultra HDR gain map filled under the removed region from its own surroundings (D12) | 2, `add-color-4-ultra-hdr-gainmap` | merge | built |
 | 4 | `add-remove-4-refine` | A second pass at a higher resolution for large regions; a grow control; possibly MI-GAN for small strokes | 2 | 2 | pending, not proposed |
 
 ## Decisions
