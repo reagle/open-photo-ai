@@ -1,11 +1,16 @@
-//! The matting family: one variant, one graph, and a result that is not an image but the share of each pixel a subject
-//! covers.
+//! The matting family: two variants of one graph each, and a result that is not an image but the share of each pixel a
+//! subject covers.
 //!
-//! What a matting run is told about the subject is a trimap: a plane at the photograph's size that marks each pixel as
+//! What a Porto run is told about the subject is a trimap: a plane at the photograph's size that marks each pixel as
 //! sure background (0), sure subject (1) or unknown (0.5). The model estimates the unknown pixels alone, from the
 //! photograph and the trimap; the known ones keep the trimap's value. The trimap reaches an operation by injection, as
 //! a lens blur's depth does: the lens blur builds one from its depth map around the plane of focus.
+//!
+//! A Bilbao run is told nothing: it mattes the salient subject of the whole photograph at its graph's 1024 px, once per
+//! photograph, and the lens blur reads it for one thing — where the subject has holes the background shows through,
+//! which the depth's trimap calls solid — before Porto runs (see `lens_blur::trimap::seeded`).
 
+pub(crate) mod bilbao;
 pub(crate) mod matte;
 pub(crate) mod porto;
 pub(crate) mod variant;
@@ -49,9 +54,14 @@ impl Matting {
         Self { variant, trimap: None }
     }
 
-    /// Porto, this family's model, at the one precision it is published in.
+    /// Porto, this family's trimap model, at the one precision it is published in.
     pub const fn porto() -> Self {
         Self::new(MattingVariant::Porto(FloatPrecision::Fp32))
+    }
+
+    /// Bilbao, this family's model of the whole photograph, at the one precision it is published in.
+    pub const fn bilbao() -> Self {
+        Self::new(MattingVariant::Bilbao(FloatPrecision::Fp16))
     }
 
     /// This operation over `trimap`: 0 sure background, 0.5 unknown, 1 sure subject, at the size of the photograph it
@@ -81,12 +91,12 @@ impl Matting {
         self.variant.profile()
     }
 
-    /// The name a user interface shows: `Porto (FP32)`.
+    /// The name a user interface shows: `Porto (FP32)`, `Bilbao (FP16)`.
     pub fn display_name(&self) -> String {
         self.to_string()
     }
 
-    /// The one artifact this runs: `mt_porto_fp32`.
+    /// The one artifact this runs: `mt_porto_fp32`, `mt_bilbao_fp16`.
     pub fn artifact(&self) -> ArtifactId {
         single_artifact(Family::Matting, self.variant.codename(), self.precision())
     }
@@ -96,11 +106,16 @@ impl Matting {
         vec![self.artifact()]
     }
 
-    /// The key the run cache stores this operation's result under: `mt-porto-fp32-t<signature>`.
+    /// The key the run cache stores this operation's result under: `mt-porto-fp32-t<signature>`, `mt-bilbao-fp16`.
     ///
     /// The variant, the precision and the trimap's signature (`t0` before one is handed), so a matte is served only to
-    /// the trimap it was estimated from. The photograph's identity is the other half of the key.
+    /// the trimap it was estimated from; Bilbao, which takes none, is keyed by its variant alone, so it runs once per
+    /// photograph whatever the focus. The photograph's identity is the other half of the key.
     pub fn cache_tag(&self) -> String {
+        if let MattingVariant::Bilbao(_) = self.variant {
+            return format!("{}-{}-{}", Family::Matting.prefix(), self.variant.codename(), self.variant.precision());
+        }
+
         let trimap = self
             .trimap
             .as_ref()
@@ -174,6 +189,15 @@ mod tests {
     #[test]
     fn a_display_name_is_the_variant_and_the_precision() {
         assert_eq!(Matting::porto().display_name(), "Porto (FP32)");
+        assert_eq!(Matting::bilbao().display_name(), "Bilbao (FP16)");
+    }
+
+    #[test]
+    fn bilbao_names_one_graph_and_is_keyed_by_its_variant_alone() {
+        assert_eq!(Matting::bilbao().artifact().as_str(), "mt_bilbao_fp16");
+        assert_eq!(Matting::bilbao().cache_tag(), "mt-bilbao-fp16");
+        assert_ne!(Matting::bilbao(), Matting::porto());
+        assert_ne!(Matting::bilbao().cache_tag(), Matting::porto().cache_tag());
     }
 
     #[test]
