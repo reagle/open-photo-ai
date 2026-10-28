@@ -5,7 +5,10 @@ import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
     DropdownMenuContent,
+    DropdownMenuGroup,
     DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { familyEntry, useCatalogue } from "@/hooks/useCatalogue";
@@ -14,6 +17,7 @@ import type { Operation } from "@/ipc/enhance";
 import { ADD_MENU_GAP, SIDEBAR_PADDING } from "@/lib/constants";
 import {
     applyOrder,
+    ENHANCEMENT_GROUPS,
     ENHANCEMENTS,
     isPainted,
     newOperation,
@@ -40,6 +44,9 @@ import { useSettingsStore } from "@/stores/settings";
 // shifts itself `-2.5rem`, which is this 40px.
 /** How far the menu sits from the control that opens it. */
 const MENU_OFFSET = SIDEBAR_PADDING + ADD_MENU_GAP;
+
+/** A heading of the menu: smaller and quieter than the entries it names, so it reads as a label, not a choice. */
+const HEADING = "px-2.5 pt-1.5 pb-0.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase";
 
 /** How far down the trigger the menu's top edge starts: its vertical centre, as the design draws it. */
 const MENU_ALIGN = 20;
@@ -130,26 +137,39 @@ export const AddEnhancement = () => {
                 className="w-[230px] p-1"
                 data-slot="add-enhancement-menu"
             >
-                {ENHANCEMENTS.map(({ family, nameKey, icon: Icon }) => (
-                    <DropdownMenuItem
-                        key={family}
-                        // The design's 44px row with its 20px glyph, where the generated item is a
-                        // 32px row with a 16px one: this menu names enhancements rather than actions.
-                        className="h-11 gap-3 px-2.5 text-[13px] [&_svg]:size-5 [&_svg]:text-foreground"
-                        // Unavailable rather than removed: adding Upscale twice would put two upscales
-                        // in one chain, and a menu that changed shape as a stack was built up would
-                        // move the entries under the pointer.
-                        // And unavailable while it would be held out of the chain on arrival: an upscale, while
-                        // the restore enlarges.
-                        disabled={
-                            stack.some((operation) => operation.family === family) ||
-                            suspendedBecause(stack, family) !== undefined
-                        }
-                        onSelect={() => void add(family)}
-                    >
-                        <Icon />
-                        {t(nameKey)}
-                    </DropdownMenuItem>
+                {/*
+                 * Under headings that name each run of the chain's order (see `ENHANCEMENT_GROUPS`), so the
+                 * order reads as the sequence it is rather than as arbitrary. The headings are labels, not
+                 * entries: the arrows step over them.
+                 */}
+                {ENHANCEMENT_GROUPS.map(({ group, labelKey }, index) => (
+                    <DropdownMenuGroup key={group}>
+                        {index > 0 && <DropdownMenuSeparator />}
+                        <DropdownMenuLabel className={HEADING}>{t(labelKey)}</DropdownMenuLabel>
+                        {ENHANCEMENTS.filter((entry) => entry.group === group).map(
+                            ({ family, nameKey, icon: Icon }) => (
+                                <DropdownMenuItem
+                                    key={family}
+                                    // The design's 44px row with its 20px glyph, where the generated item is a
+                                    // 32px row with a 16px one: this menu names enhancements rather than actions.
+                                    className="h-11 gap-3 px-2.5 text-[13px] [&_svg]:size-5 [&_svg]:text-foreground"
+                                    // Unavailable rather than removed: adding Upscale twice would put two upscales
+                                    // in one chain, and a menu that changed shape as a stack was built up would
+                                    // move the entries under the pointer.
+                                    // And unavailable while it would be held out of the chain on arrival: an
+                                    // upscale, while the restore enlarges.
+                                    disabled={
+                                        stack.some((operation) => operation.family === family) ||
+                                        suspendedBecause(stack, family) !== undefined
+                                    }
+                                    onSelect={() => void add(family)}
+                                >
+                                    <Icon />
+                                    {t(nameKey)}
+                                </DropdownMenuItem>
+                            ),
+                        )}
+                    </DropdownMenuGroup>
                 ))}
             </DropdownMenuContent>
         </DropdownMenu>

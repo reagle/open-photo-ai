@@ -105,7 +105,7 @@ describe("adding an enhancement", () => {
         expect(await upscale()).toBeInTheDocument();
 
         // Remove first, then denoise, face recovery, colorization, light adjustment, colour balance and sharpen in
-        // that order and all before upscale, then restore and grain last, and the menu says so: it draws
+        // that order and all before upscale, then restore, lens blur and grain last, and the menu says so: it draws
         // `ENHANCEMENTS` itself, which is what keeps the menu and the chain in one order.
         const offered = screen.getAllByRole("menuitem");
         expect(offered.map((item) => item.textContent)).toEqual([
@@ -121,6 +121,24 @@ describe("adding an enhancement", () => {
             "Lens Blur",
             "Grain",
         ]);
+    });
+
+    it("lists them under headings, which are not entries the arrows land on", async () => {
+        openFiles(HOLIDAY);
+        render(<AddEnhancement />);
+
+        open();
+        await upscale();
+
+        const headings = [...document.querySelectorAll('[data-slot="dropdown-menu-label"]')];
+        expect(headings.map((heading) => heading.textContent)).toEqual([
+            "Clean up",
+            "Light & color",
+            "Detail & size",
+            "Generative",
+            "Effects",
+        ]);
+        expect(screen.getAllByRole("menuitem")).toHaveLength(11);
     });
 
     it("adds it at the user's default model, at a scale suited to the photograph", async () => {
