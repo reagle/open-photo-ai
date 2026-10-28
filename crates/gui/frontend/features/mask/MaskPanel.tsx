@@ -6,8 +6,10 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { isEmpty, SLIDER_MAX, sizeToSlider, sliderToSize, withModifier } from "@/lib/mask";
+import { isPainted } from "@/lib/enhancements";
+import { isEmpty, isUsedFor, SLIDER_MAX, sizeToSlider, sliderToSize, type Use, withModifier } from "@/lib/mask";
 import { toPercent } from "@/lib/utils";
+import { useFileEnhancements } from "@/stores/enhancements";
 import { type Target, useFileMask, useMaskStore } from "@/stores/mask";
 import { useMaskKeys } from "./useMaskKeys";
 
@@ -87,6 +89,32 @@ const Setting = ({
     </div>
 );
 
+/** A switch with its name beside it and, in a tooltip, what it does. */
+const UseSwitch = ({
+    id,
+    label,
+    hint,
+    checked,
+    onChange,
+}: {
+    id: string;
+    label: string;
+    hint: string;
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+}) => (
+    <label htmlFor={id} className="flex items-center justify-between gap-3">
+        <span className="text-[13px] text-foreground">{label}</span>
+        <Switch
+            id={id}
+            checked={checked}
+            onCheckedChange={onChange}
+            title={hint}
+            className="data-[state=unchecked]:bg-input"
+        />
+    </label>
+);
+
 /**
  * The tools of editing a mask: paint or erase, the brush's size and softness, undo and redo, invert and clear, the
  * tint, and the way out.
@@ -98,6 +126,10 @@ const Setting = ({
  * Drawn in the sidebar, in the place of the section's buttons, and not in a popover: the user's attention is on the
  * preview, and a popover would close on the first click in it. It is mounted exactly while the preview is painting on
  * `path`, which is also what keeps its keys - see {@link useMaskKeys} - alive only that long.
+ *
+ * **Under a lens blur the mask is also the subject**, kept in focus, and two switches say which of its uses it is for:
+ * limiting the enhancements and keeping it in focus, both on until switched off, each an undoable step. Shown only
+ * with a lens blur in the stack, and the first only with another enhancement for it to limit.
  *
  * **A control the mouse has pressed lets go of the focus.** A focused button is pressed again by Space, and Space is
  * how the photograph is panned while painting. Keyboard activation (a click with no pointer behind it) keeps its focus.
@@ -114,6 +146,15 @@ export const MaskPanel = ({ path, target = "limit" }: { path: string; target?: T
         useMaskStore.getState();
 
     const painted = !isEmpty(entry);
+
+    // What the stack gives the uses to do: a lens blur to keep the mask in focus, and something before it to limit.
+    const stack = useFileEnhancements(path);
+    const blurred = !removal && stack.some((operation) => operation.family === "lens_blur");
+    const limited = stack.some((operation) => operation.family !== "lens_blur" && !isPainted(operation.family));
+    const use = (which: Use) => ({
+        checked: isUsedFor(entry, which),
+        onChange: (on: boolean) => useMaskStore.getState().setUse(path, which, on),
+    });
 
     const releaseFocus = (event: MouseEvent<HTMLFieldSetElement>) => {
         if (event.detail === 0 || !(event.target instanceof HTMLElement)) return;
@@ -220,6 +261,25 @@ export const MaskPanel = ({ path, target = "limit" }: { path: string; target?: T
                     className="data-[state=unchecked]:bg-input"
                 />
             </label>
+
+            {blurred && (
+                <div className="flex flex-col gap-3" data-slot="mask-uses">
+                    {limited && (
+                        <UseSwitch
+                            id="mask-limits"
+                            label={t("mask.panel.limits")}
+                            hint={t("mask.panel.limitsHint")}
+                            {...use("limitsEnhancements")}
+                        />
+                    )}
+                    <UseSwitch
+                        id="mask-keeps-sharp"
+                        label={t("mask.panel.keepsSharp")}
+                        hint={t("mask.panel.keepsSharpHint")}
+                        {...use("keepsSharp")}
+                    />
+                </div>
+            )}
 
             <p className="text-xs leading-relaxed text-muted-foreground text-pretty">
                 {removal ? t("mask.removal.hint") : t("mask.panel.hint")}

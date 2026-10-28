@@ -104,8 +104,8 @@ pub struct LensBlur {
     /// The photograph's own lens, injected by the chain beside the depth.
     #[serde(skip)]
     lens: Option<Lens>,
-    // The masking seam: always `None` and not in the catalogue until masking exists. A brush or a subject mask will
-    // hand the render a weight here, and the depth map can be edited before the render without any change to this.
+    // The masking seam: not in the catalogue, since it is a run's mask rather than a parameter of the blur. The chain
+    // hands it the mask's weight where the mask keeps its subject in focus (`inference::depth_map`).
     /// A weight in `0..=1` at any resolution that keeps pixels sharp: each pixel's radius is scaled by one minus it.
     #[serde(skip)]
     keep_sharp: Option<PlaneHandle>,
@@ -161,15 +161,11 @@ impl LensBlur {
         Self { matte: Some(MatteHandle::new(matte, refined)), ..self }
     }
 
-    /// This blur keeping the pixels `weight` covers sharp, in proportion to it. The masking seam: nothing in the
-    /// library sets one yet, and it is not public until something does.
+    /// This blur keeping the pixels `weight` covers sharp, in proportion to it: a mask's weight, rasterised, and
+    /// `signature` the mask's, which the cache tag carries rather than a hash of the plane's values.
     #[must_use]
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the masking seam: nothing sets a weight until masking exists")
-    )]
-    pub(crate) fn with_keep_sharp(self, weight: Arc<Plane>) -> Self {
-        Self { keep_sharp: Some(PlaneHandle::new(weight)), ..self }
+    pub(crate) fn with_keep_sharp(self, weight: Arc<Plane>, signature: u64) -> Self {
+        Self { keep_sharp: Some(PlaneHandle::signed(weight, signature)), ..self }
     }
 
     /// Which model this runs, and at which precision.
@@ -495,7 +491,7 @@ pub(crate) mod tests {
             base.clone().with_lens(Lens::new(24.0, 5.91, LensOrigin::Exif)),
             LensBlur { focus_x: fraction(0.2), ..base.clone() },
             injected(2.8),
-            base.clone().with_keep_sharp(Arc::new(Plane::new(4, 4, 1.0))),
+            base.clone().with_keep_sharp(Arc::new(Plane::new(4, 4, 1.0)), 7),
             base.clone().with_matte(Arc::new(Matte::new(2, 2, &[0.0, 0.5, 1.0, 1.0])), None),
             base.clone().with_edges(LensBlurEdges::Depth),
         ];
@@ -508,6 +504,22 @@ pub(crate) mod tests {
 
         // The same map handed twice is one operation: the handle compares by the map's signature, not its address.
         assert_eq!(base.clone().with_depth(Arc::new(two_planes(64, 48, 1.0, 10.0))), base);
+    }
+
+    #[test]
+    fn a_kept_sharp_weight_is_spelled_by_the_signature_it_was_handed() {
+        let base = injected(1.4);
+        let weight = Arc::new(Plane::new(4, 4, 1.0));
+
+        let kept = base.clone().with_keep_sharp(Arc::clone(&weight), 0x00c0_ffee);
+        assert_eq!(kept.cache_tag(), format!("{}-k0000000000c0ffee", base.cache_tag()));
+        assert!(!kept.cache_tag().contains('_'), "{}", kept.cache_tag());
+
+        // Another mask is another blur, whatever its plane holds; the same mask handed twice is the same one.
+        let other = base.clone().with_keep_sharp(Arc::clone(&weight), 0x00c0_ffef);
+        assert_ne!(other.cache_tag(), kept.cache_tag());
+        assert_ne!(other, kept);
+        assert_eq!(base.clone().with_keep_sharp(Arc::new(Plane::new(2, 2, 0.5)), 0x00c0_ffee), kept);
     }
 
     #[test]
