@@ -510,7 +510,14 @@
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
-        "infoLensBlur": "{{name}}, θόλωμα {{amount}}"
+        "infoLensBlur": "{{name}}, θόλωμα {{amount}}",
+        "groups": {
+            "cleanUp": "Καθαρισμός",
+            "lightColor": "Φως και χρώμα",
+            "detailSize": "Λεπτομέρεια και μέγεθος",
+            "generative": "Παραγωγικά",
+            "effects": "Εφέ"
+        }
     },
     "preview": {
         "empty": {

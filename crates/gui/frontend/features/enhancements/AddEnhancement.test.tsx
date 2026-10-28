@@ -122,6 +122,24 @@ describe("adding an enhancement", () => {
         ]);
     });
 
+    it("lists them under headings, which are not entries the arrows land on", async () => {
+        openFiles(HOLIDAY);
+        render(<AddEnhancement />);
+
+        open();
+        await upscale();
+
+        const headings = [...document.querySelectorAll('[data-slot="dropdown-menu-label"]')];
+        expect(headings.map((heading) => heading.textContent)).toEqual([
+            "Clean up",
+            "Light & color",
+            "Detail & size",
+            "Generative",
+            "Effects",
+        ]);
+        expect(screen.getAllByRole("menuitem")).toHaveLength(10);
+    });
+
     it("adds it at the user's default model, at a scale suited to the photograph", async () => {
         openFiles(HOLIDAY);
         useSettingsStore.setState({ models: { upscale: "kyoto_fp16" } });

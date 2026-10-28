@@ -500,7 +500,14 @@
         "infoFaces": "{{name}}，{{faces}}，{{quality}}",
         "infoScale": "{{name}}，{{scale}}x，{{quality}}",
         "infoRestore": "{{name}}，{{scale}}x，{{intensity}}%，{{quality}}",
-        "infoLensBlur": "{{name}}，模糊 {{amount}}"
+        "infoLensBlur": "{{name}}，模糊 {{amount}}",
+        "groups": {
+            "cleanUp": "清理",
+            "lightColor": "光线与色彩",
+            "detailSize": "细节与尺寸",
+            "generative": "生成式",
+            "effects": "效果"
+        }
     },
     "preview": {
         "empty": {

@@ -51,6 +51,8 @@ export type Enhancement = {
      * to this list cannot be added without one, and nothing has to keep a second table in step.
      */
     icon: LucideIcon;
+    /** The heading the add menu lists it under: see {@link ENHANCEMENT_GROUPS}. */
+    group: EnhancementGroup;
     /**
      * Present, and `true`, for an enhancement Autopilot never suggests: a generative redraw or a lens
      * blur is the user's choice about a photograph, never an automatic one, and the library's analysis
@@ -65,6 +67,25 @@ export type Enhancement = {
      */
     painted?: true;
 };
+
+/**
+ * The headings the add menu groups the enhancements under, in the order it lists them.
+ *
+ * **Runs of the chain's own order, not categories of their own.** Each heading covers consecutive entries of
+ * {@link ENHANCEMENTS}, so the menu still reads top to bottom in the order a chain runs - clean up the photograph,
+ * then its light and colour, then its detail and size, then a generative redraw, and the optical effect last - and a
+ * heading says why an entry sits where it does. A test holds every group to one run.
+ */
+export const ENHANCEMENT_GROUPS = [
+    { group: "cleanUp", labelKey: "enhancements.groups.cleanUp" },
+    { group: "lightColor", labelKey: "enhancements.groups.lightColor" },
+    { group: "detailSize", labelKey: "enhancements.groups.detailSize" },
+    { group: "generative", labelKey: "enhancements.groups.generative" },
+    { group: "effects", labelKey: "enhancements.groups.effects" },
+] as const satisfies readonly { group: string; labelKey: ParseKeys }[];
+
+/** A heading of the add menu. */
+export type EnhancementGroup = (typeof ENHANCEMENT_GROUPS)[number]["group"];
 
 /**
  * The ten enhancements, in the order the add menu offers them.
@@ -88,6 +109,7 @@ export const ENHANCEMENTS = [
     {
         // First, as the library runs it: everything after a removal treats the fill as photograph.
         family: "remove",
+        group: "cleanUp",
         nameKey: "enhancements.removal.name",
         activityKey: "preview.progress.removal",
         icon: Bandage,
@@ -95,48 +117,56 @@ export const ENHANCEMENTS = [
     },
     {
         family: "denoise",
+        group: "cleanUp",
         nameKey: "enhancements.denoise.name",
         activityKey: "preview.progress.denoise",
         icon: Waves,
     },
     {
         family: "face_recovery",
+        group: "cleanUp",
         nameKey: "enhancements.faceRecovery.name",
         activityKey: "preview.progress.faceRecovery",
         icon: ScanFace,
     },
     {
         family: "colorization",
+        group: "lightColor",
         nameKey: "enhancements.colorization.name",
         activityKey: "preview.progress.colorization",
         icon: Paintbrush,
     },
     {
         family: "light_adjustment",
+        group: "lightColor",
         nameKey: "enhancements.lightAdjustment.name",
         activityKey: "preview.progress.lightAdjustment",
         icon: Sun,
     },
     {
         family: "color_balance",
+        group: "lightColor",
         nameKey: "enhancements.colorBalance.name",
         activityKey: "preview.progress.colorBalance",
         icon: Palette,
     },
     {
         family: "sharpen",
+        group: "detailSize",
         nameKey: "enhancements.sharpen.name",
         activityKey: "preview.progress.sharpen",
         icon: Triangle,
     },
     {
         family: "upscale",
+        group: "detailSize",
         nameKey: "enhancements.upscale.name",
         activityKey: "preview.progress.upscale",
         icon: Maximize2,
     },
     {
         family: "restore",
+        group: "generative",
         nameKey: "enhancements.restore.name",
         activityKey: "preview.progress.restore",
         icon: Sparkles,
@@ -144,6 +174,7 @@ export const ENHANCEMENTS = [
     },
     {
         family: "lens_blur",
+        group: "effects",
         nameKey: "enhancements.lensBlur.name",
         activityKey: "preview.progress.lensBlur",
         icon: Aperture,

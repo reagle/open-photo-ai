@@ -530,7 +530,14 @@
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}} %, {{quality}}",
-        "infoLensBlur": "{{name}}, размытие {{amount}}"
+        "infoLensBlur": "{{name}}, размытие {{amount}}",
+        "groups": {
+            "cleanUp": "Очистка",
+            "lightColor": "Свет и цвет",
+            "detailSize": "Детали и размер",
+            "generative": "Генеративные",
+            "effects": "Эффекты"
+        }
     },
     "preview": {
         "empty": {

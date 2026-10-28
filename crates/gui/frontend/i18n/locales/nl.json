@@ -510,7 +510,14 @@
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
-        "infoLensBlur": "{{name}}, vervaging {{amount}}"
+        "infoLensBlur": "{{name}}, vervaging {{amount}}",
+        "groups": {
+            "cleanUp": "Opschonen",
+            "lightColor": "Licht en kleur",
+            "detailSize": "Detail en formaat",
+            "generative": "Generatief",
+            "effects": "Effecten"
+        }
     },
     "preview": {
         "empty": {

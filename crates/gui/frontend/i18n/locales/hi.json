@@ -510,7 +510,14 @@
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
-        "infoLensBlur": "{{name}}, ब्लर {{amount}}"
+        "infoLensBlur": "{{name}}, ब्लर {{amount}}",
+        "groups": {
+            "cleanUp": "सफ़ाई",
+            "lightColor": "प्रकाश और रंग",
+            "detailSize": "विवरण और आकार",
+            "generative": "जनरेटिव",
+            "effects": "इफ़ेक्ट"
+        }
     },
     "preview": {
         "empty": {

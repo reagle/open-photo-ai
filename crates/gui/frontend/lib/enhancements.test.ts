@@ -8,6 +8,7 @@ import { lensInfo } from "@/ipc/lens";
 import { CATALOGUE, HOLIDAY } from "@/test/support";
 import {
     applyOrder,
+    ENHANCEMENT_GROUPS,
     ENHANCEMENTS,
     type Enhancement,
     enlargement,
@@ -65,6 +66,16 @@ describe("the order a chain runs in", () => {
 describe("the enhancements this application presents", () => {
     it("names ten", () => {
         expect(ENHANCEMENTS).toHaveLength(10);
+    });
+
+    it("groups them in runs of their own order, each heading used and in the order the headings are listed", () => {
+        // A heading covers consecutive entries, so grouping the menu never reorders it: collapsing each run to its
+        // group gives the headings themselves, once each and in order.
+        const runs = ENHANCEMENTS.map(({ group }) => group).filter(
+            (group, index, groups) => index === 0 || group !== groups[index - 1],
+        );
+
+        expect(runs).toEqual(ENHANCEMENT_GROUPS.map(({ group }) => group));
     });
 
     it("names only families the catalogue publishes", () => {

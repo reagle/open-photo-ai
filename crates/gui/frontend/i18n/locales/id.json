@@ -500,7 +500,14 @@
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
-        "infoLensBlur": "{{name}}, blur {{amount}}"
+        "infoLensBlur": "{{name}}, blur {{amount}}",
+        "groups": {
+            "cleanUp": "Pembersihan",
+            "lightColor": "Cahaya & warna",
+            "detailSize": "Detail & ukuran",
+            "generative": "Generatif",
+            "effects": "Efek"
+        }
     },
     "preview": {
         "empty": {

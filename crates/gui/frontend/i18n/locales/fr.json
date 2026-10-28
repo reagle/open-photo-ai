@@ -520,7 +520,14 @@
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}} %, {{quality}}",
-        "infoLensBlur": "{{name}}, flou {{amount}}"
+        "infoLensBlur": "{{name}}, flou {{amount}}",
+        "groups": {
+            "cleanUp": "Nettoyage",
+            "lightColor": "Lumière et couleur",
+            "detailSize": "Détails et taille",
+            "generative": "Génératif",
+            "effects": "Effets"
+        }
     },
     "preview": {
         "empty": {

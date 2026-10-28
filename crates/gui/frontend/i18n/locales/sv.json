@@ -510,7 +510,14 @@
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}} %, {{quality}}",
-        "infoLensBlur": "{{name}}, oskärpa {{amount}}"
+        "infoLensBlur": "{{name}}, oskärpa {{amount}}",
+        "groups": {
+            "cleanUp": "Rensa",
+            "lightColor": "Ljus och färg",
+            "detailSize": "Detaljer och storlek",
+            "generative": "Generativt",
+            "effects": "Effekter"
+        }
     },
     "preview": {
         "empty": {

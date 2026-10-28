@@ -500,7 +500,14 @@
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
-        "infoLensBlur": "{{name}}、ぼかし {{amount}}"
+        "infoLensBlur": "{{name}}、ぼかし {{amount}}",
+        "groups": {
+            "cleanUp": "クリーンアップ",
+            "lightColor": "光と色",
+            "detailSize": "ディテールとサイズ",
+            "generative": "生成",
+            "effects": "エフェクト"
+        }
     },
     "preview": {
         "empty": {
