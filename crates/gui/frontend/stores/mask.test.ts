@@ -304,3 +304,103 @@ describe("closing a photograph", () => {
         expect(store().masks.size).toBe(0);
     });
 });
+
+describe("the area painted for Remove", () => {
+    const removal = (path = PATH) => store().removals.get(path);
+
+    /** One stroke painted on the removal, as the preview paints it while the removal is being edited. */
+    const removed = (x: number, path = PATH) => {
+        store().startEditing(path, "removal");
+        stroke(x, path);
+    };
+
+    it("takes the strokes painted while it is edited, and the limiting mask none of them", () => {
+        removed(0.1);
+
+        expect(removal()?.strokes).toHaveLength(1);
+        expect(entry()).toBeUndefined();
+        expect(store().editing).toEqual({ path: PATH, target: "removal" });
+    });
+
+    it("keeps a stroke in the region it began in, whichever is edited when it ends", () => {
+        store().startEditing(PATH, "removal");
+        store().beginStroke(PATH, 0.1, 0.5, false);
+        expect(store().live?.target).toBe("removal");
+
+        // Switching regions mid-stroke drops the stroke rather than committing it to the other one.
+        store().startEditing(PATH, "limit");
+        store().endStroke(0.3, 0.5);
+
+        expect(removal()).toBeUndefined();
+        expect(entry()).toBeUndefined();
+    });
+
+    it("has a history of its own, which the limiting mask's undo never reaches", () => {
+        store().startEditing(PATH, "limit");
+        stroke(0.1);
+        removed(0.5);
+        removed(0.6);
+
+        store().undo(PATH);
+        expect(entry()?.strokes).toHaveLength(0);
+        expect(removal()?.strokes).toHaveLength(2);
+
+        store().undo(PATH, "removal");
+        expect(removal()?.strokes).toHaveLength(1);
+        store().redo(PATH, "removal");
+        expect(removal()?.strokes).toHaveLength(2);
+
+        store().clear(PATH, "removal");
+        expect(removal()?.strokes).toEqual([]);
+        expect(removal()?.undo).toHaveLength(3);
+    });
+
+    it("is taken away and given back by region for a change of crop", () => {
+        removed(0.1);
+        store().startEditing(PATH, "limit");
+        stroke(0.5);
+
+        const taken = store().takeMask(PATH, "removal");
+        expect(taken?.strokes).toHaveLength(1);
+        expect(removal()).toBeUndefined();
+        expect(entry()?.strokes).toHaveLength(1);
+
+        store().restoreMask(PATH, taken as NonNullable<typeof taken>, "removal");
+        expect(removal()?.strokes).toEqual(taken?.strokes);
+    });
+
+    it("is forgotten alone when its Remove is taken off, and stops being painted", () => {
+        removed(0.1);
+        store().startEditing(PATH, "limit");
+        stroke(0.5);
+        store().startEditing(PATH, "removal");
+
+        store().forgetTarget(PATH, "removal");
+
+        expect(removal()).toBeUndefined();
+        expect(entry()?.strokes).toHaveLength(1);
+        expect(store().editing).toBeUndefined();
+    });
+
+    it("leaves the limiting mask being painted when the removal is forgotten", () => {
+        removed(0.1);
+        store().startEditing(PATH, "limit");
+
+        store().forgetTarget(PATH, "removal");
+
+        expect(store().editing).toEqual({ path: PATH, target: "limit" });
+    });
+
+    it("goes with its photograph when it closes, as the mask does", () => {
+        openFiles(HOLIDAY, SUNSET);
+        removed(0.1);
+        removed(0.1, SUNSET.path);
+
+        act(() => useFileStore.getState().closeFile(PATH));
+        expect(removal()).toBeUndefined();
+        expect(removal(SUNSET.path)).toBeDefined();
+
+        act(() => useFileStore.getState().closeAll());
+        expect(store().removals.size).toBe(0);
+    });
+});

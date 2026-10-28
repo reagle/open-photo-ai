@@ -74,6 +74,7 @@ export const EnhancementList = () => {
                         entry={familyEntry(families, operation.family)}
                         {...(file.identity && { identity: file.identity })}
                         suspended={suspendedBecause(stack, operation.family)}
+                        path={file.path}
                         // Shared with the Delete key, so the two routes are one.
                         onRemove={() => removeEnhancementOf(file.path, operation.family)}
                         onChange={(changed) => replaceEnhancement(file.path, changed)}

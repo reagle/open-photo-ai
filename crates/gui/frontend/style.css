@@ -145,6 +145,12 @@
      */
     --link: #38bdf8;
     --link-hover: #7dd3fc;
+    /*
+     * The tint over what Remove will take out, beside the limiting mask's `--primary`: the two are painted with the
+     * same brush and must never be mistaken for each other. Magenta, the colour editors' heal and remove brushes
+     * draw, which is far from the blue in hue and is rarely the colour of what is being removed.
+     */
+    --removal: #e040fb;
 }
 
 /*
@@ -220,6 +226,7 @@
     --color-warning: var(--warning);
     --color-link: var(--link);
     --color-link-hover: var(--link-hover);
+    --color-removal: var(--removal);
 
     /* The scale shadcn's components address; `--radius` above is the one number that moves it. */
     --radius-sm: calc(var(--radius) - 4px);

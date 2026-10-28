@@ -8,7 +8,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isEmpty, SLIDER_MAX, sizeToSlider, sliderToSize, withModifier } from "@/lib/mask";
 import { toPercent } from "@/lib/utils";
-import { useFileMask, useMaskStore } from "@/stores/mask";
+import { type Target, useFileMask, useMaskStore } from "@/stores/mask";
 import { useMaskKeys } from "./useMaskKeys";
 
 /** A brush's size as the panel reads it: a percent of the longer side, to a tenth below one percent. */
@@ -91,6 +91,10 @@ const Setting = ({
  * The tools of editing a mask: paint or erase, the brush's size and softness, undo and redo, invert and clear, the
  * tint, and the way out.
  *
+ * **One panel for both of a photograph's regions**, the limiting mask and the area Remove takes out (`target`): the
+ * same brush, the same keys, the same undo. The removal's is titled "Paint area to remove", says that a stroke is
+ * removed when it ends, and has no Invert - a removal turned over would take out everything but what was painted.
+ *
  * Drawn in the sidebar, in the place of the section's buttons, and not in a popover: the user's attention is on the
  * preview, and a popover would close on the first click in it. It is mounted exactly while the preview is painting on
  * `path`, which is also what keeps its keys - see {@link useMaskKeys} - alive only that long.
@@ -98,12 +102,14 @@ const Setting = ({
  * **A control the mouse has pressed lets go of the focus.** A focused button is pressed again by Space, and Space is
  * how the photograph is panned while painting. Keyboard activation (a click with no pointer behind it) keeps its focus.
  */
-export const MaskPanel = ({ path }: { path: string }) => {
+export const MaskPanel = ({ path, target = "limit" }: { path: string; target?: Target }) => {
     const { t } = useTranslation();
-    useMaskKeys(path);
+    useMaskKeys(path, target);
 
     const tool = useMaskStore((state) => state.tool);
-    const entry = useFileMask(path);
+    const entry = useFileMask(path, target);
+    const removal = target === "removal";
+    const title = removal ? t("mask.removal.title") : t("mask.panel.title");
     const { setMode, setSize, setSoftness, setOverlay, undo, redo, invert, clear, stopEditing } =
         useMaskStore.getState();
 
@@ -119,11 +125,20 @@ export const MaskPanel = ({ path }: { path: string }) => {
         // A click bubbling here is a click on one of the controls, which is all this contains.
         // biome-ignore lint/a11y/useKeyWithClickEvents: not a control; it only hands the focus back
         <fieldset
-            aria-label={t("mask.panel.title")}
+            aria-label={title}
             onClick={releaseFocus}
             className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
             data-slot="mask-panel"
+            data-target={target}
         >
+            {/* Named on screen for the removal, which opens on adding Remove and has to say what it is for. */}
+            {removal && (
+                <span className="flex items-center gap-2 text-[13px] font-semibold text-foreground">
+                    <span aria-hidden className="size-2.5 flex-none rounded-full bg-removal" />
+                    {title}
+                </span>
+            )}
+
             <ToggleGroup
                 type="single"
                 variant="outline"
@@ -172,7 +187,7 @@ export const MaskPanel = ({ path }: { path: string }) => {
                     label={t("mask.panel.undo")}
                     shortcut={withModifier("Z")}
                     disabled={(entry?.undo.length ?? 0) === 0}
-                    onClick={() => undo(path)}
+                    onClick={() => undo(path, target)}
                 >
                     <Undo2 />
                 </Tool>
@@ -180,15 +195,17 @@ export const MaskPanel = ({ path }: { path: string }) => {
                     label={t("mask.panel.redo")}
                     shortcut={withModifier("Z", true)}
                     disabled={(entry?.redo.length ?? 0) === 0}
-                    onClick={() => redo(path)}
+                    onClick={() => redo(path, target)}
                 >
                     <Redo2 />
                 </Tool>
-                {/* Nothing to turn over until something is painted. */}
-                <Tool label={t("mask.panel.invert")} disabled={!painted} onClick={() => invert(path)}>
-                    <Contrast />
-                </Tool>
-                <Tool label={t("mask.panel.clear")} disabled={!painted} onClick={() => clear(path)}>
+                {/* Nothing to turn over until something is painted; and nothing a removal can turn over at all. */}
+                {!removal && (
+                    <Tool label={t("mask.panel.invert")} disabled={!painted} onClick={() => invert(path)}>
+                        <Contrast />
+                    </Tool>
+                )}
+                <Tool label={t("mask.panel.clear")} disabled={!painted} onClick={() => clear(path, target)}>
                     <Trash2 />
                 </Tool>
             </div>
@@ -204,7 +221,9 @@ export const MaskPanel = ({ path }: { path: string }) => {
                 />
             </label>
 
-            <p className="text-xs leading-relaxed text-muted-foreground text-pretty">{t("mask.panel.hint")}</p>
+            <p className="text-xs leading-relaxed text-muted-foreground text-pretty">
+                {removal ? t("mask.removal.hint") : t("mask.panel.hint")}
+            </p>
 
             <Button
                 onClick={stopEditing}

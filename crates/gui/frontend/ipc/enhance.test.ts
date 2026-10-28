@@ -121,6 +121,25 @@ describe("enhance", () => {
         expect(args.mask).toBeUndefined();
     });
 
+    it("sends a removal's region on the operation itself, under the name Rust's `Requested::mask` reads", () => {
+        // The removal's region and the limiting mask are two arguments, one per operation and one per run.
+        const region = {
+            strokes: [{ erase: false, radius: 0.02, softness: 0, points: [0.4, 0.5, 0.6, 0.5] }],
+            inverted: false,
+        };
+        const lima: Operation = { family: "remove", codename: "lima", precision: "fp32", parameters: {}, mask: region };
+
+        enhance("0123456789abcdef", [lima, kyoto], "auto");
+
+        const [, args] = invoked.mock.calls[0] as [string, { operations: Operation[]; mask?: unknown }];
+
+        expect(args.operations).toEqual([
+            { family: "remove", codename: "lima", precision: "fp32", parameters: {}, mask: region },
+            kyoto,
+        ]);
+        expect(args.mask).toBeUndefined();
+    });
+
     it("mints the run's name before the command is called", () => {
         // The property the whole cancellation story rests on: a stop and its run cross the boundary
         // independently and either may arrive first, so an effect that starts a run must have the

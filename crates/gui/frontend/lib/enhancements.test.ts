@@ -10,6 +10,8 @@ import {
     ENHANCEMENTS,
     type Enhancement,
     enlargement,
+    familiesWhere,
+    isPainted,
     isSuggestible,
     modelChoice,
     newOperation,
@@ -18,6 +20,7 @@ import {
     publishedRange,
     restoreEnlarges,
     runnable,
+    SETTABLE,
     startingScale,
     suggestedOperation,
     suspendedBecause,
@@ -53,8 +56,8 @@ describe("the order a chain runs in", () => {
 });
 
 describe("the enhancements this application presents", () => {
-    it("names nine", () => {
-        expect(ENHANCEMENTS).toHaveLength(9);
+    it("names ten", () => {
+        expect(ENHANCEMENTS).toHaveLength(10);
     });
 
     it("names only families the catalogue publishes", () => {
@@ -77,6 +80,7 @@ describe("the enhancements this application presents", () => {
 
     it("lists them in the order the menu offers them", () => {
         expect(ENHANCEMENTS.map(({ family }) => family)).toEqual([
+            "remove",
             "denoise",
             "face_recovery",
             "colorization",
@@ -87,6 +91,30 @@ describe("the enhancements this application presents", () => {
             "restore",
             "grain",
         ]);
+    });
+});
+
+describe("the enhancements painted with the brush", () => {
+    it("are Remove alone", () => {
+        expect(ENHANCEMENTS.filter(({ family }) => isPainted(family)).map(({ family }) => family)).toEqual(["remove"]);
+        expect(isPainted("detection")).toBe(false);
+    });
+
+    it("are left out of what a setting can be about, and so of what Autopilot is asked to suggest", () => {
+        // One model, so no default to choose; and what is removed is the user's to paint, never an analysis's.
+        expect(SETTABLE.map(({ family }) => family)).not.toContain("remove");
+        expect(SETTABLE).toHaveLength(ENHANCEMENTS.length - 1);
+        expect(familiesWhere(() => true)).toEqual(SETTABLE.map(({ family }) => family));
+    });
+
+    it("are added as Lima, carrying nothing a control sets", () => {
+        // The region is not a parameter of the stack: the strokes are kept with their undo and put in on the way out.
+        expect(newOperation("remove", entry("remove"), undefined)).toEqual({
+            family: "remove",
+            codename: "lima",
+            precision: "fp32",
+            parameters: {},
+        });
     });
 });
 
@@ -230,6 +258,7 @@ describe("what the progress chip calls the family a report carries", () => {
      * here is a type error rather than a case this walk silently skips.
      */
     const EVERY_FAMILY: Record<Family, true> = {
+        remove: true,
         detection: true,
         denoise: true,
         face_recovery: true,
@@ -578,8 +607,9 @@ describe("an upscale beside a restore", () => {
 });
 
 describe("which enhancements Autopilot may suggest", () => {
-    it("is every one but restore, which a user chooses for a photograph and an analysis never does", () => {
+    it("is every one but remove and restore, which a user chooses for a photograph and an analysis never does", () => {
         expect(ENHANCEMENTS.filter(({ family }) => !isSuggestible(family)).map(({ family }) => family)).toEqual([
+            "remove",
             "restore",
             "grain",
         ]);
@@ -590,6 +620,7 @@ describe("which enhancements Autopilot may suggest", () => {
 describe("the operation an Autopilot suggestion becomes", () => {
     // Each family's stored default, so "the user's model" is a choice rather than the catalogue's first entry.
     const stored: Record<Exclude<Family, "detection">, string> = {
+        remove: "lima_fp32",
         denoise: "malmo_fp16",
         sharpen: "novgorod_fp32",
         light_adjustment: "lyon_fp16",
@@ -601,10 +632,10 @@ describe("the operation an Autopilot suggestion becomes", () => {
         grain: "sensor_fp32",
     };
 
-    // Not restore or grain, which no analysis suggests.
+    // Not restore or grain, which no analysis suggests, and never a painted one - see `SETTABLE`.
     it.each(
-        ENHANCEMENTS.map(({ family }) => family).filter(
-            (family): family is Exclude<Family, "detection" | "upscale" | "restore" | "grain"> =>
+        SETTABLE.map(({ family }) => family).filter(
+            (family): family is Exclude<Family, "detection" | "upscale" | "restore" | "grain" | "remove"> =>
                 family !== "upscale" && isSuggestible(family),
         ),
     )("is exactly what the add menu builds for %s, with the user's stored model", (family) => {

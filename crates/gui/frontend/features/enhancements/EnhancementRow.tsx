@@ -17,6 +17,7 @@ import type { ShortcutAction } from "@/lib/shortcuts";
 import { cn, toPercent } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useFaceChoice, useFacesStore, useImageFaces } from "@/stores/faces";
+import { useHasMask, useIsEditing, useMaskStore } from "@/stores/mask";
 import { useOptionsPanelStore } from "@/stores/optionsPanel";
 import { useSettingsStore } from "@/stores/settings";
 import { ColorBalanceOptions } from "./ColorBalanceOptions";
@@ -54,6 +55,8 @@ type EnhancementRowProps = {
      * for a row drawn outside the list, which then names no key.
      */
     place?: number;
+    /** The photograph's path, which a removal's strokes are kept by. */
+    path: string;
     /** Takes this enhancement off the image's stack. */
     onRemove: () => void;
     /** Puts a changed version of this enhancement back on the stack, which re-runs the preview. */
@@ -95,11 +98,19 @@ export const EnhancementRow = ({
     identity,
     suspended,
     place,
+    path,
     onRemove,
     onChange,
 }: EnhancementRowProps) => {
     const { t } = useTranslation();
     const Icon = enhancement.icon;
+
+    /*
+     * A removal's region, which is all a Remove row reports and all its control opens: whether anything is painted,
+     * and whether the brush is on it now.
+     */
+    const removalPainted = useHasMask(path, "removal");
+    const removalEditing = useIsEditing(path, "removal");
 
     /*
      * The faces found in this photograph as it is framed, which is what a face-recovery row counts.
@@ -197,6 +208,9 @@ export const EnhancementRow = ({
      */
     const options = () => {
         switch (operation.family) {
+            // Painted, not set: the row opens the brush instead of a panel - see the trigger below.
+            case "remove":
+                return null;
             case "denoise":
                 return (
                     <DenoiseOptions enhancement={enhancement} operation={operation} entry={entry} onChange={onChange} />
@@ -275,6 +289,11 @@ export const EnhancementRow = ({
      */
     const info = () => {
         switch (operation.family) {
+            // Whether there is anything to remove yet: a Remove with nothing painted does nothing at all.
+            case "remove":
+                return removalPainted
+                    ? t("enhancements.removal.painted", { name })
+                    : t("enhancements.removal.unpainted", { name });
             case "face_recovery":
                 /*
                  * **The count is the faces actually found in the photograph as it is framed**, so
@@ -349,68 +368,106 @@ export const EnhancementRow = ({
         }
     };
 
+    const label = (
+        <>
+            <Icon className="size-5 flex-none" />
+
+            <span className={cn("flex min-w-0 flex-col gap-px", suspended && "opacity-60")}>
+                <span className="text-[13px]">{t(enhancement.nameKey)}</span>
+                <span className="text-xs text-foreground-dim italic" data-slot="enhancement-info">
+                    {/* What it is set to do says nothing while it does not run; why it does not, does. */}
+                    {suspended ? t(suspended) : info()}
+                </span>
+            </span>
+        </>
+    );
+
+    /*
+     * **A painted enhancement's row opens the brush, not a popover.** Its whole setting is what is painted over the
+     * preview, and a popover would close on the first press there (Radix's outside click). The row toggles the brush
+     * panel in the sidebar, under the list, and reads as pressed while it is up - the open row's paint, as a popover's
+     * row has it.
+     */
+    const brush = enhancement.painted === true;
+
     return (
         <div
             className="group relative border-b border-border"
             data-slot="enhancement-row"
             data-family={operation.family}
         >
-            <Popover open={panelOpen} onOpenChange={setPanelOpen}>
+            {brush ? (
                 <HintTooltip tip={rowHint.tooltip}>
-                    <PopoverTrigger asChild>
-                        {/*
-                         * The whole row is the trigger, which is the reference's arrangement and the
-                         * design's (screen 14).
-                         *
-                         * `min-h` rather than a fixed height: the two lines are 13px and 12px in every
-                         * language, but a model name long enough to wrap has to be able to. The panel is
-                         * anchored against `ENHANCEMENT_ROW_HEIGHT`, which is this `min-h-13`.
-                         *
-                         * `aria-expanded:bg-secondary` beside the hover, because the design paints an
-                         * open row exactly as it paints a hovered one (screen 11) - a row whose panel is
-                         * up with nothing marking it is a panel with no visible source. Not
-                         * `data-[state=open]`: the tooltip around the trigger writes its own `data-state`
-                         * over the popover's.
-                         */}
-                        <button
-                            type="button"
-                            data-slot="enhancement-trigger"
-                            aria-keyshortcuts={rowHint.ariaKeyShortcuts}
-                            className="flex min-h-13 w-full items-center gap-3 py-2 pr-10 pl-4 text-left hover:bg-secondary aria-expanded:bg-secondary"
-                        >
-                            <Icon className="size-5 flex-none" />
+                    <button
+                        type="button"
+                        data-slot="enhancement-trigger"
+                        aria-pressed={removalEditing}
+                        aria-keyshortcuts={rowHint.ariaKeyShortcuts}
+                        onClick={(event) => {
+                            const store = useMaskStore.getState();
 
-                            <span className={cn("flex min-w-0 flex-col gap-px", suspended && "opacity-60")}>
-                                <span className="text-[13px]">{t(enhancement.nameKey)}</span>
-                                <span className="text-xs text-foreground-dim italic" data-slot="enhancement-info">
-                                    {/* What it is set to do says nothing while it does not run; why it does not, does. */}
-                                    {suspended ? t(suspended) : info()}
-                                </span>
-                            </span>
-                        </button>
-                    </PopoverTrigger>
+                            if (removalEditing) store.stopEditing();
+                            else store.startEditing(path, "removal");
+
+                            // A mouse press lets go of the focus, as the panel's controls do: Space is the brush's
+                            // pan, and a focused row would take it as a press that closes the brush again.
+                            if (event.detail !== 0) event.currentTarget.blur();
+                        }}
+                        className="flex min-h-13 w-full items-center gap-3 py-2 pr-10 pl-4 text-left hover:bg-secondary aria-pressed:bg-secondary"
+                    >
+                        {label}
+                    </button>
                 </HintTooltip>
-
-                <OptionsPanel title={t(enhancement.nameKey)}>
-                    {suspended ? (
-                        <>
-                            <p className="text-muted-foreground text-xs" data-slot="enhancement-suspended">
-                                {t(suspended)}
-                            </p>
+            ) : (
+                <Popover open={panelOpen} onOpenChange={setPanelOpen}>
+                    <HintTooltip tip={rowHint.tooltip}>
+                        <PopoverTrigger asChild>
                             {/*
-                             * Drawn as it is set, so the user sees what will run again once the reason goes, and
-                             * unavailable: a disabled fieldset disables every control inside it, the model tray's
-                             * and the scale's alike, with no control having to know.
+                             * The whole row is the trigger, which is the reference's arrangement and the
+                             * design's (screen 14).
+                             *
+                             * `min-h` rather than a fixed height: the two lines are 13px and 12px in every
+                             * language, but a model name long enough to wrap has to be able to. The panel is
+                             * anchored against `ENHANCEMENT_ROW_HEIGHT`, which is this `min-h-13`.
+                             *
+                             * `aria-expanded:bg-secondary` beside the hover, because the design paints an
+                             * open row exactly as it paints a hovered one (screen 11) - a row whose panel is
+                             * up with nothing marking it is a panel with no visible source. Not
+                             * `data-[state=open]`: the tooltip around the trigger writes its own `data-state`
+                             * over the popover's.
                              */}
-                            <fieldset disabled className="flex min-w-0 flex-col gap-4 opacity-50">
-                                {options()}
-                            </fieldset>
-                        </>
-                    ) : (
-                        options()
-                    )}
-                </OptionsPanel>
-            </Popover>
+                            <button
+                                type="button"
+                                data-slot="enhancement-trigger"
+                                aria-keyshortcuts={rowHint.ariaKeyShortcuts}
+                                className="flex min-h-13 w-full items-center gap-3 py-2 pr-10 pl-4 text-left hover:bg-secondary aria-expanded:bg-secondary"
+                            >
+                                {label}
+                            </button>
+                        </PopoverTrigger>
+                    </HintTooltip>
+
+                    <OptionsPanel title={t(enhancement.nameKey)}>
+                        {suspended ? (
+                            <>
+                                <p className="text-muted-foreground text-xs" data-slot="enhancement-suspended">
+                                    {t(suspended)}
+                                </p>
+                                {/*
+                                 * Drawn as it is set, so the user sees what will run again once the reason goes, and
+                                 * unavailable: a disabled fieldset disables every control inside it, the model
+                                 * tray's and the scale's alike, with no control having to know.
+                                 */}
+                                <fieldset disabled className="flex min-w-0 flex-col gap-4 opacity-50">
+                                    {options()}
+                                </fieldset>
+                            </>
+                        ) : (
+                            options()
+                        )}
+                    </OptionsPanel>
+                </Popover>
+            )}
 
             {/*
              * A sibling of the popover rather than a child of it, so closing the panel above does not

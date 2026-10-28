@@ -222,17 +222,21 @@ const GRAIN: VariantEntry["parameters"] = [
     { name: "match", kind: "range", min: 0, max: 1, default: 1 },
 ];
 
+/** What Lima publishes: the region a removal takes out, painted rather than set by a control. */
+const MASK: VariantEntry["parameters"] = [{ name: "mask", kind: "mask" }];
+
 /** The place `opai`'s `Family::APPLY_ORDER` gives each family in a chain; detection has none. */
 const ORDER: Partial<Record<Family, number>> = {
-    denoise: 0,
-    face_recovery: 1,
-    colorization: 2,
-    light_adjustment: 3,
-    color_balance: 4,
-    sharpen: 5,
-    upscale: 6,
-    restore: 7,
-    grain: 8,
+    remove: 0,
+    denoise: 1,
+    face_recovery: 2,
+    colorization: 3,
+    light_adjustment: 4,
+    color_balance: 5,
+    sharpen: 6,
+    upscale: 7,
+    restore: 8,
+    grain: 9,
 };
 
 const family = (name: Family, variants: VariantEntry[]): FamilyEntry => {
@@ -256,6 +260,8 @@ const family = (name: Family, variants: VariantEntry[]): FamilyEntry => {
  * publishes - and the whole point of `opai::catalogue()` is that there is one answer.
  */
 export const CATALOGUE: FamilyEntry[] = [
+    // The one model published at a single precision that takes a region: Lima, FP32 only.
+    family("remove", [variant("lima", "Lima", ["fp32"], MASK)]),
     family("denoise", [
         variant("stockholm", "Stockholm", ["fp32", "fp16"], STRENGTH),
         variant("gothenburg", "Gothenburg", ["fp32", "fp16"], STRENGTH),

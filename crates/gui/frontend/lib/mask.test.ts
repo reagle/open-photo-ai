@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Operation } from "@/ipc/enhance";
 import {
     isEmpty,
     keepsPoint,
@@ -6,6 +7,7 @@ import {
     pngDataUrl,
     previewSize,
     radiusOf,
+    regionOf,
     SIZE_MAX,
     SIZE_MIN,
     sizeToSlider,
@@ -14,6 +16,7 @@ import {
     stepSoftness,
     strokesAfter,
     toWire,
+    withRemoval,
 } from "./mask";
 
 const STROKE = { erase: false, radius: 0.025, softness: 0.5, points: [0.1, 0.2] };
@@ -107,6 +110,37 @@ describe("emptiness and the wire", () => {
         toWire({ strokes: [stroke], inverted: false });
 
         expect(stroke.points).toEqual([0.123456789, 0.5]);
+    });
+});
+
+describe("a removal's region on the wire", () => {
+    it("is sent even when nothing is painted, as a mask with no strokes", () => {
+        // Rust leaves a removal of nothing out of the chain; sending none would be a second way of saying it.
+        expect(regionOf(undefined)).toEqual({ strokes: [], inverted: false });
+        expect(regionOf({ strokes: [], inverted: false })).toEqual({ strokes: [], inverted: false });
+    });
+
+    it("carries the strokes rounded as the limiting mask's are, and is never turned over", () => {
+        const painted = { strokes: [{ ...STROKE, points: [0.1234567, 0.7654321] }], inverted: true };
+
+        expect(regionOf(painted)).toEqual({
+            strokes: [{ ...STROKE, points: [0.12346, 0.76543] }],
+            inverted: false,
+        });
+    });
+
+    it("is put on the Remove of a chain and on nothing else", () => {
+        const remove: Operation = { family: "remove", codename: "lima", precision: "fp32", parameters: {} };
+        const upscale: Operation = {
+            family: "upscale",
+            codename: "kyoto",
+            precision: "fp32",
+            parameters: { scale: 2 },
+        };
+        const region = regionOf({ strokes: [STROKE], inverted: false });
+
+        expect(withRemoval([remove, upscale], region)).toEqual([{ ...remove, mask: region }, upscale]);
+        expect(withRemoval([upscale], region)).toEqual([upscale]);
     });
 });
 

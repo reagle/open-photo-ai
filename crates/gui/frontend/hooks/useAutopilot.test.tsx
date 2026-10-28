@@ -129,11 +129,15 @@ describe("an analysis", () => {
 
         void analyse(HOLIDAY, undefined);
 
-        // And never restore or grain, which no analysis suggests.
+        // And never restore or grain, which no analysis suggests, nor Remove: what it takes out is the user's to paint.
         expect(asking[0]?.families).toEqual(
             ENHANCEMENTS.map(({ family }) => family).filter(
                 (family) =>
-                    family !== "colorization" && family !== "denoise" && family !== "restore" && family !== "grain",
+                    family !== "colorization" &&
+                    family !== "denoise" &&
+                    family !== "restore" &&
+                    family !== "grain" &&
+                    family !== "remove",
             ),
         );
     });

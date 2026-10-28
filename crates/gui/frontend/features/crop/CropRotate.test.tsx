@@ -56,6 +56,31 @@ describe("CropRotate", () => {
         expect(screen.getByText(/mouse wheel or the trackpad pinch/)).toBeInTheDocument();
     });
 
+    it("says that applying a framing clears the area painted for Remove, and both where both are painted", () => {
+        useMaskStore.setState(useMaskStore.getInitialState(), true);
+        render(<CropRotate open onClose={() => {}} />);
+
+        act(() => {
+            const { startEditing, beginStroke, endStroke } = useMaskStore.getState();
+
+            startEditing(HOLIDAY.path, "removal");
+            beginStroke(HOLIDAY.path, 0.2, 0.2, false);
+            endStroke(0.4, 0.2);
+        });
+        expect(screen.getByText("Changing the crop clears the area painted for Remove.")).toBeInTheDocument();
+
+        act(() => {
+            const { startEditing, beginStroke, endStroke } = useMaskStore.getState();
+
+            startEditing(HOLIDAY.path, "limit");
+            beginStroke(HOLIDAY.path, 0.2, 0.2, false);
+            endStroke(0.4, 0.2);
+        });
+        expect(
+            screen.getByText("Changing the crop clears the mask and the area painted for Remove."),
+        ).toBeInTheDocument();
+    });
+
     it("says that applying a framing clears the mask, but only where there is one", () => {
         useMaskStore.setState(useMaskStore.getInitialState(), true);
         render(<CropRotate open onClose={vi.fn()} />);

@@ -2,7 +2,7 @@ import { toast } from "sonner";
 import i18n from "@/i18n";
 import type { Operation } from "@/ipc/enhance";
 import { revealImage } from "@/ipc/images";
-import { ENHANCEMENTS } from "@/lib/enhancements";
+import { ENHANCEMENTS, isPainted } from "@/lib/enhancements";
 import { track } from "@/lib/faro";
 import { report } from "@/lib/report";
 import { useAddEnhancementMenuStore } from "@/stores/addEnhancementMenu";
@@ -11,6 +11,7 @@ import { useCropDialogStore } from "@/stores/cropDialog";
 import { useDrawerStore } from "@/stores/drawer";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useFileStore } from "@/stores/files";
+import { useMaskStore } from "@/stores/mask";
 import { useOptionsPanelStore } from "@/stores/optionsPanel";
 import { nextPreviewMode, usePreviewStore } from "@/stores/preview";
 
@@ -48,6 +49,8 @@ const currentFile = () => {
 /** Takes one enhancement off one image's stack, as its row's remove button does. */
 export const removeEnhancementOf = (path: string, family: Family) => {
     useEnhancementStore.getState().removeEnhancement(path, family);
+    // A removal's strokes are its whole setting, and go with it as an upscale's scale goes.
+    if (isPainted(family)) useMaskStore.getState().forgetTarget(path, "removal");
     track("enhancement_removed", { family });
 };
 
@@ -111,6 +114,14 @@ export const openOptionsAt = (place: number): boolean => {
         .filter((family) => ENHANCEMENTS.some((entry) => entry.family === family));
     const family = families[place - 1];
     if (!family) return false;
+
+    // A painted enhancement's row opens the brush rather than a panel, and so does its key.
+    if (isPainted(family)) {
+        const mask = useMaskStore.getState();
+        if (mask.editing?.path === file.path && mask.editing.target === "removal") mask.stopEditing();
+        else mask.startEditing(file.path, "removal");
+        return true;
+    }
 
     useOptionsPanelStore.getState().openPanel(family);
     return true;

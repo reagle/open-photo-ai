@@ -46,20 +46,36 @@ export type Tool = {
     overlay: boolean;
 };
 
-/** A stroke being drawn, which belongs to no mask until the pointer comes up. */
-export type LiveStroke = { path: string; stroke: Stroke };
+/**
+ * Which of a photograph's two painted regions: the **limiting** mask, which keeps the chain's result where it is white
+ * and the photograph where it is black, or the **removal**, what Remove takes out.
+ *
+ * Painted with one brush and one panel, and independent in everything else: each has its own strokes and its own
+ * history, and neither is ever sent in the place of the other - the limiting mask is the run's, the removal is the
+ * Remove operation's. One is edited at a time.
+ */
+export type Target = "limit" | "removal";
+
+/** A stroke being drawn, which belongs to no mask until the pointer comes up - then to `target`'s. */
+export type LiveStroke = { path: string; target: Target; stroke: Stroke };
 
 type MaskStore = {
     // **By path**, like the enhancement stack it limits: the mask belongs to what is done to this file. Strokes are
     // fractions of the *framed* photograph, so a change of framing takes it away - see `takeMask`.
-    /** Each open photograph's mask, keyed by the file's path. */
+    /** Each open photograph's limiting mask, keyed by the file's path. */
     masks: Map<string, MaskEntry>;
+    /**
+     * Each open photograph's removal, keyed the same way: the region its Remove takes out. Belongs to the Remove in the
+     * stack, so taking that off forgets it - see {@link MaskStore.forgetTarget}.
+     */
+    removals: Map<string, MaskEntry>;
     tool: Tool;
     /**
-     * The photograph the preview is painting on, or absent. The preview is in paint mode exactly while this is set, for
-     * that photograph and no other. Left when the photograph changes, the stack empties, Escape is pressed or Done is.
+     * The photograph the preview is painting on, and which of its regions, or absent. The preview is in paint mode
+     * exactly while this is set, for that photograph and no other. Left when the photograph changes, the stack empties,
+     * Escape is pressed or Done is.
      */
-    editing: { path: string } | undefined;
+    editing: { path: string; target: Target } | undefined;
     /** Whether Space is held, which turns a drag from a stroke into a pan. Written by the panel's key handling. */
     panning: boolean;
     /** The stroke under the pointer, if any. Not part of any mask, so drawing it re-runs nothing. */
@@ -75,10 +91,14 @@ type MaskStore = {
     setOverlay: (overlay: boolean) => void;
     setPanning: (panning: boolean) => void;
 
-    startEditing: (path: string) => void;
+    /** Paints `target`'s region of `path` - the limiting mask unless told otherwise - leaving any other. */
+    startEditing: (path: string, target?: Target) => void;
     stopEditing: () => void;
 
-    /** Starts a stroke at (`x`, `y`) with the tool's size and softness, and erasing if the tool is, or `erase` is. */
+    /**
+     * Starts a stroke at (`x`, `y`) with the tool's size and softness, and erasing if the tool is, or `erase` is. It goes
+     * to the region being edited, which is fixed for the stroke: one never ends in another region than it began in.
+     */
     beginStroke: (path: string, x: number, y: number, erase: boolean) => void;
     /**
      * Adds a point to the stroke, unless it is too close to the last one - see {@link keepsPoint}. `aspect` is the
@@ -90,12 +110,15 @@ type MaskStore = {
     /** Drops the stroke without committing it: a press the system took away. */
     cancelStroke: () => void;
 
-    /** Turns the weight over, as one undoable step. Nothing for a mask that paints nothing. */
+    /**
+     * Turns the limiting mask's weight over, as one undoable step. Nothing for a mask that paints nothing. The limiting
+     * mask's alone: a removal turned over would take out everything but what was painted.
+     */
     invert: (path: string) => void;
-    /** Takes every stroke away, as one undoable step. */
-    clear: (path: string) => void;
-    undo: (path: string) => void;
-    redo: (path: string) => void;
+    /** Takes every stroke of `target`'s region away, as one undoable step. */
+    clear: (path: string, target?: Target) => void;
+    undo: (path: string, target?: Target) => void;
+    redo: (path: string, target?: Target) => void;
 
     /**
      * Takes the mask, and its history, away, and hands it back.
@@ -105,10 +128,16 @@ type MaskStore = {
      * with. The entry is always taken, but `undefined` comes back for a mask that paints nothing: there is nothing to
      * offer back, though its history was the old framing's all the same.
      */
-    takeMask: (path: string) => MaskEntry | undefined;
+    takeMask: (path: string, target?: Target) => MaskEntry | undefined;
     /** Gives a mask taken by {@link MaskStore.takeMask} back, with its history, as a change of its own. */
-    restoreMask: (path: string, entry: MaskEntry) => void;
+    restoreMask: (path: string, entry: MaskEntry, target?: Target) => void;
 
+    /**
+     * Forgets one region of one photograph, with its history, and stops painting it: what taking Remove off the stack
+     * does to the strokes that were its whole setting, as taking off an upscale forgets its scale.
+     */
+    forgetTarget: (path: string, target: Target) => void;
+    /** Forgets both of a photograph's regions: the file closed. */
     forget: (path: string) => void;
     forgetAll: () => void;
 };
@@ -132,6 +161,28 @@ const changed = (entry: MaskEntry | undefined, next: Snapshot): MaskEntry => ({
 
 const withEntry = (masks: Map<string, MaskEntry>, path: string, entry: MaskEntry) => new Map(masks).set(path, entry);
 
+/** The store's key for `target`'s map of entries. */
+const KEY = { limit: "masks", removal: "removals" } as const satisfies Record<Target, keyof MaskStore>;
+
+/** `state`'s map of `target`'s entries. */
+const mapOf = (state: Pick<MaskStore, "masks" | "removals">, target: Target) => state[KEY[target]];
+
+/** The change to the store that puts `entry` in as `path`'s `target` region. */
+const putting = (state: Pick<MaskStore, "masks" | "removals">, target: Target, path: string, entry: MaskEntry) => ({
+    [KEY[target]]: withEntry(mapOf(state, target), path, entry),
+});
+
+/** The change to the store that takes `path`'s `target` region out, or `undefined` where it has none. */
+const dropping = (state: Pick<MaskStore, "masks" | "removals">, target: Target, path: string) => {
+    const map = mapOf(state, target);
+    if (!map.has(path)) return;
+
+    const left = new Map(map);
+    left.delete(path);
+
+    return { [KEY[target]]: left };
+};
+
 // Not persisted, as nothing else per photograph in the window is: strokes are editing state, and the framing they are
 // fractions of is itself forgotten at the next launch.
 /**
@@ -142,6 +193,7 @@ const withEntry = (masks: Map<string, MaskEntry>, path: string, entry: MaskEntry
  */
 export const useMaskStore = create<MaskStore>()((set, get) => ({
     masks: new Map<string, MaskEntry>(),
+    removals: new Map<string, MaskEntry>(),
     tool: { mode: "paint", size: SIZE_DEFAULT, softness: SOFTNESS_DEFAULT, overlay: true },
     editing: undefined,
     panning: false,
@@ -158,15 +210,17 @@ export const useMaskStore = create<MaskStore>()((set, get) => ({
     setOverlay: (overlay) => set((state) => ({ tool: { ...state.tool, overlay } })),
     setPanning: (panning) => set((state) => (state.panning === panning ? state : { panning })),
 
-    startEditing: (path) => set({ editing: { path } }),
+    // A region left for another is left as a stroke would be by a pointer that went away: nothing half-drawn moves.
+    startEditing: (path, target = "limit") => set({ editing: { path, target }, live: undefined }),
     stopEditing: () => set({ editing: undefined, panning: false, live: undefined }),
 
     beginStroke: (path, x, y, erase) => {
-        const { tool } = get();
+        const { tool, editing } = get();
 
         set({
             live: {
                 path,
+                target: editing?.path === path ? editing.target : "limit",
                 stroke: {
                     erase: erase || tool.mode === "erase",
                     radius: radiusOf(tool.size),
@@ -197,12 +251,13 @@ export const useMaskStore = create<MaskStore>()((set, get) => ({
             const ends = lastX !== x || lastY !== y;
             const stroke = { ...live.stroke, points: ends ? [...points, x, y] : points };
 
-            const entry = state.masks.get(live.path);
+            const entry = mapOf(state, live.target).get(live.path);
 
             return {
                 live: undefined,
-                masks: withEntry(
-                    state.masks,
+                ...putting(
+                    state,
+                    live.target,
                     live.path,
                     changed(entry, {
                         strokes: [...(entry?.strokes ?? []), stroke],
@@ -230,92 +285,110 @@ export const useMaskStore = create<MaskStore>()((set, get) => ({
             };
         }),
 
-    clear: (path) =>
+    clear: (path, target = "limit") =>
         set((state) => {
-            const entry = state.masks.get(path);
+            const entry = mapOf(state, target).get(path);
             if (!entry || isEmpty(entry)) return state;
 
-            return { masks: withEntry(state.masks, path, changed(entry, { strokes: [], inverted: false })) };
+            return putting(state, target, path, changed(entry, { strokes: [], inverted: false }));
         }),
 
-    undo: (path) =>
+    undo: (path, target = "limit") =>
         set((state) => {
-            const entry = state.masks.get(path);
+            const entry = mapOf(state, target).get(path);
             const previous = entry?.undo.at(-1);
             if (!entry || !previous) return state;
 
-            return {
-                masks: withEntry(state.masks, path, {
-                    ...previous,
-                    undo: entry.undo.slice(0, -1),
-                    redo: [...entry.redo, snapshot(entry)],
-                    version: ++changes,
-                }),
-            };
+            return putting(state, target, path, {
+                ...previous,
+                undo: entry.undo.slice(0, -1),
+                redo: [...entry.redo, snapshot(entry)],
+                version: ++changes,
+            });
         }),
 
-    redo: (path) =>
+    redo: (path, target = "limit") =>
         set((state) => {
-            const entry = state.masks.get(path);
+            const entry = mapOf(state, target).get(path);
             const next = entry?.redo.at(-1);
             if (!entry || !next) return state;
 
-            return {
-                masks: withEntry(state.masks, path, {
-                    ...next,
-                    undo: pushed(entry.undo, snapshot(entry)),
-                    redo: entry.redo.slice(0, -1),
-                    version: ++changes,
-                }),
-            };
+            return putting(state, target, path, {
+                ...next,
+                undo: pushed(entry.undo, snapshot(entry)),
+                redo: entry.redo.slice(0, -1),
+                version: ++changes,
+            });
         }),
 
-    takeMask: (path) => {
-        const entry = get().masks.get(path);
+    takeMask: (path, target = "limit") => {
+        const entry = mapOf(get(), target).get(path);
         if (!entry) return;
 
         // Taken whether or not it paints anything: an emptied mask still holds the old framing's history, and an Undo
         // after the crop must not step back into it.
-        set((state) => {
-            const masks = new Map(state.masks);
-            masks.delete(path);
-
-            return { masks };
-        });
+        set((state) => dropping(state, target, path) ?? state);
 
         return isEmpty(entry) ? undefined : entry;
     },
 
-    restoreMask: (path, entry) =>
-        set((state) => ({ masks: withEntry(state.masks, path, { ...entry, version: ++changes }) })),
+    restoreMask: (path, entry, target = "limit") =>
+        set((state) => putting(state, target, path, { ...entry, version: ++changes })),
+
+    forgetTarget: (path, target) =>
+        set((state) => {
+            const left =
+                state.editing?.path === path && state.editing.target === target
+                    ? { editing: undefined, panning: false }
+                    : {};
+            const live = state.live?.path === path && state.live.target === target ? { live: undefined } : {};
+            const dropped = dropping(state, target, path);
+            if (!dropped && Object.keys(left).length === 0 && Object.keys(live).length === 0) return state;
+
+            return { ...dropped, ...left, ...live };
+        }),
 
     forget: (path) =>
         set((state) => {
             const left = state.editing?.path === path ? { editing: undefined, panning: false } : {};
             const live = state.live?.path === path ? { live: undefined } : {};
-            if (!state.masks.has(path) && Object.keys(left).length === 0 && Object.keys(live).length === 0)
-                return state;
+            const masks = dropping(state, "limit", path);
+            const removals = dropping(state, "removal", path);
+            if (!masks && !removals && Object.keys(left).length === 0 && Object.keys(live).length === 0) return state;
 
-            const masks = new Map(state.masks);
-            masks.delete(path);
-
-            return { masks, ...left, ...live };
+            return { ...masks, ...removals, ...left, ...live };
         }),
 
-    forgetAll: () => set({ masks: new Map<string, MaskEntry>(), editing: undefined, panning: false, live: undefined }),
+    forgetAll: () =>
+        set({
+            masks: new Map<string, MaskEntry>(),
+            removals: new Map<string, MaskEntry>(),
+            editing: undefined,
+            panning: false,
+            live: undefined,
+        }),
 }));
 
-/** One photograph's mask, or `undefined` for one with none. */
-export const useFileMask = (path: string | undefined): MaskEntry | undefined =>
-    useMaskStore((state) => (path === undefined ? undefined : state.masks.get(path)));
+/** One photograph's limiting mask - or, asked for, its removal - or `undefined` for one with none. */
+export const useFileMask = (path: string | undefined, target: Target = "limit"): MaskEntry | undefined =>
+    useMaskStore((state) => (path === undefined ? undefined : mapOf(state, target).get(path)));
 
-/** Whether one photograph has a mask that paints something. */
-export const useHasMask = (path: string | undefined): boolean =>
-    useMaskStore((state) => path !== undefined && !isEmpty(state.masks.get(path)));
+/** Whether one photograph has a limiting mask - or, asked for, a removal - that paints something. */
+export const useHasMask = (path: string | undefined, target: Target = "limit"): boolean =>
+    useMaskStore((state) => path !== undefined && !isEmpty(mapOf(state, target).get(path)));
 
-/** Whether the preview is painting on the photograph at `path`. */
-export const useIsEditing = (path: string | undefined): boolean =>
-    useMaskStore((state) => path !== undefined && state.editing?.path === path);
+/** Whether the preview is painting on the photograph at `path`: on `target`'s region, or on either where none is named. */
+export const useIsEditing = (path: string | undefined, target?: Target): boolean =>
+    useMaskStore(
+        (state) =>
+            path !== undefined &&
+            state.editing?.path === path &&
+            (target === undefined || state.editing.target === target),
+    );
+
+/** Which region of `path` the preview is painting, or `undefined` where it paints none of them. */
+export const useEditingTarget = (path: string | undefined): Target | undefined =>
+    useMaskStore((state) => (path !== undefined && state.editing?.path === path ? state.editing.target : undefined));
 
 /*
  * A per-file owner keyed by path, so a closed photograph's mask goes with it, and a preview painting on it stops. The
