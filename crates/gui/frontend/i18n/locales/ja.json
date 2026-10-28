@@ -513,6 +513,13 @@
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
         "infoLensBlur": "{{name}}、ぼかし {{amount}}",
+        "groups": {
+            "cleanUp": "クリーンアップ",
+            "lightColor": "光と色",
+            "detailSize": "ディテールとサイズ",
+            "generative": "生成",
+            "effects": "エフェクト"
+        },
         "infoGrain": "{{name}}, {{intensity}}%, {{mode}}"
     },
     "preview": {
