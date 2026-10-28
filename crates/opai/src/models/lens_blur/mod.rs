@@ -300,7 +300,10 @@ impl LensBlur {
     }
 
     /// The key the run cache stores this operation's result under:
-    /// `lb-lisbon-fp16-n1.4-x0.55-y0.3-d<signature>-l36-6`.
+    /// `lb-lisbon-fp16-n1.4-x0.55-y0.3-d<signature>-l36-6-v2`.
+    ///
+    /// The render's version, `-v<n>`, so a build whose render or matte join draws differently is
+    /// never served an older build's blur.
     ///
     /// The f-number, the focus point, the depth map's signature (`d0` before one is injected) and the lens the blur
     /// used (`l0` before one is), so a photograph whose EXIF differs is never served another's blur. A matte adds its
@@ -315,7 +318,7 @@ impl LensBlur {
         let lens = self.lens.map_or_else(|| "l0".to_string(), |lens| lens.tag());
 
         let mut tag = format!(
-            "{}-{}-{}-n{}-x{}-y{}-d{depth}-{lens}",
+            "{}-{}-{}-n{}-x{}-y{}-d{depth}-{lens}-v{RENDER_VERSION}",
             Family::LensBlur.prefix(),
             self.variant.codename(),
             self.variant.precision(),
@@ -339,6 +342,12 @@ impl LensBlur {
         tag
     }
 }
+
+/// The version of what the lens blur renders from its inputs, in its cache tag: raised whenever the render, the fill
+/// behind the subject or the join of the mattes draws a different picture from the same depth, matte and settings, so
+/// the run cache never serves a blur an older build drew. 2: the background behind the subject filled from the
+/// nearest of it.
+pub(crate) const RENDER_VERSION: u32 = 2;
 
 impl std::fmt::Display for LensBlur {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -468,12 +477,12 @@ pub(crate) mod tests {
             panic!("Lisbon built another family");
         };
 
-        assert_eq!(blur.cache_tag(), "lb-lisbon-fp16-n1.4-x0.55-y0.3-d0-l0");
+        assert_eq!(blur.cache_tag(), "lb-lisbon-fp16-n1.4-x0.55-y0.3-d0-l0-v2");
 
         let map = Arc::new(two_planes(64, 48, 1.0, 10.0));
         let signature = map.signature();
         let blur = blur.with_depth(map).with_lens(Lens::new(36.0, 6.0, LensOrigin::Exif));
-        assert_eq!(blur.cache_tag(), format!("lb-lisbon-fp16-n1.4-x0.55-y0.3-d{signature:016x}-l36-6"));
+        assert_eq!(blur.cache_tag(), format!("lb-lisbon-fp16-n1.4-x0.55-y0.3-d{signature:016x}-l36-6-v2"));
         assert!(!blur.cache_tag().contains('_'), "{}", blur.cache_tag());
     }
 
