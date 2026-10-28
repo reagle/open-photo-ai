@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { OPEN_LAYER } from "@/lib/layers";
-import { useMaskStore } from "@/stores/mask";
+import { type Target, useMaskStore } from "@/stores/mask";
 
 /** Whether `target` takes typed text, which a key meant for it is never one for the brush. */
 const isTyping = (target: EventTarget | null) =>
@@ -37,7 +37,7 @@ const takesSpace = (target: EventTarget | null) =>
  * and the brackets - by where they are, so a layout that spells them differently, or a Cyrillic one, still has them
  * where the hand expects. `Shift+[` types `{` on some keyboards and the key is the same key.
  */
-export const useMaskKeys = (path: string) => {
+export const useMaskKeys = (path: string, target: Target = "limit") => {
     useEffect(() => {
         const store = () => useMaskStore.getState();
 
@@ -52,8 +52,9 @@ export const useMaskKeys = (path: string) => {
                 event.preventDefault();
                 event.stopPropagation();
 
-                if (key === "y" || event.shiftKey) store().redo(path);
-                else store().undo(path);
+                // The region being edited's own history: the limiting mask's and a removal's are never one undo.
+                if (key === "y" || event.shiftKey) store().redo(path, target);
+                else store().undo(path, target);
 
                 return;
             }
@@ -114,5 +115,5 @@ export const useMaskKeys = (path: string) => {
             window.removeEventListener("blur", onBlur);
             store().setPanning(false);
         };
-    }, [path]);
+    }, [path, target]);
 };

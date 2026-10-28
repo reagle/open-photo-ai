@@ -11,11 +11,12 @@ import {
 import { familyEntry, useCatalogue } from "@/hooks/useCatalogue";
 import type { Operation } from "@/ipc/enhance";
 import { ADD_MENU_GAP, SIDEBAR_PADDING } from "@/lib/constants";
-import { applyOrder, ENHANCEMENTS, newOperation, startingScale } from "@/lib/enhancements";
+import { applyOrder, ENHANCEMENTS, isPainted, newOperation, startingScale } from "@/lib/enhancements";
 import { track } from "@/lib/faro";
 import { useImageCrop } from "@/stores/crop";
 import { useEnhancementStore, useFileEnhancements } from "@/stores/enhancements";
 import { useCurrentFile } from "@/stores/files";
+import { useMaskStore } from "@/stores/mask";
 import { useSettingsStore } from "@/stores/settings";
 
 // Not the design's own 16px. The design puts the menu 16px clear of the **sidebar's** leading edge
@@ -75,6 +76,9 @@ export const AddEnhancement = () => {
 
         addEnhancement(file.path, operation, applyOrder(families));
         track("enhancement_added", { family, source: "manual" });
+
+        // A painted enhancement does nothing until something is painted, so adding it is asking for the brush.
+        if (isPainted(family)) useMaskStore.getState().startEditing(file.path, "removal");
     };
 
     return (

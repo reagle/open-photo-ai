@@ -842,6 +842,57 @@ describe("useCropController", () => {
             expect(toast).not.toHaveBeenCalled();
         });
 
+        it("clears the area painted for Remove with the same notice, and gives it back with the crop", async () => {
+            openFiles(HOLIDAY);
+            act(() => {
+                const { startEditing, beginStroke, endStroke, stopEditing } = useMaskStore.getState();
+
+                startEditing(HOLIDAY.path, "removal");
+                beginStroke(HOLIDAY.path, 0.2, 0.2, false);
+                endStroke(0.5, 0.2);
+                stopEditing();
+            });
+            const painted = useMaskStore.getState().removals.get(HOLIDAY.path)?.strokes;
+            const { hook, widget } = await openOn(decode, { width: 3000, height: 2000 });
+
+            act(() => widget.ref.setCoordinates({ left: 0, top: 0, width: 1000, height: 800 }));
+            act(() => hook.result.current.onApply());
+
+            expect(useMaskStore.getState().removals.has(HOLIDAY.path)).toBe(false);
+            expect(toast).toHaveBeenCalledExactlyOnceWith(
+                "The crop changed, so the area painted for Remove was cleared.",
+                expect.objectContaining({ action: expect.objectContaining({ label: "Undo" }) }),
+            );
+
+            act(() => undoOf()());
+
+            expect(useMaskStore.getState().removals.get(HOLIDAY.path)?.strokes).toEqual(painted);
+            expect(useMaskStore.getState().masks.has(HOLIDAY.path)).toBe(false);
+        });
+
+        it("says so in one notice when both the mask and the area to remove are cleared", async () => {
+            openFiles(HOLIDAY);
+            paint();
+            act(() => {
+                const { startEditing, beginStroke, endStroke } = useMaskStore.getState();
+
+                startEditing(HOLIDAY.path, "removal");
+                beginStroke(HOLIDAY.path, 0.6, 0.6, false);
+                endStroke(0.7, 0.6);
+            });
+            const { hook, widget } = await openOn(decode, { width: 3000, height: 2000 });
+
+            act(() => widget.ref.setCoordinates({ left: 0, top: 0, width: 1000, height: 800 }));
+            act(() => hook.result.current.onApply());
+
+            expect(toast).toHaveBeenCalledExactlyOnceWith(
+                "The crop changed, so the mask and the area painted for Remove were cleared.",
+                expect.anything(),
+            );
+            expect(useMaskStore.getState().masks.has(HOLIDAY.path)).toBe(false);
+            expect(useMaskStore.getState().removals.has(HOLIDAY.path)).toBe(false);
+        });
+
         it("raises no notice for a photograph with no mask, and leaves another photograph's alone", async () => {
             openFiles(HOLIDAY, SUNSET);
             act(() => {

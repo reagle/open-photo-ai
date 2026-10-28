@@ -70,7 +70,7 @@ describe("the mask section", () => {
 
         fireEvent.click(screen.getByRole("button", { name: "Paint mask" }));
 
-        expect(store().editing).toEqual({ path: HOLIDAY.path });
+        expect(store().editing).toEqual({ path: HOLIDAY.path, target: "limit" });
         expect(document.querySelector("[data-slot='mask-panel']")).not.toBeNull();
         expect(screen.queryByRole("button", { name: "Paint mask" })).toBeNull();
 
@@ -224,5 +224,68 @@ describe("the panel", () => {
         expect(document.activeElement).toBe(invert);
         fireEvent.click(invert, { detail: 0 });
         expect(document.activeElement).toBe(invert);
+    });
+});
+
+describe("the brush for Remove", () => {
+    const remove: Operation = { family: "remove", codename: "lima", precision: "fp32", parameters: {} };
+
+    const holding = (...operations: Operation[]) =>
+        act(() => useEnhancementStore.setState({ enhancements: new Map([[HOLIDAY.path, operations]]) }));
+
+    it("stands in for the section while the area to remove is painted, titled for it and with no Invert", () => {
+        holding(remove, sharpen);
+        act(() => store().startEditing(HOLIDAY.path, "removal"));
+        render(<MaskSection />);
+
+        expect(screen.getByText("Paint area to remove")).toBeInTheDocument();
+        expect(document.querySelector("[data-slot='mask-panel']")?.getAttribute("data-target")).toBe("removal");
+        expect(screen.queryByRole("button", { name: "Invert" })).toBeNull();
+        expect(screen.getByRole("button", { name: "Clear" })).toBeInTheDocument();
+        expect(screen.queryByText("No mask")).toBeNull();
+    });
+
+    it("undoes and clears the removal's strokes and not the mask's", () => {
+        holding(remove, sharpen);
+        paint();
+        act(() => store().startEditing(HOLIDAY.path, "removal"));
+        paint();
+        paint();
+        render(<MaskSection />);
+
+        fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+        expect(store().removals.get(HOLIDAY.path)?.strokes).toHaveLength(1);
+
+        fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+        expect(store().removals.get(HOLIDAY.path)?.strokes).toEqual([]);
+        expect(store().masks.get(HOLIDAY.path)?.strokes).toHaveLength(1);
+    });
+
+    it("gives the mask's buttons back when Done is pressed", () => {
+        holding(remove, sharpen);
+        act(() => store().startEditing(HOLIDAY.path, "removal"));
+        render(<MaskSection />);
+
+        fireEvent.click(screen.getByRole("button", { name: "Done" }));
+
+        expect(store().editing).toBeUndefined();
+        expect(screen.getByRole("button", { name: "Paint mask" })).toBeInTheDocument();
+    });
+
+    it("offers no limiting mask for a stack that holds only Remove, which it would have nothing to limit", () => {
+        holding(remove);
+        render(<MaskSection />);
+
+        expect(document.querySelector("[data-slot='mask-section']")).toBeNull();
+    });
+
+    it("stops when Remove leaves the stack", () => {
+        holding(remove, sharpen);
+        act(() => store().startEditing(HOLIDAY.path, "removal"));
+        render(<MaskSection />);
+
+        holding(sharpen);
+
+        expect(store().editing).toBeUndefined();
     });
 });

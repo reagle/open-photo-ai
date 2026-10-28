@@ -199,12 +199,20 @@
             "hint": "Drag to paint. Hold Space to move the photograph.",
             "shortcut": "{{action}} ({{key}})"
         },
+        "removal": {
+            "title": "Paint area to remove",
+            "hint": "Paint over what to remove; it is removed when you let go. Hold Space to move the photograph."
+        },
         "crop": {
-            "notice": "Changing the crop clears the mask."
+            "notice": "Changing the crop clears the mask.",
+            "noticeRemoval": "Changing the crop clears the area painted for Remove.",
+            "noticeBoth": "Changing the crop clears the mask and the area painted for Remove."
         },
         "toast": {
             "cleared": "The crop changed, so the mask was cleared.",
-            "undo": "Undo"
+            "undo": "Undo",
+            "clearedRemoval": "The crop changed, so the area painted for Remove was cleared.",
+            "clearedBoth": "The crop changed, so the mask and the area painted for Remove were cleared."
         }
     },
     "export": {
@@ -312,6 +320,11 @@
         "unsupportedFiles_other": "{{count}} files are not supported: {{names}}"
     },
     "enhancements": {
+        "removal": {
+            "name": "Remove",
+            "painted": "{{name}}, area painted",
+            "unpainted": "{{name}}, nothing painted"
+        },
         "denoise": {
             "name": "Denoise",
             "models": {
@@ -403,6 +416,7 @@
         },
         "progress": {
             "downloading": "Downloading {{percent}}%",
+            "removal": "Remove",
             "denoise": "Denoise",
             "faceRecovery": "Face Recovery",
             "colorization": "Colorize",

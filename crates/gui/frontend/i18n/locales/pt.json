@@ -199,12 +199,20 @@
             "hint": "Arraste para pintar. Segure Space para mover a foto.",
             "shortcut": "{{action}} ({{key}})"
         },
+        "removal": {
+            "title": "Pinte a área a remover",
+            "hint": "Pinte por cima do que quer remover; é removido ao soltar. Segure Space para mover a foto."
+        },
         "crop": {
-            "notice": "Alterar o recorte limpa a máscara."
+            "notice": "Alterar o recorte limpa a máscara.",
+            "noticeRemoval": "Alterar o recorte limpa a área pintada para Remover.",
+            "noticeBoth": "Alterar o recorte limpa a máscara e a área pintada para Remover."
         },
         "toast": {
             "cleared": "O recorte mudou, então a máscara foi limpa.",
-            "undo": "Desfazer"
+            "undo": "Desfazer",
+            "clearedRemoval": "O recorte mudou, então a área pintada para Remover foi limpa.",
+            "clearedBoth": "O recorte mudou, então a máscara e a área pintada para Remover foram limpas."
         }
     },
     "export": {
@@ -312,6 +320,11 @@
         "unsupportedFiles_other": "{{count}} arquivos não são compatíveis: {{names}}"
     },
     "enhancements": {
+        "removal": {
+            "name": "Remover",
+            "painted": "{{name}}, área pintada",
+            "unpainted": "{{name}}, nada pintado"
+        },
         "denoise": {
             "name": "Redução de ruído",
             "models": {
@@ -403,6 +416,7 @@
         },
         "progress": {
             "downloading": "Baixando {{percent}}%",
+            "removal": "Remover",
             "denoise": "Redução de ruído",
             "faceRecovery": "Recup. de rostos",
             "colorization": "Colorização",

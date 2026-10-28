@@ -3,7 +3,7 @@ import { type Mask, maskPreview, type Stroke } from "@/ipc/mask";
 import { isEmpty, pngDataUrl, previewSize, strokesAfter, toWire } from "@/lib/mask";
 import { report } from "@/lib/report";
 import { cn } from "@/lib/utils";
-import { type MaskEntry, useFileMask, useMaskStore } from "@/stores/mask";
+import { type MaskEntry, type Target, useEditingTarget, useFileMask, useMaskStore } from "@/stores/mask";
 
 /** Where the photograph is drawn in a pane, in the pane's own pixels: what the overlay is laid over. */
 export type PhotographBox = { x: number; y: number; width: number; height: number };
@@ -107,11 +107,13 @@ const Strokes = ({
     box,
     radius,
     inverted,
+    target,
 }: {
     strokes: Stroke[];
     box: PhotographBox;
     radius: number;
     inverted: boolean;
+    target: Target;
 }) => (
     <svg
         aria-hidden
@@ -130,7 +132,7 @@ const Strokes = ({
                     key={index}
                     // Taking the tint away is drawn as a pale trace, not as a removal: the picture under it has not
                     // changed yet.
-                    className={takesAway ? "text-foreground" : "text-primary"}
+                    className={takesAway ? "text-foreground" : TINT[target].stroke}
                     opacity={takesAway ? 0.3 : 0.4}
                 >
                     {stroke.points.length <= 2 ? (
@@ -156,6 +158,16 @@ const Strokes = ({
     </svg>
 );
 
+/**
+ * Each region's colour: the theme's primary for the limiting mask, `--removal`'s magenta for what Remove takes out, so
+ * the two painted with one brush are never mistaken for each other. The removal's tint is lighter, since what is under
+ * it is the fill the user is judging.
+ */
+const TINT = {
+    limit: { fill: "bg-primary/40", stroke: "text-primary" },
+    removal: { fill: "bg-removal/35", stroke: "text-removal" },
+} as const satisfies Record<Target, { fill: string; stroke: string }>;
+
 type MaskOverlayProps = {
     /** The photograph whose mask is shown, by the path the store keys it by. */
     path: string;
@@ -176,8 +188,12 @@ type MaskOverlayProps = {
  * events: the pane under it paints, pans and zooms.
  */
 export const MaskOverlay = ({ path, box }: MaskOverlayProps) => {
-    const entry = useFileMask(path);
-    const live = useMaskStore((state) => (state.live?.path === path ? state.live.stroke : undefined));
+    // The region being painted: the overlay is drawn only while one is, and shows that one alone.
+    const target = useEditingTarget(path) ?? "limit";
+    const entry = useFileMask(path, target);
+    const live = useMaskStore((state) =>
+        state.live?.path === path && state.live.target === target ? state.live.stroke : undefined,
+    );
 
     const wanted = previewSize(box.width, box.height, density());
     const shown = usePreview(entry, wanted?.width ?? 0, wanted?.height ?? 0);
@@ -205,11 +221,12 @@ export const MaskOverlay = ({ path, box }: MaskOverlayProps) => {
                 willChange: "transform",
             }}
             data-slot="mask-overlay"
+            data-target={target}
         >
             {picture && (
                 <div
                     aria-hidden
-                    className={cn("absolute inset-0 bg-primary/40")}
+                    className={cn("absolute inset-0", TINT[target].fill)}
                     style={{
                         maskImage: `url(${picture})`,
                         WebkitMaskImage: `url(${picture})`,
@@ -223,7 +240,13 @@ export const MaskOverlay = ({ path, box }: MaskOverlayProps) => {
             )}
 
             {strokes.length > 0 && (
-                <Strokes strokes={strokes} box={box} radius={longer} inverted={entry?.inverted ?? false} />
+                <Strokes
+                    strokes={strokes}
+                    box={box}
+                    radius={longer}
+                    inverted={entry?.inverted ?? false}
+                    target={target}
+                />
             )}
         </div>
     );

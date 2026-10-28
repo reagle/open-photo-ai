@@ -11,7 +11,7 @@ import {
 import { describeExportError, type ExportFailure, qualityFor } from "@/lib/export";
 import { withChoice } from "@/lib/faces";
 import { track } from "@/lib/faro";
-import { toWire } from "@/lib/mask";
+import { regionOf, toWire, withRemoval } from "@/lib/mask";
 import { useCropStore } from "@/stores/crop";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { batchSummary, useExportBatchStore } from "@/stores/exportBatch";
@@ -107,8 +107,11 @@ const exportOne = async (
     // What the user painted over this photograph, read now like the stack and the crop, and sent as the preview sends
     // it: the file shows the enhancements where the canvas does. Nothing for a photograph that was never painted.
     const mask = toWire(useMaskStore.getState().masks.get(path));
+    // And what Remove takes out of it, as the preview sends it: the removal's region, carried by the Remove itself.
+    const region = regionOf(useMaskStore.getState().removals.get(path));
+    const chain = withRemoval(withChoice(operations, choice), region);
 
-    const { run, done } = exportImage(identity, withChoice(operations, choice), processor, request, crop, mask);
+    const { run, done } = exportImage(identity, chain, processor, request, crop, mask);
     setCurrent({ path, run });
     setStage(path, { stage: "enhancing", fraction: 0 });
 

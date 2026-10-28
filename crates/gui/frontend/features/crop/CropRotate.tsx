@@ -30,7 +30,12 @@ export const CropRotate = ({ open, onClose }: { open: boolean; onClose: () => vo
     const controller = useCropController(open, onClose);
     // Said before the user applies a framing, because applying one takes the mask away: its strokes are fractions of
     // the framing they were painted on.
-    const masked = useHasMask(useCurrentFile()?.path);
+    const path = useCurrentFile()?.path;
+    const masked = useHasMask(path);
+    // And the area painted for Remove, for the same reason: both are said in one sentence where both are painted.
+    const removing = useHasMask(path, "removal");
+    const notice =
+        masked && removing ? "mask.crop.noticeBoth" : removing ? "mask.crop.noticeRemoval" : "mask.crop.notice";
 
     // Escape and the close box both go through Radix's `onOpenChange`, so there is one way out rather
     // than two that could come to differ. None of them writes anything: there is no draft to unwind.
@@ -122,13 +127,13 @@ export const CropRotate = ({ open, onClose }: { open: boolean; onClose: () => vo
                             {t("crop.zoomHint")}
                         </p>
 
-                        {masked && (
+                        {(masked || removing) && (
                             <p
                                 role="note"
                                 className="mt-2 text-center text-[13px] leading-relaxed text-warning text-pretty"
                                 data-slot="crop-mask-notice"
                             >
-                                {t("mask.crop.notice")}
+                                {t(notice)}
                             </p>
                         )}
 

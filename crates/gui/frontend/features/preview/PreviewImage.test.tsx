@@ -1036,6 +1036,18 @@ describe("painting the mask", () => {
         ]);
     });
 
+    it("paints the area to remove while that is what is edited, into the removal and not the mask", () => {
+        act(() => store().startEditing(HOLIDAY.path, "removal"));
+        draw("side");
+
+        fireEvent.pointerDown(pane(1), at(0.5, 0.5));
+        fireEvent.pointerUp(pane(1), at(0.6, 0.5));
+
+        expect(store().removals.get(HOLIDAY.path)?.strokes).toHaveLength(1);
+        expect(store().masks.get(HOLIDAY.path)).toBeUndefined();
+        expect(pane(1).querySelector("[data-slot='mask-overlay']")?.getAttribute("data-target")).toBe("removal");
+    });
+
     it("clamps a stroke to the photograph where the pointer leaves it, and keeps following", () => {
         paintMode();
         draw("full");

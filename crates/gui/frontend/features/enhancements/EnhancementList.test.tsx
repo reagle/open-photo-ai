@@ -7,6 +7,7 @@ import { track } from "@/lib/faro";
 import { useAutopilotStore } from "@/stores/autopilot";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useFileStore } from "@/stores/files";
+import { useMaskStore } from "@/stores/mask";
 import { APPLY_ORDER, CATALOGUE, HOLIDAY, openFiles, render, resetFileStore, SUNSET } from "@/test/support";
 import { EnhancementList } from "./EnhancementList";
 
@@ -425,5 +426,88 @@ describe("a photograph being analysed", () => {
 
         expect(analysingRow()).toBeNull();
         expect(screen.getByText("Light Adjustment")).toBeInTheDocument();
+    });
+});
+
+describe("a Remove on the current image", () => {
+    const remove: Operation = { family: "remove", codename: "lima", precision: "fp32", parameters: {} };
+    const mask = () => useMaskStore.getState();
+
+    /** One stroke on the removal, as the preview commits it. */
+    const paint = () =>
+        act(() => {
+            mask().startEditing(HOLIDAY.path, "removal");
+            mask().beginStroke(HOLIDAY.path, 0.3, 0.5, false);
+            mask().endStroke(0.4, 0.5);
+            mask().stopEditing();
+        });
+
+    const row = () => screen.getByRole("button", { name: /Lima/ });
+
+    beforeEach(() => {
+        forgetCatalogue();
+        resetFileStore();
+        useMaskStore.setState(useMaskStore.getInitialState(), true);
+        useEnhancementStore.setState({ autopilot: true, enhancements: new Map() });
+        published = CATALOGUE;
+        openFiles(HOLIDAY);
+    });
+
+    it("says whether anything is painted yet, by the model's name", async () => {
+        stack(remove);
+        await mount();
+        expect(infoLines()).toEqual(["Lima, nothing painted"]);
+
+        paint();
+
+        expect(infoLines()).toEqual(["Lima, area painted"]);
+    });
+
+    it("opens the brush rather than a panel of options, and closes it again", async () => {
+        stack(remove);
+        await mount();
+
+        fireEvent.click(row());
+        expect(mask().editing).toEqual({ path: HOLIDAY.path, target: "removal" });
+        expect(row()).toHaveAttribute("aria-pressed", "true");
+        expect(document.querySelector("[data-slot='enhancement-options']")).toBeNull();
+
+        fireEvent.click(row());
+        expect(mask().editing).toBeUndefined();
+    });
+
+    it("lets go of the focus after a mouse press, so Space pans rather than closing the brush", async () => {
+        stack(remove);
+        await mount();
+
+        row().focus();
+        fireEvent.click(row(), { detail: 1 });
+        expect(document.activeElement).not.toBe(row());
+
+        // A keyboard press keeps it, for the keyboard user who will press it again.
+        row().focus();
+        fireEvent.click(row(), { detail: 0 });
+        expect(document.activeElement).toBe(row());
+    });
+
+    it("forgets what was painted for it when it is taken off, and leaves the limiting mask alone", async () => {
+        stack(remove, upscale("kyoto", "fp32", 2));
+        paint();
+        act(() => {
+            mask().beginStroke(HOLIDAY.path, 0.6, 0.5, false);
+            mask().endStroke(0.7, 0.5);
+        });
+        await mount();
+
+        fireEvent.click(screen.getAllByRole("button", { name: "Remove enhancement" })[0] as HTMLElement);
+
+        expect(
+            useEnhancementStore
+                .getState()
+                .enhancements.get(HOLIDAY.path)
+                ?.map(({ family }) => family),
+        ).toEqual(["upscale"]);
+        expect(mask().removals.has(HOLIDAY.path)).toBe(false);
+        expect(mask().masks.get(HOLIDAY.path)?.strokes).toHaveLength(1);
     });
 });

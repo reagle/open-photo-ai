@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { useFileEnhancements } from "@/stores/enhancements";
 import { useCurrentFile } from "@/stores/files";
-import { useHasMask, useIsEditing, useMaskStore } from "@/stores/mask";
+import { isPainted } from "@/lib/enhancements";
+import { useEditingTarget, useHasMask, useMaskStore } from "@/stores/mask";
 import { MaskPanel } from "./MaskPanel";
 
 /**
@@ -13,9 +14,18 @@ import { MaskPanel } from "./MaskPanel";
  * painting, the panel of tools in their place. Not shown for a photograph with nothing in its stack - there is nothing
  * for a mask to limit - though what is painted is kept, and is there again when an enhancement is.
  *
+ * **The removal's brush is drawn here too**, in the same place: while the area Remove takes out is being painted, the
+ * panel for it - titled "Paint area to remove", with no Invert - stands in for the whole section. One region is edited
+ * at a time, and the limiting mask's buttons come back when Done is pressed.
+ *
+ * **A mask limits the enhancements that are not painted**: a stack holding only Remove has nothing for one to limit -
+ * the limiting mask is blended in after the removals and never brings back what was removed - so the section is not
+ * offered for it.
+ *
  * **It also owns when painting stops**, being the one thing mounted for as long as a file is open: when the photograph
- * changes, and when the stack empties. Escape and Done stop it from the panel's own keys and button; a closed file
- * stops it through the store's own `registerFileOwner`.
+ * changes, and when the stack no longer holds what the region being painted is for. Escape and Done stop it from the
+ * panel's own keys and button; a closed file stops it through the store's own `registerFileOwner`, and taking Remove
+ * off the stack through `forgetTarget`.
  */
 export const MaskSection = () => {
     const { t } = useTranslation();
@@ -23,24 +33,37 @@ export const MaskSection = () => {
     const path = file?.path;
     const stack = useFileEnhancements(path);
     const painted = useHasMask(path);
-    const editing = useIsEditing(path);
+    const editing = useEditingTarget(path);
     const startEditing = useMaskStore((state) => state.startEditing);
     const invert = useMaskStore((state) => state.invert);
     const clear = useMaskStore((state) => state.clear);
-    const stacked = stack.length > 0;
+    const stacked = stack.some((operation) => !isPainted(operation.family));
+    const removing = stack.some((operation) => isPainted(operation.family));
 
     useEffect(() => {
         const { editing: painting, stopEditing } = useMaskStore.getState();
+        if (!painting) return;
 
-        // Painting on another photograph than the one open, or on one with nothing left to limit: nowhere to paint.
-        if (painting && (painting.path !== path || !stacked)) stopEditing();
-    }, [path, stacked]);
+        // Painting on another photograph than the one open, or a region the stack has nothing left for: nowhere to
+        // paint.
+        const wanted = painting.target === "removal" ? removing : stacked;
+        if (painting.path !== path || !wanted) stopEditing();
+    }, [path, stacked, removing]);
 
-    if (path === undefined || !stacked) return;
+    if (path === undefined) return;
+
+    if (editing === "removal" && removing)
+        return (
+            <div className="flex flex-col gap-3 border-t border-border px-6 py-4" data-slot="mask-section">
+                <MaskPanel path={path} target="removal" />
+            </div>
+        );
+
+    if (!stacked) return;
 
     return (
         <div className="flex flex-col gap-3 border-t border-border px-6 py-4" data-slot="mask-section">
-            {editing ? (
+            {editing === "limit" ? (
                 <MaskPanel path={path} />
             ) : (
                 <>

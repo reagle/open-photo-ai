@@ -201,12 +201,20 @@
             "hint": "Glissez pour peindre. Maintenez Space enfoncé pour déplacer la photo.",
             "shortcut": "{{action}} ({{key}})"
         },
+        "removal": {
+            "title": "Peignez la zone à supprimer",
+            "hint": "Peignez sur ce qu'il faut supprimer ; c'est supprimé dès que vous relâchez. Maintenez Space enfoncé pour déplacer la photo."
+        },
         "crop": {
-            "notice": "Modifier le recadrage efface le masque."
+            "notice": "Modifier le recadrage efface le masque.",
+            "noticeRemoval": "Modifier le recadrage efface la zone peinte pour Supprimer.",
+            "noticeBoth": "Modifier le recadrage efface le masque et la zone peinte pour Supprimer."
         },
         "toast": {
             "cleared": "Le recadrage a changé, le masque a donc été effacé.",
-            "undo": "Annuler"
+            "undo": "Annuler",
+            "clearedRemoval": "Le recadrage a changé, la zone peinte pour Supprimer a donc été effacée.",
+            "clearedBoth": "Le recadrage a changé, le masque et la zone peinte pour Supprimer ont donc été effacés."
         }
     },
     "export": {
@@ -320,6 +328,11 @@
         "unsupportedFiles_other": "{{count}} fichiers ne sont pas pris en charge : {{names}}"
     },
     "enhancements": {
+        "removal": {
+            "name": "Supprimer",
+            "painted": "{{name}}, zone peinte",
+            "unpainted": "{{name}}, rien de peint"
+        },
         "denoise": {
             "name": "Débruitage",
             "models": {
@@ -413,6 +426,7 @@
         },
         "progress": {
             "downloading": "Téléchargement {{percent}} %",
+            "removal": "Supprimer",
             "denoise": "Débruitage",
             "faceRecovery": "Visages",
             "colorization": "Colorisation",

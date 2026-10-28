@@ -197,12 +197,20 @@
             "hint": "拖动以绘制。按住 Space 可移动照片。",
             "shortcut": "{{action}} ({{key}})"
         },
+        "removal": {
+            "title": "绘制要移除的区域",
+            "hint": "在要移除的内容上绘制，松开后即移除。按住 Space 可移动照片。"
+        },
         "crop": {
-            "notice": "更改裁剪会清除蒙版。"
+            "notice": "更改裁剪会清除蒙版。",
+            "noticeRemoval": "更改裁剪会清除为移除绘制的区域。",
+            "noticeBoth": "更改裁剪会清除蒙版和为移除绘制的区域。"
         },
         "toast": {
             "cleared": "裁剪已更改，因此蒙版已清除。",
-            "undo": "撤销"
+            "undo": "撤销",
+            "clearedRemoval": "裁剪已更改，因此为移除绘制的区域已清除。",
+            "clearedBoth": "裁剪已更改，因此蒙版和为移除绘制的区域已清除。"
         }
     },
     "export": {
@@ -304,6 +312,11 @@
         "unsupportedFiles_other": "有 {{count}} 个文件不受支持：{{names}}"
     },
     "enhancements": {
+        "removal": {
+            "name": "移除",
+            "painted": "{{name}}, 已绘制区域",
+            "unpainted": "{{name}}, 尚未绘制"
+        },
         "denoise": {
             "name": "降噪",
             "models": {
@@ -393,6 +406,7 @@
         },
         "progress": {
             "downloading": "下载中 {{percent}}%",
+            "removal": "移除",
             "denoise": "降噪",
             "faceRecovery": "人脸修复",
             "colorization": "上色",

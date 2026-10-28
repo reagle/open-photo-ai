@@ -2,7 +2,7 @@ import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import { familyEntry, useCatalogue } from "@/hooks/useCatalogue";
 import type { FamilyEntry } from "@/ipc/catalogue";
-import { ENHANCEMENTS, type Enhancement, familiesWhere, modelChoice, modelLabel } from "@/lib/enhancements";
+import { type Enhancement, familiesWhere, modelChoice, modelLabel, SETTABLE } from "@/lib/enhancements";
 import { cn } from "@/lib/utils";
 import { useSettingsDraft } from "./draft";
 import { SettingsCard, SettingsSelect, SettingsSelectItem, SettingsSelectSeparator, SettingsSwitch } from "./rows.tsx";
@@ -87,7 +87,8 @@ export const EnhancementsPage = () => {
     // One component drawn per entry of `ENHANCEMENTS` rather than one per family: what differs between
     // them is which family they are for, and that is data - so a family added to that list is a row,
     // a switch and an "allowed" default here without a file being written. Detection is named nowhere
-    // in that list, which is how the catalogue's eighth family stays out of a dialog about enhancements.
+    // in that list, which is how the catalogue's detector stays out of a dialog about enhancements; and
+    // Remove, painted rather than set, is left out by `SETTABLE` - one model, and never suggested.
     return (
         <SettingsCard>
             <div className={cn(COLUMNS, "h-9 font-medium text-foreground-dim text-xs")}>
@@ -96,7 +97,7 @@ export const EnhancementsPage = () => {
                 <span className="text-right">{t("settings.enhancements.columns.autopilot")}</span>
             </div>
 
-            {ENHANCEMENTS.map((enhancement) => (
+            {SETTABLE.map((enhancement) => (
                 <EnhancementRow
                     key={enhancement.family}
                     enhancement={enhancement}

@@ -1,10 +1,11 @@
 import { useTranslation } from "react-i18next";
 import { familyEntry, useCatalogue } from "@/hooks/useCatalogue";
-import { ENHANCEMENTS } from "@/lib/enhancements";
+import { ENHANCEMENTS, isPainted } from "@/lib/enhancements";
 import { track } from "@/lib/faro";
 import { useAnalysing } from "@/stores/autopilot";
 import { useEnhancementStore, useFileEnhancements } from "@/stores/enhancements";
 import { useCurrentFile } from "@/stores/files";
+import { useMaskStore } from "@/stores/mask";
 import { EnhancementRow } from "./EnhancementRow";
 
 /**
@@ -70,8 +71,11 @@ export const EnhancementList = () => {
                         operation={operation}
                         entry={familyEntry(families, operation.family)}
                         {...(file.identity && { identity: file.identity })}
+                        path={file.path}
                         onRemove={() => {
                             removeEnhancement(file.path, operation.family);
+                            // A removal's strokes are its whole setting, and go with it as an upscale's scale goes.
+                            if (isPainted(operation.family)) useMaskStore.getState().forgetTarget(file.path, "removal");
                             track("enhancement_removed", { family: operation.family });
                         }}
                         onChange={(changed) => replaceEnhancement(file.path, changed)}

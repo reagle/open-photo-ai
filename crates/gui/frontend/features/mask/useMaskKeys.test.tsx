@@ -190,7 +190,7 @@ describe("the keys of editing a mask", () => {
 
         expect(store().tool.mode).toBe("paint");
         expect(store().panning).toBe(false);
-        expect(store().editing).toEqual({ path: PATH });
+        expect(store().editing).toEqual({ path: PATH, target: "limit" });
     });
 
     it("do nothing while a dialog or a menu is open", () => {
@@ -205,7 +205,7 @@ describe("the keys of editing a mask", () => {
         press("Escape");
 
         expect(store().tool.mode).toBe("paint");
-        expect(store().editing).toEqual({ path: PATH });
+        expect(store().editing).toEqual({ path: PATH, target: "limit" });
     });
 
     it("leave a chord to whoever it belongs to", () => {

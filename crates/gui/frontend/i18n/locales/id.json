@@ -197,12 +197,20 @@
             "hint": "Seret untuk melukis. Tahan Space untuk memindahkan foto.",
             "shortcut": "{{action}} ({{key}})"
         },
+        "removal": {
+            "title": "Lukis area yang akan dihapus",
+            "hint": "Lukis di atas bagian yang ingin dihapus; bagian itu dihapus saat Anda melepas. Tahan Space untuk memindahkan foto."
+        },
         "crop": {
-            "notice": "Mengubah pemangkasan akan menghapus masker."
+            "notice": "Mengubah pemangkasan akan menghapus masker.",
+            "noticeRemoval": "Mengubah pemangkasan akan menghapus area yang dilukis untuk Hapus.",
+            "noticeBoth": "Mengubah pemangkasan akan menghapus masker dan area yang dilukis untuk Hapus."
         },
         "toast": {
             "cleared": "Pemangkasan berubah, jadi masker dihapus.",
-            "undo": "Urungkan"
+            "undo": "Urungkan",
+            "clearedRemoval": "Pemangkasan berubah, jadi area yang dilukis untuk Hapus dihapus.",
+            "clearedBoth": "Pemangkasan berubah, jadi masker dan area yang dilukis untuk Hapus dihapus."
         }
     },
     "export": {
@@ -304,6 +312,11 @@
         "unsupportedFiles_other": "{{count}} file tidak didukung: {{names}}"
     },
     "enhancements": {
+        "removal": {
+            "name": "Hapus",
+            "painted": "{{name}}, area dilukis",
+            "unpainted": "{{name}}, belum ada yang dilukis"
+        },
         "denoise": {
             "name": "Reduksi Noise",
             "models": {
@@ -393,6 +406,7 @@
         },
         "progress": {
             "downloading": "Mengunduh {{percent}}%",
+            "removal": "Hapus",
             "denoise": "Reduksi Noise",
             "faceRecovery": "Wajah",
             "colorization": "Pewarnaan",

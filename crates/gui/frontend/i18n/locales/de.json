@@ -199,12 +199,20 @@
             "hint": "Ziehen zum Malen. Space gedrückt halten, um das Foto zu verschieben.",
             "shortcut": "{{action}} ({{key}})"
         },
+        "removal": {
+            "title": "Zu entfernenden Bereich malen",
+            "hint": "Übermalen, was entfernt werden soll; es wird beim Loslassen entfernt. Space gedrückt halten, um das Foto zu verschieben."
+        },
         "crop": {
-            "notice": "Das Ändern des Zuschnitts löscht die Maske."
+            "notice": "Das Ändern des Zuschnitts löscht die Maske.",
+            "noticeRemoval": "Das Ändern des Zuschnitts löscht den für „Entfernen“ gemalten Bereich.",
+            "noticeBoth": "Das Ändern des Zuschnitts löscht die Maske und den für „Entfernen“ gemalten Bereich."
         },
         "toast": {
             "cleared": "Der Zuschnitt wurde geändert, daher wurde die Maske gelöscht.",
-            "undo": "Rückgängig"
+            "undo": "Rückgängig",
+            "clearedRemoval": "Der Zuschnitt wurde geändert, daher wurde der für „Entfernen“ gemalte Bereich gelöscht.",
+            "clearedBoth": "Der Zuschnitt wurde geändert, daher wurden die Maske und der für „Entfernen“ gemalte Bereich gelöscht."
         }
     },
     "export": {
@@ -312,6 +320,11 @@
         "unsupportedFiles_other": "{{count}} Dateien werden nicht unterstützt: {{names}}"
     },
     "enhancements": {
+        "removal": {
+            "name": "Entfernen",
+            "painted": "{{name}}, Bereich gemalt",
+            "unpainted": "{{name}}, nichts gemalt"
+        },
         "denoise": {
             "name": "Rauschreduzierung",
             "models": {
@@ -403,6 +416,7 @@
         },
         "progress": {
             "downloading": "Herunterladen {{percent}}%",
+            "removal": "Entfernen",
             "denoise": "Entrauschen",
             "faceRecovery": "Gesichter",
             "colorization": "Kolorierung",

@@ -14,6 +14,7 @@ const CATALOGUE_COMMAND = "catalogue";
  * published, `detection` and `colorization` included.
  */
 export type Family =
+    | "remove"
     | "detection"
     | "denoise"
     | "face_recovery"
@@ -35,10 +36,16 @@ export type Precision = "fp32" | "fp16" | "int8";
  * by a detection run rather than by a control - there is no slider to draw, and what it says is that
  * this model needs another operation's output before it can be built at all.
  *
+ * `mask` is a third: a region painted with the brush - Remove's, what it takes out - and, like the faces, nothing a
+ * control sets. A model taking one does nothing until something is painted.
+ *
  * The bounds are flattened onto the tag, which is `#[serde(flatten)]` on the Rust side. `default` is what a
  * newly added enhancement starts at, published by the library so no front end restates a number of its own.
  */
-export type ParameterKind = { kind: "range"; min: number; max: number; default: number } | { kind: "faces" };
+export type ParameterKind =
+    | { kind: "range"; min: number; max: number; default: number }
+    | { kind: "faces" }
+    | { kind: "mask" };
 
 /** One parameter a model takes, named as its own error message names it, and what kind of value it is. */
 export type ParameterEntry = { name: string } & ParameterKind;

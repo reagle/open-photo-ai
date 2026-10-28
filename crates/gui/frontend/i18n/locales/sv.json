@@ -199,12 +199,20 @@
             "hint": "Dra för att måla. Håll ner Space för att flytta fotot.",
             "shortcut": "{{action}} ({{key}})"
         },
+        "removal": {
+            "title": "Måla området som ska tas bort",
+            "hint": "Måla över det som ska bort; det tas bort när du släpper. Håll ner Space för att flytta fotot."
+        },
         "crop": {
-            "notice": "Ändrad beskärning rensar masken."
+            "notice": "Ändrad beskärning rensar masken.",
+            "noticeRemoval": "Ändrad beskärning rensar området som målats för Ta bort.",
+            "noticeBoth": "Ändrad beskärning rensar masken och området som målats för Ta bort."
         },
         "toast": {
             "cleared": "Beskärningen ändrades, så masken rensades.",
-            "undo": "Ångra"
+            "undo": "Ångra",
+            "clearedRemoval": "Beskärningen ändrades, så området som målats för Ta bort rensades.",
+            "clearedBoth": "Beskärningen ändrades, så masken och området som målats för Ta bort rensades."
         }
     },
     "export": {
@@ -312,6 +320,11 @@
         "unsupportedFiles_other": "{{count}} filer stöds inte: {{names}}"
     },
     "enhancements": {
+        "removal": {
+            "name": "Ta bort",
+            "painted": "{{name}}, område målat",
+            "unpainted": "{{name}}, inget målat"
+        },
         "denoise": {
             "name": "Brusreducering",
             "models": {
@@ -403,6 +416,7 @@
         },
         "progress": {
             "downloading": "Laddar ner {{percent}} %",
+            "removal": "Ta bort",
             "denoise": "Brusreducering",
             "faceRecovery": "Ansikten",
             "colorization": "Kolorering",

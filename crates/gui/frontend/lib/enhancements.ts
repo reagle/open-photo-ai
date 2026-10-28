@@ -1,5 +1,5 @@
 import type { ParseKeys, TFunction } from "i18next";
-import { type LucideIcon, Maximize2, Paintbrush, Palette, ScanFace, Sun, Triangle, Waves } from "lucide-react";
+import { Bandage, type LucideIcon, Maximize2, Paintbrush, Palette, ScanFace, Sun, Triangle, Waves } from "lucide-react";
 import { type Suggestion, suggestedScale } from "@/ipc/autopilot";
 import type { Family, FamilyEntry, ParameterEntry, Precision, VariantEntry } from "@/ipc/catalogue";
 import { type CropInfo, framedDimensions } from "@/ipc/crop";
@@ -32,10 +32,17 @@ export type Enhancement = {
      * to this list cannot be added without one, and nothing has to keep a second table in step.
      */
     icon: LucideIcon;
+    /**
+     * Set for an enhancement whose model takes a painted region rather than settings - Remove. Adding it opens the
+     * brush rather than a panel of options, and it is in neither the settings dialog's table nor what Autopilot may
+     * be asked to suggest: it publishes one model, so there is no default to choose, and what it removes is the user's
+     * choice to paint, never an analysis's. Absent for the others.
+     */
+    painted?: true;
 };
 
 /**
- * The seven enhancements, in the order the add menu offers them.
+ * The eight enhancements, in the order the add menu offers them.
  *
  * **This is the frontend's only list of domain names, and it is not model vocabulary.** It is which
  * enhancements this application presents and in what order - a presentation decision, which is why
@@ -53,6 +60,14 @@ export type Enhancement = {
  * without the catalogue being filtered on the wire.
  */
 export const ENHANCEMENTS = [
+    {
+        // First, as the library runs it: everything after a removal treats the fill as photograph.
+        family: "remove",
+        nameKey: "enhancements.removal.name",
+        shortNameKey: "preview.progress.removal",
+        icon: Bandage,
+        painted: true,
+    },
     {
         family: "denoise",
         nameKey: "enhancements.denoise.name",
@@ -114,11 +129,25 @@ export const applyOrder = (families: readonly FamilyEntry[]): Family[] =>
         .map(({ family }) => family);
 
 /**
- * The families `keep` holds, in {@link ENHANCEMENTS}' order - so a list built from them does not
- * depend on the order they were chosen or stored in.
+ * The enhancements a setting can be about - a default model, whether Autopilot may suggest it - which is every one but
+ * those painted with the brush: see {@link Enhancement.painted}.
+ */
+export const SETTABLE = ENHANCEMENTS.filter(
+    (entry): entry is Exclude<(typeof ENHANCEMENTS)[number], { painted: true }> => !("painted" in entry),
+);
+
+/**
+ * The families `keep` holds among those a setting can be about, in {@link ENHANCEMENTS}' order - so a list built from
+ * them does not depend on the order they were chosen or stored in.
+ *
+ * Never a painted family: what this builds is a list Autopilot is asked to suggest from, or one stored beside it.
  */
 export const familiesWhere = (keep: (family: Family) => boolean): Family[] =>
-    ENHANCEMENTS.map(({ family }) => family).filter(keep);
+    SETTABLE.map(({ family }) => family).filter(keep);
+
+/** Whether `family` is painted with the brush rather than set by a panel of options - see {@link Enhancement.painted}. */
+export const isPainted = (family: Family): boolean =>
+    ENHANCEMENTS.some((entry: Enhancement) => entry.family === family && entry.painted === true);
 
 /**
  * Nothing, or the compile error that the wire carries a family {@link ENHANCEMENTS} forgot.

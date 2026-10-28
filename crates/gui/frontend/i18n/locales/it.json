@@ -201,12 +201,20 @@
             "hint": "Trascina per dipingere. Tieni premuto Space per spostare la fotografia.",
             "shortcut": "{{action}} ({{key}})"
         },
+        "removal": {
+            "title": "Dipingi l'area da rimuovere",
+            "hint": "Dipingi sopra ciò che vuoi rimuovere; viene rimosso quando rilasci. Tieni premuto Space per spostare la fotografia."
+        },
         "crop": {
-            "notice": "Cambiare il ritaglio cancella la maschera."
+            "notice": "Cambiare il ritaglio cancella la maschera.",
+            "noticeRemoval": "Cambiare il ritaglio cancella l'area dipinta per Rimuovi.",
+            "noticeBoth": "Cambiare il ritaglio cancella la maschera e l'area dipinta per Rimuovi."
         },
         "toast": {
             "cleared": "Il ritaglio è cambiato, quindi la maschera è stata cancellata.",
-            "undo": "Annulla"
+            "undo": "Annulla",
+            "clearedRemoval": "Il ritaglio è cambiato, quindi l'area dipinta per Rimuovi è stata cancellata.",
+            "clearedBoth": "Il ritaglio è cambiato, quindi la maschera e l'area dipinta per Rimuovi sono state cancellate."
         }
     },
     "export": {
@@ -320,6 +328,11 @@
         "unsupportedFiles_other": "{{count}} file non sono supportati: {{names}}"
     },
     "enhancements": {
+        "removal": {
+            "name": "Rimuovi",
+            "painted": "{{name}}, area dipinta",
+            "unpainted": "{{name}}, niente dipinto"
+        },
         "denoise": {
             "name": "Riduzione rumore",
             "models": {
@@ -413,6 +426,7 @@
         },
         "progress": {
             "downloading": "Download {{percent}}%",
+            "removal": "Rimuovi",
             "denoise": "Riduzione rumore",
             "faceRecovery": "Recupero volti",
             "colorization": "Colorazione",

@@ -6,7 +6,7 @@ import { cancelEnhance, enhance, onEnhanceProgress, type RunProgress } from "@/i
 import type { Face } from "@/ipc/faces";
 import type { ImageRecord } from "@/ipc/images";
 import { withChoice } from "@/lib/faces";
-import { toWire } from "@/lib/mask";
+import { regionOf, toWire, withRemoval } from "@/lib/mask";
 import { report } from "@/lib/report";
 import { useFileEnhancements } from "@/stores/enhancements";
 import { useFaceChoice, useFacesStore } from "@/stores/faces";
@@ -18,6 +18,43 @@ import { useSettingsStore } from "@/stores/settings";
  * a flurry of strokes.
  */
 const MASK_DEBOUNCE_MS = 300;
+
+/**
+ * How long a painted removal waits for the next stroke before it is run, in milliseconds. Unlike the limiting mask's
+ * wait, this one leads to models: a removal is the chain's first step, so a new region recomputes it and everything
+ * after it, and a run already computing is stopped for it - one run per pause, not one per stroke.
+ */
+const REMOVAL_DEBOUNCE_MS = 300;
+
+/**
+ * `entry`, once it has stayed the same for {@link REMOVAL_DEBOUNCE_MS} - or at once, for another photograph than the
+ * one last settled, and for one whose region was taken away or emptied.
+ *
+ * **Keyed by the photograph**: a value left from the photograph before must never be sent with this one's pixels, so a
+ * change of photograph answers the new one's region at once. A region taken away (a crop change, which re-runs for the
+ * new framing in the same render) or cleared has nothing to compute and is not waited for either.
+ */
+const useSettledRegion = <T extends { strokes: readonly unknown[] }>(
+    path: string | undefined,
+    entry: T | undefined,
+) => {
+    const [settled, setSettled] = useState<{ path: string | undefined; entry: T | undefined }>({ path, entry });
+    const now = entry === undefined || entry.strokes.length === 0;
+
+    useEffect(() => {
+        if (settled.path === path && settled.entry === entry) return;
+        if (now || settled.path !== path) {
+            setSettled({ path, entry });
+            return;
+        }
+
+        const timer = setTimeout(() => setSettled({ path, entry }), REMOVAL_DEBOUNCE_MS);
+
+        return () => clearTimeout(timer);
+    }, [path, entry, now, settled]);
+
+    return settled.path !== path || now ? entry : settled.entry;
+};
 
 /** Where an enhanced result's pixels are, and how large they are. */
 export type EnhancedImage = { identity: string; width: number; height: number };
@@ -163,6 +200,14 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
     const mask = useMemo(() => toWire(painted), [painted]);
 
     /*
+     * What Remove is to take out: the strokes painted for it, settled for a moment, as the wire carries them - an empty
+     * region where nothing is painted, since a removal is sent whatever it holds. A dependency of the run like the
+     * stack, not like the mask: a new region is new work for the models. Memoised on the entry, as the mask is.
+     */
+    const removing = useSettledRegion(file?.path, useFileMask(file?.path, "removal"));
+    const region = useMemo(() => regionOf(removing), [removing]);
+
+    /*
      * What the mask-only re-run is built from, all read in the run effect rather than listed as its dependencies - a
      * mask change must not restart it on its own, which is the whole of the wait below.
      */
@@ -272,7 +317,8 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
         ran.current = sent;
         computing.current = !cheap;
 
-        const { run, done } = enhance(source, withChoice(operations, choice), processor, crop, sent);
+        const chain = withRemoval(withChoice(operations, choice), region);
+        const { run, done } = enhance(source, chain, processor, crop, sent);
         mine.current = run;
         setRunning(true);
 
@@ -361,7 +407,9 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
         // The mask is not one of these, but `rerun` is: a committed stroke, an undo, an invert or a clear changes the
         // mask the chain is limited to, and the effect below asks for a run for it once it has waited out the next
         // change. The models behind that run are served from the cache, so what it costs is the blend.
-    }, [source, operations, processor, crop, choice, rerun]);
+        //
+        // The region a removal takes out is one of these: it is part of what a model computes, the removal's.
+    }, [source, operations, processor, crop, choice, region, rerun]);
 
     /*
      * A change that is only to the mask asks for a re-run after a pause - and not at all while the run in flight is

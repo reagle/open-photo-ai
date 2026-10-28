@@ -710,3 +710,134 @@ describe("a mask painted over the photograph", () => {
         expect(asked).toHaveBeenCalledTimes(1);
     });
 });
+
+describe("an area painted for Remove", () => {
+    beforeEach(() => {
+        useMaskStore.setState(useMaskStore.getInitialState(), true);
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    const remove: Operation = { family: "remove", codename: "lima", precision: "fp32", parameters: {} };
+
+    /** One stroke on `path`'s removal, committed as the pointer coming up commits it. */
+    const paint = (path: string, x = 0.4) =>
+        act(() => {
+            const { startEditing, beginStroke, endStroke } = useMaskStore.getState();
+
+            startEditing(path, "removal");
+            beginStroke(path, x, 0.5, false);
+            endStroke(x, 0.5);
+        });
+
+    const chainOf = (call: number) => (asked.mock.calls[call] as unknown[])[1] as Operation[];
+    const wait = (ms = 300) => act(() => vi.advanceTimersByTime(ms));
+
+    it("is sent on the Remove before anything is painted, as a region with nothing in it", () => {
+        stack(HOLIDAY.path, remove, upscale(2));
+        mount();
+
+        // Rust leaves the empty removal out of the chain; the limiting mask is still absent.
+        expect(asked).toHaveBeenLastCalledWith(
+            HOLIDAY.identity,
+            [{ ...remove, mask: { strokes: [], inverted: false } }, upscale(2)],
+            "auto",
+            undefined,
+            undefined,
+        );
+    });
+
+    it("runs a stroke once a pause has gone by, stopping a run still computing, and leaves the stack without it", () => {
+        stack(HOLIDAY.path, remove, upscale(2));
+        mount();
+
+        paint(HOLIDAY.path);
+        wait(299);
+        expect(asked).toHaveBeenCalledTimes(1);
+
+        wait(1);
+
+        // A new region is new work for the models, so the run in flight - computing the old one - is displaced.
+        expect(asked).toHaveBeenCalledTimes(2);
+        expect(stopped).toHaveBeenCalledWith("run-1");
+        expect(chainOf(1)[0]?.mask).toEqual({
+            strokes: [{ erase: false, radius: 0.025, softness: 0.5, points: [0.4, 0.5] }],
+            inverted: false,
+        });
+        expect(chainOf(1)[1]).toEqual(upscale(2));
+        expect((asked.mock.calls[1] as unknown[])[4]).toBeUndefined();
+        expect(useEnhancementStore.getState().enhancements.get(HOLIDAY.path)?.[0]).toEqual(remove);
+    });
+
+    it("costs one run for a flurry of strokes", () => {
+        stack(HOLIDAY.path, remove);
+        mount();
+
+        paint(HOLIDAY.path, 0.2);
+        wait(200);
+        paint(HOLIDAY.path, 0.4);
+        wait(300);
+
+        expect(asked).toHaveBeenCalledTimes(2);
+        expect(chainOf(1)[0]?.mask?.strokes).toHaveLength(2);
+    });
+
+    it("runs a clear at once, with nothing left to compute", () => {
+        stack(HOLIDAY.path, remove);
+        mount();
+        paint(HOLIDAY.path);
+        wait();
+
+        act(() => useMaskStore.getState().clear(HOLIDAY.path, "removal"));
+
+        expect(asked).toHaveBeenCalledTimes(3);
+        expect(chainOf(2)[0]?.mask).toEqual({ strokes: [], inverted: false });
+    });
+
+    it("is never sent with another photograph's pixels", () => {
+        stack(HOLIDAY.path, remove);
+        act(() =>
+            useEnhancementStore.setState({
+                enhancements: new Map([
+                    [HOLIDAY.path, [remove]],
+                    [SUNSET.path, [remove]],
+                ]),
+            }),
+        );
+        paint(HOLIDAY.path);
+        const { rerender } = render(<Probe file={HOLIDAY} />);
+        wait();
+
+        rerender(<Probe file={SUNSET} />);
+
+        // At once, with the second photograph's own (empty) region, not after a pause with the first one's.
+        const last = asked.mock.calls.at(-1) as unknown[];
+        expect(last[0]).toBe(SUNSET.identity);
+        expect((last[1] as Operation[])[0]?.mask).toEqual({ strokes: [], inverted: false });
+    });
+
+    it("is independent of the limiting mask, which is still the run's own argument", async () => {
+        stack(HOLIDAY.path, remove, upscale(2));
+        mount();
+        paint(HOLIDAY.path);
+        wait();
+
+        act(() => {
+            const { startEditing, beginStroke, endStroke } = useMaskStore.getState();
+
+            startEditing(HOLIDAY.path, "limit");
+            beginStroke(HOLIDAY.path, 0.8, 0.5, false);
+            endStroke(0.8, 0.5);
+        });
+        pending[1]?.settle({ outcome: "enhanced", identity: "abcdef0123456789", width: 6000, height: 4000 });
+        await act(async () => {});
+        wait();
+
+        const last = asked.mock.calls.at(-1) as unknown[];
+        expect((last[1] as Operation[])[0]?.mask?.strokes[0]?.points).toEqual([0.4, 0.5]);
+        expect((last[4] as { strokes: { points: number[] }[] }).strokes[0]?.points).toEqual([0.8, 0.5]);
+    });
+});

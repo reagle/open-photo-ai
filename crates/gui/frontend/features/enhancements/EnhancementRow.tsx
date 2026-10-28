@@ -13,6 +13,7 @@ import { report } from "@/lib/report";
 import { toPercent } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useFaceChoice, useFacesStore, useImageFaces } from "@/stores/faces";
+import { useHasMask, useIsEditing, useMaskStore } from "@/stores/mask";
 import { useSettingsStore } from "@/stores/settings";
 import { ColorBalanceOptions } from "./ColorBalanceOptions";
 import { ColorizationOptions } from "./ColorizationOptions";
@@ -37,6 +38,8 @@ type EnhancementRowProps = {
      * reports no count and can only ever report none.
      */
     identity?: string;
+    /** The photograph's path, which a removal's strokes are kept by. */
+    path: string;
     /** Takes this enhancement off the image's stack. */
     onRemove: () => void;
     /** Puts a changed version of this enhancement back on the stack, which re-runs the preview. */
@@ -64,11 +67,19 @@ export const EnhancementRow = ({
     operation,
     entry,
     identity,
+    path,
     onRemove,
     onChange,
 }: EnhancementRowProps) => {
     const { t } = useTranslation();
     const Icon = enhancement.icon;
+
+    /*
+     * A removal's region, which is all a Remove row reports and all its control opens: whether anything is painted,
+     * and whether the brush is on it now.
+     */
+    const removalPainted = useHasMask(path, "removal");
+    const removalEditing = useIsEditing(path, "removal");
 
     /*
      * The faces found in this photograph as it is framed, which is what a face-recovery row counts.
@@ -152,6 +163,9 @@ export const EnhancementRow = ({
      */
     const options = () => {
         switch (operation.family) {
+            // Painted, not set: the row opens the brush instead of a panel - see the trigger below.
+            case "remove":
+                return null;
             case "denoise":
                 return (
                     <DenoiseOptions enhancement={enhancement} operation={operation} entry={entry} onChange={onChange} />
@@ -222,6 +236,11 @@ export const EnhancementRow = ({
      */
     const info = () => {
         switch (operation.family) {
+            // Whether there is anything to remove yet: a Remove with nothing painted does nothing at all.
+            case "remove":
+                return removalPainted
+                    ? t("enhancements.removal.painted", { name })
+                    : t("enhancements.removal.unpainted", { name });
             case "face_recovery":
                 /*
                  * **The count is the faces actually found in the photograph as it is framed**, so
@@ -279,39 +298,73 @@ export const EnhancementRow = ({
         }
     };
 
+    const label = (
+        <>
+            <Icon className="size-5 flex-none" />
+
+            <span className="flex min-w-0 flex-col gap-px">
+                <span className="text-[13px]">{t(enhancement.nameKey)}</span>
+                <span className="text-xs text-foreground-dim italic" data-slot="enhancement-info">
+                    {info()}
+                </span>
+            </span>
+        </>
+    );
+
+    /*
+     * **A painted enhancement's row opens the brush, not a popover.** Its whole setting is what is painted over the
+     * preview, and a popover would close on the first press there (Radix's outside click). The row toggles the brush
+     * panel in the sidebar, under the list, and reads as pressed while it is up - the open row's paint, as a popover's
+     * row has it.
+     */
+    const brush = enhancement.painted === true;
+
     return (
         <div className="group relative border-b border-border" data-slot="enhancement-row">
-            <Popover open={panelOpen} onOpenChange={setPanelOpen}>
-                <PopoverTrigger asChild>
-                    {/*
-                     * The whole row is the trigger, which is the reference's arrangement and the
-                     * design's (screen 14).
-                     *
-                     * `min-h` rather than a fixed height: the two lines are 13px and 12px in every
-                     * language, but a model name long enough to wrap has to be able to. The panel is
-                     * anchored against `ENHANCEMENT_ROW_HEIGHT`, which is this `min-h-13`.
-                     *
-                     * `data-[state=open]:bg-secondary` beside the hover, because the design paints an
-                     * open row exactly as it paints a hovered one (screen 11) - a row whose panel is
-                     * up with nothing marking it is a panel with no visible source.
-                     */}
-                    <button
-                        type="button"
-                        className="flex min-h-13 w-full items-center gap-3 py-2 pr-10 pl-4 text-left hover:bg-secondary data-[state=open]:bg-secondary"
-                    >
-                        <Icon className="size-5 flex-none" />
+            {brush ? (
+                <button
+                    type="button"
+                    aria-pressed={removalEditing}
+                    onClick={(event) => {
+                        const store = useMaskStore.getState();
 
-                        <span className="flex min-w-0 flex-col gap-px">
-                            <span className="text-[13px]">{t(enhancement.nameKey)}</span>
-                            <span className="text-xs text-foreground-dim italic" data-slot="enhancement-info">
-                                {info()}
-                            </span>
-                        </span>
-                    </button>
-                </PopoverTrigger>
+                        if (removalEditing) store.stopEditing();
+                        else store.startEditing(path, "removal");
 
-                <OptionsPanel title={t(enhancement.nameKey)}>{options()}</OptionsPanel>
-            </Popover>
+                        // A mouse press lets go of the focus, as the panel's controls do: Space is the brush's pan,
+                        // and a focused row would take it as a press that closes the brush again.
+                        if (event.detail !== 0) event.currentTarget.blur();
+                    }}
+                    className="flex min-h-13 w-full items-center gap-3 py-2 pr-10 pl-4 text-left hover:bg-secondary aria-pressed:bg-secondary"
+                >
+                    {label}
+                </button>
+            ) : (
+                <Popover open={panelOpen} onOpenChange={setPanelOpen}>
+                    <PopoverTrigger asChild>
+                        {/*
+                         * The whole row is the trigger, which is the reference's arrangement and the
+                         * design's (screen 14).
+                         *
+                         * `min-h` rather than a fixed height: the two lines are 13px and 12px in every
+                         * language, but a model name long enough to wrap has to be able to. The panel is
+                         * anchored against `ENHANCEMENT_ROW_HEIGHT`, which is this `min-h-13`.
+                         *
+                         * `data-[state=open]:bg-secondary` beside the hover, because the design paints an
+                         * open row exactly as it paints a hovered one (screen 11) - a row whose panel is
+                         * up with nothing marking it is a panel with no visible source.
+                         */}
+                        <button
+                            type="button"
+                            className="flex min-h-13 w-full items-center gap-3 py-2 pr-10 pl-4 text-left hover:bg-secondary data-[state=open]:bg-secondary"
+                        >
+                            {label}
+                        </button>
+                    </PopoverTrigger>
+
+                    <OptionsPanel title={t(enhancement.nameKey)}>{options()}</OptionsPanel>
+                </Popover>
+            )}
 
             {/*
              * A sibling of the popover rather than a child of it, so closing the panel above does not

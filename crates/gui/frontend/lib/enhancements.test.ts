@@ -9,11 +9,14 @@ import {
     applyOrder,
     ENHANCEMENTS,
     type Enhancement,
+    familiesWhere,
+    isPainted,
     modelChoice,
     newOperation,
     parameterOf,
     progressLabelKey,
     publishedRange,
+    SETTABLE,
     startingScale,
     suggestedOperation,
     upscaleFactor,
@@ -49,8 +52,8 @@ describe("the order a chain runs in", () => {
 });
 
 describe("the enhancements this application presents", () => {
-    it("names seven", () => {
-        expect(ENHANCEMENTS).toHaveLength(7);
+    it("names eight", () => {
+        expect(ENHANCEMENTS).toHaveLength(8);
     });
 
     it("names only families the catalogue publishes", () => {
@@ -73,6 +76,7 @@ describe("the enhancements this application presents", () => {
 
     it("lists them in the order the menu offers them", () => {
         expect(ENHANCEMENTS.map(({ family }) => family)).toEqual([
+            "remove",
             "denoise",
             "face_recovery",
             "colorization",
@@ -81,6 +85,30 @@ describe("the enhancements this application presents", () => {
             "sharpen",
             "upscale",
         ]);
+    });
+});
+
+describe("the enhancements painted with the brush", () => {
+    it("are Remove alone", () => {
+        expect(ENHANCEMENTS.filter(({ family }) => isPainted(family)).map(({ family }) => family)).toEqual(["remove"]);
+        expect(isPainted("detection")).toBe(false);
+    });
+
+    it("are left out of what a setting can be about, and so of what Autopilot is asked to suggest", () => {
+        // One model, so no default to choose; and what is removed is the user's to paint, never an analysis's.
+        expect(SETTABLE.map(({ family }) => family)).not.toContain("remove");
+        expect(SETTABLE).toHaveLength(ENHANCEMENTS.length - 1);
+        expect(familiesWhere(() => true)).toEqual(SETTABLE.map(({ family }) => family));
+    });
+
+    it("are added as Lima, carrying nothing a control sets", () => {
+        // The region is not a parameter of the stack: the strokes are kept with their undo and put in on the way out.
+        expect(newOperation("remove", entry("remove"), undefined)).toEqual({
+            family: "remove",
+            codename: "lima",
+            precision: "fp32",
+            parameters: {},
+        });
     });
 });
 
@@ -222,6 +250,7 @@ describe("what the progress chip calls the family a report carries", () => {
      * here is a type error rather than a case this walk silently skips.
      */
     const EVERY_FAMILY: Record<Family, true> = {
+        remove: true,
         detection: true,
         denoise: true,
         face_recovery: true,
@@ -512,6 +541,7 @@ describe("how much larger a chain makes a photograph", () => {
 describe("the operation an Autopilot suggestion becomes", () => {
     // Each family's stored default, so "the user's model" is a choice rather than the catalogue's first entry.
     const stored: Record<Exclude<Family, "detection">, string> = {
+        remove: "lima_fp32",
         denoise: "malmo_fp16",
         sharpen: "novgorod_fp32",
         light_adjustment: "lyon_fp16",
@@ -521,7 +551,8 @@ describe("the operation an Autopilot suggestion becomes", () => {
         upscale: "saitama_fp16",
     };
 
-    it.each(ENHANCEMENTS.map(({ family }) => family).filter((family) => family !== "upscale"))(
+    // Every family an analysis can suggest: never a painted one - see `SETTABLE`.
+    it.each(SETTABLE.map(({ family }) => family).filter((family) => family !== "upscale"))(
         "is exactly what the add menu builds for %s, with the user's stored model",
         (family) => {
             const built = suggestedOperation({ family }, entry(family), stored[family]);

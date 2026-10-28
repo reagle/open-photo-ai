@@ -199,12 +199,20 @@
             "hint": "Arrastra para pintar. Mantén pulsada la tecla Space para mover la fotografía.",
             "shortcut": "{{action}} ({{key}})"
         },
+        "removal": {
+            "title": "Pinta la zona que quieres eliminar",
+            "hint": "Pinta sobre lo que quieras eliminar; se elimina al soltar. Mantén pulsada la tecla Space para mover la fotografía."
+        },
         "crop": {
-            "notice": "Cambiar el recorte borra la máscara."
+            "notice": "Cambiar el recorte borra la máscara.",
+            "noticeRemoval": "Cambiar el recorte borra la zona pintada para Eliminar.",
+            "noticeBoth": "Cambiar el recorte borra la máscara y la zona pintada para Eliminar."
         },
         "toast": {
             "cleared": "El recorte ha cambiado, así que se ha borrado la máscara.",
-            "undo": "Deshacer"
+            "undo": "Deshacer",
+            "clearedRemoval": "El recorte ha cambiado, así que se ha borrado la zona pintada para Eliminar.",
+            "clearedBoth": "El recorte ha cambiado, así que se han borrado la máscara y la zona pintada para Eliminar."
         }
     },
     "export": {
@@ -312,6 +320,11 @@
         "unsupportedFiles_other": "{{count}} archivos no son compatibles: {{names}}"
     },
     "enhancements": {
+        "removal": {
+            "name": "Eliminar",
+            "painted": "{{name}}, zona pintada",
+            "unpainted": "{{name}}, nada pintado"
+        },
         "denoise": {
             "name": "Reducción de ruido",
             "models": {
@@ -403,6 +416,7 @@
         },
         "progress": {
             "downloading": "Descargando {{percent}}%",
+            "removal": "Eliminar",
             "denoise": "Reducir ruido",
             "faceRecovery": "Rostros",
             "colorization": "Colorizar",

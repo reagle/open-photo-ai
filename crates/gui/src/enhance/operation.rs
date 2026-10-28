@@ -4,8 +4,9 @@
 //! design.md D1.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
-use opai::{BuildError, Family, ParameterValues, Precision, Subject, VariantEntry};
+use opai::{BuildError, Family, Mask, ParameterKind, ParameterValues, Precision, Subject, VariantEntry};
 use serde::{Deserialize, Serialize};
 
 use crate::faces::FaceChoice;
@@ -16,6 +17,9 @@ use crate::faces::FaceChoice;
 /// { "family": "upscale", "codename": "kyoto", "precision": "fp32", "parameters": { "scale": 2.0 } }
 /// { "family": "face_recovery", "codename": "athens", "precision": "fp32", "parameters": { "fidelity": 1.0 },
 ///   "faces": { "skipped": ["10,20,110,140"], "restored": [] } }
+/// { "family": "remove", "codename": "lima", "precision": "fp32",
+///   "mask": { "strokes": [{ "erase": false, "radius": 0.02, "softness": 0, "points": [0.4, 0.5, 0.6, 0.5] }],
+///             "inverted": false } }
 /// ```
 ///
 /// **One shape for every family**, spelled in the catalogue's own vocabulary: the family as [`Family`] spells it, the
@@ -54,6 +58,17 @@ pub(crate) struct Requested {
     /// and [`resolve`](Self::resolve) builds every face recovery over an empty selection for it to fill in.
     #[serde(default)]
     pub(crate) faces: Option<FaceChoice>,
+    /// The region an operation whose model takes one works on — what the user painted for a removal, in fractions of
+    /// the framed photograph — and absent for every other operation.
+    ///
+    /// **Not the limiting mask**, which is the run's (`enhance`'s own `mask` argument) rather than one operation's: a
+    /// removal's region says what is taken out, the limiting mask where the chain's result is kept. The two are
+    /// painted apart and never stand in for each other.
+    ///
+    /// Sent even when nothing is painted: an empty region is a removal of nothing, which the run leaves out of the
+    /// chain before planning it, so no model is opened for it.
+    #[serde(default)]
+    pub(crate) mask: Option<Mask>,
 }
 
 /// Why an operation the window named cannot be run.
@@ -125,7 +140,8 @@ impl Requested {
     ///
     /// # Errors
     ///
-    /// [`UnknownOperation`]. Nothing is fetched or run until the whole chain has been checked.
+    /// [`UnknownOperation`], including a region sent for a model that takes none. Nothing is fetched or run until the
+    /// whole chain has been checked.
     pub(crate) fn resolve(&self) -> Result<opai::Operation, UnknownOperation> {
         let row = VariantEntry::published(self.family, &self.codename)?;
 
@@ -133,6 +149,17 @@ impl Requested {
         let mut values = ParameterValues::new();
         for (name, value) in &self.parameters {
             values.set(name, *value)?;
+        }
+
+        // The region goes to whichever parameter the row publishes as a mask, found by its kind rather than by the
+        // family's name, so a second model that takes a region needs nothing here. One sent to a model that takes none
+        // is refused as the window's mistake, as a range name nothing publishes is: dropping it would run a chain
+        // that is not the one the user painted.
+        if let Some(mask) = &self.mask {
+            if !row.parameters.iter().any(|parameter| parameter.kind == ParameterKind::Mask) {
+                return Err(UnknownOperation::Parameter { name: "mask".to_string() });
+            }
+            values = values.with_mask(Arc::new(mask.clone()));
         }
 
         match row.build(self.precision, &values)? {
@@ -155,6 +182,7 @@ impl Requested {
             precision,
             parameters: parameters.iter().map(|(name, value)| ((*name).to_string(), *value)).collect(),
             faces: None,
+            mask: None,
         }
     }
 }
@@ -665,6 +693,87 @@ mod tests {
             .resolve()
             .expect_err("a detection has no image result");
         assert_eq!(refused, UnknownOperation::Model { family: Family::Detection, codename: "newyork".to_string() });
+    }
+
+    /// What the window sends for a removal: Lima, with `strokes` as its region.
+    fn removal(strokes: serde_json::Value) -> serde_json::Value {
+        let mut sent = json(Family::Remove, "lima", "fp32", &[]);
+        sent["mask"] = serde_json::json!({ "strokes": strokes, "inverted": false });
+
+        sent
+    }
+
+    /// One hard stroke across the middle of the framed photograph.
+    fn across() -> serde_json::Value {
+        serde_json::json!([{ "erase": false, "radius": 0.02, "softness": 0.0, "points": [0.4, 0.5, 0.6, 0.5] }])
+    }
+
+    #[test]
+    fn a_removal_carries_the_region_the_window_painted_into_the_operation_the_library_constructs() {
+        let requested = parse(removal(across()));
+        let region = Mask {
+            base: None,
+            strokes: vec![opai::Stroke::new(false, 0.02, 0.0, vec![0.4, 0.5, 0.6, 0.5])],
+            inverted: false,
+        };
+
+        assert_eq!(requested.mask.as_ref(), Some(&region), "the strokes did not arrive as the library's own mask");
+        assert_eq!(requested.resolve().expect("Lima is published at FP32"), opai::Remove::lima(Arc::new(region)));
+    }
+
+    #[test]
+    fn a_removal_with_nothing_painted_is_a_removal_of_nothing_rather_than_a_refusal() {
+        // The window sends the region before anything is painted; the run then leaves the removal out of the chain.
+        let resolved = parse(removal(serde_json::json!([]))).resolve().expect("an empty region is a request");
+        assert_eq!(resolved, opai::Remove::lima(Arc::new(Mask::default())));
+
+        // And one sent without a region at all builds the same removal of nothing.
+        let bare = parse(json(Family::Remove, "lima", "fp32", &[]));
+        assert_eq!(bare.mask, None);
+        assert_eq!(bare.resolve().expect("Lima is published at FP32"), resolved);
+    }
+
+    #[test]
+    fn a_region_sent_for_a_model_that_takes_none_is_refused_by_name() {
+        // The removal's region is not the limiting mask, and no other model reads one: carrying it would run a chain
+        // other than the one the user painted.
+        let mut sent = upscale("kyoto", "fp32", 2.0);
+        sent["mask"] = serde_json::json!({ "strokes": across(), "inverted": false });
+
+        assert_eq!(
+            parse(sent).resolve().expect_err("an upscale takes no region"),
+            UnknownOperation::Parameter { name: "mask".to_string() }
+        );
+    }
+
+    #[test]
+    fn every_model_the_catalogue_publishes_a_mask_for_is_handed_the_region_by_its_kind() {
+        // Driven from the catalogue, so a second model that takes a region is covered without a family name here.
+        let mut found = 0;
+
+        for entry in opai::catalogue() {
+            for variant in &entry.variants {
+                if !variant.parameters.iter().any(|parameter| parameter.kind == ParameterKind::Mask) {
+                    continue;
+                }
+
+                for precision in variant.precisions {
+                    let mut sent = json(entry.family, variant.codename, precision.as_str(), &[]);
+                    sent["mask"] = serde_json::json!({ "strokes": across(), "inverted": false });
+
+                    let resolved =
+                        parse(sent).resolve().unwrap_or_else(|error| panic!("{}: {error}", variant.codename));
+                    let empty = parse(json(entry.family, variant.codename, precision.as_str(), &[]))
+                        .resolve()
+                        .expect("the same model without a region");
+                    assert_ne!(resolved, empty, "{} was built without the region it was sent", variant.codename);
+
+                    found += 1;
+                }
+            }
+        }
+
+        assert!(found > 0, "the catalogue publishes no model that takes a region");
     }
 
     #[test]

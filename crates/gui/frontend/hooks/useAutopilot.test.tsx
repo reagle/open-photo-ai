@@ -129,9 +129,10 @@ describe("an analysis", () => {
 
         void analyse(HOLIDAY, undefined);
 
+        // Never Remove: what it takes out is the user's to paint.
         expect(asking[0]?.families).toEqual(
             ENHANCEMENTS.map(({ family }) => family).filter(
-                (family) => family !== "colorization" && family !== "denoise",
+                (family) => family !== "colorization" && family !== "denoise" && family !== "remove",
             ),
         );
     });

@@ -197,12 +197,20 @@
             "hint": "ドラッグして描画します。Space キーを押したままで写真を移動します。",
             "shortcut": "{{action}} ({{key}})"
         },
+        "removal": {
+            "title": "除去する範囲を描画",
+            "hint": "除去したい部分の上を描画します。ボタンを離すと除去されます。Space キーを押したままで写真を移動します。"
+        },
         "crop": {
-            "notice": "切り抜きを変更するとマスクがクリアされます。"
+            "notice": "切り抜きを変更するとマスクがクリアされます。",
+            "noticeRemoval": "切り抜きを変更すると、除去用に描画した範囲がクリアされます。",
+            "noticeBoth": "切り抜きを変更すると、マスクと除去用に描画した範囲がクリアされます。"
         },
         "toast": {
             "cleared": "切り抜きが変更されたため、マスクをクリアしました。",
-            "undo": "元に戻す"
+            "undo": "元に戻す",
+            "clearedRemoval": "切り抜きが変更されたため、除去用に描画した範囲をクリアしました。",
+            "clearedBoth": "切り抜きが変更されたため、マスクと除去用に描画した範囲をクリアしました。"
         }
     },
     "export": {
@@ -304,6 +312,11 @@
         "unsupportedFiles_other": "{{count}} 件のファイルは対応していません：{{names}}"
     },
     "enhancements": {
+        "removal": {
+            "name": "除去",
+            "painted": "{{name}}, 範囲を描画済み",
+            "unpainted": "{{name}}, 未描画"
+        },
         "denoise": {
             "name": "ノイズ除去",
             "models": {
@@ -393,6 +406,7 @@
         },
         "progress": {
             "downloading": "ダウンロード中 {{percent}}%",
+            "removal": "除去",
             "denoise": "ノイズ除去",
             "faceRecovery": "顔の復元",
             "colorization": "カラー化",

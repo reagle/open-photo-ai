@@ -42,6 +42,13 @@ export type Operation = {
      * merged in by `withChoice` in `lib/faces.ts` before calling {@link enhance}.
      */
     faces?: FaceChoice;
+    /**
+     * The region a Remove takes out, as Rust's `Requested::mask` reads it: the strokes painted for it, in fractions of
+     * the framed photograph. Not the limiting mask, which is {@link enhance}'s own argument. Not kept in the stack -
+     * the strokes are in `stores/mask.ts`, with their undo - but put in by `withRemoval` in `lib/mask.ts` on the way
+     * to `enhance`, and sent even when nothing is painted: Rust leaves a removal of nothing out of the chain.
+     */
+    mask?: Mask;
 };
 
 /** User overrides to the default face-recovery selection, keyed by Rust's per-face id. Mirrors Rust's `FaceChoice` in `crates/gui/src/faces.rs`. */
