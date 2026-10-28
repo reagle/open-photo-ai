@@ -56,10 +56,16 @@ pub enum LensBlurEdges {
     /// The subject in focus is matted and composited over the blurred background, so hair, fur and leaf edges stay
     /// sharp with the background between them blurred. Where the blur is too small to show the difference, or the
     /// matting model cannot run, the render is the depth's alone.
+    ///
+    /// Bilbao's matte of the whole photograph is read first for where the subject has holes — the background seen
+    /// between a canopy's leaves or through the loop of a strap, which the depth calls solid — and those are seeded as
+    /// background, so they are blurred with it. Where Bilbao is not installed, the subject is matted as [`Solid`](Self::Solid).
     #[default]
     Matte,
     /// The depth alone decides what is sharp, pixel by pixel: the render before matting existed.
     Depth,
+    /// Matted as [`Matte`](Self::Matte) is, but taken to be solid: no holes are looked for, and Bilbao is not run.
+    Solid,
 }
 
 impl LensBlurEdges {
@@ -216,9 +222,14 @@ impl LensBlur {
     /// The matting a chain runs to matte this blur's subject: none where it renders from the depth alone.
     pub(crate) fn matting(&self) -> Option<Matting> {
         match self.edges {
-            LensBlurEdges::Matte => Some(self.variant.matting()),
+            LensBlurEdges::Matte | LensBlurEdges::Solid => Some(self.variant.matting()),
             LensBlurEdges::Depth => None,
         }
+    }
+
+    /// Whether a chain looks for the holes in this blur's subject before matting it.
+    pub(crate) fn finds_holes(&self) -> bool {
+        self.edges == LensBlurEdges::Matte
     }
 
     /// The model this runs, as a metric is tagged with it: `lb_lisbon_fp16`.
@@ -271,7 +282,7 @@ impl LensBlur {
             (None, _) => return Err(refused("a depth map")),
         };
         let lens = self.lens.ok_or_else(|| refused("the photograph's lens"))?;
-        let matte = self.matte.as_ref().filter(|_| self.edges == LensBlurEdges::Matte);
+        let matte = self.matte.as_ref().filter(|_| self.edges != LensBlurEdges::Depth);
 
         Ok(Arc::new(render::LensBlurPipeline::new(
             self.display_name(),
@@ -313,10 +324,14 @@ impl LensBlur {
             self.focus_x,
             self.focus_y,
         );
+        // A solid subject is spelled by its matte alone: where no hole was found its matte is the one `Matte` makes, and
+        // so is the render.
         match (&self.matte, self.edges) {
-            (Some(matte), LensBlurEdges::Matte) => tag.push_str(&format!("-a{:016x}", matte.signature)),
             (_, LensBlurEdges::Depth) => tag.push_str("-e0"),
-            (None, LensBlurEdges::Matte) => {}
+            (Some(matte), LensBlurEdges::Matte | LensBlurEdges::Solid) => {
+                tag.push_str(&format!("-a{:016x}", matte.signature));
+            }
+            (None, LensBlurEdges::Matte | LensBlurEdges::Solid) => {}
         }
         if let Some(weight) = &self.keep_sharp {
             tag.push_str(&format!("-k{:016x}", weight.signature()));
@@ -509,6 +524,14 @@ pub(crate) mod tests {
         assert_eq!(depth_only.matting(), None);
         assert_eq!(base.matting(), Some(Matting::porto()));
 
+        // A solid subject is matted by the same model, looks for no holes, and is spelled by its matte.
+        let solid = base.clone().with_edges(LensBlurEdges::Solid);
+        assert_eq!(solid.matting(), Some(Matting::porto()));
+        assert!(base.finds_holes() && !solid.finds_holes() && !depth_only.finds_holes());
+        assert_eq!(solid.cache_tag(), base.cache_tag());
+        let same = Arc::new(Matte::new(2, 2, &[0.0, 0.5, 1.0, 1.0]));
+        assert_eq!(solid.clone().with_matte(same, None).cache_tag(), matted.cache_tag());
+
         // A blur told to render from the depth alone is spelled as one, whatever it was handed.
         let both = depth_only.clone().with_matte(Arc::new(Matte::new(1, 1, &[1.0])), None);
         assert_eq!(both.cache_tag(), depth_only.cache_tag());
@@ -585,5 +608,9 @@ pub(crate) mod tests {
             panic!("the tag named another family");
         };
         assert_eq!(back.edges(), LensBlurEdges::Depth);
+
+        let solid = injected(1.4).with_edges(LensBlurEdges::Solid);
+        let json = serde_json::to_string(&Operation::LensBlur(solid)).expect("serializes");
+        assert!(json.ends_with(r#""edges":"solid"}"#), "{json}");
     }
 }

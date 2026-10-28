@@ -196,6 +196,7 @@ async fn two_matted_lens_blurs_report_one_bar_that_only_moves_forward() {
     let mattes = reports
         .iter()
         .filter(|report| matches!(&*report.subject, Subject::Analysis(Analysis::Matting(_))));
-    assert_eq!(mattes.count(), 6, "both mattes did not report");
+    // Bilbao once, and each blur's matte; Bilbao's matte of all 1 finds no hole, so neither is matted a second time.
+    assert_eq!(mattes.count(), 9, "Bilbao and both mattes did not report");
     assert_eq!(reports.last().map(|report| report.chain_fraction), Some(1.0));
 }

@@ -153,7 +153,9 @@ pub(crate) async fn execute<B: Backend, O: DataOperation>(
     // Generic in the backend so that everything this decides — the defaulting of the options, the progress weighting,
     // the cancellation, the session-holding, the provider report — is checked against a fake session on a runner with
     // no runtime.
-    let options = options.unwrap_or_default();
+    let mut options = options.unwrap_or_default();
+    // Before anything reads it, so the records, the run and the provider report all name the provider it runs on.
+    options.provider = operation.provider(options.provider);
 
     let cache = RunCache::for_run(cache, options.cache, source);
 
