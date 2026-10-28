@@ -10,7 +10,7 @@ import { track } from "@/lib/faro";
 import { clampTo } from "@/lib/utils";
 import { useCropStore, useImageCrop } from "@/stores/crop";
 import { useCurrentFile } from "@/stores/files";
-import { useMaskStore } from "@/stores/mask";
+import { type Target, useMaskStore } from "@/stores/mask";
 import { FITTED, useTransformStore } from "@/stores/transform";
 
 // What the widget was measured to do, in the version this project pins.
@@ -594,20 +594,36 @@ export const useCropController = (open: boolean, onClose: () => void) => {
         // said so beforehand; what it cannot say is that the strokes are gone for good, because the mask's own Undo
         // belongs to the old framing. The notice's Undo is the one way back, and it gives the framing and the mask back
         // together.
-        const cleared = changed && path !== undefined ? useMaskStore.getState().takeMask(path) : undefined;
+        //
+        // The area painted for Remove is strokes over the same framing, and goes the same way, in the same notice and
+        // with the same Undo: the two regions are independent in everything but the framing they share.
+        const taken = (target: Target) =>
+            changed && path !== undefined ? useMaskStore.getState().takeMask(path, target) : undefined;
+        const cleared = taken("limit");
+        const removal = taken("removal");
 
-        if (cleared && path !== undefined) {
+        if ((cleared || removal) && path !== undefined) {
             // **The notice goes with the first stroke painted after the crop**, and its Undo restores only while the
-            // photograph still has no mask: giving the old one back over new strokes would overwrite them.
+            // photograph still has neither region: giving the old ones back over new strokes would overwrite them.
+            const repainted = (state: Pick<ReturnType<typeof useMaskStore.getState>, "masks" | "removals">) =>
+                state.masks.has(path) || state.removals.has(path);
+
             let noticeId: string | number | undefined;
             const unwatch = useMaskStore.subscribe((state) => {
-                if (!state.masks.has(path)) return;
+                if (!repainted(state)) return;
 
                 unwatch();
                 toast.dismiss(noticeId);
             });
 
-            noticeId = toast(i18n.t("mask.toast.cleared"), {
+            const message =
+                cleared && removal
+                    ? "mask.toast.clearedBoth"
+                    : removal
+                      ? "mask.toast.clearedRemoval"
+                      : "mask.toast.cleared";
+
+            noticeId = toast(i18n.t(message), {
                 duration: MASK_UNDO_MS,
                 onDismiss: unwatch,
                 onAutoClose: unwatch,
@@ -615,13 +631,14 @@ export const useCropController = (open: boolean, onClose: () => void) => {
                     label: i18n.t("mask.toast.undo"),
                     onClick: () => {
                         unwatch();
-                        if (useMaskStore.getState().masks.has(path)) return;
+                        if (repainted(useMaskStore.getState())) return;
 
                         if (recorded) setCrop(identity, recorded);
                         else forgetCrop(identity);
 
                         setTransform(identity, FITTED);
-                        useMaskStore.getState().restoreMask(path, cleared);
+                        if (cleared) useMaskStore.getState().restoreMask(path, cleared);
+                        if (removal) useMaskStore.getState().restoreMask(path, removal, "removal");
                     },
                 },
             });

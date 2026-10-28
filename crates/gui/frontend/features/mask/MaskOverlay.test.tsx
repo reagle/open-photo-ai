@@ -288,3 +288,46 @@ describe("the mask overlay", () => {
         expect(document.querySelector("[data-slot='mask-overlay']")).toBeNull();
     });
 });
+
+describe("the overlay while the area to remove is painted", () => {
+    it("shows the removal's region alone, in its own colour, never the mask's", async () => {
+        stroke(0.2);
+        act(() => store().startEditing(PATH, "removal"));
+        stroke(0.6);
+        render(<MaskOverlay path={PATH} box={BOX} />);
+
+        // The removal's one stroke is what is asked for, not the limiting mask's.
+        expect(asked).toHaveBeenCalledTimes(1);
+        expect(asked.mock.calls[0]?.[0]).toEqual({
+            strokes: [{ erase: false, radius: 0.025, softness: 0.5, points: [0.6, 0.5, 0.7, 0.5] }],
+            inverted: false,
+        });
+
+        await answer(0, 1);
+
+        expect(document.querySelector("[data-slot='mask-overlay']")?.getAttribute("data-target")).toBe("removal");
+        expect(tint()?.className).toContain("bg-removal");
+        expect(tint()?.className).not.toContain("bg-primary");
+    });
+
+    it("draws the stroke under the pointer in the removal's colour", () => {
+        act(() => {
+            store().startEditing(PATH, "removal");
+            store().beginStroke(PATH, 0.2, 0.5, false);
+            store().extendStroke(0.4, 0.5, 1.5);
+        });
+        render(<MaskOverlay path={PATH} box={BOX} />);
+
+        const live = document.querySelector("[data-slot='mask-strokes'] g");
+        expect(live?.getAttribute("class")).toBe("text-removal");
+    });
+
+    it("keeps the limiting mask's colour for the limiting mask", async () => {
+        act(() => store().startEditing(PATH, "limit"));
+        stroke(0.2);
+        render(<MaskOverlay path={PATH} box={BOX} />);
+        await answer(0, 1);
+
+        expect(tint()?.className).toContain("bg-primary");
+    });
+});

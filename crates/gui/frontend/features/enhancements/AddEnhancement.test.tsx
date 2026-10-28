@@ -6,6 +6,7 @@ import "@/i18n";
 import { forgetCatalogue } from "@/ipc/catalogue";
 import { track } from "@/lib/faro";
 import { useEnhancementStore } from "@/stores/enhancements";
+import { useMaskStore } from "@/stores/mask";
 import { useSettingsStore } from "@/stores/settings";
 import {
     APPLY_ORDER,
@@ -91,11 +92,12 @@ describe("adding an enhancement", () => {
         // All eight: every family the wire can carry is in `ENHANCEMENTS`, which the typecheck holds.
         expect(await upscale()).toBeInTheDocument();
 
-        // Denoise first, then face recovery, colorization, light adjustment, colour balance and sharpen in
-        // that order and all before upscale, then restore and grain last, and the menu says so: it draws `ENHANCEMENTS`
-        // itself, which is what keeps the menu and the chain in one order.
+        // Remove first, then denoise, face recovery, colorization, light adjustment, colour balance and sharpen in
+        // that order and all before upscale, then restore and grain last, and the menu says so: it draws
+        // `ENHANCEMENTS` itself, which is what keeps the menu and the chain in one order.
         const offered = screen.getAllByRole("menuitem");
         expect(offered.map((item) => item.textContent)).toEqual([
+            "Remove",
             "Denoise",
             "Face Recovery",
             "Colorization",
@@ -125,6 +127,21 @@ describe("adding an enhancement", () => {
         );
         expect(invoke).toHaveBeenCalledWith("suggested_scale", { width: 3000, height: 2000 });
         expect(track).toHaveBeenCalledExactlyOnceWith("enhancement_added", { family: "upscale", source: "manual" });
+    });
+
+    it("adds Remove as Lima and opens its brush at once, asking nothing of the backend", async () => {
+        openFiles(HOLIDAY);
+        useMaskStore.setState(useMaskStore.getInitialState(), true);
+        render(<AddEnhancement />);
+        open();
+
+        fireEvent.click(await screen.findByRole("menuitem", { name: "Remove" }));
+
+        await waitFor(() =>
+            expect(stack()).toEqual([{ family: "remove", codename: "lima", precision: "fp32", parameters: {} }]),
+        );
+        expect(useMaskStore.getState().editing).toEqual({ path: HOLIDAY.path, target: "removal" });
+        expect(invoke).not.toHaveBeenCalledWith("suggested_scale", expect.anything());
     });
 
     it("asks for the scale of the photograph as it is framed, not as the file is", async () => {
@@ -257,6 +274,7 @@ describe("adding an enhancement", () => {
         // same with every family switched off as with none.
         const offered = await screen.findAllByRole("menuitem");
         expect(offered.map((item) => item.textContent)).toEqual([
+            "Remove",
             "Denoise",
             "Face Recovery",
             "Colorization",
@@ -340,10 +358,10 @@ describe("the Add enhancement key", () => {
         const event = press("e");
 
         expect(event.defaultPrevented).toBe(true);
-        await waitFor(() => expect(screen.getByRole("menuitem", { name: "Denoise" })).toHaveFocus());
+        await waitFor(() => expect(screen.getByRole("menuitem", { name: "Remove" })).toHaveFocus());
 
-        fireEvent.keyDown(screen.getByRole("menuitem", { name: "Denoise" }), { key: "ArrowDown" });
-        await waitFor(() => expect(screen.getByRole("menuitem", { name: "Face Recovery" })).toHaveFocus());
+        fireEvent.keyDown(screen.getByRole("menuitem", { name: "Remove" }), { key: "ArrowDown" });
+        await waitFor(() => expect(screen.getByRole("menuitem", { name: "Denoise" })).toHaveFocus());
     });
 
     it("opens nothing with no image open, as the button is unavailable, and leaves the key alone", () => {

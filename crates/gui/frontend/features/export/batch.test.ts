@@ -289,6 +289,41 @@ describe("the order", () => {
         expect(exporting[1]?.mask).toBeUndefined();
     });
 
+    it("sends each photograph's Remove the area painted for it, apart from the mask, and an empty one unpainted", async () => {
+        const remove: Operation = { family: "remove", codename: "lima", precision: "fp32", parameters: {} };
+        act(() => {
+            useEnhancementStore.setState({
+                enhancements: new Map([
+                    [HOLIDAY.path, [remove]],
+                    [SUNSET.path, [remove]],
+                ]),
+            });
+
+            const { startEditing, beginStroke, endStroke, stopEditing } = useMaskStore.getState();
+            startEditing(HOLIDAY.path, "removal");
+            beginStroke(HOLIDAY.path, 0.3, 0.3, false);
+            endStroke(0.6, 0.3);
+            stopEditing();
+        });
+
+        void run([HOLIDAY, SUNSET]);
+        await settle();
+        await exporting[0]?.answer({ outcome: "exported", path: "/exports/holiday.jpg", bytes: 10 });
+
+        expect(exporting[0]?.operations).toEqual([
+            {
+                ...remove,
+                mask: {
+                    strokes: [{ erase: false, radius: 0.025, softness: 0.5, points: [0.3, 0.3, 0.6, 0.3] }],
+                    inverted: false,
+                },
+            },
+        ]);
+        // The removal is the Remove's, never the limiting mask the export is also given.
+        expect(exporting[0]?.mask).toBeUndefined();
+        expect(exporting[1]?.operations).toEqual([{ ...remove, mask: { strokes: [], inverted: false } }]);
+    });
+
     it("sends no mask for one painted and then undone back to nothing", async () => {
         act(() => {
             const { beginStroke, endStroke, undo } = useMaskStore.getState();

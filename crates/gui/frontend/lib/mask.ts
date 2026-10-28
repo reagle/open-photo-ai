@@ -1,4 +1,6 @@
+import type { Operation } from "@/ipc/enhance";
 import type { Mask, Stroke } from "@/ipc/mask";
+import { isPainted } from "@/lib/enhancements";
 import { clampTo } from "@/lib/utils";
 
 /**
@@ -114,6 +116,27 @@ export const toWire = (snapshot: Snapshot | undefined): Mask | undefined =>
               inverted: snapshot.inverted,
           }
         : undefined;
+
+/**
+ * What a removal's region is on the wire: always a mask, with nothing in it for a region nothing was painted in.
+ *
+ * Unlike {@link toWire}'s, sent even when empty - Rust leaves a removal of nothing out of the chain, so no model is
+ * opened for it - and never inverted: a removal turned over would take out all but what was painted. The coordinates
+ * are rounded as {@link toWire} rounds them.
+ */
+export const regionOf = (snapshot: Snapshot | undefined): Mask => ({
+    strokes: toWire(snapshot && { strokes: snapshot.strokes, inverted: false })?.strokes ?? [],
+    inverted: false,
+});
+
+/**
+ * `operations` with `region` as the region of each one painted with the brush - Remove - and every other one as it
+ * was: the removal's strokes put in on the way to `enhance` or `export`, as `withChoice` puts in the choice among
+ * faces. Which operations take a region is `ENHANCEMENTS`' business (`isPainted`); Rust hands it to the parameter the
+ * model publishes as a mask.
+ */
+export const withRemoval = (operations: readonly Operation[], region: Mask): Operation[] =>
+    operations.map((operation) => (isPainted(operation.family) ? { ...operation, mask: region } : operation));
 
 /**
  * The strokes `now` has beyond `base`, where `base` is `now` as it was a few strokes ago: the same strokes, the same

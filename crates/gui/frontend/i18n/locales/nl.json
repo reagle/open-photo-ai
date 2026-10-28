@@ -259,12 +259,20 @@
             "hint": "Sleep om te schilderen. Houd Space ingedrukt om de foto te verplaatsen.",
             "shortcut": "{{action}} ({{key}})"
         },
+        "removal": {
+            "title": "Schilder het gebied dat weg moet",
+            "hint": "Schilder over wat weg moet; het wordt verwijderd zodra je loslaat. Houd Space ingedrukt om de foto te verplaatsen."
+        },
         "crop": {
-            "notice": "Het bijsnijden wijzigen wist het masker."
+            "notice": "Het bijsnijden wijzigen wist het masker.",
+            "noticeRemoval": "Het bijsnijden wijzigen wist het gebied dat voor Verwijderen is geschilderd.",
+            "noticeBoth": "Het bijsnijden wijzigen wist het masker en het gebied dat voor Verwijderen is geschilderd."
         },
         "toast": {
             "cleared": "De uitsnede is gewijzigd, dus het masker is gewist.",
-            "undo": "Ongedaan maken"
+            "undo": "Ongedaan maken",
+            "clearedRemoval": "De uitsnede is gewijzigd, dus het gebied dat voor Verwijderen is geschilderd, is gewist.",
+            "clearedBoth": "De uitsnede is gewijzigd, dus het masker en het gebied dat voor Verwijderen is geschilderd, zijn gewist."
         }
     },
     "export": {
@@ -373,6 +381,11 @@
         "unsupportedFiles_other": "{{count}} bestanden worden niet ondersteund: {{names}}"
     },
     "enhancements": {
+        "removal": {
+            "name": "Verwijderen",
+            "painted": "{{name}}, gebied geschilderd",
+            "unpainted": "{{name}}, niets geschilderd"
+        },
         "denoise": {
             "name": "Ruisonderdrukking",
             "models": {
@@ -487,6 +500,7 @@
         },
         "progress": {
             "downloading": "Downloaden {{percent}}%",
+            "removal": "Verwijderen",
             "denoise": "Ruis verwijderen",
             "faceRecovery": "Gezichten herstellen",
             "colorization": "Inkleuren",
