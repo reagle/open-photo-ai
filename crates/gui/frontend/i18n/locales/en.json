@@ -523,6 +523,13 @@
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
         "infoLensBlur": "{{name}}, blur {{amount}}",
+        "groups": {
+            "cleanUp": "Clean up",
+            "lightColor": "Light & color",
+            "detailSize": "Detail & size",
+            "generative": "Generative",
+            "effects": "Effects"
+        },
         "infoGrain": "{{name}}, {{intensity}}%, {{mode}}"
     },
     "preview": {
