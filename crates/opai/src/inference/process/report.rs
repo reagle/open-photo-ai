@@ -118,6 +118,12 @@ impl ProviderReport {
 
         Self { requested, actual }
     }
+
+    /// One report of this run and `later`, one that went on from where it ended under the same request: every provider
+    /// either built on, in the order they were first built on.
+    pub(crate) fn and(&self, later: Self) -> Self {
+        Self::new(self.requested, self.actual.iter().copied().chain(later.actual))
+    }
 }
 
 /// What a run produced: the enhanced picture, and what it was executed on.
