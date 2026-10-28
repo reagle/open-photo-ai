@@ -22,6 +22,7 @@
 // fill as photograph. Its mask is part of the operation, not of the run: `ProcessOptions::mask` says where the
 // enhancements apply, this says what to take out, and the two are painted separately.
 
+mod gain_map;
 pub(crate) mod lima;
 #[cfg(test)]
 mod live;

@@ -46,7 +46,9 @@
 
 pub mod bilinear;
 pub mod blend;
+pub(crate) mod boxes;
 pub mod canvas;
+pub mod fill;
 pub mod grid;
 pub mod mix;
 pub mod pad;

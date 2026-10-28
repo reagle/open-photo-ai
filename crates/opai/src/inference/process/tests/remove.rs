@@ -184,3 +184,114 @@ fn a_face_whose_centre_a_removal_marks_is_not_restored_and_the_others_are() {
         std::borrow::Cow::Borrowed(_)
     ));
 }
+
+/// An Ultra HDR photograph of 200x150, its gain map at half resolution with the gain of a bright object (250) over the
+/// cells around `(50, 75)`, where [`removing`]`(0.25, 0.5)` takes a dot out; or, with `larger`, a gain map wider than
+/// the photograph, which no removal can lay over it.
+fn ultra_hdr(dir: &std::path::Path, larger: bool) -> Picture {
+    use crate::image::GainMap;
+    use crate::image::test_support::written_ultra_hdr_of;
+
+    let path = dir.join("lamp.jpg");
+    std::fs::write(&path, written_ultra_hdr_of((200, 150), (100, 75), 3)).expect("writable");
+    let loaded = crate::image::load_blocking(&path).expect("decodable");
+
+    let (width, height) = if larger { (300, 150) } else { (100, 75) };
+    let pixels = DynamicImage::ImageRgb8(::image::RgbImage::from_fn(width, height, |x, y| {
+        if (22..28).contains(&x) && (34..41).contains(&y) {
+            ::image::Rgb([250, 250, 250])
+        } else {
+            ::image::Rgb([(40 + x * 100 / width) as u8, 90, 128])
+        }
+    }));
+    let base = if larger { (width, height) } else { (200, 150) };
+    loaded.with_gain_map(Some(GainMap::holding(pixels, base)))
+}
+
+#[tokio::test]
+async fn a_removal_fills_the_gain_map_under_it_from_around_it_fresh_or_cached_and_exports_it() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let source = ultra_hdr(dir.path(), false);
+    let before = source.gain_map().expect("carried").pixels().to_rgb8();
+    let backend = Fake::new();
+    let cache = store();
+    let lima_runs = |backend: &Fake| backend.log().ran.iter().filter(|artifact| *artifact == LIMA).count();
+
+    let fresh = process(&backend, Some(&cache), &source, &[removing(0.25, 0.5)], None).await.unwrap().picture;
+    settled();
+    let cached = process(&backend, Some(&cache), &source, &[removing(0.25, 0.5)], None).await.unwrap().picture;
+    assert_eq!(lima_runs(&backend), 1, "the second run was not served from the store");
+
+    for (name, picture) in [("fresh", &fresh), ("cached", &cached)] {
+        let map = picture.gain_map().unwrap_or_else(|| panic!("{name}: the gain map was dropped"));
+        let after = map.pixels().to_rgb8();
+        assert_eq!((after.width(), after.height()), (100, 75), "{name}: resampled");
+
+        // Under the dot, the gain around it rather than the object's; far from it, every byte as it was.
+        let centre = after.get_pixel(25, 37).0;
+        assert!(centre[0].abs_diff(65) <= 8 && centre[1].abs_diff(90) <= 4, "{name}: the centre is {centre:?}");
+        for (x, y) in [(5, 5), (90, 70), (25, 10), (60, 37)] {
+            assert_eq!(after.get_pixel(x, y), before.get_pixel(x, y), "{name}: ({x}, {y}) changed");
+        }
+    }
+    assert_eq!(
+        fresh.gain_map().unwrap().pixels().as_bytes(),
+        cached.gain_map().unwrap().pixels().as_bytes(),
+        "the store served another gain map"
+    );
+
+    let written = crate::export::write(
+        &fresh,
+        &dir.path().join("out.jpg"),
+        crate::image::ImageFormat::Jpeg,
+        crate::export::WriteOptions::default(),
+    )
+    .await
+    .expect("written");
+    assert_eq!(written.losses, [], "a rewritten gain map is carried");
+    let file = std::fs::read(&written.path).expect("readable");
+    let map = rust_sak::image::decode_bytes(&rust_sak::image::metadata_bytes(&file).gain_map.expect("written"))
+        .expect("decodable")
+        .to_rgb8();
+    assert!(map.get_pixel(25, 37).0[0] < 100, "the written gain map still lifts the removed object");
+}
+
+#[tokio::test]
+async fn a_gain_map_a_removal_cannot_lay_over_the_photograph_is_dropped_fresh_or_cached_and_the_export_says_so() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let source = ultra_hdr(dir.path(), true);
+    let backend = Fake::new();
+    let cache = store();
+
+    let fresh = process(&backend, Some(&cache), &source, &[removing(0.25, 0.5)], None).await.unwrap().picture;
+    settled();
+    let ran = backend.log().ran.len();
+    let cached = process(&backend, Some(&cache), &source, &[removing(0.25, 0.5)], None).await.unwrap().picture;
+    assert_eq!(backend.log().ran.len(), ran, "a stored drop ran the removal again");
+
+    for (name, picture) in [("fresh", &fresh), ("cached", &cached)] {
+        assert!(picture.gain_map().is_none(), "{name}: the gain map was kept over the removal");
+        assert_ne!(picture.pixels().as_bytes(), source.pixels().as_bytes(), "{name}: the removal itself was lost");
+    }
+
+    let written = crate::export::write(
+        &fresh,
+        &dir.path().join("out.jpg"),
+        crate::image::ImageFormat::Jpeg,
+        crate::export::WriteOptions::default(),
+    )
+    .await
+    .expect("written");
+    let losses: Vec<String> = written.losses.iter().map(ToString::to_string).collect();
+    assert_eq!(losses, ["HDR gain map dropped: it could not be carried"]);
+}
+
+#[tokio::test]
+async fn a_chain_without_a_removal_keeps_the_sources_gain_map_shared() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let source = ultra_hdr(dir.path(), false);
+
+    let sharpened = process(&Fake::new(), None, &source, &[sharpen(0.5)], None).await.unwrap().picture;
+
+    assert!(Arc::ptr_eq(&sharpened.shared_gain_map().unwrap(), &source.shared_gain_map().unwrap()));
+}

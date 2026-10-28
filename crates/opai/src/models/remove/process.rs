@@ -13,16 +13,19 @@ use std::sync::Arc;
 
 use image::{DynamicImage, ImageBuffer, Rgb};
 
+use super::gain_map::{self, Filled};
 use super::lima::{PLANES_IN, PLANES_OUT};
 use super::region::{Bicubic, Marks, Rect, crops, distances, fill_weight, hole_plane, in_hole, regions};
 
 use crate::error::InferenceError;
+use crate::image::GainMap;
 use crate::mask::Mask;
 use crate::models::ArtifactId;
 use crate::pipeline::session::GraphShape;
-use crate::pipeline::{Backend, DepthGeneric, OnOneGraph, Shared, SingleGraph, checkpoint, reporter};
+use crate::pipeline::{Backend, ImagePipeline, OnOneGraph, Shared, SingleGraph, checkpoint, reporter};
 use crate::providers::profile::EpProfile;
 use crate::sessions::SessionHandle;
+use imaging::ChannelDepth;
 use imaging::pad::source_offset;
 use imaging::present::{plan, presented};
 use imaging::tensor::{Channel, Normalisation, Sampler, flattened};
@@ -33,6 +36,10 @@ const RANGE: Normalisation = Normalisation::Unit;
 
 /// How many progress steps one region is: presented, inferred, pasted.
 const STEPS_PER_REGION: usize = 3;
+
+/// The share of the bar the colour removal has where a gain map is rewritten after it: the rewrite is one push-pull
+/// over the regions' crops at the gain map's resolution, a small fraction of a model run.
+const COLOUR_SHARE: f64 = 0.95;
 
 /// The pipeline running one removal, as the family's contract seam hands it back.
 pub(crate) fn pipeline<B: Backend>(
@@ -87,23 +94,47 @@ impl Removal {
 
         (tensor, scaled)
     }
-}
 
-impl OnOneGraph for Removal {
-    fn graph(&self) -> &SingleGraph {
-        &self.graph
+    /// The regions this removal fills in a `width` x `height` picture: each crop with its pixels' distances from the
+    /// marks, which the colour paste and the gain map's rewrite both read. Refused, before anything is allocated, for a
+    /// picture with no area, as every whole-image pipeline refuses one.
+    fn regions(&self, width: u32, height: u32) -> Result<Vec<Filled>, InferenceError> {
+        if width == 0 || height == 0 {
+            return Err(InferenceError::Untileable { width, height });
+        }
+
+        let marks = Marks::of(&self.mask.rasterised(width, height));
+        Ok(crops(&regions(&marks), width, height)
+            .into_iter()
+            .map(|crop| Filled { crop, squared: distances(&marks, crop) })
+            .collect())
     }
-}
 
-impl DepthGeneric for Removal {
-    /// One graph, run once per region.
-    fn stages(&self) -> usize {
-        1
-    }
-
-    fn run_at<T: Channel, B: Backend>(
+    /// The photograph at `depth` with `filling` removed.
+    fn removed<B: Backend>(
         &self,
         input: &DynamicImage,
+        filling: &[Filled],
+        sessions: &[SessionHandle<B::Session>],
+        depth: ChannelDepth,
+        progress: Option<&dyn Fn(f64)>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<DynamicImage, InferenceError> {
+        match depth {
+            ChannelDepth::Eight => {
+                self.removed_at::<u8, B>(input, filling, sessions, progress, cancelled).map(u8::into_dynamic)
+            }
+            ChannelDepth::Sixteen => {
+                self.removed_at::<u16, B>(input, filling, sessions, progress, cancelled).map(u16::into_dynamic)
+            }
+        }
+    }
+
+    /// [`removed`](Self::removed)'s body, once, at whichever channel the caller asked for.
+    fn removed_at<T: Channel, B: Backend>(
+        &self,
+        input: &DynamicImage,
+        filling: &[Filled],
         sessions: &[SessionHandle<B::Session>],
         progress: Option<&dyn Fn(f64)>,
         cancelled: &dyn Fn() -> bool,
@@ -112,11 +143,6 @@ impl DepthGeneric for Removal {
         Rgb<T>: image::Pixel<Subpixel = T>,
     {
         let (width, height) = (input.width(), input.height());
-
-        // Before anything is allocated, as every whole-image pipeline refuses one.
-        if width == 0 || height == 0 {
-            return Err(InferenceError::Untileable { width, height });
-        }
 
         if cancelled() {
             return Err(InferenceError::Cancelled);
@@ -129,23 +155,20 @@ impl DepthGeneric for Removal {
         let sampler = Sampler::new(input);
         let mut output = T::matching(&sampler).cloned().unwrap_or_else(|| flattened::<T>(&sampler, width, height));
 
-        let marks = Marks::of(&self.mask.rasterised(width, height));
-        let crops = crops(&regions(&marks), width, height);
-
         // Nothing marked: the photograph, and the graph is never run.
-        if crops.is_empty() {
+        if filling.is_empty() {
             report(1.0);
             return Ok(output);
         }
 
         let session = &sessions[0];
         let side = self.side as usize;
-        let steps = (crops.len() * STEPS_PER_REGION) as f64;
+        let steps = (filling.len() * STEPS_PER_REGION) as f64;
         let at = |region: usize, step: usize| (region * STEPS_PER_REGION + step) as f64 / steps;
 
-        for (index, crop) in crops.iter().copied().enumerate() {
-            let squared = distances(&marks, crop);
-            let (tensor, scaled) = self.presented(input, crop, &squared);
+        for (index, Filled { crop, squared }) in filling.iter().enumerate() {
+            let (crop, squared) = (*crop, squared.as_slice());
+            let (tensor, scaled) = self.presented(input, crop, squared);
             checkpoint(&report, cancelled, at(index, 1))?;
 
             let mut filled = vec![0.0_f32; PLANES_OUT * side * side];
@@ -159,16 +182,68 @@ impl DepthGeneric for Removal {
             .map_err(InferenceError::run(&self.graph.name, index))?;
             checkpoint(&report, cancelled, at(index, 2))?;
 
-            paste(
-                &mut output,
-                crop,
-                &squared,
-                &Bicubic::new(&filled, self.side, scaled, (crop.width, crop.height)),
-            );
+            paste(&mut output, crop, squared, &Bicubic::new(&filled, self.side, scaled, (crop.width, crop.height)));
             checkpoint(&report, cancelled, at(index, 3))?;
         }
 
         Ok(output)
+    }
+}
+
+impl OnOneGraph for Removal {
+    fn graph(&self) -> &SingleGraph {
+        &self.graph
+    }
+}
+
+impl<B: Backend> ImagePipeline<B> for Removal {
+    /// One graph, run once per region.
+    fn stages(&self) -> usize {
+        1
+    }
+
+    fn run(
+        &self,
+        input: &DynamicImage,
+        sessions: &[SessionHandle<B::Session>],
+        depth: ChannelDepth,
+        progress: Option<&dyn Fn(f64)>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<DynamicImage, InferenceError> {
+        let filling = self.regions(input.width(), input.height())?;
+        self.removed::<B>(input, &filling, sessions, depth, progress, cancelled)
+    }
+
+    /// Always: whatever the removal takes out, the gain under it is the object's. (A mask that marks nothing past
+    /// [`MARKED`](super::region::MARKED) hands the gain map back unchanged, under a rewrite of its own, which the store
+    /// keeps; the chain drops a removal of nothing before it plans, so that is a mask of faint greys only.)
+    fn rewrites_gain_map(&self, _gain_map: &GainMap) -> bool {
+        true
+    }
+
+    /// The photograph with the regions removed, and its gain map with the gain under them filled from the gain around
+    /// them by a push-pull membrane through the same feather (the series design's D10): not LaMa, whose texture a gain
+    /// map has no use for.
+    fn run_with_gain_map(
+        &self,
+        input: &DynamicImage,
+        gain_map: &GainMap,
+        sessions: &[SessionHandle<B::Session>],
+        depth: ChannelDepth,
+        progress: Option<&dyn Fn(f64)>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(DynamicImage, Option<Result<GainMap, InferenceError>>), InferenceError> {
+        let report = reporter(progress);
+        let filling = self.regions(input.width(), input.height())?;
+
+        let colour = |fraction: f64| report(fraction * COLOUR_SHARE);
+        let removed = self.removed::<B>(input, &filling, sessions, depth, Some(&colour), cancelled)?;
+
+        let rewritten = gain_map::rewritten(gain_map, (input.width(), input.height()), &filling)
+            .map_err(|reason| InferenceError::GainMap { operation: self.graph.name.clone(), reason });
+        checkpoint(&report, cancelled, 1.0)?;
+
+        Ok((removed, Some(rewritten)))
     }
 }
 
@@ -484,6 +559,65 @@ mod tests {
 
             assert!(matches!(outcome, Err(InferenceError::Cancelled)), "a stop at {boundary} gave {outcome:?}");
         }
+    }
+
+    #[test]
+    fn with_a_gain_map_the_photograph_is_removed_as_without_and_the_map_rewritten_after_it() {
+        let marked = rect(90, 60, 12, 20);
+        let source = photograph(200, 150);
+        let gain_map = GainMap::holding(
+            DynamicImage::ImageLuma8(image::GrayImage::from_pixel(50, 38, image::Luma([90]))),
+            (200, 150),
+        );
+        let (handle, _) = session();
+        let reported: Mutex<Vec<f64>> = Mutex::default();
+
+        let (with, rewritten) = removing(mask(200, 150, &[marked]))
+            .run_with_gain_map(
+                &source,
+                &gain_map,
+                std::slice::from_ref(&handle),
+                ChannelDepth::Eight,
+                Some(&|fraction| reported.lock().unwrap().push(fraction)),
+                &|| false,
+            )
+            .unwrap();
+        let without = removing(mask(200, 150, &[marked]))
+            .run(&source, std::slice::from_ref(&handle), ChannelDepth::Eight, None, &|| false)
+            .unwrap();
+
+        assert_eq!(with.as_bytes(), without.as_bytes());
+        let rewritten = rewritten.expect("a removal always answers for the gain map").expect("rewritten");
+        assert_eq!(rewritten.pixels().as_bytes(), gain_map.pixels().as_bytes(), "a flat gain fills as itself");
+        assert!(ImagePipeline::<Fake>::rewrites_gain_map(removing(mask(200, 150, &[])).as_ref(), &gain_map));
+
+        let reported = reported.lock().unwrap();
+        assert!(reported.windows(2).all(|pair| pair[1] > pair[0]), "{reported:?}");
+        assert_eq!(*reported.last().unwrap(), 1.0);
+    }
+
+    #[test]
+    fn a_gain_map_that_cannot_be_rewritten_is_the_gain_maps_failure_not_the_removals() {
+        let (handle, _) = session();
+        let larger = GainMap::holding(DynamicImage::ImageLuma8(image::GrayImage::new(90, 60)), (90, 60));
+
+        let (removed, rewritten) = removing(mask(60, 40, &[rect(28, 18, 4, 4)]))
+            .run_with_gain_map(
+                &photograph(60, 40),
+                &larger,
+                std::slice::from_ref(&handle),
+                ChannelDepth::Eight,
+                None,
+                &|| false,
+            )
+            .unwrap();
+
+        assert_eq!(removed.into_rgb8().get_pixel(30, 20).0, [0, 255, 0]);
+        let error = rewritten.expect("answered").expect_err("a map wider than the photograph");
+        assert!(
+            matches!(&error, InferenceError::GainMap { operation, .. } if operation == "Lima (FP32)"),
+            "{error:?}"
+        );
     }
 
     #[test]

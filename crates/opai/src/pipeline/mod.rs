@@ -41,6 +41,7 @@ pub(crate) use backend::Backend;
 use session::GraphShape;
 
 use crate::error::InferenceError;
+use crate::image::GainMap;
 use crate::models::ArtifactId;
 use crate::providers::profile::EpProfile;
 use crate::sessions::SessionHandle;
@@ -119,6 +120,42 @@ pub(crate) trait ImagePipeline<B: Backend>: Model<B> {
         progress: Option<&dyn Fn(f64)>,
         cancelled: &dyn Fn() -> bool,
     ) -> Result<DynamicImage, InferenceError>;
+
+    // A gain map is the one thing a picture carries that a step can make untrue by changing what the photograph shows.
+    // Every step but a removal leaves it as it is, which is why both methods have a default: the chain keeps the
+    // picture's gain map, shared, across a step that answers `false` here.
+    //
+    // One call for the pixels and the gain map rather than a second method called after `run`: a removal's rewrite
+    // uses the regions and distances its colour paste computed, and only inside one call can it reuse them without
+    // holding a copy on the shared pipeline between calls, and give the rewrite its own share of the bar. (The
+    // lens-blur line adds the same two methods, of the same shape, for its blur.)
+
+    /// Whether this step changes `gain_map` when it runs, rewriting it or dropping it: the question the run cache asks
+    /// of a step it serves, whose stored result is only whole with what became of the gain map stored beside it.
+    /// [`run_with_gain_map`](Self::run_with_gain_map) answers `Some` exactly where this answers `true`.
+    fn rewrites_gain_map(&self, _gain_map: &GainMap) -> bool {
+        false
+    }
+
+    /// [`run`](Self::run) for a picture that carries `gain_map`: the result, and the gain map of the result where the
+    /// step changes it, or `None` where it leaves the gain map as it was. Called by the chain, in place of `run`, for a
+    /// picture that carries one; `progress` covers both.
+    ///
+    /// # Errors
+    ///
+    /// [`InferenceError`] as for `run`, a stop during the gain map's rewrite included. The inner error is the gain
+    /// map's alone: the chain drops the gain map from the result, with a warning, and the run goes on.
+    fn run_with_gain_map(
+        &self,
+        input: &DynamicImage,
+        _gain_map: &GainMap,
+        sessions: &[SessionHandle<B::Session>],
+        depth: ChannelDepth,
+        progress: Option<&dyn Fn(f64)>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(DynamicImage, Option<Result<GainMap, InferenceError>>), InferenceError> {
+        self.run(input, sessions, depth, progress, cancelled).map(|image| (image, None))
+    }
 }
 
 /// One planned operation whose result is **not** a picture, as the execute driver sees it.
