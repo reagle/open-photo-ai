@@ -27,8 +27,8 @@ async fn processed(
         std::future::ready(answer)
     };
 
-    let estimate = |_, _| std::future::ready(Err(InferenceError::Cancelled));
-    let matte = |_, _| std::future::ready(Err(InferenceError::Cancelled));
+    let estimate = |_, _, _| std::future::ready(Err(InferenceError::Cancelled));
+    let matte = |_, _, _| std::future::ready(Err(InferenceError::Cancelled));
     let outcome =
         process_with(backend, None, &picture(120, 80), operations, Some(options), detect, estimate, matte).await;
 

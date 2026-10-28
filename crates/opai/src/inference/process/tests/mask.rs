@@ -252,3 +252,21 @@ fn an_upscale_enlarges_a_transparent_photograph_from_its_flattening() {
 
     assert_eq!(a.as_bytes(), b.as_bytes(), "colour under a transparent pixel reached the enlargement");
 }
+
+#[test]
+fn a_gain_map_a_step_rewrote_is_kept_where_the_mask_is_white_and_the_photographs_where_it_is_black() {
+    let flat = |value: u8| DynamicImage::ImageRgb8(image::RgbImage::from_pixel(40, 20, image::Rgb([value; 3])));
+    let original = Arc::new(GainMap::holding(flat(200), (80, 40)));
+    let rewritten = Arc::new(original.rewritten(flat(40)));
+    let mask = halves(80, 40, 40, (1.0, 0.0));
+
+    let mixed = masked_gain_map(Some(Arc::clone(&original)), Some(rewritten), &mask).expect("kept");
+    let mixed = mixed.pixels().to_rgb8();
+    assert_eq!(mixed.get_pixel(5, 10).0, [40; 3], "the white half keeps what the step made of it");
+    assert_eq!(mixed.get_pixel(35, 10).0, [200; 3], "the black half is the photograph's own");
+
+    // The source's own, carried through unchanged, is left as it is, and one a step dropped stays dropped.
+    let carried = masked_gain_map(Some(Arc::clone(&original)), Some(Arc::clone(&original)), &mask).expect("kept");
+    assert!(Arc::ptr_eq(&carried, &original));
+    assert!(masked_gain_map(Some(original), None, &mask).is_none());
+}
