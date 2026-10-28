@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use image::DynamicImage;
 use imaging::ChannelDepth;
 use imaging::defocus::{Defocus, Spacing, Subject, defocus};
-use imaging::fill::filled;
+use imaging::fill::{filled, nearest_filled};
 use imaging::fusion::foreground;
 use imaging::guided::{dilated_nearer, upsampled};
 use imaging::linear::{decoded_linear, encoded};
@@ -56,6 +56,9 @@ const MATTED_SPACING: Spacing = Spacing::Geometric { first: 1.0, ratio: 1.4 };
 
 /// The coverage above which a pixel is part of the subject, and has the background filled in behind it.
 const COVERED: f32 = 0.004;
+
+/// The radius, in pixels, over which the background's colour is smoothed before it is carried in behind the subject.
+const FILL_SMOOTHING: u32 = 2;
 
 // Not the radius of the subject's median distance, which the design proposed: on a long lens the band of distances is
 // deep in radius (at 181 mm f/1.4 a street portrait's spans -20 to +20 px), and its median, pulled back by the hair,
@@ -203,7 +206,7 @@ impl LensBlurPipeline {
         // The background's colour behind the subject, from what lies behind the band and is not covered. Not from what is
         // in front of it: focused low on a tree, the canopy above is nearer, and its colour would wash the background.
         let known = plane_of(&|index| !covered(index) && band.behind(disparity[index] * nearest));
-        let filled_colour = filled(&linear, 3, width, height, &known);
+        let filled_colour = nearest_filled(&linear, 3, width, height, &known, FILL_SMOOTHING);
         // Except beside a nearer thing, where the subject goes on behind it: what shows through its blurred edge is
         // the subject, so the subject's own colour is kept there, as far as the farthest disc reaches, and wherever
         // no disc from there reaches the background around the subject, which it would otherwise tint.
@@ -714,7 +717,9 @@ mod tests {
             blues.iter().max().unwrap() - blues.iter().min().unwrap()
         };
         assert!(spread(&input) >= 40, "{}", spread(&input));
-        assert!(3 * spread(&matted) < spread(&input), "{} against {}", spread(&matted), spread(&input));
+        // At most half: the fill behind the subject carries the nearest squares up to the strands, so a little of the
+        // pattern is left after the blur.
+        assert!(2 * spread(&matted) < spread(&input), "{} against {}", spread(&matted), spread(&input));
         assert!(spread(&matted) < spread(&plain), "{} against {}", spread(&matted), spread(&plain));
 
         // Half the strand pixel is the subject's red.
