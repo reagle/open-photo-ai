@@ -137,6 +137,28 @@ impl GainMap {
         Self { pixels: Arc::new(pixels), metadata: Arc::clone(&self.metadata), scale: self.scale, source: None }
     }
 
+    /// The pixels as a shared handle, for the run cache to store a rewritten gain map without copying it.
+    pub(crate) fn shared_pixels(&self) -> Arc<DynamicImage> {
+        Arc::clone(&self.pixels)
+    }
+
+    /// This gain map with `pixels` in place of its own, at the same resolution, encoding the same parameters: how an
+    /// enhancement that changes what the photograph shows — a removal — hands back the gain map of its result. The
+    /// metadata and scale are kept and the source's bytes are not, as for [`reframed`](Self::reframed), and the pixels
+    /// are brought to the gain map's own colour type.
+    #[must_use]
+    pub(crate) fn rewritten(&self, pixels: DynamicImage) -> Self {
+        self.reframed(|_, _| pixels)
+    }
+
+    /// A gain map holding `pixels` (8-bit grayscale or RGB) beside a base of `base` pixels, with the hawk's parameters.
+    #[cfg(test)]
+    pub(crate) fn holding(pixels: DynamicImage, base: (u32, u32)) -> Self {
+        let channels = if pixels.color().has_color() { 3 } else { 1 };
+        let encoded = crate::image::test_support::gain_map_jpeg((pixels.width(), pixels.height()), channels);
+        Self::read(&encoded, base, Orientation::NoTransforms).expect("readable").rewritten(pixels)
+    }
+
     /// This gain map with `metadata` in place of its own, for a test to give it metadata a writer refuses.
     #[cfg(test)]
     pub(crate) fn with_metadata(&self, metadata: Metadata) -> Self {

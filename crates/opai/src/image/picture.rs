@@ -124,6 +124,13 @@ impl Picture {
         Self { gain_map: gain_map.map(Arc::new), ..self }
     }
 
+    /// This picture carrying `gain_map`, shared rather than copied — how a run hands its result the gain map its last
+    /// step left, which is the source's own `Arc` unless a step rewrote it. `None` drops it.
+    #[must_use]
+    pub(crate) fn with_shared_gain_map(self, gain_map: Option<Arc<GainMap>>) -> Self {
+        Self { gain_map, ..self }
+    }
+
     /// A picture computed from this one: `pixels` under `identity`, keeping this picture's path, metadata, fidelity and
     /// gain map.
     ///
