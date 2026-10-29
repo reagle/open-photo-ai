@@ -109,7 +109,7 @@ Where the results go: one file, or a directory. Without it, each result is writt
 
 ### `--gui`
 
-Opens the images in the GUI instead of processing them, and ignores every other option. The inputs are expanded exactly as for a run, `-r` included, and every image found is added to the GUI's open images. If the GUI is already open, they are added to that window; if not, it is started first.
+Opens the images in the GUI instead of processing them, and ignores every other option but a lens blur. The inputs are expanded exactly as for a run, `-r` included, and every image found is added to the GUI's open images. If the GUI is already open, they are added to that window; if not, it is started first.
 
 ```
 $ opai photos -r --gui
@@ -121,6 +121,13 @@ Any other option you give is ignored, with a warning that names it, because the 
 ```
 $ opai beach.jpg --up osaka -q sd -o out --gui
 ⚠️ --upscale, --quality and --output are ignored with --gui; set them in Open Photo AI instead
+🖼️ Opening 1 image in Open Photo AI
+```
+
+The one exception is a lens blur: with [`--lens-blur`](#lens-blur---lens-blur-model---lb-model), each image opens with a Lens Blur at `--lb-f` or `--lb-amount` and `--lb-focus`, and Autopilot is switched off in the GUI, as a run refuses `--ap` with an enhancement. What is left out is the GUI's own default for a new Lens Blur; `--lb-edges` is ignored with a warning, since the GUI has no such setting.
+
+```
+$ opai beach.jpg --gui --lb --lb-f 1.4 --lb-focus 0.4,0.5
 🖼️ Opening 1 image in Open Photo AI
 ```
 

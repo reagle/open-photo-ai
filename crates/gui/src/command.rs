@@ -176,6 +176,7 @@ finished!(
     Vec<crate::export::ExportLosses>,
     Option<String>,
     Option<crate::TelemetryIds>,
+    Option<crate::opened::Request>,
     &'static str,
     &'static [opai::FamilyEntry],
     Vec<&'static str>,

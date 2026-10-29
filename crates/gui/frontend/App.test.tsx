@@ -45,10 +45,11 @@ vi.mock("@tauri-apps/api/webview", () => ({
 // it because the sidebar's add menu asks for the catalogue as soon as the shell mounts; what that
 // menu does with the answer is `AddEnhancement.test.tsx`'s subject. An image opened with Autopilot on is
 // analysed, and the analysis answers that it needs nothing: what the window does with an answer is
-// `hooks/useAutopilot.test.tsx`'s subject.
+// `hooks/useAutopilot.test.tsx`'s subject. The platform asks to open nothing, which is `hooks/useOpenedFiles.test.tsx`'s.
+const ANSWERS: Record<string, unknown> = { suggest: [], take_opened_files: [], take_open_request: null };
 vi.mock("@tauri-apps/api/core", () => ({
     convertFileSrc: vi.fn((identity: string) => `opai://localhost/${identity}`),
-    invoke: vi.fn((command: string) => Promise.resolve(command === "suggest" ? [] : CATALOGUE)),
+    invoke: vi.fn((command: string) => Promise.resolve(command in ANSWERS ? ANSWERS[command] : CATALOGUE)),
 }));
 
 // And the progress event, which `listen` reads a third of those globals for: a mounted canvas
