@@ -3,6 +3,9 @@
 //! ```text
 //! ignored options  --> ⚠️ naming each option given besides the inputs and -r; they are the window's to set
 //! inputs           --> expanded and checked as a run's are; nothing to open refuses it
+//! lens blur        --> with --lens-blur, `opai::open_request` written for the application to claim when the paths
+//!                      arrive: a Lens Blur on each and Autopilot off. One that cannot be written is a warning, and the
+//!                      photographs open without it
 //! hand over        --> macOS: `open -b io.vinicius.opai <paths>`, which delivers them as an "open documents" Apple
 //!                      Event whether or not the application is running
 //!                      Windows, Linux: the application's binary, beside this one or on PATH, started detached with
@@ -16,6 +19,8 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+
+use opai::open_request::{self, LensBlurRequest, OpenRequest};
 
 use crate::args::Args;
 use crate::error::CliError;
@@ -61,6 +66,10 @@ pub fn open(args: &Args, look: Look) -> Result<(), CliError> {
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    if let Some(warning) = request_lens_blur(args, &paths) {
+        eprintln!("{}", look::warning(warning, look.color));
+    }
+
     hand_over(&paths)?;
     tracing::info!("handed {} images to the GUI", paths.len());
 
@@ -78,6 +87,29 @@ fn ignored_warning(ignored: &[String]) -> Option<String> {
     };
 
     Some(format!("{names} {verb} ignored with --gui; set {them} in {APP} instead"))
+}
+
+/// Writes the request for the application to add the lens blur `args` asks for to each of `paths`, where it asks for
+/// one; answers the warning to give where the request could not be written.
+fn request_lens_blur(args: &Args, paths: &[PathBuf]) -> Option<String> {
+    let selection = &args.selection;
+    selection.lens_blur?;
+
+    let lens_blur = LensBlurRequest {
+        f_number: selection.lens_blur_f,
+        amount: selection.lens_blur_amount,
+        focus: selection.lens_blur_focus,
+    };
+    let request = OpenRequest::new(paths.to_vec(), lens_blur);
+
+    let written = open_request::path(opai::APP_NAME)
+        .map_err(|error| error.to_string())
+        .and_then(|path| open_request::write_at(&path, &request).map_err(|error| error.to_string()));
+
+    written.err().map(|error| {
+        tracing::warn!(%error, "the lens blur for the GUI could not be requested");
+        format!("could not ask {APP} for the lens blur ({error}); the photographs open without it")
+    })
 }
 
 /// `🖼️ Opening N images in Open Photo AI`, or `1 image`.
