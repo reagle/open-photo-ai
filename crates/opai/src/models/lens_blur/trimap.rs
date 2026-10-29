@@ -326,8 +326,9 @@ pub(crate) fn trimap(refined: &Refined, band: Band, cut: Option<&Plane>) -> Plan
 const STRAND: f32 = 0.05;
 
 /// `trimap` with its sure background left unknown where Bilbao's `saliency` sees a strand of the subject joined to its
-/// unknown ring, never in front of `band` by `refined`, the depth the trimap was drawn on; or `None` where that changes
-/// nothing, or Bilbao found another subject than the depth (see [`MIN_SALIENT`]).
+/// unknown ring, and in the small islands of it Bilbao calls the subject (false holes, [`false_hole_area`]), never in
+/// front of `band` by `refined`, the depth the trimap was drawn on; or `None` where that changes nothing, or Bilbao
+/// found another subject than the depth (see [`MIN_SALIENT`]).
 pub(crate) fn widened(trimap: &Plane, saliency: &Matte, refined: &Refined, band: Band) -> Option<Plane> {
     let (width, height) = (trimap.width(), trimap.height());
     let (columns, rows) = (width as usize, height as usize);
@@ -374,10 +375,32 @@ pub(crate) fn widened(trimap: &Plane, saliency: &Matte, refined: &Refined, band:
             changed += 1;
         }
     }
+    let strands = changed;
 
-    tracing::debug!(changed, "the subject's strands left unknown");
+    // The depth's false holes: an island of sure background within the subject, too small to be the background around
+    // it, where Bilbao calls the photograph the subject. The guided depth overshoots at a bright detail, so the watch
+    // face and the buckle on a backlit wrist read nearer than the band, in dots the opening of what is in front keeps;
+    // sure background, they were holes in the matte the fill's sky showed through, as pale patches on the watch. In
+    // front of the band or not: a nearer thing that is an island within the subject, and that Bilbao calls the subject,
+    // is the depth's overshoot, never a passer-by, whose outline reaches the background around the subject.
+    let background: Vec<bool> = known.iter().map(|&value| value == 0.0).collect();
+    let out_values = out.as_mut_slice();
+    for index in islands(&background, columns, false_hole_area(unknown_radius(width, height))) {
+        if out_values[index] == 0.0 && salience[index] > SALIENT {
+            out_values[index] = 0.5;
+            changed += 1;
+        }
+    }
+
+    tracing::debug!(strands, false_holes = changed - strands, "the subject's strands and false holes left unknown");
 
     (changed > 0).then_some(out)
+}
+
+/// The largest island of sure background, in pixels, that may be a false hole in the subject: a square four `ring`s on a
+/// side, 1,936 px on the bench's photographs. The background around a subject is one island far larger.
+fn false_hole_area(ring: u32) -> usize {
+    (4 * ring as usize).pow(2)
 }
 
 /// Of what `known` (a trimap) surely calls the subject, the share Bilbao's `salience` (at the trimap's size) calls the
@@ -877,6 +900,38 @@ mod tests {
         // Bilbao with no faint alpha changes nothing.
         let solid: Vec<f32> = (0..600).flat_map(|_| (0..800).map(|x| if x < 300 { 0.9 } else { 0.0 })).collect();
         assert!(widened(&plain, &Matte::new(800, 600, &solid), &depth, band).is_none());
+    }
+
+    #[test]
+    fn a_small_island_of_sure_background_bilbao_calls_the_subject_is_left_unknown_and_a_hole_it_sees_is_not() {
+        // A wrist at 1 m on the left of an 800 x 600 photograph before a sky at 10 m. The guided depth overshoots at a
+        // bright watch face, which reads at 0.5 m, nearer than the band: sure background, an island within the wrist.
+        // Bilbao calls the watch the subject; a second island of the same, a real gap, it calls background.
+        let watch = |x: u32, y: u32| (150..160).contains(&x) && (300..310).contains(&y);
+        let gap = |x: u32, y: u32| (150..160).contains(&x) && (100..110).contains(&y);
+        let depth = refined(800, 600, |x, y| {
+            if watch(x, y) || gap(x, y) {
+                0.5
+            } else if x < 400 {
+                1.0
+            } else {
+                10.0
+            }
+        });
+        let band = Band::around(1.0);
+        let plain = trimap(&depth, band, None);
+        assert_eq!(plain.get(155, 305), 0.0, "the watch is sure background to the depth");
+        let saliency: Vec<f32> = (0..600)
+            .flat_map(|y| (0..800).map(move |x| (x, y)))
+            .map(|(x, y)| if x < 400 && !gap(x, y) { 0.9 } else { 0.0 })
+            .collect();
+
+        let found = widened(&plain, &Matte::new(800, 600, &saliency), &depth, band).expect("a false hole was found");
+        for (x, y) in [(150, 300), (155, 305), (159, 309)] {
+            assert_eq!(found.get(x, y), 0.5, "({x}, {y}) on the watch");
+        }
+        assert_eq!(found.get(155, 105), 0.0, "the gap stays background");
+        assert_eq!(found.get(600, 300), 0.0, "the sky stays background");
     }
 
     #[test]
