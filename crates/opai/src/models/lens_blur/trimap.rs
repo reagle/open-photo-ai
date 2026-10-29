@@ -30,6 +30,7 @@
 // then mattes the cut, so the subject comes apart in smeared patches; 12 px still splits the sign. The subject is one
 // object, and a continuous surface through the band's edge keeps its step.
 
+use image::RgbImage;
 use imaging::morph::{dilated, eroded};
 use imaging::plane::Plane;
 use imaging::rows::for_each_row;
@@ -232,7 +233,7 @@ const MIN_SALIENT: f64 = 0.25;
 /// subject beside them unknown; or `None` where that changes nothing, or Bilbao found another subject than the depth.
 ///
 /// `saliency` is at any size (Bilbao's graph's); it is resampled to the trimap's.
-pub(crate) fn seeded(trimap: &Plane, saliency: &Matte) -> Option<Plane> {
+pub(crate) fn seeded(trimap: &Plane, saliency: &Matte, photo: Option<&RgbImage>) -> Option<Plane> {
     let (width, height) = (trimap.width(), trimap.height());
     let (columns, rows) = (width as usize, height as usize);
     let ring = unknown_radius(width, height);
@@ -279,7 +280,13 @@ pub(crate) fn seeded(trimap: &Plane, saliency: &Matte) -> Option<Plane> {
 
     // The holes: Bilbao's background inside the band, in from its edge by an eighth of the ring.
     let hole = plane_of(width, height, |x, y| known[y * columns + x] > 0.0 && salience[y * columns + x] < HOLE);
-    let seeds = eroded(&hole, seed_inset(ring));
+    let mut seeds = eroded(&hole, seed_inset(ring));
+    if let Some(photo) = photo {
+        let planted = |index: usize| {
+            at(&outline, index % columns, index / columns) && at(&inside, index % columns, index / columns)
+        };
+        unseed_the_subjects_colour(&mut seeds, trimap, photo, ring, planted);
+    }
 
     let mut out = trimap.clone();
     for_each_row(out.as_mut_slice(), columns, rows, |y, out| {
@@ -377,6 +384,89 @@ fn islands(inside: &[bool], columns: usize, area: usize) -> Vec<usize> {
     }
 
     small
+}
+
+/// How much nearer the sure subject's colour around it a seed's colour must be than the sure background's, as a share
+/// of its distance from the background's, for the seed to be taken for the subject.
+const SUBJECT_COLOURED: f32 = 0.5;
+
+/// `seeds` less every seed (of the pixels `planted` keeps) whose colour in `photo` is the sure subject's around it
+/// rather than the sure background's: a seed on a thin stalk or stem Bilbao cannot see, which would take a piece of
+/// the subject for background and blur it. Pixel by pixel, since one region of seeds can straddle a stalk's tip and
+/// the background beside it. Around means within two and a half rings, from the means of `trimap`'s sure subject and
+/// sure background over blocks a ring on a side. A seed with too little of either around it stays: deep in a canopy
+/// there is no sure background near, and that is what the seeds are for.
+fn unseed_the_subjects_colour(
+    seeds: &mut Plane,
+    trimap: &Plane,
+    photo: &RgbImage,
+    ring: u32,
+    planted: impl Fn(usize) -> bool,
+) {
+    let (width, height) = (trimap.width(), trimap.height());
+    if photo.dimensions() != (width, height) {
+        return;
+    }
+    let columns = width as usize;
+    let block = ring.max(1) as usize;
+    let (across, down) = (columns.div_ceil(block), (height as usize).div_ceil(block));
+    let raw = photo.as_raw();
+    let colour = |index: usize| [0, 1, 2].map(|channel| f32::from(raw[3 * index + channel]));
+
+    // Each block's colour sums and counts of the sure subject (0) and the sure background (1), then the same over the
+    // five by five blocks around each block.
+    let mut sums = vec![[[0.0_f32; 3]; 2]; across * down];
+    let mut counts = vec![[0_u32; 2]; across * down];
+    for (index, &value) in trimap.as_slice().iter().enumerate() {
+        let class = if value == 1.0 {
+            0
+        } else if value == 0.0 {
+            1
+        } else {
+            continue;
+        };
+        let cell = (index / columns / block) * across + (index % columns) / block;
+        sums[cell][class].iter_mut().zip(colour(index)).for_each(|(sum, value)| *sum += value);
+        counts[cell][class] += 1;
+    }
+    let around: Vec<Option<[[f32; 3]; 2]>> = (0..across * down)
+        .map(|cell| {
+            let (cx, cy) = (cell % across, cell / across);
+            let mut sum = [[0.0_f32; 3]; 2];
+            let mut seen = [0_u32; 2];
+            for y in cy.saturating_sub(2)..(cy + 3).min(down) {
+                for x in cx.saturating_sub(2)..(cx + 3).min(across) {
+                    for class in 0..2 {
+                        sum[class].iter_mut().zip(sums[y * across + x][class]).for_each(|(a, s)| *a += s);
+                        seen[class] += counts[y * across + x][class];
+                    }
+                }
+            }
+            #[allow(clippy::cast_precision_loss, reason = "pixel counts")]
+            seen.iter()
+                .all(|&seen| seen as usize >= block)
+                .then(|| [0, 1].map(|class| sum[class].map(|value| value / seen[class] as f32)))
+        })
+        .collect();
+
+    let distance = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).map(|(a, b)| (a - b).powi(2)).sum::<f32>().sqrt();
+    let mut dropped = 0_usize;
+    for (index, seed) in seeds.as_mut_slice().iter_mut().enumerate() {
+        if *seed <= 0.5 || !planted(index) {
+            continue;
+        }
+        let cell = (index / columns / block) * across + (index % columns) / block;
+        let Some([subject, background]) = around[cell] else {
+            continue;
+        };
+        let own = colour(index);
+        if distance(own, subject) < SUBJECT_COLOURED * distance(own, background) {
+            *seed = 0.0;
+            dropped += 1;
+        }
+    }
+
+    tracing::debug!(dropped, "seeds the subject's colour taken back");
 }
 
 /// How far in from Bilbao's background a seed is planted, in pixels: an eighth of the `ring`, rounded, and at least one.
@@ -551,7 +641,7 @@ mod tests {
     #[test]
     fn a_hole_bilbao_finds_in_the_subject_is_seeded_as_background_and_nothing_outside_it() {
         let (plain, saliency) = scene(1, bilbao(1));
-        let seeded = seeded(&plain, &saliency).expect("a hole was found");
+        let seeded = seeded(&plain, &saliency, None).expect("a hole was found");
 
         // The hole is sure background, in from its edge; the subject beside it unknown, for Porto to draw its edge.
         assert_eq!(seeded.get(500, 380), 0.0);
@@ -579,7 +669,7 @@ mod tests {
     fn a_subject_with_no_hole_or_another_salient_subject_leaves_the_trimap_as_it_is() {
         // No hole, and Bilbao's subject the depth's, table and all: nothing to seed.
         let (plain, saliency) = scene(1, |x, y| (300..700).contains(&x) && (200..700).contains(&y));
-        assert!(seeded(&plain, &saliency).is_none());
+        assert!(seeded(&plain, &saliency, None).is_none());
 
         // Bilbao found something else, a passer-by at the left, with a hole of its own: the depth's subject is not it,
         // and its holes are not this subject's.
@@ -587,10 +677,10 @@ mod tests {
             (20..250).contains(&x) && (100..600).contains(&y) && !((120..140).contains(&x) && (300..320).contains(&y))
         };
         let (plain, saliency) = scene(1, elsewhere);
-        assert!(seeded(&plain, &saliency).is_none());
+        assert!(seeded(&plain, &saliency, None).is_none());
 
         // Nothing sure at all.
-        assert!(seeded(&Plane::new(400, 300, 0.5), &Matte::new(1, 1, &[1.0])).is_none());
+        assert!(seeded(&Plane::new(400, 300, 0.5), &Matte::new(1, 1, &[1.0]), None).is_none());
     }
 
     #[test]
@@ -599,7 +689,8 @@ mod tests {
         // unknown beside it is twice as wide.
         let (small, small_saliency) = scene(1, bilbao(1));
         let (large, large_saliency) = scene(2, bilbao(2));
-        let (small, large) = (seeded(&small, &small_saliency).unwrap(), seeded(&large, &large_saliency).unwrap());
+        let (small, large) =
+            (seeded(&small, &small_saliency, None).unwrap(), seeded(&large, &large_saliency, None).unwrap());
 
         assert_eq!((small.get(500, 380), large.get(1000, 760)), (0.0, 0.0));
         assert_eq!((small.get(489, 380), large.get(975, 760)), (0.5, 0.5));
@@ -615,7 +706,7 @@ mod tests {
         // A hole wider than the closing is no hole: an opening in the outline, left to the depth.
         let wide = |x: u32, y: u32| bilbao(1)(x, y) && !((400..600).contains(&x) && (300..450).contains(&y));
         let (plain, saliency) = scene(1, wide);
-        let opened = seeded(&plain, &saliency).unwrap_or(plain);
+        let opened = seeded(&plain, &saliency, None).unwrap_or(plain);
         assert!((400..600).all(|x| (300..450).all(|y| opened.get(x, y) == 1.0)));
     }
 
@@ -639,6 +730,43 @@ mod tests {
         assert_eq!(joined.alpha_at(100, 50), 1.0);
         assert!((joined.alpha_at(150, 50) - 0.2).abs() < 1e-4);
         assert_eq!(joined.dimensions(), (width, height));
+    }
+
+    #[test]
+    fn a_seed_the_colour_of_the_subject_around_it_is_taken_back_and_one_the_colour_of_the_background_is_not() {
+        // A yellow subject on the left, a blue background on the right, both sure (a ring of 11 px); two seed squares in
+        // the unknown strip between, two rings wide: one on a yellow stalk, one on a blue gap.
+        let (width, height) = (1600, 400);
+        let trimap = Plane::from_vec(
+            width,
+            height,
+            (0..width * height)
+                .map(|index| match index % width {
+                    0..760 => 1.0,
+                    760..800 => 0.5,
+                    _ => 0.0,
+                })
+                .collect(),
+        )
+        .unwrap();
+        let (stalk, gap) = ((770, 100), (770, 300));
+        let square = |(left, top): (usize, usize), x: usize, y: usize| {
+            (left..left + 20).contains(&x) && (top..top + 20).contains(&y)
+        };
+        let photo = RgbImage::from_fn(width, height, |x, y| {
+            let (x, y) = (x as usize, y as usize);
+            if x < 760 || square(stalk, x, y) {
+                image::Rgb([220, 200, 40])
+            } else {
+                image::Rgb([40, 60, 160])
+            }
+        });
+        let mut seeds = plane_of(width, height, |x, y| square(stalk, x, y) || square(gap, x, y));
+
+        unseed_the_subjects_colour(&mut seeds, &trimap, &photo, unknown_radius(width, height), |_| true);
+
+        assert_eq!(seeds.get(780, 110), 0.0, "the stalk is the subject's colour: no seed");
+        assert_eq!(seeds.get(780, 310), 1.0, "the gap is the background's colour: seeded");
     }
 
     #[test]
