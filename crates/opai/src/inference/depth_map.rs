@@ -354,9 +354,15 @@ where
         let trimap = Arc::new(trimap);
         let seeded = match &saliency {
             Some(saliency) => {
+                bench_dump("saliency", saliency.dimensions(), saliency.plane().as_slice());
                 let (plain, saliency, pixels) = (Arc::clone(&trimap), Arc::clone(saliency), source.shared_pixels());
-                spawn_blocking::<_, InferenceError, _>(move || seeded(&plain, &saliency, Some(&pixels.to_rgb8())))
-                    .await?
+                let seeded =
+                    spawn_blocking::<_, InferenceError, _>(move || seeded(&plain, &saliency, Some(&pixels.to_rgb8())))
+                        .await?;
+                if let Some(seeded) = &seeded {
+                    bench_dump("seeded", (seeded.width(), seeded.height()), seeded.as_slice());
+                }
+                seeded
             }
             None => None,
         };
@@ -436,7 +442,10 @@ fn trimap_of(blur: &LensBlur, source: &image::DynamicImage) -> Option<(Plane, Re
     bench_dump("cut", (cut.width(), cut.height()), cut.as_slice());
     let refined = Refined::of(depth, source);
 
-    Some((trimap(&refined, band, Some(&cut)), refined))
+    let trimap = trimap(&refined, band, Some(&cut));
+    bench_dump("trimap", (trimap.width(), trimap.height()), trimap.as_slice());
+
+    Some((trimap, refined))
 }
 
 /// `operations` with every lens blur handed `lens` and no depth: the blurs a chain knows add nothing.
