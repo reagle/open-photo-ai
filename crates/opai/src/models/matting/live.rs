@@ -84,7 +84,7 @@ async fn mattes_the_portrait(provider: ExecutionProvider) {
     let map = opai.estimate_depth(&picture, &Depth::lisbon(), None).await.expect("an estimate").value;
     let focus_m = matted_focus(map.focus_metres(EYES.0, EYES.1));
     let started = Instant::now();
-    let trimap = trimap(&Refined::of(&map, picture.pixels()), Band::around(focus_m));
+    let trimap = trimap(&Refined::of(&map, picture.pixels()), Band::around(focus_m), None);
     let built = started.elapsed();
     let tiles = tiles(&trimap).len();
     let matting = Matting::porto().with_trimap(Arc::new(trimap.clone()));
@@ -183,6 +183,7 @@ async fn bilbao_finds_the_portraits_subject_on_the_cpu_whatever_is_asked_and_see
     let plain = trimap(
         &Refined::of(&map, picture.pixels()),
         Band::around(matted_focus(map.focus_metres(EYES.0, EYES.1))),
+        None,
     );
     let started = Instant::now();
     let holed = seeded(&plain, &salient);

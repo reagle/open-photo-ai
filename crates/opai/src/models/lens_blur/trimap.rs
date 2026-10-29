@@ -9,6 +9,10 @@
 //! the matting model, and only what lies beyond it either way is sure. A pixel nearer than the band is never the
 //! subject, in the ring or not.
 //!
+//! **Behind the subject, a jump.** Within the band, what the depth parts from the subject in focus by a jump in the
+//! blur (the wall close behind a chair) is not the subject, and [`cut_at_steps`] drops it; what a surface joins to it
+//! (the head above the shoulders, the floor under the chair) is kept, however far into the band it reaches.
+//!
 //! **The subject's holes.** The depth cannot see the background between a canopy's leaves or through the loop of a
 //! strap: it calls the subject there solid, or unknown in patches too large for the matting model, which then answers
 //! about a half — half the sharp gap over the blurred fill, a smudge. [`seeded`] reads Bilbao's matte of the whole
@@ -61,6 +65,18 @@ const MIN_RADIUS: f32 = 3.0;
 /// The smallest share of the photograph the band must cover for a matte to be estimated: below it, there is no subject
 /// in focus to speak of.
 const MIN_BAND: f64 = 0.005;
+
+/// The least difference in blur across which the depth is a jump rather than a surface, as a share of the photograph's
+/// diagonal: 2 px on a 1,620 x 1,080 photograph, 7 px at 24 megapixels, so one scene is cut alike at any size.
+const STEP: f32 = 0.001;
+
+/// How far apart, as a share of the depth map's long side, the two sides of a jump are looked for: the depth model's
+/// edge is soft, spread over a few of its pixels, so neighbours alone never differ by a jump.
+const STEP_SPAN: f32 = 0.005;
+
+/// The least share of the depth map a part of the band cut off by jumps must cover to be dropped: a smaller one is the
+/// subject's own (a petal's tip, the end of a slat) that the soft depth happens to isolate.
+const MIN_CUT: f64 = 0.01;
 
 /// The band of disparities (`1 / m`) the subject lies in, around a plane of focus.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -127,14 +143,106 @@ pub(crate) fn worth_matting(map: &DepthMap, blur: &Blur, band: Band) -> bool {
     largest >= MIN_RADIUS && share >= MIN_BAND
 }
 
+/// What of `band` lies behind the subject in focus across a jump in the depth, at `map`'s resolution: 1 where a pixel
+/// of the band is dropped from the subject, 0 elsewhere. `blur` is the blur on a photograph `diagonal_px` across.
+///
+/// The band reaches a fixed 1.5 times the distance focused at, so a wall close behind a chair is in it and would be
+/// held sharp with the chair. What the depth joins to the subject by a surface — her head above her shoulders, a
+/// petal curving away, the floor the chair stands on — is kept, however far it reaches; what it parts from the subject
+/// by a jump of [`STEP`] in blur or more is dropped, where it is large enough ([`MIN_CUT`]) to be something else. The
+/// near side is never dropped: the band keeps it tight already.
+pub(crate) fn cut_at_steps(map: &DepthMap, blur: &Blur, band: Band, diagonal_px: f32) -> Plane {
+    let (width, height) = map.dimensions();
+    let (columns, rows) = (width as usize, height as usize);
+    let disparity = map.disparity();
+    let step = STEP * diagonal_px;
+    let radii = Plane::from_vec(width, height, disparity.iter().map(|&value| blur.radius(value)).collect())
+        .expect("one radius a pixel");
+
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "a span of a few pixels")]
+    let span = ((STEP_SPAN * width.max(height) as f32).round() as u32).max(1);
+    // A jump is where the blur within the span either way differs by a step: the soft edge of a wall behind the chair,
+    // never the gentle slope of a face turning away, nor the few tenths of a pixel between two leaves of a canopy.
+    let (least, most) = (eroded(&radii, span), dilated(&radii, span));
+    let (radius, least, most) = (radii.as_slice(), least.as_slice(), most.as_slice());
+    let held = |index: usize| band.holds(disparity[index]);
+    // In focus: sharp to within half a step, or nearer than the focus. The subject grows from it.
+    let sharp = |index: usize| radius[index] >= -step / 2.0;
+    let open = |index: usize| held(index) && (sharp(index) || most[index] - least[index] < step);
+
+    // The parts of the band the jumps divide it into, by a fill from each pixel no part has reached yet; a part is
+    // kept where it holds a pixel in focus, or is too small to be anything but the subject's.
+    let mut part = vec![u32::MAX; columns * rows];
+    let mut kept: Vec<bool> = Vec::new();
+    let mut stack = Vec::new();
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        reason = "a share of a pixel count"
+    )]
+    let min_cut = (MIN_CUT * part.len() as f64) as usize;
+    for start in 0..part.len() {
+        if part[start] != u32::MAX || !open(start) {
+            continue;
+        }
+
+        #[allow(clippy::cast_possible_truncation, reason = "fewer parts than pixels")]
+        let label = kept.len() as u32;
+        let (mut size, mut in_focus) = (0_usize, false);
+        part[start] = label;
+        stack.push(start);
+        while let Some(index) = stack.pop() {
+            size += 1;
+            in_focus |= sharp(index);
+
+            let (x, y) = (index % columns, index / columns);
+            let neighbours = [
+                (x > 0).then(|| index - 1),
+                (x + 1 < columns).then(|| index + 1),
+                (y > 0).then(|| index - columns),
+                (y + 1 < rows).then(|| index + columns),
+            ];
+            for next in neighbours.into_iter().flatten() {
+                if part[next] == u32::MAX && open(next) {
+                    part[next] = label;
+                    stack.push(next);
+                }
+            }
+        }
+        kept.push(in_focus || size < min_cut);
+    }
+
+    // Grown back by the span over the jumps themselves, so the subject's own side of its edge is never dropped: what
+    // that takes of the wall beside it lies within the unknown ring, for the matting model to tell by its colour.
+    let joined =
+        plane_of(width, height, |x, y| part[y * columns + x] != u32::MAX && kept[part[y * columns + x] as usize]);
+    let joined = dilated(&joined, span);
+
+    plane_of(width, height, |x, y| held(y * columns + x) && joined.as_slice()[y * columns + x] < 0.5)
+}
+
 /// The trimap of the subject `band` holds, at the size of `refined`, the depth guided to the photograph: 1 where it is
-/// surely the subject, 0 where it is surely not, 0.5 between.
-pub(crate) fn trimap(refined: &Refined, band: Band) -> Plane {
+/// surely the subject, 0 where it is surely not, 0.5 between. `cut`, at any size (the depth map's), drops from the band
+/// what [`cut_at_steps`] parts from the subject.
+pub(crate) fn trimap(refined: &Refined, band: Band, cut: Option<&Plane>) -> Plane {
     let (width, height) = (refined.plane.width(), refined.plane.height());
     let (columns, rows) = (width as usize, height as usize);
     let values = refined.plane.as_slice();
     let disparity = |index: usize| values[index] * refined.nearest;
-    let held = |index: usize| band.holds(disparity(index));
+    // The cut's pixel under a pixel of the photograph, by the nearest.
+    let cut_at = |index: usize| {
+        cut.is_some_and(|cut| {
+            let (x, y) = (index % columns, index / columns);
+            #[allow(clippy::cast_possible_truncation, reason = "a pixel of a plane no larger than the photograph")]
+            let (cut_x, cut_y) = (
+                (x as u64 * u64::from(cut.width()) / columns as u64) as u32,
+                (y as u64 * u64::from(cut.height()) / rows as u64) as u32,
+            );
+            cut.get(cut_x, cut_y) > 0.5
+        })
+    };
+    let held = |index: usize| band.holds(disparity(index)) && !cut_at(index);
 
     // The band reduced by a box: a reduced pixel is in it where most of its block is. And the band with what is in
     // front of it, likewise: the subject's edge against a nearer thing is that thing's edge, not one to matte.
@@ -433,7 +541,7 @@ mod tests {
         // A subject at 1 m on the left half of an 800 x 600 photograph, before a wall at 10 m: the unknown band is
         // about 6 px (0.7 percent of 800) either side of column 400, at the quarter size's resolution.
         let depth = refined(800, 600, |x, _| if x < 400 { 1.0 } else { 10.0 });
-        let trimap = trimap(&depth, Band::around(1.0));
+        let trimap = trimap(&depth, Band::around(1.0), None);
         let radius = unknown_radius(800, 600);
         assert_eq!(radius, 6);
 
@@ -478,7 +586,7 @@ mod tests {
             100..300 => 1.0,
             _ => 10.0,
         });
-        let trimap = trimap(&depth, Band::around(1.0));
+        let trimap = trimap(&depth, Band::around(1.0), None);
 
         assert_eq!(trimap.get(20, 150), 0.0);
         assert_eq!(trimap.get(200, 150), 1.0);
@@ -693,7 +801,7 @@ mod tests {
             (12..200, _) => 1.0,
             _ => 10.0,
         });
-        let trimap = trimap(&depth, Band::around(1.0));
+        let trimap = trimap(&depth, Band::around(1.0), None);
 
         for y in [10, 150, 290] {
             assert_ne!(trimap.get(199, y), 0.0, "the arc on the edge at (199, {y}) is sure background");
@@ -720,5 +828,57 @@ mod tests {
         assert!(!worth_matting(&scene, &blur(5.6, 200.0), Band::around(1.0)));
         // Focused on nothing: no pixel of the scene lies within the band around 3 m.
         assert!(!worth_matting(&scene, &blur(1.4, 7211.0), Band::around(3.0)));
+    }
+
+    /// The blur of f/1.4 on a 36 mm lens focused at 1 m, on a photograph 2,000 px across: a jump is 2 px of blur, which
+    /// is 0.09 of disparity (1 m against 1.1 m), and the wall at 1.3 m behind blurs by 5 px.
+    fn blur_at_one_metre() -> Blur {
+        Blur::new(&Lens::new(36.0, 6.0, LensOrigin::Exif), 1.4, 1.0, 2000.0).expect("adds a blur")
+    }
+
+    #[test]
+    fn a_wall_behind_the_subject_across_a_jump_is_cut_from_the_band_and_a_small_part_is_not() {
+        // A chair at 1 m on the left half, a wall at 1.3 m on the right — within the band, which reaches 1.5 m — and a
+        // tip of the chair the depth reads at the wall's distance, 6 x 6 px, too small to be anything else.
+        let metres =
+            |x: u32, y: u32| if x < 64 && !((20..26).contains(&x) && (40..46).contains(&y)) { 1.0 } else { 1.3 };
+        let band = Band::around(1.0);
+        let cut = cut_at_steps(&map(metres), &blur_at_one_metre(), band, 2000.0);
+
+        assert_eq!((cut.width(), cut.height()), (128, 96));
+        for y in [0, 48, 95] {
+            assert!((70..128).all(|x| cut.get(x, y) == 1.0), "the wall is kept in row {y}");
+            assert!((0..65).all(|x| cut.get(x, y) == 0.0), "the chair or its side of the jump is cut in row {y}");
+        }
+        assert_eq!(cut.get(22, 42), 0.0, "the small part is cut");
+
+        // The trimap, at a photograph's size, leaves the wall out of the subject as it would the wall beyond the band.
+        let depth = refined(800, 600, |x, y| metres(x * 128 / 800, y * 96 / 600));
+        assert_eq!(trimap(&depth, band, None).get(700, 300), 1.0);
+        assert_eq!(trimap(&depth, band, Some(&cut)).get(700, 300), 0.0);
+        assert_eq!(trimap(&depth, band, Some(&cut)).get(100, 300), 1.0);
+    }
+
+    #[test]
+    fn a_surface_turning_away_from_the_focus_is_kept_however_far_it_reaches() {
+        // Shoulders in focus at the bottom, the head above them reaching 1.4 m at the top: 6 px of blur farther, but
+        // smoothly, a tenth of a pixel a row.
+        let scene = map(|_, y| 1.0 + 0.4 * (95 - y) as f32 / 95.0);
+        let cut = cut_at_steps(&scene, &blur_at_one_metre(), Band::around(1.0), 2000.0);
+
+        assert!(cut.as_slice().iter().all(|&value| value == 0.0));
+    }
+
+    #[test]
+    fn the_small_steps_between_the_leaves_of_a_canopy_are_not_jumps() {
+        // Leaves 8 px across at 1.03 m and 1.08 m in turn, a pixel of blur apart, before a sky beyond the band.
+        let scene = map(|x, y| match (x, y) {
+            (16..112, 16..80) if (x / 8 + y / 8) % 2 == 0 => 1.03,
+            (16..112, 16..80) => 1.08,
+            _ => 50.0,
+        });
+        let cut = cut_at_steps(&scene, &blur_at_one_metre(), Band::around(1.0), 2000.0);
+
+        assert!(cut.as_slice().iter().all(|&value| value == 0.0));
     }
 }
