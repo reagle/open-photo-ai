@@ -174,7 +174,26 @@ where
         "the lens a lens blur is rendered for"
     );
 
+    bench_dump("depth", map.dimensions(), map.metres());
+
     Ok(fill_chain_depth(operations, &Arc::new(map), lens))
+}
+
+/// Fork only, for the benchmark (`opai-bench`): where `OPAI_BENCH_DUMP` is set to a path prefix, `values` (one a
+/// pixel, row-major) are written to `<prefix>-<name>.f32` as a little-endian `u32` width, `u32` height and `f32`
+/// values. A failed write is logged and changes nothing else.
+fn bench_dump(name: &str, (width, height): (u32, u32), values: &[f32]) {
+    let Some(prefix) = std::env::var_os("OPAI_BENCH_DUMP") else {
+        return;
+    };
+    let path = format!("{}-{name}.f32", prefix.to_string_lossy());
+    let mut bytes = Vec::with_capacity(8 + 4 * values.len());
+    bytes.extend_from_slice(&width.to_le_bytes());
+    bytes.extend_from_slice(&height.to_le_bytes());
+    values.iter().for_each(|value| bytes.extend_from_slice(&value.to_le_bytes()));
+    if let Err(error) = std::fs::write(&path, bytes) {
+        tracing::warn!(%error, path, "the benchmark dump could not be written");
+    }
 }
 
 /// What matting the subjects of a chain's lens blurs came to, for a front end to show beside the result.
@@ -347,6 +366,7 @@ where
                         plain
                     }
                 };
+                bench_dump("matte", found.dimensions(), found.plane().as_slice());
                 outcome = outcome.and(ChainMatte::Matted);
                 matted.push(Operation::LensBlur(blur.with_matte(Arc::new(found), Some(Arc::new(refined)))));
             }
