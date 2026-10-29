@@ -185,7 +185,7 @@ async fn bilbao_finds_the_portraits_subject_on_the_cpu_whatever_is_asked_and_see
         Band::around(matted_focus(map.focus_metres(EYES.0, EYES.1))),
     );
     let started = Instant::now();
-    let holed = seeded(&plain, &salient);
+    let holed = seeded(&plain, &salient, Some(&picture.pixels().to_rgb8()));
     let seeding = started.elapsed();
     let seeds = holed.as_ref().map_or(0, |holed| {
         holed

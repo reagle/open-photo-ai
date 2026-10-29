@@ -300,7 +300,7 @@ impl LensBlur {
     }
 
     /// The key the run cache stores this operation's result under:
-    /// `lb-lisbon-fp16-n1.4-x0.55-y0.3-d<signature>-l36-6-v2`.
+    /// `lb-lisbon-fp16-n1.4-x0.55-y0.3-d<signature>-l36-6-v3`.
     ///
     /// The render's version, `-v<n>`, so a build whose render or matte join draws differently is
     /// never served an older build's blur.
@@ -346,8 +346,8 @@ impl LensBlur {
 /// The version of what the lens blur renders from its inputs, in its cache tag: raised whenever the render, the fill
 /// behind the subject or the join of the mattes draws a different picture from the same depth, matte and settings, so
 /// the run cache never serves a blur an older build drew. 2: the background behind the subject filled from the
-/// nearest of it.
-pub(crate) const RENDER_VERSION: u32 = 2;
+/// nearest of it. 3: no hole seed where the colour around it is the subject's.
+pub(crate) const RENDER_VERSION: u32 = 3;
 
 impl std::fmt::Display for LensBlur {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -477,12 +477,12 @@ pub(crate) mod tests {
             panic!("Lisbon built another family");
         };
 
-        assert_eq!(blur.cache_tag(), "lb-lisbon-fp16-n1.4-x0.55-y0.3-d0-l0-v2");
+        assert_eq!(blur.cache_tag(), "lb-lisbon-fp16-n1.4-x0.55-y0.3-d0-l0-v3");
 
         let map = Arc::new(two_planes(64, 48, 1.0, 10.0));
         let signature = map.signature();
         let blur = blur.with_depth(map).with_lens(Lens::new(36.0, 6.0, LensOrigin::Exif));
-        assert_eq!(blur.cache_tag(), format!("lb-lisbon-fp16-n1.4-x0.55-y0.3-d{signature:016x}-l36-6-v2"));
+        assert_eq!(blur.cache_tag(), format!("lb-lisbon-fp16-n1.4-x0.55-y0.3-d{signature:016x}-l36-6-v3"));
         assert!(!blur.cache_tag().contains('_'), "{}", blur.cache_tag());
     }
 

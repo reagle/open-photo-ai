@@ -1688,7 +1688,7 @@ fn the_lens_blur_family_is_reachable_from_the_crate_root() {
     let carried: Operation = LensBlur::lisbon(f_number, x, y);
     assert_eq!(carried.family(), Family::LensBlur);
     assert_eq!(carried.display_name(), "Lisbon (FP16)");
-    assert_eq!(carried.cache_tag(), "lb-lisbon-fp16-n1.4-x0.55-y0.3-d0-l0-v2");
+    assert_eq!(carried.cache_tag(), "lb-lisbon-fp16-n1.4-x0.55-y0.3-d0-l0-v3");
     assert_eq!(
         carried.required_artifacts().iter().map(ArtifactId::as_str).collect::<Vec<_>>(),
         vec!["dp_lisbon_landscape_fp16", "dp_lisbon_portrait_fp16"]
