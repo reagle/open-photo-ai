@@ -5,6 +5,10 @@
 //! raises it. The window drains the inbox with [`take_opened_files`] once it can use the files, and opens them exactly
 //! as it opens a drop: the extension check, the refusal notice and `describe_images`, which is still the only way a
 //! file is admitted to [`crate::images::Opened`].
+//!
+//! A batch `opai --gui --lens-blur` handed over also carries the lens blur it asked for, in the
+//! [`opai::open_request`] the command line wrote beside the handover: [`deliver`] claims it as the paths arrive, and
+//! the window takes it with [`take_open_request`] in the same drain, before it opens them.
 
 // The inbox rather than the event's payload is what carries the paths, because the event alone would lose the first
 // files: a launch to open a photograph hands it over (`RunEvent::Opened` on macOS, the command line elsewhere) before
@@ -16,6 +20,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+
+use opai::open_request::{self, OpenRequest};
+use serde::Serialize;
 
 use crate::command::{Traceparent, command_span, traced_sync};
 use crate::sync::lock;
@@ -39,6 +46,57 @@ impl Inbox {
     pub(crate) fn take(&self) -> Vec<PathBuf> {
         std::mem::take(&mut *lock(&self.0))
     }
+}
+
+/// The lens blur a batch handed over by `opai --gui` asked for, claimed and not taken by the window yet.
+#[derive(Debug, Default)]
+pub(crate) struct Requested(Mutex<Option<Request>>);
+
+/// What a batch asked for, as the window reads it: `OpenRequest` with the paths the window knows the photographs by.
+///
+/// Written once more, as `OpenRequest`, in `frontend/ipc/images.ts`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Request {
+    paths: Vec<String>,
+    lens_blur: LensBlur,
+}
+
+/// A lens blur as the command line asked for it; what is absent is the window's own default.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LensBlur {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    f_number: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    amount: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    focus_x: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    focus_y: Option<f64>,
+}
+
+impl From<OpenRequest> for Request {
+    fn from(request: OpenRequest) -> Self {
+        let blur = request.lens_blur;
+        Self {
+            // A path that is not Unicode cannot cross to the window, and `take_opened_files` leaves it out too.
+            paths: request.paths.into_iter().filter_map(|path| path.into_os_string().into_string().ok()).collect(),
+            lens_blur: LensBlur {
+                f_number: blur.f_number,
+                amount: blur.amount,
+                focus_x: blur.focus.map(|(x, _)| x),
+                focus_y: blur.focus.map(|(_, y)| y),
+            },
+        }
+    }
+}
+
+// The command's name is written once more, in `frontend/ipc/images.ts`.
+/// What the batch the window last drained asked for besides opening it, once, or nothing.
+#[tauri::command]
+pub(crate) fn take_open_request(requested: State<'_, Requested>, traceparent: Traceparent) -> Option<Request> {
+    traced_sync(command_span!("take_open_request", traceparent), || lock(&requested.0).take())
 }
 
 // The command's name is written once more, in `frontend/ipc/images.ts`.
@@ -76,6 +134,13 @@ pub(crate) fn deliver<R: Runtime>(app: &AppHandle<R>, paths: Vec<PathBuf>) {
     }
 
     tracing::info!(count = paths.len(), "the platform asked to open files");
+
+    // Claimed before the paths are pushed, so a drain that takes them finds what they asked for beside them.
+    if let Some(request) = claim_request(&paths) {
+        tracing::info!(count = request.paths.len(), "the command line asked for a lens blur on the files");
+        *lock(&app.state::<Requested>().0) = Some(request.into());
+    }
+
     app.state::<Inbox>().push(paths);
 
     // An event with no listener - the page has not loaded - is not an error; the window drains when it is ready.
@@ -86,6 +151,15 @@ pub(crate) fn deliver<R: Runtime>(app: &AppHandle<R>, paths: Vec<PathBuf>) {
     if crate::window::has_been_revealed() {
         crate::single_instance::raise_main_window(app);
     }
+}
+
+/// The request `opai --gui` wrote for `paths`, where it wrote one for them.
+fn claim_request(paths: &[PathBuf]) -> Option<OpenRequest> {
+    let file = open_request::path(opai::APP_NAME)
+        .inspect_err(|error| tracing::warn!(%error, "the open request's location could not be determined"))
+        .ok()?;
+
+    open_request::claim_at(&file, paths, std::time::SystemTime::now())
 }
 
 /// The local files among `urls`, which is how macOS names what it asks the application to open.
@@ -137,12 +211,26 @@ mod tests {
         use tauri::test::{mock_builder, mock_context, noop_assets};
 
         // The launch-time case: the files arrive before any window exists, and must be waiting when it drains.
-        let app = mock_builder().manage(Inbox::default()).build(mock_context(noop_assets())).expect("a mock app");
+        let app = mock_builder()
+            .manage(Inbox::default())
+            .manage(Requested::default())
+            .build(mock_context(noop_assets()))
+            .expect("a mock app");
 
         deliver(app.handle(), vec![PathBuf::from("/a.jpg")]);
         deliver(app.handle(), Vec::new());
 
         assert_eq!(app.state::<Inbox>().take(), [PathBuf::from("/a.jpg")]);
+    }
+
+    #[test]
+    fn a_request_reaches_the_window_with_its_focus_as_two_fractions_and_nothing_it_left_out() {
+        let blur = open_request::LensBlurRequest { f_number: Some(1.4), amount: None, focus: Some((0.3, 0.6)) };
+        let request = Request::from(OpenRequest::new(vec![PathBuf::from("/photos/a.jpg")], blur));
+
+        let json = serde_json::to_string(&request).expect("serializes");
+
+        assert_eq!(json, r#"{"paths":["/photos/a.jpg"],"lensBlur":{"fNumber":1.4,"focusX":0.3,"focusY":0.6}}"#);
     }
 
     // Unix only because the URLs are Unix paths, which is what macOS - the one platform that sends URLs - hands over.

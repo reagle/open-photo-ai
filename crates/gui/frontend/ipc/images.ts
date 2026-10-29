@@ -16,6 +16,8 @@ const INPUT_EXTENSIONS_COMMAND = "input_extensions";
 const REVEAL_IMAGE_COMMAND = "reveal_image";
 // Its Rust half is `take_opened_files` in `crates/gui/src/opened.rs`.
 const TAKE_OPENED_FILES_COMMAND = "take_opened_files";
+// Its Rust half is `take_open_request` in `crates/gui/src/opened.rs`.
+const TAKE_OPEN_REQUEST_COMMAND = "take_open_request";
 
 /**
  * The event Rust emits when the platform has asked the application to open files. It carries no
@@ -95,6 +97,21 @@ export const describeImages = (paths: string[]) => call<ImageRecord[]>(DESCRIBE_
  * Paths, not records: they are opened through `lib/openPaths.ts`, exactly as a drop's are.
  */
 export const takeOpenedFiles = () => call<string[]>(TAKE_OPENED_FILES_COMMAND);
+
+/**
+ * What `opai --gui --lens-blur` asked for the photographs it handed over: a Lens Blur on each, with Autopilot off.
+ * What the lens blur leaves out is the window's own default for a freshly added one.
+ *
+ * Matches `Request` in `crates/gui/src/opened.rs`.
+ */
+export type OpenRequest = {
+    /** The photographs it is for, spelled as {@link takeOpenedFiles} hands them over. */
+    paths: string[];
+    lensBlur: { fNumber?: number; amount?: number; focusX?: number; focusY?: number };
+};
+
+/** What the batch {@link takeOpenedFiles} last handed over asked for besides opening it, once, or `null`. */
+export const takeOpenRequest = () => call<OpenRequest | null>(TAKE_OPEN_REQUEST_COMMAND);
 
 /**
  * Subscribes to {@link FILES_OPENED_EVENT}. Resolves with the function that removes the listener, as
