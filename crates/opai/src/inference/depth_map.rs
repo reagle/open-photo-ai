@@ -42,7 +42,7 @@ use crate::image::{LensExif, Picture, read_frame_diagonal, read_lens};
 use crate::inference::execute::ExecuteOptions;
 use crate::models::lens_blur::lens::Blur;
 use crate::models::lens_blur::render::Refined;
-use crate::models::lens_blur::trimap::{Band, joined, matted_focus, seeded, trimap, worth_matting};
+use crate::models::lens_blur::trimap::{Band, cut_at_steps, joined, matted_focus, seeded, trimap, worth_matting};
 use crate::models::{Depth, DepthMap, Lens, LensBlur, Matte, Matting, Operation, OwnLens};
 use crate::task::spawn_blocking;
 
@@ -411,9 +411,12 @@ fn trimap_of(blur: &LensBlur, source: &image::DynamicImage) -> Option<(Plane, Re
         return None;
     }
 
+    // What lies behind the subject across a jump in the depth is dropped from the band, at the depth's resolution.
+    let cut = cut_at_steps(depth, &found, band, diagonal);
+    bench_dump("cut", (cut.width(), cut.height()), cut.as_slice());
     let refined = Refined::of(depth, source);
 
-    Some((trimap(&refined, band), refined))
+    Some((trimap(&refined, band, Some(&cut)), refined))
 }
 
 /// `operations` with every lens blur handed `lens` and no depth: the blurs a chain knows add nothing.
