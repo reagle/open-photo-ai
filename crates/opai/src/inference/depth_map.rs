@@ -47,7 +47,9 @@ use crate::image::{LensExif, Picture, read_frame_diagonal, read_lens};
 use crate::inference::execute::ExecuteOptions;
 use crate::models::lens_blur::lens::Blur;
 use crate::models::lens_blur::render::Refined;
-use crate::models::lens_blur::trimap::{Band, cut_at_steps, joined, matted_focus, seeded, trimap, worth_matting};
+use crate::models::lens_blur::trimap::{
+    Band, cut_at_steps, joined, matted_focus, seeded, trimap, widened, worth_matting,
+};
 use crate::models::{Depth, DepthMap, Lens, LensBlur, Matte, Matting, Operation, OwnLens};
 use crate::task::spawn_blocking;
 
@@ -275,9 +277,10 @@ pub(crate) fn mattes_asked(operations: &[Operation]) -> usize {
 /// of the analyses still to come (its argument, at least 1), so each reports where the last left off.
 ///
 /// A blur that looks for its subject's holes ([`LensBlur::finds_holes`]) is matted twice: over the trimap the depth
-/// drew, and over that trimap with Bilbao's holes seeded as background ([`seeded`]), the two then [`joined`]. Bilbao's matte of the whole photograph is asked for once, for the first such blur, and
-/// served from the store afterwards whatever the focus. Where Bilbao is not installed or fails, or finds no hole, the
-/// subject is matted once, as solid.
+/// drew, and over that trimap with Bilbao's holes seeded as background ([`seeded`]), the two then [`joined`]; both with
+/// the strands Bilbao sees beyond the depth's subject left unknown first ([`widened`]). Bilbao's matte of the whole
+/// photograph is asked for once, for the first such blur, and served from the store afterwards whatever the focus.
+/// Where Bilbao is not installed or fails, or finds no hole, the subject is matted once, as solid.
 ///
 /// Called after [`find_chain_depth`], whose depth and lens it reads. A blur that adds nothing, mattes nothing, or was
 /// handed no depth is left as it is.
@@ -331,7 +334,7 @@ where
         // The trimap off the runtime, as every pass over a photograph's pixels is: the depth guided to its size, then
         // the band, at a quarter of it.
         let (asked, pixels) = (blur.clone(), source.shared_pixels());
-        let Some((trimap, refined)) =
+        let Some((trimap, refined, band)) =
             spawn_blocking::<_, InferenceError, _>(move || trimap_of(&asked, &pixels)).await?
         else {
             outcome = outcome.and(ChainMatte::Skipped);
@@ -351,6 +354,19 @@ where
             });
         }
         let saliency = salient.clone().flatten().filter(|_| holes);
+        // The strands the depth cannot see, where Bilbao sees them, left to the matting model.
+        let (trimap, refined) = match &saliency {
+            Some(saliency) => {
+                let saliency = Arc::clone(saliency);
+                spawn_blocking::<_, InferenceError, _>(move || {
+                    let found = widened(&trimap, &saliency, &refined, band).unwrap_or(trimap);
+                    (found, refined)
+                })
+                .await?
+            }
+            None => (trimap, refined),
+        };
+        bench_dump("widened", (trimap.width(), trimap.height()), trimap.as_slice());
         let trimap = Arc::new(trimap);
         let seeded = match &saliency {
             Some(saliency) => {
@@ -422,7 +438,7 @@ fn not_installed(error: &InferenceError) -> bool {
 
 /// The trimap of `blur`'s subject on `source` and the depth refined to `source` it was drawn on, or `None` where it is
 /// not worth matting: no depth, a blur that adds nothing or under 3 px anywhere, or no subject in focus.
-fn trimap_of(blur: &LensBlur, source: &image::DynamicImage) -> Option<(Plane, Refined)> {
+fn trimap_of(blur: &LensBlur, source: &image::DynamicImage) -> Option<(Plane, Refined, Band)> {
     let (depth, lens) = (blur.depth()?, blur.lens()?);
     let diagonal = (source.width() as f32).hypot(source.height() as f32);
     let (x, y) = blur.focus();
@@ -445,7 +461,7 @@ fn trimap_of(blur: &LensBlur, source: &image::DynamicImage) -> Option<(Plane, Re
     let trimap = trimap(&refined, band, Some(&cut));
     bench_dump("trimap", (trimap.width(), trimap.height()), trimap.as_slice());
 
-    Some((trimap, refined))
+    Some((trimap, refined, band))
 }
 
 /// `operations` with every lens blur handed `lens` and no depth: the blurs a chain knows add nothing.
