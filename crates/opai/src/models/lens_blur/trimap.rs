@@ -403,16 +403,27 @@ fn false_hole_area(ring: u32) -> usize {
     (4 * ring as usize).pow(2)
 }
 
-/// Of what `known` (a trimap) surely calls the subject, the share Bilbao's `salience` (at the trimap's size) calls the
-/// subject too; or `None` where it is under [`MIN_SALIENT`], or nothing is sure.
+/// Whether Bilbao's `salience` (at the trimap's size) found the subject `known` (a trimap) holds: of what the trimap
+/// surely calls the subject, the share Bilbao calls the subject too, where it is [`MIN_SALIENT`] or more, or else where
+/// [`MIN_WITHIN`] or more of what Bilbao calls the subject lies within the trimap's (sure or unknown). `None` where
+/// neither holds, or nothing is sure.
 fn agreed_share(known: &[f32], salience: &[f32]) -> Option<f64> {
-    let (sure, agreed) = known.iter().zip(salience).fold((0_usize, 0_usize), |(sure, agreed), (&value, &salience)| {
-        (sure + usize::from(value == 1.0), agreed + usize::from(value == 1.0 && salience > SALIENT))
-    });
-    #[allow(clippy::cast_precision_loss, reason = "a share of a pixel count")]
-    let share = agreed as f64 / sure.max(1) as f64;
+    let (sure, agreed, salient, within) = known.iter().zip(salience).fold(
+        (0_usize, 0_usize, 0_usize, 0_usize),
+        |(sure, agreed, salient, within), (&value, &salience)| {
+            let (is_sure, is_salient) = (value == 1.0, salience > SALIENT);
+            (
+                sure + usize::from(is_sure),
+                agreed + usize::from(is_sure && is_salient),
+                salient + usize::from(is_salient),
+                within + usize::from(is_salient && value > 0.0),
+            )
+        },
+    );
+    #[allow(clippy::cast_precision_loss, reason = "shares of pixel counts")]
+    let (share, inside) = (agreed as f64 / sure.max(1) as f64, within as f64 / salient.max(1) as f64);
 
-    (sure > 0 && share >= MIN_SALIENT).then_some(share)
+    (sure > 0 && (share >= MIN_SALIENT || salient > 0 && inside >= MIN_WITHIN)).then_some(share)
 }
 
 // The holes (the "B7" of the prototype in the fork's notes, `lens-blur/gaps`, with the refinements its gate on two more
@@ -442,6 +453,12 @@ const HOLE: f32 = 0.1;
 /// Bilbao has found another subject than the one in focus (focused on the street behind a passer-by, the passer-by),
 /// and the trimap is left as the depth drew it.
 const MIN_SALIENT: f64 = 0.25;
+
+/// The least share of Bilbao's subject that must lie within the depth's for its holes to be trusted however little of
+/// the depth's sure subject it covers: a chair on a floor the band holds from wall to wall is a fifth of the depth's
+/// subject, and the gaps between its slats went unseeded, the fence behind held sharp in one of them. Bilbao's subject
+/// within the depth's is a part of it, never another subject (a passer-by is nearer than the band).
+const MIN_WITHIN: f64 = 0.9;
 
 /// The trimap `trimap` with sure background planted in the holes Bilbao's `saliency` finds in the subject, and the sure
 /// subject beside them unknown; or `None` where that changes nothing, or Bilbao found another subject than the depth.
@@ -977,6 +994,24 @@ mod tests {
 
         // Nothing sure at all.
         assert!(seeded(&Plane::new(400, 300, 0.5), &Matte::new(1, 1, &[1.0]), None).is_none());
+    }
+
+    #[test]
+    fn a_salient_subject_within_a_much_larger_band_still_has_its_holes_seeded() {
+        // A chair on a floor the band holds from wall to wall: the depth's sure subject is the lower two thirds of a
+        // 1000 x 900 photograph, and Bilbao's subject, the chair, a 200 px square of it with a 20 px gap between two
+        // slats, under a tenth of that. All of Bilbao's subject lies within the depth's, so it is a part of it.
+        let (width, height) = (1000_u32, 900_u32);
+        let pixels = || (0..height).flat_map(move |y| (0..width).map(move |x| (x, y)));
+        let chair = |x: u32, y: u32| (400..600).contains(&x) && (400..600).contains(&y);
+        let gap = |x: u32, y: u32| (400..600).contains(&x) && (490..510).contains(&y);
+        let trimap: Vec<f32> = pixels().map(|(_, y)| if y >= 300 { 1.0 } else { 0.0 }).collect();
+        let saliency: Vec<f32> = pixels().map(|(x, y)| if chair(x, y) && !gap(x, y) { 0.97 } else { 0.02 }).collect();
+        let (plain, saliency) = (Plane::from_vec(width, height, trimap).unwrap(), Matte::new(width, height, &saliency));
+
+        let seeded = seeded(&plain, &saliency, None).expect("the chair's gap was seeded");
+        assert_eq!(seeded.get(500, 500), 0.0, "the gap between the slats is sure background");
+        assert_eq!(seeded.get(200, 700), 1.0, "the floor away from the chair is the depth's");
     }
 
     #[test]
