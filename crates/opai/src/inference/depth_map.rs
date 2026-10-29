@@ -385,20 +385,26 @@ where
             }
             None => trimap,
         };
+        bench_dump("widened", (trimap.width(), trimap.height()), trimap.as_slice());
         let trimap = Arc::new(trimap);
         let seeded = match &saliency {
             Some(saliency) => {
+                bench_dump("saliency", saliency.dimensions(), saliency.plane().as_slice());
                 let (plain, saliency, pixels) = (Arc::clone(&trimap), Arc::clone(saliency), source.shared_pixels());
                 let refine = refine.clone();
                 // No seed planted where focus is painted: the brush is laid over the seeded trimap as over the plain.
-                spawn_blocking::<_, InferenceError, _>(move || {
+                let seeded = spawn_blocking::<_, InferenceError, _>(move || {
                     let seeded = seeded(&plain, &saliency, Some(&pixels.to_rgb8()));
                     match &refine {
                         Some(refine) => seeded.map(|seeded| Refinement::trimap(refine, &seeded)),
                         None => seeded,
                     }
                 })
-                .await?
+                .await?;
+                if let Some(seeded) = &seeded {
+                    bench_dump("seeded", (seeded.width(), seeded.height()), seeded.as_slice());
+                }
+                seeded
             }
             None => None,
         };
@@ -497,9 +503,13 @@ fn trimap_of(blur: &LensBlur, source: &image::DynamicImage) -> Option<(Plane, Re
 
     // What lies behind the subject across a jump in the depth is dropped from the band, at the depth's resolution.
     let cut = cut_at_steps(depth, &found, band, diagonal);
+    bench_dump("cut", (cut.width(), cut.height()), cut.as_slice());
     let refined = Refined::of(depth, source);
 
-    Some((trimap(&refined, band, Some(&cut)), refined, band))
+    let trimap = trimap(&refined, band, Some(&cut));
+    bench_dump("trimap", (trimap.width(), trimap.height()), trimap.as_slice());
+
+    Some((trimap, refined, band))
 }
 
 /// `operations` with every lens blur handed `lens` and no depth: the blurs a chain knows add nothing.
