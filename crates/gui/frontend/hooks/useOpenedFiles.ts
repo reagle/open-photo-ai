@@ -1,13 +1,25 @@
 import { useEffect } from "react";
-import { onFilesOpened, takeOpenedFiles } from "@/ipc/images";
+import { onFilesOpened, takeOpenedFiles, takeOpenRequest } from "@/ipc/images";
 import { openPaths } from "@/lib/openPaths";
+import { applyRequest, prepareForRequest } from "@/lib/openRequest";
 import { report } from "@/lib/report";
 import { useSetupStore } from "@/stores/setup";
 
-/** Takes what the platform asked the application to open and opens it, as a drop is opened. */
+/**
+ * Takes what the platform asked the application to open and opens it, as a drop is opened, with whatever
+ * `opai --gui` asked for the batch besides.
+ */
 const drain = () =>
     takeOpenedFiles()
-        .then((paths) => (paths.length > 0 ? openPaths(paths, "open_with") : undefined))
+        .then(async (paths) => {
+            if (paths.length === 0) return;
+
+            const request = await takeOpenRequest();
+            if (request) prepareForRequest();
+
+            const admitted = await openPaths(paths, "open_with");
+            if (request) await applyRequest(request, admitted);
+        })
         .catch((error: unknown) =>
             // The IPC bridge is gone. Rust has written whatever it knows to the log, and `report`
             // records what it could not know.

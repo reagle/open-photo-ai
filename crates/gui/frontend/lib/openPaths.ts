@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 import i18n from "@/i18n";
-import { describeImages, inputExtensions } from "@/ipc/images";
+import { describeImages, type ImageRecord, inputExtensions } from "@/ipc/images";
 import { formatsOf } from "@/lib/events";
 import { track } from "@/lib/faro";
 import { extensionOf, fileName } from "@/lib/paths";
@@ -25,9 +25,10 @@ export type PathSource = "drop" | "open_with" | "recent";
  * catalogue gets right in languages with more than two. Refusing a file never costs the user the rest
  * of the batch - a folder of photographs with a stray document in it is a batch they assembled.
  *
- * Rejects when the extension list or the describe does, both of which mean the IPC bridge is gone.
+ * Resolves with the records admitted. Rejects when the extension list or the describe does, both of which mean the
+ * IPC bridge is gone.
  */
-export const openPaths = async (paths: string[], source: PathSource) => {
+export const openPaths = async (paths: string[], source: PathSource): Promise<ImageRecord[]> => {
     const extensions = await inputExtensions();
 
     // One pass rather than two complementary filters: `extensionOf` allocates and the
@@ -52,7 +53,7 @@ export const openPaths = async (paths: string[], source: PathSource) => {
 
     // Not "describe nothing and add nothing", which would be the same answer at the cost of a
     // round trip: a batch of one document is a batch this application has nothing to open.
-    if (supported.length === 0) return;
+    if (supported.length === 0) return [];
 
     const admitted = await describeImages(supported);
     useFileStore.getState().addFiles(admitted);
@@ -60,4 +61,6 @@ export const openPaths = async (paths: string[], source: PathSource) => {
     if (admitted.length > 0) {
         track("files_added", { count: admitted.length, source, formats: formatsOf(admitted.map((file) => file.path)) });
     }
+
+    return admitted;
 };

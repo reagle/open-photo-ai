@@ -25,15 +25,23 @@ vi.mock("@/ipc/images", async (original) => ({
         inbox = [];
         return Promise.resolve(taken);
     }),
+    takeOpenRequest: vi.fn(() => Promise.resolve(null)),
     onFilesOpened: vi.fn((handler: () => void) => {
         announce = handler;
         return Promise.resolve(unlisten);
     }),
 }));
 
-const { describeImages, takeOpenedFiles } = await import("@/ipc/images");
+const { describeImages, takeOpenedFiles, takeOpenRequest } = await import("@/ipc/images");
 const described = describeImages as Mock;
 const taken = takeOpenedFiles as Mock;
+const requested = takeOpenRequest as Mock;
+
+// Mocked at its own boundary: `lib/openRequest.test.ts` covers what applying a request does to the stores.
+vi.mock("@/lib/openRequest", () => ({ prepareForRequest: vi.fn(), applyRequest: vi.fn(() => Promise.resolve()) }));
+const { applyRequest, prepareForRequest } = await import("@/lib/openRequest");
+const applied = applyRequest as Mock;
+const prepared = prepareForRequest as Mock;
 
 // Mocked at `lib/faro.ts`'s own boundary, as `useDroppedImages.test.tsx` mocks it.
 vi.mock("@/lib/faro", () => ({
@@ -67,7 +75,39 @@ beforeEach(() => {
     described.mockClear();
     taken.mockClear();
     tracked.mockClear();
+    applied.mockClear();
+    prepared.mockClear();
     sonner.dismiss();
+});
+
+describe("a batch opai --gui asked a lens blur for", () => {
+    it("is prepared for before it opens and given the lens blur on what was admitted", async () => {
+        const request = { paths: [HOLIDAY.path], lensBlur: { fNumber: 1.4 } };
+        inbox = [HOLIDAY.path];
+        requested.mockResolvedValueOnce(request);
+        described.mockImplementationOnce(() => {
+            expect(prepared).toHaveBeenCalledTimes(1);
+            return Promise.resolve([HOLIDAY]);
+        });
+
+        render(<Opener />);
+        await ready();
+        await settle();
+
+        expect(applied).toHaveBeenCalledWith(request, [HOLIDAY]);
+    });
+
+    it("is not asked about, and nothing is applied, for a batch with nothing asked", async () => {
+        inbox = [HOLIDAY.path];
+        described.mockResolvedValueOnce([HOLIDAY]);
+
+        render(<Opener />);
+        await ready();
+        await settle();
+
+        expect(prepared).not.toHaveBeenCalled();
+        expect(applied).not.toHaveBeenCalled();
+    });
 });
 
 describe("files the platform asks the application to open", () => {

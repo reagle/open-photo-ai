@@ -12,6 +12,7 @@ import {
     renditionUrl,
     revealImage,
     takeOpenedFiles,
+    takeOpenRequest,
 } from "./images";
 
 // Mocked at the `invoke` boundary, so the names asserted below are the ones that would actually go on
@@ -92,6 +93,16 @@ describe("takeOpenedFiles", () => {
 
         await expect(takeOpenedFiles()).resolves.toEqual([holiday.path]);
         expect(invoked).toHaveBeenCalledWith("take_opened_files");
+    });
+});
+
+describe("takeOpenRequest", () => {
+    it("calls the command Rust registers, by name, and resolves with what the batch asked for", async () => {
+        const request = { paths: [holiday.path], lensBlur: { fNumber: 1.4 } };
+        invoked.mockResolvedValueOnce(request);
+
+        await expect(takeOpenRequest()).resolves.toEqual(request);
+        expect(invoked).toHaveBeenCalledWith("take_open_request");
     });
 });
 

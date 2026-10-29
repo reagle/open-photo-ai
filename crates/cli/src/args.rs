@@ -128,7 +128,8 @@ pub struct Args {
     #[arg(help_heading = "Output", long)]
     pub verbose: bool,
 
-    /// Open the photographs in Open Photo AI instead of processing them; other options are ignored.
+    /// Open the photographs in Open Photo AI instead of processing them. With --lens-blur, each opens with a Lens Blur
+    /// at --lb-f, --lb-amount and --lb-focus and with Autopilot switched off; other options are ignored.
     #[arg(help_heading = "Options", long)]
     pub gui: bool,
 
@@ -727,9 +728,18 @@ where
 }
 
 /// The arguments, by clap id, that `--gui` is never warned about: the inputs and `--recursive`, which choose what it
-/// opens, and `--gui` itself. Every other argument is warned about when given, so an option added later is covered
-/// without being listed; one `--gui` should accept silently is added here.
-const NOT_IGNORED_BY_GUI: &[&str] = &["inputs", "recursive", "gui", "verbose"];
+/// opens, `--gui` itself, and the lens blur it asks the application to add. Every other argument is warned about when
+/// given, so an option added later is covered without being listed; one `--gui` should accept silently is added here.
+const NOT_IGNORED_BY_GUI: &[&str] = &[
+    "inputs",
+    "recursive",
+    "gui",
+    "verbose",
+    "lens_blur",
+    "lens_blur_f",
+    "lens_blur_amount",
+    "lens_blur_focus",
+];
 
 /// The options `--gui` does not use, each named by its long flag, in the order given: every one written on the command
 /// line except those in [`NOT_IGNORED_BY_GUI`]. A default or an environment variable is not counted, only what the
@@ -1654,6 +1664,19 @@ mod tests {
         );
 
         assert_eq!(parse("opai a.jpg --ap --gui").expect("parses").ignored, ["--autopilot"]);
+    }
+
+    #[test]
+    fn gui_takes_a_lens_blur_but_not_its_edges() {
+        let args = parse("opai a.jpg --gui --lb --lb-f 1.4 --lb-focus 0.3,0.6").expect("parses");
+
+        assert!(args.ignored.is_empty(), "{:?}", args.ignored);
+        assert_eq!(args.selection.lens_blur_f, Some(1.4));
+        assert_eq!(args.selection.lens_blur_focus, Some((0.3, 0.6)));
+
+        let args = parse("opai a.jpg --gui --lb --lb-amount 80 --lb-edges depth").expect("parses");
+        assert_eq!(args.ignored, ["--lb-edges"]);
+        assert_eq!(args.selection.lens_blur_amount, Some(80.0));
     }
 
     #[test]

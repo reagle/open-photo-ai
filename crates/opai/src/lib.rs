@@ -210,6 +210,7 @@ mod live_support;
 pub mod logging;
 pub mod mask;
 mod models;
+pub mod open_request;
 mod pipeline;
 mod progress;
 mod providers;

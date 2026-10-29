@@ -142,6 +142,7 @@ pub fn run(prepared: Result<(), opai::InitError>) {
         // `src/opened.rs`); filled from the first launch's arguments below, a second launch's, and macOS's
         // `RunEvent::Opened`.
         .manage(opened::Inbox::default())
+        .manage(opened::Requested::default())
         // The photographs opened most recently (`src/recent.rs`), read from the state file here rather than in `setup`, so
         // the list is in place before the page can ask for it and before the menu that shows it is built.
         .manage(recent::Recents::load())
@@ -214,6 +215,7 @@ pub fn run(prepared: Result<(), opai::InitError>) {
             images::files::reveal_image,
             images::files::input_extensions,
             opened::take_opened_files,
+            opened::take_open_request,
             window::window_ready
         ])
         .build(tauri::generate_context!())
