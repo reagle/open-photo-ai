@@ -403,6 +403,8 @@ fn trimap_of(blur: &LensBlur, source: &image::DynamicImage) -> Option<(Plane, Re
     let focus_m = matted_focus(depth.focus_metres(x.get(), y.get()));
     let found = Blur::new(&lens, blur.f_number().as_f32(), focus_m, diagonal)?;
     let band = Band::around(focus_m);
+    let radii: Vec<f32> = depth.disparity().iter().map(|&disparity| found.radius(disparity)).collect();
+    bench_dump("radius", depth.dimensions(), &radii);
 
     if !worth_matting(depth, &found, band) {
         tracing::debug!(focus_m, "the lens blur's subject is not matted: the blur is too small or nothing is in focus");

@@ -347,7 +347,7 @@ impl LensBlur {
 /// The version of what the lens blur renders from its inputs, in its cache tag: raised whenever the render, the fill
 /// behind the subject or the join of the mattes draws a different picture from the same depth, matte and settings, so
 /// the run cache never serves a blur an older build drew. 2: the background behind the subject filled from the
-/// nearest of it.
+/// nearest of it. 3: no hole seed where the colour around it is the subject's.
 pub(crate) const RENDER_VERSION: u32 = 3;
 
 impl std::fmt::Display for LensBlur {
