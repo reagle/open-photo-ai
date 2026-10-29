@@ -334,8 +334,9 @@ where
         let trimap = Arc::new(trimap);
         let seeded = match &saliency {
             Some(saliency) => {
-                let (plain, saliency) = (Arc::clone(&trimap), Arc::clone(saliency));
-                spawn_blocking::<_, InferenceError, _>(move || seeded(&plain, &saliency)).await?
+                let (plain, saliency, pixels) = (Arc::clone(&trimap), Arc::clone(saliency), source.shared_pixels());
+                spawn_blocking::<_, InferenceError, _>(move || seeded(&plain, &saliency, Some(&pixels.to_rgb8())))
+                    .await?
             }
             None => None,
         };
