@@ -13,6 +13,10 @@
 //! blur (the wall close behind a chair) is not the subject, and [`cut_at_steps`] drops it; what a surface joins to it
 //! (the head above the shoulders, the floor under the chair) is kept, however far into the band it reaches.
 //!
+//! **The subject's strands.** The depth cannot see a single hair against the sky either: it reads at the sky's distance,
+//! and the trimap calls it surely background. [`widened`] leaves unknown what Bilbao gives any coverage to and is joined
+//! to the subject's unknown ring, so the matting model is asked about the strands.
+//!
 //! **The subject's holes.** The depth cannot see the background between a canopy's leaves or through the loop of a
 //! strap: it calls the subject there solid, or unknown in patches too large for the matting model, which then answers
 //! about a half — half the sharp gap over the blurred fill, a smudge. [`seeded`] reads Bilbao's matte of the whole
@@ -309,6 +313,85 @@ pub(crate) fn trimap(refined: &Refined, band: Band, cut: Option<&Plane>) -> Plan
     trimap
 }
 
+// The strands. The depth model cannot see a single hair against the sky, so a backlit portrait's flyaway hair reads at
+// the sky's distance, the trimap calls it surely background a ring or more from the head, and the matting model is never
+// asked about it: on the bench's backlit portrait (`o_f12a8afc`) 70 percent of the ground truth's strands beyond the
+// head's outline were sure background. Bilbao, which mattes the whole photograph from its colours alone, sees a share
+// of them as a faint alpha (a tenth or two). So the trimap's sure background is left unknown where Bilbao gives it any
+// coverage and the patch reaches the unknown ring around the subject: the strands that grow from the head, and not a
+// faint halo Bilbao leaves around something else in the photograph. Never in front of the band: a nearer thing is not
+// the subject, however salient.
+
+/// Bilbao's coverage above which a pixel the depth calls surely background may be a strand of the subject's.
+const STRAND: f32 = 0.05;
+
+/// `trimap` with its sure background left unknown where Bilbao's `saliency` sees a strand of the subject joined to its
+/// unknown ring, never in front of `band` by `refined`, the depth the trimap was drawn on; or `None` where that changes
+/// nothing, or Bilbao found another subject than the depth (see [`MIN_SALIENT`]).
+pub(crate) fn widened(trimap: &Plane, saliency: &Matte, refined: &Refined, band: Band) -> Option<Plane> {
+    let (width, height) = (trimap.width(), trimap.height());
+    let (columns, rows) = (width as usize, height as usize);
+    if (refined.plane.width(), refined.plane.height()) != (width, height) {
+        return None;
+    }
+    let salient = saliency.plane().resized(width, height);
+    let (known, salience, depth) = (trimap.as_slice(), salient.as_slice(), refined.plane.as_slice());
+    agreed_share(known, salience)?;
+
+    let candidate = |index: usize| {
+        known[index] == 0.0 && salience[index] > STRAND && !band.in_front(depth[index] * refined.nearest)
+    };
+
+    // A fill from the unknown ring over the candidates.
+    let mut reached = vec![false; known.len()];
+    let mut stack: Vec<usize> = (0..known.len()).filter(|&index| known[index] == 0.5).collect();
+    while let Some(index) = stack.pop() {
+        let (x, y) = (index % columns, index / columns);
+        let neighbours = [
+            (x > 0).then(|| index - 1),
+            (x + 1 < columns).then_some(index + 1),
+            (y > 0).then(|| index - columns),
+            (y + 1 < rows).then_some(index + columns),
+        ];
+        for next in neighbours.into_iter().flatten() {
+            if !reached[next] && candidate(next) {
+                reached[next] = true;
+                stack.push(next);
+            }
+        }
+    }
+
+    // Grown by the seeds' inset, so a strand Bilbao draws thinner than it is, at its graph's size, is unknown across.
+    let grown = dilated(
+        &plane_of(width, height, |x, y| reached[y * columns + x]),
+        seed_inset(unknown_radius(width, height)),
+    );
+    let mut out = trimap.clone();
+    let mut changed = 0_usize;
+    for (index, value) in out.as_mut_slice().iter_mut().enumerate() {
+        if *value == 0.0 && grown.as_slice()[index] > 0.5 && !band.in_front(depth[index] * refined.nearest) {
+            *value = 0.5;
+            changed += 1;
+        }
+    }
+
+    tracing::debug!(changed, "the subject's strands left unknown");
+
+    (changed > 0).then_some(out)
+}
+
+/// Of what `known` (a trimap) surely calls the subject, the share Bilbao's `salience` (at the trimap's size) calls the
+/// subject too; or `None` where it is under [`MIN_SALIENT`], or nothing is sure.
+fn agreed_share(known: &[f32], salience: &[f32]) -> Option<f64> {
+    let (sure, agreed) = known.iter().zip(salience).fold((0_usize, 0_usize), |(sure, agreed), (&value, &salience)| {
+        (sure + usize::from(value == 1.0), agreed + usize::from(value == 1.0 && salience > SALIENT))
+    });
+    #[allow(clippy::cast_precision_loss, reason = "a share of a pixel count")]
+    let share = agreed as f64 / sure.max(1) as f64;
+
+    (sure > 0 && share >= MIN_SALIENT).then_some(share)
+}
+
 // The holes (the "B7" of the prototype in the fork's notes, `lens-blur/gaps`, with the refinements its gate on two more
 // photographs called for). On the bonsai of that prototype, a ring of 34 px: Bilbao's subject (its matte above a half)
 // closed by 68 px at a quarter of the size, which fills every hole in it smaller than that and leaves the outline; the
@@ -349,15 +432,10 @@ pub(crate) fn seeded(trimap: &Plane, saliency: &Matte, photo: Option<&RgbImage>)
     let (known, salience) = (trimap.as_slice(), salient.as_slice());
 
     // The guard: of what the depth surely calls the subject, how much Bilbao calls it too.
-    let (sure, agreed) = known.iter().zip(salience).fold((0_usize, 0_usize), |(sure, agreed), (&value, &salience)| {
-        (sure + usize::from(value == 1.0), agreed + usize::from(value == 1.0 && salience > SALIENT))
-    });
-    #[allow(clippy::cast_precision_loss, reason = "a share of a pixel count")]
-    let share = agreed as f64 / sure.max(1) as f64;
-    if sure == 0 || share < MIN_SALIENT {
-        tracing::debug!(share, "the subject's holes are not looked for: the salient subject is another");
+    let Some(share) = agreed_share(known, salience) else {
+        tracing::debug!("the subject's holes are not looked for: the salient subject is another");
         return None;
-    }
+    };
 
     // Bilbao's subject closed by twice the ring, at a quarter of the size: its outline, with its holes filled.
     let (small_width, small_height) = (width.div_ceil(REDUCTION), height.div_ceil(REDUCTION));
@@ -744,6 +822,61 @@ mod tests {
             let hole = (490 * scale..510 * scale).contains(&x) && (370 * scale..390 * scale).contains(&y);
             inside && !hole
         }
+    }
+
+    #[test]
+    fn a_strand_bilbao_sees_beyond_the_ring_is_left_unknown_and_a_faint_halo_apart_or_a_nearer_thing_is_not() {
+        // A head at 1 m on the left of an 800 x 600 photograph before a sky at 10 m, with a nearer post at 0.5 m on the
+        // right. Bilbao sees a strand of hair (0.2) running out of the head 60 px into the sky, a faint smudge (0.2) in
+        // the sky well away from the head, and the post (0.9), which stands against the head.
+        let depth = refined(800, 600, |x, y| {
+            if x < 300 {
+                1.0
+            } else if (300..330).contains(&x) && y >= 400 {
+                0.5
+            } else {
+                10.0
+            }
+        });
+        let band = Band::around(1.0);
+        let plain = trimap(&depth, band, None);
+        let strand = |x: u32, y: u32| (300..360).contains(&x) && (200..203).contains(&y);
+        let smudge = |x: u32, y: u32| (600..640).contains(&x) && (100..140).contains(&y);
+        let post = |x: u32, y: u32| (300..330).contains(&x) && y >= 400;
+        let saliency: Vec<f32> = (0..600)
+            .flat_map(|y| (0..800).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                if x < 300 || post(x, y) {
+                    0.9
+                } else if strand(x, y) || smudge(x, y) {
+                    0.2
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let saliency = Matte::new(800, 600, &saliency);
+        assert_eq!(plain.get(350, 201), 0.0, "the strand's tip is sure background to the depth");
+
+        let found = widened(&plain, &saliency, &depth, band).expect("a strand was found");
+        // The strand to its tip, and a pixel either side of it, for the matting model.
+        for x in [310, 330, 359] {
+            assert_eq!(found.get(x, 201), 0.5, "({x}, 201) on the strand");
+        }
+        assert_eq!(found.get(340, 199), 0.5);
+        // Not the sky beside it, the smudge apart from the head, nor the nearer post.
+        assert_eq!(found.get(340, 190), 0.0);
+        assert_eq!(found.get(620, 120), 0.0);
+        assert_eq!(found.get(315, 500), 0.0);
+        // Nothing else changed.
+        for (index, (found, plain)) in found.as_slice().iter().zip(plain.as_slice()).enumerate() {
+            let (x, y) = (index % 800, index / 800);
+            assert!(found == plain || (300..365).contains(&x) && (195..208).contains(&y), "({x}, {y})");
+        }
+
+        // Bilbao with no faint alpha changes nothing.
+        let solid: Vec<f32> = (0..600).flat_map(|_| (0..800).map(|x| if x < 300 { 0.9 } else { 0.0 })).collect();
+        assert!(widened(&plain, &Matte::new(800, 600, &solid), &depth, band).is_none());
     }
 
     #[test]
