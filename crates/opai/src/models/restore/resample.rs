@@ -108,6 +108,7 @@ mod tests {
             Normalisation::Unit,
             strength,
             None,
+            None,
             TileGeometry::DEFAULT,
         );
 
