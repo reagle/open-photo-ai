@@ -1,10 +1,13 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import type { ImageRecord } from "@/ipc/images";
+import { requestOf } from "@/lib/batch";
 import { FILE_MENU_GLYPH, THUMBNAIL_BOUND } from "@/lib/constants";
+import { useBatchStore } from "@/stores/batch";
+import { useEnhancementStore } from "@/stores/enhancements";
 import { useFileStore } from "@/stores/files";
-import { frame, HOLIDAY, openFiles, render, resetCropStore, resetFileStore, SUNSET } from "@/test/support";
+import { APPLY_ORDER, frame, HOLIDAY, openFiles, render, resetCropStore, resetFileStore, SUNSET } from "@/test/support";
 import { DrawerItem } from "./DrawerItem";
 
 // The global Tauri's init script installs, which jsdom has none of. Spelled as the macOS form so the
@@ -28,7 +31,12 @@ const selected = () => [...useFileStore.getState().selectedPaths];
 beforeEach(() => {
     resetFileStore();
     resetCropStore();
+    // Autopilot off: with it on, a photograph with nothing on it yet is one the batch will ask it about.
+    useEnhancementStore.setState({ enhancements: new Map(), autopilot: false });
+    useBatchStore.getState().forgetAll();
 });
+
+const sharpen = { family: "sharpen", codename: "moscow", precision: "fp16", parameters: { strength: 0.5 } } as const;
 
 describe("DrawerItem", () => {
     it("draws the whole photograph whatever framing it carries", () => {
@@ -184,5 +192,66 @@ describe("DrawerItem", () => {
         expect(thumbnail("sunset over the harbour.nef")).toBeInTheDocument();
         expect(screen.getByRole("checkbox", { name: "Select sunset over the harbour.nef" })).toBeEnabled();
         expect(container.querySelector(".bg-surface-thumbnail")).toBeInTheDocument();
+    });
+
+    describe("the enhancement badge", () => {
+        const badge = () => document.querySelector("[data-badge]");
+
+        it("draws nothing for a photograph with no enhancements, even one in a batch", () => {
+            openFiles(HOLIDAY);
+            useBatchStore.setState({ phase: "paused", members: new Set([HOLIDAY.path]) });
+            renderItem(HOLIDAY);
+
+            expect(badge()).toBeNull();
+        });
+
+        it("says queued while the batch has still to reach it, processing once its run reports, then done", () => {
+            openFiles(HOLIDAY);
+            useEnhancementStore.getState().addEnhancement(HOLIDAY.path, { ...sharpen }, APPLY_ORDER);
+            useBatchStore.setState({ phase: "paused", members: new Set([HOLIDAY.path]) });
+            renderItem(HOLIDAY);
+
+            expect(screen.getByRole("img", { name: "Waiting to be enhanced" })).toHaveAttribute("title");
+
+            act(() => {
+                useBatchStore.getState().showing(HOLIDAY.path);
+                useBatchStore.getState().started();
+            });
+            expect(screen.getByRole("img", { name: "Being enhanced" }).querySelector("svg")).toHaveClass(
+                "animate-spin",
+            );
+
+            act(() => {
+                useBatchStore.getState().showing(undefined);
+                useBatchStore.getState().record(HOLIDAY.path, requestOf(HOLIDAY)?.key ?? "", false);
+            });
+            expect(screen.getByRole("img", { name: "Enhanced" })).toBeInTheDocument();
+        });
+
+        it("says failed for a run that failed, and stops saying so once the request changes", () => {
+            openFiles(HOLIDAY);
+            useEnhancementStore.getState().addEnhancement(HOLIDAY.path, { ...sharpen }, APPLY_ORDER);
+            useBatchStore.getState().record(HOLIDAY.path, requestOf(HOLIDAY)?.key ?? "", true);
+            renderItem(HOLIDAY);
+
+            expect(screen.getByRole("img", { name: "Enhancement failed" })).toBeInTheDocument();
+
+            // In no batch, so an edited stack is simply not run yet: no badge until the window runs it.
+            act(() =>
+                useEnhancementStore
+                    .getState()
+                    .replaceEnhancement(HOLIDAY.path, { ...sharpen, parameters: { strength: 0.9 } }),
+            );
+            expect(badge()).toBeNull();
+        });
+
+        it("does not spin for a run that has not reported, which may still be waiting", () => {
+            openFiles(HOLIDAY);
+            useEnhancementStore.getState().addEnhancement(HOLIDAY.path, { ...sharpen }, APPLY_ORDER);
+            useBatchStore.getState().showing(HOLIDAY.path);
+            renderItem(HOLIDAY);
+
+            expect(screen.getByRole("img", { name: "Waiting to be enhanced" })).toBeInTheDocument();
+        });
     });
 });

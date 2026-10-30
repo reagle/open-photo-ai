@@ -12,7 +12,7 @@ import { useAppShortcutHint } from "@/hooks/useAppShortcuts";
 import { useAutopilot } from "@/hooks/useAutopilot";
 import { useShortcutHint } from "@/hooks/useShortcuts";
 import { useEnhancementStore } from "@/stores/enhancements";
-import { useCanExport, useExportDialogStore } from "@/stores/exportDialog";
+import { useCanExport, useExportDialogStore, useExportHeldByBatch } from "@/stores/exportDialog";
 import { useFileStore } from "@/stores/files";
 
 /**
@@ -38,6 +38,7 @@ export const Sidebar = () => {
     const autopilotHint = useShortcutHint("toggleAutopilot", t("sidebar.autopilot"));
     const exportLabel = t("sidebar.exportImage", { count: Math.max(picked, 1) });
     const exportHint = useAppShortcutHint("export", exportLabel);
+    const heldByBatch = useExportHeldByBatch();
 
     return (
         <aside className="flex w-64 flex-none flex-col border-l border-border bg-card">
@@ -99,18 +100,24 @@ export const Sidebar = () => {
              * Gated on the selection rather than on an image being open: nothing can be picked with
              * nothing open, so "unavailable while none is open" still holds by construction.
              */}
-            <HintTooltip tip={exportHint.tooltip}>
-                <Button
-                    variant="secondary"
-                    disabled={!exportable}
-                    onClick={openExport}
-                    aria-keyshortcuts={exportHint.ariaKeyShortcuts}
-                    className="h-12 w-full flex-none rounded-none border-t border-border font-normal disabled:opacity-35"
-                >
-                    <Upload className="size-4.5 text-primary" />
-                    {/* The singular with nothing picked, as the empty window's design draws it. */}
-                    {exportLabel}
-                </Button>
+            {/*
+             * Held back while a batch runs, and the tooltip says why. A disabled button takes no pointer, so the tooltip is
+             * on a wrapper then.
+             */}
+            <HintTooltip tip={heldByBatch ? t("batch.exportHeld") : exportHint.tooltip}>
+                <span className="flex flex-none">
+                    <Button
+                        variant="secondary"
+                        disabled={!exportable}
+                        onClick={openExport}
+                        aria-keyshortcuts={exportHint.ariaKeyShortcuts}
+                        className="h-12 w-full flex-none rounded-none border-t border-border font-normal disabled:opacity-35"
+                    >
+                        <Upload className="size-4.5 text-primary" />
+                        {/* The singular with nothing picked, as the empty window's design draws it. */}
+                        {exportLabel}
+                    </Button>
+                </span>
             </HintTooltip>
 
             {/* Mounted while open, which is what snapshots its queue as it opens. */}
