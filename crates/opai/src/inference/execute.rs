@@ -33,6 +33,7 @@ use crate::image::Picture;
 use crate::models::DataOperation;
 use crate::pipeline;
 use crate::pipeline::Backend;
+use crate::pipeline::session;
 use crate::providers::ExecutionProvider;
 use crate::sessions::SessionHandle;
 use crate::task::spawn_blocking;
@@ -333,7 +334,11 @@ async fn run<B: Backend, O: DataOperation>(
                 let report = wanted.then_some(&report as &dyn Fn(f64));
                 let stopped = || cancelled.is_cancelled();
 
-                let produced = running.run(&input, &sessions, report, &stopped);
+                // Terminable: a stop lands inside the graph rather than after it (`session::terminable`), and a matte the
+                // graph had finished before the stop arrived is still kept and stored below.
+                let (produced, terminated) =
+                    session::terminable(&cancelled, || running.run(&input, &sessions, report, &stopped));
+                let produced = session::settled(produced, terminated);
 
                 // Inside the same blocking call the run happened on, as the chain's write is: encoding and storing is
                 // I/O and belongs nowhere near the runtime, and there is a blocking thread here already.
