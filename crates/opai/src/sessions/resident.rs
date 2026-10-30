@@ -22,16 +22,34 @@ use super::flight::{Flight, Install, Interest};
 /// One number rather than the reference implementation's scaling — a five-minute floor, extended to twenty times what
 /// the build cost, capped at thirty minutes — because that scaling exists to cooperate with a memory budget this
 /// series defers, and carrying it without its reason would make "why is this model still resident" a calculation
-/// rather than a fact. Fifteen minutes is inside the range the reference's own floor and ceiling bracket.
-pub(super) const IDLE_LIFE: Duration = Duration::from_secs(15 * 60);
+/// rather than a fact.
+///
+/// **Five minutes, the reference's floor**, and no longer fifteen. Fifteen held six sessions for a quarter of an hour
+/// after a lens-blur batch had finished — two Lisbons, Bilbao on the CPU, Porto, Petersburg and Moscow — and `footprint`
+/// put the idle GUI at 28 GB on a 24 GB Mac, swapping. What the shorter life costs is a rebuild for a model not used for
+/// five minutes, which is under a second for every session the log has timed (0.2--0.9 s) except Porto's first Core ML
+/// compile; a batch reuses each of its models every photograph, well inside five minutes, and so does someone paging by
+/// hand.
+pub(super) const IDLE_LIFE: Duration = Duration::from_secs(5 * 60);
+
+/// How many sessions stay resident at most, counting those in use.
+///
+/// A count rather than bytes, because no number this cache can read says what a session costs: a model file's size
+/// is not its footprint (Porto is a 104 MB file and gigabytes of Core ML buffers; Bilbao's CPU arena is several times its
+/// weights), so a byte budget would be a budget over guesses. **Four** is the largest chain plus one: a lens blur holds
+/// three sessions at once (Lisbon, Bilbao, Porto), and the fourth lets a batch that alternates it with a Sharpen or a
+/// Denoise keep both without rebuilding on every photograph. A fifth session is evicted least recently used first, and
+/// a session in use is never evicted — freeing it would be a native use-after-free — so a run that needs more than four
+/// at once is held to what it needs, and nothing beyond.
+pub(super) const MAX_RESIDENT: usize = 4;
 
 /// How often the background task looks for sessions to release.
 ///
 /// A quarter of [`IDLE_LIFE`] rather than the whole of it, and the two are deliberately different numbers. Sweeping on
 /// the same period as the cutoff turns the idle life into the near edge of a window rather than a number: a session
-/// falling idle a moment after one tick is not looked at until the next, so "released fifteen minutes after its last
-/// use" would mean anything up to thirty. A quarter bounds that overshoot at under four minutes, and what it costs is
-/// three extra passes an hour over a map that holds a handful of entries and is already behind a lock a session build
+/// falling idle a moment after one tick is not looked at until the next, so "released five minutes after its last
+/// use" would mean anything up to ten. A quarter bounds that overshoot at a minute and a quarter, and what it costs is
+/// three extra passes per idle life over a map that holds a handful of entries and is already behind a lock a session build
 /// takes anyway.
 pub(super) const SWEEP_INTERVAL: Duration = Duration::from_secs(IDLE_LIFE.as_secs() / 4);
 
@@ -103,7 +121,7 @@ impl<S> Resident<S> {
 /// last handle is what frees the native resources — including for a session the cache has already let go of.
 ///
 /// Its [`Drop`] stamps the entry as used. Both edges of a use are stamped, the near one when the handle is handed out
-/// and the far one here, because stamping only the first would evict a session fifteen minutes after a two-hour run
+/// and the far one here, because stamping only the first would evict a session five minutes after a two-hour run
 /// *started*, moments after that run let go of it.
 #[derive(Debug)]
 pub(crate) struct SessionHandle<S> {
@@ -297,7 +315,7 @@ impl<S, E> SessionCache<S, E> {
     /// Releases every entry that nothing is using and that has not been used since `evict_unused_since`.
     ///
     /// The cutoff is a parameter rather than read from the clock here, which is what lets a test evict everything by
-    /// passing the present and nothing by passing an hour ago, with no fake clock and no sleeping. The fifteen
+    /// passing the present and nothing by passing an hour ago, with no fake clock and no sleeping. The five
     /// minutes is then one constant applied at one call site, which is [`spawn_sweeper`].
     ///
     /// A session something is holding survives whatever its timestamp: a single run can legitimately last far longer
@@ -334,6 +352,26 @@ impl<S, E> SessionCache<S, E> {
         );
 
         released
+    }
+
+    /// Removes the least recently used entries nothing is using until at most `cap` are resident, never `kept` (the one
+    /// just filed), and returns the artifacts that went.
+    ///
+    /// Under the caller's lock on `entries`, for `evict`'s reason: the count a handle adds is only ever added under it.
+    fn trim(entries: &mut HashMap<Key, Arc<Resident<S>>>, kept: &Key, cap: usize) -> Vec<String> {
+        let mut evicted = Vec::new();
+        while entries.len() > cap {
+            let oldest = entries
+                .iter()
+                .filter(|(key, entry)| *key != kept && Arc::strong_count(entry) == 1)
+                .min_by_key(|(_, entry)| entry.last_used())
+                .map(|(key, _)| key.clone());
+            let Some(oldest) = oldest else { break };
+            entries.remove(&oldest);
+            evicted.push(oldest.0.to_string());
+        }
+
+        evicted
     }
 
     /// Removes every entry nothing is using that has not been used since `evict_unused_since`, and returns how many
@@ -555,7 +593,14 @@ impl<S> SessionCache<S, SessionError> {
             built.map(|built| {
                 let mut entries = lock(&self.entries);
                 let entry = Arc::clone(entries.entry(key.clone()).or_insert(built));
+                let evicted = Self::trim(&mut entries, &key, MAX_RESIDENT);
                 self.publish_resident(&entries);
+                drop(entries);
+                if !evicted.is_empty() {
+                    let released = evicted.len();
+                    let artifacts = released_artifacts(evicted);
+                    tracing::info!(released, %artifacts, reason = "cap", building = %artifact, "released resident sessions");
+                }
                 entry
             })
         });

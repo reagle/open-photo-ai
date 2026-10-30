@@ -1,7 +1,7 @@
 //! What stays resident, what a release frees, and when the idle sweep lets a session go.
 
 use super::*;
-use crate::sessions::resident::{IDLE_LIFE, SWEEP_INTERVAL};
+use crate::sessions::resident::{IDLE_LIFE, MAX_RESIDENT, SWEEP_INTERVAL};
 
 #[tokio::test]
 async fn the_same_model_requested_twice_is_opened_once_and_both_requests_are_served_it() {
@@ -208,7 +208,7 @@ async fn a_session_something_is_using_survives_the_sweep_whatever_its_timestamp(
 
 #[tokio::test]
 async fn letting_go_of_a_handle_restamps_the_entry_so_the_interval_runs_from_the_end_of_the_use() {
-    // Stamping only when a handle is handed out would evict a session fifteen minutes after a two-hour run
+    // Stamping only when a handle is handed out would evict a session five minutes after a two-hour run
     // *started*, moments after that run let go of it.
     let (cache, builds) = counting_cache();
     let id = kyoto();
@@ -228,11 +228,56 @@ async fn letting_go_of_a_handle_restamps_the_entry_so_the_interval_runs_from_the
     );
 }
 
+/// Five different keys: two artifacts, on the providers a session can be filed under.
+fn five_keys() -> Vec<(ArtifactId, ExecutionProvider)> {
+    let providers = [ExecutionProvider::Cpu, ExecutionProvider::Cuda, ExecutionProvider::CoreMl];
+    [kyoto(), tokyo()]
+        .into_iter()
+        .flat_map(|id| providers.map(|provider| (id.clone(), provider)))
+        .take(5)
+        .collect()
+}
+
+#[tokio::test]
+async fn a_fifth_model_lets_the_least_recently_used_idle_one_go_and_keeps_the_four_most_recent() {
+    // Six sessions resident at once put the idle GUI at 28 GB on a 24 GB Mac. Four is the lens blur's three and one more.
+    let (cache, builds) = counting_cache();
+    let keys = five_keys();
+
+    for (id, provider) in &keys {
+        drop(build_through(&cache, &builds, id, *provider).await.unwrap());
+        tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+    }
+
+    assert_eq!(cache.resident(), MAX_RESIDENT, "more sessions were kept than the cap allows");
+    // The first one built and least recently used is the one that went: asking for it again builds it again.
+    let (first, provider) = &keys[0];
+    drop(build_through(&cache, &builds, first, *provider).await.unwrap());
+    assert_eq!(builds.load(Ordering::SeqCst), 6, "the least recently used session was still resident");
+    // The most recent of the others is still there.
+    let (last, provider) = &keys[4];
+    drop(build_through(&cache, &builds, last, *provider).await.unwrap());
+    assert_eq!(builds.load(Ordering::SeqCst), 6, "a recently used session was let go instead");
+}
+
+#[tokio::test]
+async fn sessions_a_run_is_holding_are_never_let_go_to_make_room() {
+    // Freeing a session a run holds would be a native use-after-free; the cap gives way instead.
+    let (cache, builds) = counting_cache();
+    let mut held = Vec::new();
+    for (id, provider) in five_keys() {
+        held.push(build_through(&cache, &builds, &id, provider).await.unwrap());
+    }
+
+    assert_eq!(cache.resident(), 5, "a session in use was evicted");
+    drop(held);
+}
+
 #[test]
 fn the_sweep_runs_oftener_than_the_idle_life_it_enforces() {
     // The two being one number is the mistake this guards against. A task that looks every `IDLE_LIFE` does not
     // see a session that fell idle a moment after a tick until the next one, so a session would be released
-    // anywhere between fifteen and thirty minutes after its last use — and fifteen is what is specified.
+    // anywhere between five and ten minutes after its last use — and five is what is specified.
     assert!(SWEEP_INTERVAL < IDLE_LIFE, "the sweep period must be shorter than the idle life it enforces");
 
     // What a session can outlive its last use by is `IDLE_LIFE + SWEEP_INTERVAL`, so this is what bounds the
