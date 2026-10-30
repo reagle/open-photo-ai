@@ -98,6 +98,8 @@ pub(crate) enum Reply {
     /// that is still running. Against a reply that ends, a test that cancels races the download finishing, and the
     /// race is one it would usually lose — the fixture is 70 KiB over a loopback socket.
     Stalled(usize),
+    /// Answer `404 Not Found` with no body: what upstream's model host answers for a file it never had.
+    NotFound,
     /// Serve `body` as one page of a JSON listing, advertising a next page in a `Link` header when `more`.
     ///
     /// The link points back at this server, so a client following it lands on the next scripted reply — which is how
@@ -236,6 +238,14 @@ async fn respond(stream: &mut TcpStream, reply: Reply, offset: u64, base_url: &s
         return;
     }
 
+    if let Reply::NotFound = reply {
+        let _ = stream
+            .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            .await;
+        let _ = stream.flush().await;
+        return;
+    }
+
     let body: Vec<u8> = match reply {
         Reply::Fixture => FIXTURE.to_vec(),
         // Same length as the fixture, so only the hash gives it away — which is the point: a length check would have
@@ -245,7 +255,7 @@ async fn respond(stream: &mut TcpStream, reply: Reply, offset: u64, base_url: &s
         // The whole archive as far as the headers are concerned — the client is mid-transfer, not short-changed.
         Reply::Stalled(_) => FIXTURE.to_vec(),
         // Answered above, before the fixture bodies are built.
-        Reply::Listing { .. } => unreachable!("a listing is served before this point"),
+        Reply::Listing { .. } | Reply::NotFound => unreachable!("a listing and a 404 are served before this point"),
     };
 
     let total = FIXTURE.len() as u64;

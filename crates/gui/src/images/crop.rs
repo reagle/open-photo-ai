@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use image::DynamicImage;
 use image::metadata::Orientation;
 use opai::Picture;
+use opai::image::Affine;
 use serde::Deserialize;
 
 use super::files::Opened;
@@ -221,7 +222,10 @@ pub(crate) fn cropped(picture: &Picture, crop: Crop) -> Picture {
         // The path is the source's own: these pixels came from that file, and `Picture`'s path is documented as
         // where the pixels came from rather than where anything is going.
         Cow::Owned(framed) => {
-            let derived = picture.derive(framed, identity_of(picture.identity(), crop));
+            // The move recorded beside the pixels, so an export can say where the photograph's subject now is.
+            let derived = picture
+                .derive(framed, identity_of(picture.identity(), crop))
+                .framed(picture.dimensions(), placement(picture.dimensions(), crop));
             // `opai::GainMap::reframed` brings the turn's alpha back to the gain map's own colour type; the framing
             // itself is this file's, so it is handed in rather than restated there.
             let gain_map = picture
@@ -316,8 +320,51 @@ fn changes_nothing(pixels: &DynamicImage, crop: Crop) -> bool {
         && crop.height >= pixels.height()
 }
 
+/// Where [`frame`] takes a point of a picture `size` in size: the flips, the turn about the centre onto the turned
+/// bounding box `rust_sak::image::rotate` draws, and the cut, as one transform.
+///
+/// What `opai` records beside the framed pixels, so that an export moves the subject's EXIF position with them. The
+/// cut-first shortcut [`frame`] takes without a turn is the same pixels, so it is the same transform.
+pub(super) fn placement((width, height): (u32, u32), crop: Crop) -> Affine {
+    let (w, h) = (f64::from(width), f64::from(height));
+    let mut placement = Affine::IDENTITY;
+    if crop.flip_horizontal {
+        placement = placement.then(Affine::new(-1.0, 0.0, w, 0.0, 1.0, 0.0));
+    }
+    if crop.flip_vertical {
+        placement = placement.then(Affine::new(1.0, 0.0, 0.0, 0.0, -1.0, h));
+    }
+
+    let mut canvas = (width, height);
+    if crop.millidegrees != 0 {
+        // The canvas `rotate` turns onto: exact for the quarter turns, which it does without interpolating, and the
+        // bounding box rounded outward otherwise.
+        let quarter = crop.millidegrees.rem_euclid(90_000) == 0;
+        let odd_quarter = quarter && crop.millidegrees.rem_euclid(180_000) != 0;
+        canvas = if odd_quarter {
+            (height, width)
+        } else if quarter {
+            (width, height)
+        } else {
+            let (sin, cos) = crop.rotation_degrees().to_radians().sin_cos();
+            let (sin, cos) = (sin.abs(), cos.abs());
+            ((w * cos + h * sin).ceil() as u32, (w * sin + h * cos).ceil() as u32)
+        };
+        let centre = (f64::from(canvas.0) / 2.0, f64::from(canvas.1) / 2.0);
+        placement = placement.then(Affine::turn(crop.rotation_degrees(), (w / 2.0, h / 2.0), centre));
+    }
+
+    let (left, top, _, _) = inside_of(canvas, crop);
+    placement.then(Affine::translation(-f64::from(left), -f64::from(top)))
+}
+
 /// `crop`'s rectangle brought inside `pixels`, as `(left, top, width, height)`.
 fn inside(pixels: &DynamicImage, crop: Crop) -> (u32, u32, u32, u32) {
+    inside_of((pixels.width(), pixels.height()), crop)
+}
+
+/// [`inside`] for a picture `(width, height)` in size.
+fn inside_of((width, height): (u32, u32), crop: Crop) -> (u32, u32, u32, u32) {
     // There is no out-of-bounds refusal to add to three error types for a case no interface can produce: the canvas
     // a turn lands on is at most one pixel larger per axis than the space the widget measures in, so what this guards
     // is the process boundary and `Crop::scaled`'s rounding.
@@ -325,15 +372,10 @@ fn inside(pixels: &DynamicImage, crop: Crop) -> (u32, u32, u32, u32) {
     // The last pixel that exists on each axis, which is where an origin past the edge lands. A picture
     // with no pixels on an axis is not something a decoder produces; saturating rather than asserting it
     // keeps this total, which is the whole point of the clamp.
-    let left = crop.left.min(pixels.width().saturating_sub(1));
-    let top = crop.top.min(pixels.height().saturating_sub(1));
+    let left = crop.left.min(width.saturating_sub(1));
+    let top = crop.top.min(height.saturating_sub(1));
 
-    (
-        left,
-        top,
-        crop.width.min(pixels.width() - left).max(1),
-        crop.height.min(pixels.height() - top).max(1),
-    )
+    (left, top, crop.width.min(width - left).max(1), crop.height.min(height - top).max(1))
 }
 
 /// What identifies the pixels `crop` frames out of the picture identified by `source`.
@@ -688,6 +730,52 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_recorded_move_takes_every_source_pixel_to_where_the_framing_put_it() {
+        // Each source pixel holds its own coordinates, so where one landed can be read off the framed pixels.
+        let source = picture_of(37, 23);
+        for crop in [
+            Crop::new(3, 5, 11, 7, 0, false, false),
+            Crop::new(3, 5, 11, 7, 0, true, true),
+            Crop::new(2, 4, 15, 20, 90_000, true, false),
+            Crop::new(1, 2, 30, 18, -180_000, false, true),
+        ] {
+            let crop = crop.expect("legal");
+            let framed = cropped(&source, crop);
+            let frame = framed.edits().frame().expect("a recorded move");
+            assert_eq!(frame.source, (37, 23));
+
+            let pixels = framed.pixels().to_rgb8();
+            for (u, v, pixel) in pixels.enumerate_pixels() {
+                let (x, y) = (f64::from(pixel[0]) + 0.5, f64::from(pixel[1]) + 0.5);
+                let (to_u, to_v) = frame.to_pixels.apply((x, y));
+                assert!(
+                    (to_u - f64::from(u) - 0.5).abs() < 1e-6 && (to_v - f64::from(v) - 0.5).abs() < 1e-6,
+                    "{crop:?}: source ({x}, {y}) is at ({u}, {v}), recorded at ({to_u}, {to_v})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_arbitrary_turn_is_recorded_about_the_centre_of_the_canvas_it_lands_on() {
+        // rust-sak's own example: 240x120 turned 30° lands on 268x224, centre on centre.
+        let source = picture_of(240, 120);
+        let framed = cropped(&source, Crop::new(0, 0, 268, 224, 30_000, false, false).expect("legal"));
+        assert_eq!(framed.dimensions(), (268, 224));
+
+        let frame = framed.edits().frame().expect("a recorded move");
+        let (x, y) = frame.to_pixels.apply((120.0, 60.0));
+        assert!((x - 134.0).abs() < 1e-9 && (y - 112.0).abs() < 1e-9, "the centre went to ({x}, {y})");
+    }
+
+    #[test]
+    fn a_framing_that_changes_nothing_records_no_move() {
+        let source = picture_of(10, 10);
+        let framed = cropped(&source, Crop::new(0, 0, 10, 10, 0, false, false).expect("legal"));
+        assert!(framed.edits().is_empty());
     }
 
     #[test]

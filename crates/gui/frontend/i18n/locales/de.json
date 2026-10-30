@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "In dieser Installation nicht verfügbar",
+        "unavailableLabel": "{{model}} (nicht verfügbar)"
     },
     "settings": {
         "title": "Einstellungen",
@@ -60,6 +62,10 @@
             "analytics": {
                 "title": "Analyse",
                 "description": "Anonyme Nutzungsdaten senden. Bilder oder persönliche Daten werden nie erfasst."
+            },
+            "askBeforePause": {
+                "title": "Vor dem Pausieren fragen",
+                "description": "Wenn Sie während der Stapelverarbeitung ein anderes Foto wählen, zuerst fragen. Aus pausiert die Verarbeitung und zeigt das Foto."
             }
         },
         "performance": {
@@ -143,7 +149,8 @@
                 "openOptions7": "Optionen von Verbesserung 7",
                 "openOptions8": "Optionen von Verbesserung 8",
                 "cropRotate": "Zuschneiden/Drehen",
-                "showShortcuts": "Tastaturkürzel anzeigen"
+                "showShortcuts": "Tastaturkürzel anzeigen",
+                "toggleInfo": "Fotoinfo ein- oder ausblenden"
             },
             "add": "Kürzel hinzufügen",
             "addLabel": "Kürzel hinzufügen für {{action}}",
@@ -210,6 +217,12 @@
             "full": "Voll",
             "sideBySide": "Nebeneinander",
             "split": "Geteilt"
+        },
+        "badge": {
+            "queued": "Wartet auf Verbesserung",
+            "processing": "Wird verbessert",
+            "done": "Verbessert",
+            "failed": "Verbesserung fehlgeschlagen"
         }
     },
     "faces": {
@@ -557,7 +570,25 @@
             "loading": "Modell {{model}} wird geladen",
             "firstUse": "Nur beim ersten Mal, kann einige Minuten dauern",
             "firstUseAbout_one": "Nur beim ersten Mal, kann etwa {{count}} Minute dauern",
-            "firstUseAbout_other": "Nur beim ersten Mal, kann etwa {{count}} Minuten dauern"
+            "firstUseAbout_other": "Nur beim ersten Mal, kann etwa {{count}} Minuten dauern",
+            "waiting": "Warten…"
+        },
+        "info": {
+            "title": "Fotoinfo",
+            "equivalent": "{{value}} mm KB",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm KB (Zuschnitt)",
+            "simulated": "{{value}} simuliert",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR-Gain-Map",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Aufnahmeort gespeichert",
+            "edits": "Bearbeitungen",
+            "blurredEarlier": "Objektivunschärfe bereits angewendet ({{value}} simuliert)",
+            "enhancedEarlier": "Bereits mit Open Photo AI verbessert"
         }
     },
     "menu": {
@@ -612,7 +643,9 @@
             "title": "Etwas ist schiefgelaufen",
             "message": "Open Photo AI ist auf einen unerwarteten Fehler gestoßen und kann nicht fortfahren. Ein Neuladen behebt das meist; Ihre Einstellungen bleiben erhalten, nicht gespeicherte Arbeit aus der aktuellen Sitzung geht jedoch verloren.",
             "reload": "Neu laden"
-        }
+        },
+        "modelUnavailable": "{{model}} ({{precision}}) ist in dieser Installation nicht verfügbar; verwende {{alternative}}.",
+        "modelUnavailableAlone": "{{model}} ({{precision}}) ist in dieser Installation nicht verfügbar."
     },
     "shortcuts": {
         "title": "Tastaturkürzel",
@@ -631,6 +664,36 @@
             "pan": "Schwenken",
             "images": "Vorheriges Bild / Nächstes Bild",
             "options": "Optionen von Verbesserung 1–8"
+        }
+    },
+    "batch": {
+        "processing": "Verarbeite {{current}} von {{total}}",
+        "pause": "Pausieren",
+        "paused": "Pausiert — noch {{left}}",
+        "resume": "Fortsetzen",
+        "processAll": "Alle verarbeiten ({{count}})",
+        "exportHeld": "Der Export ist verfügbar, sobald die Verarbeitung pausiert oder beendet ist",
+        "finished_one": "{{count}} Foto verarbeitet",
+        "finished_other": "{{count}} Fotos verarbeitet",
+        "finishedWithFailures_one": "{{count}} Foto verarbeitet, {{failed}} fehlgeschlagen",
+        "finishedWithFailures_other": "{{count}} Fotos verarbeitet, {{failed}} fehlgeschlagen",
+        "done": "Fertig — {{processed}} verarbeitet",
+        "doneWithFailures": "Fertig — {{processed}} verarbeitet ({{failed}} fehlgeschlagen)",
+        "list": {
+            "title": "Fotos in dieser Stapelverarbeitung"
+        },
+        "state": {
+            "done": "Fertig",
+            "processing": "In Arbeit",
+            "pending": "Ausstehend",
+            "failed": "Fehlgeschlagen"
+        },
+        "ask": {
+            "title": "Verarbeitung pausieren und dieses Foto ansehen?",
+            "body": "Die Verarbeitung hält an, wo sie ist. Setzen Sie sie später fort, um die übrigen Fotos zu verarbeiten.",
+            "pause": "Pausieren & ansehen",
+            "keep": "Weiter verarbeiten",
+            "dontAsk": "Nicht mehr fragen"
         }
     }
 }

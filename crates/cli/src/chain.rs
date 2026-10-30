@@ -110,33 +110,33 @@ pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u3
     let mut notes = Vec::new();
 
     if let Some(model) = selection.denoise {
-        built.push(build(model, qualities, Parameter::Strength(selection.denoise_strength)));
+        built.push(build(model, qualities, &mut notes, Parameter::Strength(selection.denoise_strength)));
     }
 
     if let Some(model) = selection.face_recovery {
         // Maximum fidelity: as close to the original face as the model goes, which is what the catalogue publishes.
-        built.push(build(model, qualities, Parameter::None));
+        built.push(build(model, qualities, &mut notes, Parameter::None));
     }
 
     if let Some(model) = selection.colorization {
-        built.push(build(model, qualities, Parameter::None));
+        built.push(build(model, qualities, &mut notes, Parameter::None));
     }
 
     if let Some(model) = selection.light_adjustment {
-        built.push(build(model, qualities, Parameter::Bias(selection.light_bias)));
+        built.push(build(model, qualities, &mut notes, Parameter::Bias(selection.light_bias)));
     }
 
     if let Some(model) = selection.color_balance {
-        built.push(build(model, qualities, Parameter::Bias(selection.balance_bias)));
+        built.push(build(model, qualities, &mut notes, Parameter::Bias(selection.balance_bias)));
     }
 
     if let Some(model) = selection.sharpen {
-        built.push(build(model, qualities, Parameter::Strength(selection.sharpen_strength)));
+        built.push(build(model, qualities, &mut notes, Parameter::Strength(selection.sharpen_strength)));
     }
 
     if let Some(model) = selection.upscale {
         match selection.scale.or_else(|| opai::suggested_scale(width, height)) {
-            Some(scale) => built.push(build(model, qualities, Parameter::Scale(scale))),
+            Some(scale) => built.push(build(model, qualities, &mut notes, Parameter::Scale(scale))),
             None => notes.push(format!(
                 "the upscale was skipped: the photograph is already large enough ({width}x{height}); \
                  pass --scale to upscale it anyway"
@@ -150,6 +150,7 @@ pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u3
         built.push(build(
             model,
             qualities,
+            &mut notes,
             Parameter::Restore { scale: selection.restore_scale, strength: selection.restore_strength },
         ));
     }
@@ -160,6 +161,7 @@ pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u3
         let (blur, mut applied) = build(
             model,
             qualities,
+            &mut notes,
             Parameter::LensBlur { f_number: selection.lens_blur_f, focus: selection.lens_blur_focus },
         );
 
@@ -183,12 +185,28 @@ pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u3
 ///
 /// `quality` picks a build by its position in the row's precisions, so a model published at other precisions than
 /// FP32 and FP16 — Osaka, at FP16 and INT8 — needs no case of its own.
-fn build<M: CatalogueModel>(model: M, qualities: &Qualities, parameter: Parameter) -> (Operation, Applied) {
+///
+/// A build this install cannot run — a model this fork exports and has not placed at that precision — is swapped for
+/// the one it can, with a line in `notes` saying so; see [`served_precision`].
+fn build<M: CatalogueModel>(
+    model: M,
+    qualities: &Qualities,
+    notes: &mut Vec<String>,
+    parameter: Parameter,
+) -> (Operation, Applied) {
     let quality: Quality = qualities.of(M::FAMILY);
     let name = model.to_possible_value().expect("no model is skipped");
     let variant =
         VariantEntry::published(M::FAMILY, name.get_name()).expect("every model the command line names is published");
-    let precision = variant.precisions.get(quality.position()).unwrap_or(&variant.precisions[0]);
+    let served = served()
+        .iter()
+        .filter(|entry| entry.family == M::FAMILY)
+        .flat_map(|entry| entry.variants.iter())
+        .find(|served| served.codename == variant.codename)
+        .unwrap_or(variant);
+    let (precision, note) = served_precision(served, quality);
+    notes.extend(note);
+    let precision = &precision;
 
     let mut values = ParameterValues::new();
     for parameter in variant.parameters {
@@ -243,6 +261,64 @@ fn build<M: CatalogueModel>(model: M, qualities: &Qualities, parameter: Paramete
         other => panic!("{:?} {} did not build an enhancement: {other:?}", M::FAMILY, variant.codename),
     };
     (operation, Applied { family: M::FAMILY, model: variant.label, detail })
+}
+
+// Fork-only, not for upstream: every model upstream names is served at every precision it is published at.
+/// The catalogue as this install can serve it, read once per process: see [`opai::installable_catalogue`].
+///
+/// The library's own catalogue under test, so what the suite plans does not depend on the models placed on the machine
+/// running it.
+fn served() -> &'static [opai::FamilyEntry] {
+    #[cfg(test)]
+    {
+        opai::catalogue()
+    }
+
+    #[cfg(not(test))]
+    {
+        static SERVED: std::sync::OnceLock<Vec<opai::FamilyEntry>> = std::sync::OnceLock::new();
+
+        SERVED.get_or_init(|| opai::installable_catalogue(opai::APP_NAME, opai::ModelTrust::Published))
+    }
+}
+
+/// The precision `variant` runs at for `quality` — the build at that position in its precisions, or its first — and,
+/// where this install cannot serve that build, the nearest one it can, with the note saying so.
+///
+/// A fallback rather than a refusal, as the GUI's saved default falls back: `-q hd` is every family's quality at once,
+/// and Kazan having only its SD build here is no reason to fail a chain that also denoises. Where no build at all can be
+/// served the asked-for one is kept, and the run reports the install's refusal, naming the model.
+fn served_precision(variant: &VariantEntry, quality: Quality) -> (opai::Precision, Option<String>) {
+    let asked = *variant.precisions.get(quality.position()).unwrap_or(&variant.precisions[0]);
+
+    match variant.nearest_available(asked) {
+        Some(served) if served != asked => {
+            let (label, tier, asked) = (variant.label, tier(variant, served), spelled(asked));
+            (
+                served,
+                Some(format!(
+                    "{label} runs at {tier}: its {} build ({asked}) isn't available on this install",
+                    quality.label()
+                )),
+            )
+        }
+        _ => (asked, None),
+    }
+}
+
+/// How the notes name `precision`'s place among `variant`'s builds: `HD`, `SD`, or the precision itself past the two
+/// the command line names.
+fn tier(variant: &VariantEntry, precision: opai::Precision) -> String {
+    match variant.precisions.iter().position(|candidate| *candidate == precision) {
+        Some(0) => Quality::Hd.label().to_string(),
+        Some(1) => Quality::Sd.label().to_string(),
+        _ => spelled(precision),
+    }
+}
+
+/// `precision` as the notes write it: `FP32`.
+fn spelled(precision: opai::Precision) -> String {
+    format!("{precision:?}").to_uppercase()
 }
 
 /// The default `variant` publishes for the range parameter `name`.
@@ -307,6 +383,41 @@ mod tests {
     fn plan(line: &str, width: u32, height: u32) -> Plan {
         let args = args(line);
         super::plan(&args.selection, args.qualities(), width, height)
+    }
+
+    /// Stockholm as an install serves it with `unavailable` missing from it.
+    fn stockholm_without(unavailable: &[opai::Precision]) -> VariantEntry {
+        let mut variant = VariantEntry::published(Family::Denoise, "stockholm").unwrap().clone();
+        variant.unavailable = unavailable.to_vec();
+        variant
+    }
+
+    #[test]
+    fn a_build_this_install_cannot_serve_falls_back_to_the_one_it_can_and_says_so() {
+        // Kazan HD where only Kazan SD was placed, here as Stockholm: `-q hd`, or the default, runs SD rather than
+        // failing the chain on a model nothing hosts.
+        let (precision, note) = served_precision(&stockholm_without(&[opai::Precision::Fp32]), Quality::Hd);
+
+        assert_eq!(precision, opai::Precision::Fp16);
+        assert_eq!(
+            note.as_deref(),
+            Some("Stockholm runs at SD: its HD build (FP32) isn't available on this install")
+        );
+    }
+
+    #[test]
+    fn a_build_this_install_serves_runs_as_asked_with_nothing_said() {
+        let served = stockholm_without(&[opai::Precision::Fp32]);
+
+        assert_eq!(served_precision(&served, Quality::Sd), (opai::Precision::Fp16, None));
+        assert_eq!(served_precision(&stockholm_without(&[]), Quality::Hd), (opai::Precision::Fp32, None));
+    }
+
+    #[test]
+    fn a_model_with_no_build_this_install_serves_keeps_the_one_asked_for_so_the_run_can_say_why() {
+        let served = stockholm_without(&[opai::Precision::Fp32, opai::Precision::Fp16]);
+
+        assert_eq!(served_precision(&served, Quality::Hd), (opai::Precision::Fp32, None));
     }
 
     fn scale(factor: f64) -> Scale {

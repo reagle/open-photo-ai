@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "このインストールでは利用できません",
+        "unavailableLabel": "{{model}}（利用不可）"
     },
     "settings": {
         "title": "設定",
@@ -60,6 +62,10 @@
             "analytics": {
                 "title": "利用状況の分析",
                 "description": "匿名の使用状況データを送信します。画像や個人データが収集されることはありません。"
+            },
+            "askBeforePause": {
+                "title": "一括処理を一時停止する前に確認",
+                "description": "一括処理中に別の写真を選んだとき、先に確認します。オフにすると、一括処理を一時停止して写真を表示します。"
             }
         },
         "performance": {
@@ -143,7 +149,8 @@
                 "openOptions7": "補正 7 のオプション",
                 "openOptions8": "補正 8 のオプション",
                 "cropRotate": "切り抜き/回転",
-                "showShortcuts": "キーボードショートカットを表示"
+                "showShortcuts": "キーボードショートカットを表示",
+                "toggleInfo": "写真情報の表示/非表示"
             },
             "add": "ショートカットを追加",
             "addLabel": "{{action}}にショートカットを追加",
@@ -209,6 +216,12 @@
             "full": "全体",
             "sideBySide": "左右比較",
             "split": "分割"
+        },
+        "badge": {
+            "queued": "補正待ち",
+            "processing": "補正中",
+            "done": "補正済み",
+            "failed": "補正に失敗しました"
         }
     },
     "faces": {
@@ -546,7 +559,25 @@
             "compiling": "{{model}} モデルをコンパイル中",
             "loading": "{{model}} モデルを読み込み中",
             "firstUse": "初回のみ。数分かかることがあります",
-            "firstUseAbout_other": "初回のみ。約 {{count}} 分かかることがあります"
+            "firstUseAbout_other": "初回のみ。約 {{count}} 分かかることがあります",
+            "waiting": "待機中…"
+        },
+        "info": {
+            "title": "写真情報",
+            "equivalent": "35mm換算 {{value}} mm",
+            "croppedEquivalent": "35mm換算 {{shot}} → {{rendered}} mm（切り抜き）",
+            "simulated": "{{value}}（シミュレーション）",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDRゲインマップ",
+                "pq": "HDR（PQ）",
+                "hlg": "HDR（HLG）",
+                "other": "HDR"
+            },
+            "located": "位置情報あり",
+            "edits": "編集",
+            "blurredEarlier": "レンズぼかし適用済み（{{value}} シミュレーション）",
+            "enhancedEarlier": "Open Photo AIで補正済み"
         }
     },
     "menu": {
@@ -601,7 +632,9 @@
             "title": "問題が発生しました",
             "message": "Open Photo AI で予期しないエラーが発生したため、処理を続行できません。再読み込みすればたいてい解決します。設定は保持されますが、現在のセッションで保存していない作業は失われます。",
             "reload": "再読み込み"
-        }
+        },
+        "modelUnavailable": "{{model}}（{{precision}}）はこのインストールでは利用できません。{{alternative}} を使用してください。",
+        "modelUnavailableAlone": "{{model}}（{{precision}}）はこのインストールでは利用できません。"
     },
     "shortcuts": {
         "title": "キーボードショートカット",
@@ -620,6 +653,34 @@
             "pan": "移動",
             "images": "前の画像 / 次の画像",
             "options": "補正 1–8 のオプション"
+        }
+    },
+    "batch": {
+        "processing": "{{total}} 枚中 {{current}} 枚目を処理中",
+        "pause": "一時停止",
+        "paused": "一時停止中 — 残り {{left}} 枚",
+        "resume": "再開",
+        "processAll": "すべて処理（{{count}}）",
+        "exportHeld": "処理を一時停止するか完了すると書き出せます",
+        "finished_other": "{{count}} 枚の写真を処理しました",
+        "finishedWithFailures_other": "{{count}} 枚の写真を処理しました（{{failed}} 枚は失敗）",
+        "done": "完了 — {{processed}} 枚を処理",
+        "doneWithFailures": "完了 — {{processed}} 枚を処理（{{failed}} 枚は失敗）",
+        "list": {
+            "title": "この一括処理の写真"
+        },
+        "state": {
+            "done": "完了",
+            "processing": "処理中",
+            "pending": "待機中",
+            "failed": "失敗"
+        },
+        "ask": {
+            "title": "処理を一時停止してこの写真を表示しますか？",
+            "body": "処理はその場で止まります。残りの写真は後で再開して処理できます。",
+            "pause": "一時停止して表示",
+            "keep": "処理を続ける",
+            "dontAsk": "今後は確認しない"
         }
     }
 }

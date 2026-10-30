@@ -69,9 +69,9 @@ export const framedDimensions = (
     file: { width?: number; height?: number } | undefined,
     crop: CropInfo | undefined,
 ): { width?: number; height?: number } => {
-    // The canvas lays out the `<img>`'s box from this and only then loads the rendition - see
-    // `hooks/useSettledFile.ts` - so a size taken from the decoded picture would be a size arriving a
-    // decode too late. It is correct because Rust serves an *unbounded* framing at exactly the
+    // The canvas lays out the `<img>`'s box from this before any rendition has loaded, and draws a
+    // thumbnail-sized stand-in in it - see `hooks/useStandIn.ts` - so a size taken from the decoded
+    // picture would be a size arriving a decode too late, and the stand-in's own. It is correct because Rust serves an *unbounded* framing at exactly the
     // rectangle's dimensions, which is the property `reduced` in crates/gui/src/images/serve.rs keeps
     // for precisely this reason. The reference computes the same thing in its `cropDimensions`.
     if (crop) return { width: crop.width, height: crop.height };

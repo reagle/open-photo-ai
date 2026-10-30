@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "Inte tillgänglig i den här installationen",
+        "unavailableLabel": "{{model}} (inte tillgänglig)"
     },
     "settings": {
         "title": "Inställningar",
@@ -60,6 +62,10 @@
             "analytics": {
                 "title": "Analys",
                 "description": "Skicka anonym användningsdata. Inga bilder eller personuppgifter samlas någonsin in."
+            },
+            "askBeforePause": {
+                "title": "Fråga innan en omgång pausas",
+                "description": "När du väljer ett annat foto medan en omgång bearbetas, fråga först. Av pausar omgången och visar fotot."
             }
         },
         "performance": {
@@ -143,7 +149,8 @@
                 "openOptions7": "Alternativ för förbättring 7",
                 "openOptions8": "Alternativ för förbättring 8",
                 "cropRotate": "Beskär/Rotera",
-                "showShortcuts": "Visa kortkommandon"
+                "showShortcuts": "Visa kortkommandon",
+                "toggleInfo": "Visa eller dölj fotoinfo"
             },
             "add": "Lägg till kortkommando",
             "addLabel": "Lägg till kortkommando för {{action}}",
@@ -210,6 +217,12 @@
             "full": "Hel",
             "sideBySide": "Sida vid sida",
             "split": "Delad"
+        },
+        "badge": {
+            "queued": "Väntar på förbättring",
+            "processing": "Förbättras",
+            "done": "Förbättrad",
+            "failed": "Förbättringen misslyckades"
         }
     },
     "faces": {
@@ -557,7 +570,25 @@
             "loading": "Läser in modellen {{model}}",
             "firstUse": "Bara första gången, kan ta några minuter",
             "firstUseAbout_one": "Bara första gången, kan ta ungefär {{count}} minut",
-            "firstUseAbout_other": "Bara första gången, kan ta ungefär {{count}} minuter"
+            "firstUseAbout_other": "Bara första gången, kan ta ungefär {{count}} minuter",
+            "waiting": "Väntar…"
+        },
+        "info": {
+            "title": "Fotoinfo",
+            "equivalent": "{{value}} mm ekv.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm ekv. (beskärning)",
+            "simulated": "{{value}} simulerad",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR-förstärkningskarta",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Plats registrerad",
+            "edits": "Redigeringar",
+            "blurredEarlier": "Objektivoskärpa redan tillämpad ({{value}} simulerad)",
+            "enhancedEarlier": "Redan förbättrad med Open Photo AI"
         }
     },
     "menu": {
@@ -612,7 +643,9 @@
             "title": "Något gick fel",
             "message": "Open Photo AI råkade ut för ett oväntat fel och kan inte fortsätta. Att ladda om brukar lösa det; dina inställningar behålls, men allt osparat arbete i den aktuella sessionen går förlorat.",
             "reload": "Ladda om"
-        }
+        },
+        "modelUnavailable": "{{model}} ({{precision}}) är inte tillgänglig i den här installationen; använd {{alternative}}.",
+        "modelUnavailableAlone": "{{model}} ({{precision}}) är inte tillgänglig i den här installationen."
     },
     "shortcuts": {
         "title": "Kortkommandon",
@@ -631,6 +664,36 @@
             "pan": "Panorera",
             "images": "Föregående bild / Nästa bild",
             "options": "Alternativ för förbättring 1–8"
+        }
+    },
+    "batch": {
+        "processing": "Bearbetar {{current}} av {{total}}",
+        "pause": "Pausa",
+        "paused": "Pausad — {{left}} kvar",
+        "resume": "Återuppta",
+        "processAll": "Bearbeta alla ({{count}})",
+        "exportHeld": "Export blir tillgänglig när bearbetningen är pausad eller klar",
+        "finished_one": "{{count}} foto bearbetat",
+        "finished_other": "{{count}} foton bearbetade",
+        "finishedWithFailures_one": "{{count}} foto bearbetat, {{failed}} misslyckades",
+        "finishedWithFailures_other": "{{count}} foton bearbetade, {{failed}} misslyckades",
+        "done": "Klart — {{processed}} bearbetade",
+        "doneWithFailures": "Klart — {{processed}} bearbetade ({{failed}} misslyckades)",
+        "list": {
+            "title": "Foton i den här omgången"
+        },
+        "state": {
+            "done": "Klar",
+            "processing": "Bearbetas",
+            "pending": "Väntar",
+            "failed": "Misslyckades"
+        },
+        "ask": {
+            "title": "Pausa bearbetningen och visa det här fotot?",
+            "body": "Bearbetningen stannar där den är. Fortsätt senare med de foton som är kvar.",
+            "pause": "Pausa och visa",
+            "keep": "Fortsätt bearbeta",
+            "dontAsk": "Fråga inte igen"
         }
     }
 }

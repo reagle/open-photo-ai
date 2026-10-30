@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "इस इंस्टॉलेशन पर उपलब्ध नहीं",
+        "unavailableLabel": "{{model}} (उपलब्ध नहीं)"
     },
     "settings": {
         "title": "सेटिंग्स",
@@ -60,6 +62,10 @@
             "analytics": {
                 "title": "एनालिटिक्स",
                 "description": "अनाम उपयोग डेटा भेजें। कोई छवि या व्यक्तिगत डेटा कभी एकत्र नहीं किया जाता।"
+            },
+            "askBeforePause": {
+                "title": "बैच रोकने से पहले पूछें",
+                "description": "बैच प्रोसेस होते समय दूसरी फ़ोटो चुनने पर पहले पूछें। बंद होने पर बैच रुक जाता है और फ़ोटो दिखाई जाती है।"
             }
         },
         "performance": {
@@ -143,7 +149,8 @@
                 "openOptions7": "सुधार 7 के विकल्प",
                 "openOptions8": "सुधार 8 के विकल्प",
                 "cropRotate": "क्रॉप/घुमाएँ",
-                "showShortcuts": "कीबोर्ड शॉर्टकट दिखाएँ"
+                "showShortcuts": "कीबोर्ड शॉर्टकट दिखाएँ",
+                "toggleInfo": "फ़ोटो जानकारी दिखाएँ या छिपाएँ"
             },
             "add": "शॉर्टकट जोड़ें",
             "addLabel": "{{action}} के लिए शॉर्टकट जोड़ें",
@@ -210,6 +217,12 @@
             "full": "पूर्ण",
             "sideBySide": "साथ-साथ",
             "split": "विभाजित"
+        },
+        "badge": {
+            "queued": "सुधार की प्रतीक्षा में",
+            "processing": "सुधार हो रहा है",
+            "done": "सुधारा गया",
+            "failed": "सुधार विफल रहा"
         }
     },
     "faces": {
@@ -557,7 +570,25 @@
             "loading": "{{model}} मॉडल लोड हो रहा है",
             "firstUse": "सिर्फ़ पहली बार, कुछ मिनट लग सकते हैं",
             "firstUseAbout_one": "सिर्फ़ पहली बार, लगभग {{count}} मिनट लग सकता है",
-            "firstUseAbout_other": "सिर्फ़ पहली बार, लगभग {{count}} मिनट लग सकते हैं"
+            "firstUseAbout_other": "सिर्फ़ पहली बार, लगभग {{count}} मिनट लग सकते हैं",
+            "waiting": "प्रतीक्षा…"
+        },
+        "info": {
+            "title": "फ़ोटो जानकारी",
+            "equivalent": "{{value}} mm समतुल्य",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm समतुल्य (क्रॉप)",
+            "simulated": "{{value}} सिम्युलेटेड",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR गेन मैप",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "स्थान दर्ज है",
+            "edits": "संपादन",
+            "blurredEarlier": "लेंस ब्लर पहले से लागू ({{value}} सिम्युलेटेड)",
+            "enhancedEarlier": "Open Photo AI से पहले ही बेहतर किया गया"
         }
     },
     "menu": {
@@ -612,7 +643,9 @@
             "title": "कुछ गलत हो गया",
             "message": "Open Photo AI में एक अप्रत्याशित त्रुटि आई और यह आगे नहीं चल सकता। आमतौर पर पेज दोबारा लोड करने से यह ठीक हो जाता है; आपकी सेटिंग्स सुरक्षित रहती हैं, लेकिन मौजूदा सत्र का बिना सहेजा काम खो जाएगा।",
             "reload": "फिर से लोड करें"
-        }
+        },
+        "modelUnavailable": "{{model}} ({{precision}}) इस इंस्टॉलेशन पर उपलब्ध नहीं है; {{alternative}} का उपयोग करें।",
+        "modelUnavailableAlone": "{{model}} ({{precision}}) इस इंस्टॉलेशन पर उपलब्ध नहीं है।"
     },
     "shortcuts": {
         "title": "कीबोर्ड शॉर्टकट",
@@ -631,6 +664,36 @@
             "pan": "खिसकाएँ",
             "images": "पिछली छवि / अगली छवि",
             "options": "सुधार 1–8 के विकल्प"
+        }
+    },
+    "batch": {
+        "processing": "{{total}} में से {{current}} संसाधित हो रही है",
+        "pause": "रोकें",
+        "paused": "रुका हुआ — {{left}} बाकी",
+        "resume": "फिर से शुरू करें",
+        "processAll": "सभी संसाधित करें ({{count}})",
+        "exportHeld": "संसाधन रुकने या पूरा होने पर निर्यात उपलब्ध होगा",
+        "finished_one": "{{count}} फ़ोटो संसाधित हुई",
+        "finished_other": "{{count}} फ़ोटो संसाधित हुईं",
+        "finishedWithFailures_one": "{{count}} फ़ोटो संसाधित हुई, {{failed}} विफल",
+        "finishedWithFailures_other": "{{count}} फ़ोटो संसाधित हुईं, {{failed}} विफल",
+        "done": "पूरा — {{processed}} प्रोसेस हुईं",
+        "doneWithFailures": "पूरा — {{processed}} प्रोसेस हुईं ({{failed}} विफल)",
+        "list": {
+            "title": "इस बैच की फ़ोटो"
+        },
+        "state": {
+            "done": "पूरा",
+            "processing": "प्रोसेस हो रही है",
+            "pending": "बाकी",
+            "failed": "विफल"
+        },
+        "ask": {
+            "title": "संसाधन रोककर यह फ़ोटो देखें?",
+            "body": "संसाधन जहाँ है वहीं रुक जाएगा। बची हुई फ़ोटो के लिए बाद में इसे फिर से शुरू करें।",
+            "pause": "रोकें और देखें",
+            "keep": "संसाधन जारी रखें",
+            "dontAsk": "फिर से न पूछें"
         }
     }
 }

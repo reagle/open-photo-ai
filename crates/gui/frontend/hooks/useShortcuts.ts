@@ -10,6 +10,7 @@ import {
     revealCurrent,
     toggleAutopilot,
     toggleDrawer,
+    toggleInfo,
 } from "@/lib/editorActions";
 import {
     actionFor,
@@ -43,6 +44,7 @@ const PRESS: Record<Exclude<ShortcutAction, "showOriginal">, () => unknown> = {
     panUp: () => panCurrent("up"),
     panDown: () => panCurrent("down"),
     cyclePreview,
+    toggleInfo,
     toggleDrawer,
     previousImage: () => stepImage(-1),
     nextImage: () => stepImage(1),
@@ -69,6 +71,7 @@ const PRESS: Record<Exclude<ShortcutAction, "showOriginal">, () => unknown> = {
 const ONCE_PER_PRESS: ReadonlySet<ShortcutAction> = new Set([
     "toggleZoom",
     "cyclePreview",
+    "toggleInfo",
     "toggleDrawer",
     "revealImage",
     "toggleAutopilot",

@@ -25,9 +25,14 @@ pub(crate) mod ns {
     pub(crate) const CONTAINER: &str = "http://ns.google.com/photos/1.0/container/";
     pub(crate) const ITEM: &str = "http://ns.google.com/photos/1.0/container/item/";
     pub(crate) const GCAMERA: &str = "http://ns.google.com/photos/1.0/camera/";
+    pub(crate) const GIMAGE: &str = "http://ns.google.com/photos/1.0/image/";
+    pub(crate) const GFOCUS: &str = "http://ns.google.com/photos/1.0/focus/";
+    pub(crate) const GDEPTH: &str = "http://ns.google.com/photos/1.0/depthmap/";
     pub(crate) const DC: &str = "http://purl.org/dc/elements/1.1/";
     pub(crate) const PHOTOSHOP: &str = "http://ns.adobe.com/photoshop/1.0/";
     pub(crate) const IPTC_CORE: &str = "http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/";
+    pub(crate) const IPTC_EXT: &str = crate::export::metadata::record::IPTC_EXT;
+    pub(crate) const OPAI: &str = crate::export::metadata::record::NAMESPACE;
 }
 
 /// The prefix a namespace is declared under when the packet has none for it.
@@ -43,6 +48,8 @@ fn preferred_prefix(uri: &str) -> &'static str {
         ns::DC => "dc",
         ns::PHOTOSHOP => "photoshop",
         ns::IPTC_CORE => "Iptc4xmpCore",
+        ns::IPTC_EXT => "Iptc4xmpExt",
+        ns::OPAI => "opai",
         _ => "ns",
     }
 }

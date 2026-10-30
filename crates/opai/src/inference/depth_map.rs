@@ -474,9 +474,14 @@ where
 }
 
 /// Whether `error` says the model is not installed and no source publishes it: the matting graph, not yet published
-/// with the others, everywhere it was never put by hand.
+/// with the others, everywhere it was never put by hand — refused as unpublished where the fork's listing does not name
+/// it, and as unavailable where it names it and the files are not in place.
 fn not_installed(error: &InferenceError) -> bool {
-    matches!(error, InferenceError::Install(init) if matches!(**init, InitError::UnpublishedModel { .. }))
+    matches!(
+        error,
+        InferenceError::Install(init)
+            if matches!(**init, InitError::UnpublishedModel { .. } | InitError::UnavailableModel { .. })
+    )
 }
 
 /// The trimap of `blur`'s subject on `source` and the depth refined to `source` it was drawn on, or why it is not

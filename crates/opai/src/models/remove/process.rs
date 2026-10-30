@@ -8,12 +8,21 @@
 // (`imaging::present`); the hole is reduced by any-coverage rather than nearest, so a thin string is not lost; and the
 // feather is a smoothstep across the band between the grown marks and the hole rather than a Gaussian of the grown marks
 // (see `region::fill_weight`).
+//
+// One departure since (2026-10-31): a fill the model made from a reduced crop is given the photograph's grain, which the
+// reduction and the read-back smoothed away (`grain`). Judged on the fork's bench (`remove/README.md` in its notes):
+// ground truth inside synthetic holes in the background of AIM-500 photographs, and the three prototype cases. Two
+// other ways were measured and parked: the same weights exported at 1024 for large crops (slower by three and a half
+// times, nine gigabytes at its peak, and a worse fill of large holes, a grey haze where the 512 draws the road), and a
+// guided patch synthesis at the photograph's resolution (texture as close as the grain's, for seconds more on a large
+// photograph).
 
 use std::sync::Arc;
 
 use image::{DynamicImage, ImageBuffer, Rgb};
 
 use super::gain_map::{self, Filled};
+use super::grain::{self, Composite};
 use super::lima::{PLANES_IN, PLANES_OUT};
 use super::region::{Bicubic, Marks, Rect, crops, distances, fill_weight, hole_plane, in_hole, regions};
 
@@ -41,6 +50,21 @@ const STEPS_PER_REGION: usize = 3;
 /// over the regions' crops at the gain map's resolution, a small fraction of a model run.
 const COLOUR_SHARE: f64 = 0.95;
 
+/// What a removal does past the model's own fill.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Finish {
+    /// Whether a fill made from a reduced crop is given the photograph's grain.
+    pub(crate) grain: bool,
+}
+
+/// What every removal does.
+pub(crate) const FINISH: Finish = Finish { grain: true };
+
+/// What the bench (`live::bench`) runs in place of [`FINISH`], to compare one with another in a build: never set
+/// outside it.
+#[cfg(test)]
+pub(crate) static BENCH_FINISH: std::sync::Mutex<Option<Finish>> = std::sync::Mutex::new(None);
+
 /// The pipeline running one removal, as the family's contract seam hands it back.
 pub(crate) fn pipeline<B: Backend>(
     name: String,
@@ -48,7 +72,12 @@ pub(crate) fn pipeline<B: Backend>(
     profile: EpProfile,
     mask: Arc<Mask>,
 ) -> Shared<B> {
-    Arc::new(Removal::new(name, artifact, profile, mask, super::lima::SIDE))
+    #[cfg(test)]
+    let finish = BENCH_FINISH.lock().expect("the bench's finish is never held across a panic").unwrap_or(FINISH);
+    #[cfg(not(test))]
+    let finish = FINISH;
+
+    Arc::new(Removal::new(name, artifact, profile, mask, super::lima::SIDE, finish))
 }
 
 /// One removal run: the graph it opens, the square it runs at, and what it takes out.
@@ -59,11 +88,13 @@ struct Removal {
     side: u32,
     /// What to take out.
     mask: Arc<Mask>,
+    /// What is done past the model's fill.
+    finish: Finish,
 }
 
 impl Removal {
-    fn new(name: String, artifact: ArtifactId, profile: EpProfile, mask: Arc<Mask>, side: u32) -> Self {
-        Self { graph: SingleGraph::new(name, artifact, profile), side, mask }
+    fn new(name: String, artifact: ArtifactId, profile: EpProfile, mask: Arc<Mask>, side: u32, finish: Finish) -> Self {
+        Self { graph: SingleGraph::new(name, artifact, profile), side, mask, finish }
     }
 
     /// The tensor the graph is shown for `crop` of `input`, whose distances from the marks are `squared`, and the size
@@ -182,7 +213,22 @@ impl Removal {
             .map_err(InferenceError::run(&self.graph.name, index))?;
             checkpoint(&report, cancelled, at(index, 2))?;
 
-            paste(&mut output, crop, squared, &Bicubic::new(&filled, self.side, scaled, (crop.width, crop.height)));
+            let read = Bicubic::new(&filled, self.side, scaled, (crop.width, crop.height));
+            let mut pixels = composite(&output, crop, squared, &read);
+
+            // The grain only where the model saw the crop reduced: at about its own resolution the model draws the
+            // photograph's grain itself, and the ring's texture would be added again as noise.
+            let reduction = crop.width.max(crop.height) as f32 / scaled.0.max(scaled.1) as f32;
+            if self.finish.grain && reduction >= grain::FROM_REDUCTION {
+                let (width, height) = (crop.width as usize, crop.height as usize);
+                let mut composite = Composite { pixels: &mut pixels, width, height };
+
+                if let Some((photograph, fill)) = grain::grains(&composite, squared) {
+                    grain::matched(&mut composite, squared, (crop.x, crop.y), photograph, fill);
+                }
+            }
+
+            paste(&mut output, crop, squared, &pixels);
             checkpoint(&report, cancelled, at(index, 3))?;
         }
 
@@ -247,24 +293,57 @@ impl<B: Backend> ImagePipeline<B> for Removal {
     }
 }
 
-/// Pastes the fill `read` gives for `crop` into `output`, through the feather its `squared` distances give: the fill
-/// where the marks were grown, mixed across the band to the hole's edge, and nothing beyond it.
-fn paste<T: Channel>(output: &mut ImageBuffer<Rgb<T>, Vec<T>>, crop: Rect, squared: &[u16], read: &Bicubic<'_>)
+/// `crop` of `output`, the photograph, in the unit range, with the fill `read` gives in place over the hole its
+/// `squared` distances describe: what the grain is measured in and matched over before the paste.
+fn composite<T: Channel>(
+    output: &ImageBuffer<Rgb<T>, Vec<T>>,
+    crop: Rect,
+    squared: &[u16],
+    read: &Bicubic<'_>,
+) -> Vec<[f32; 3]>
 where
     Rgb<T>: image::Pixel<Subpixel = T>,
 {
     // Reading the fill only where it is used: a crop four thousand pixels across is read back at the pixels of its
     // hole rather than resized whole. On one thread, since a channel type generic over both depths is not known to
     // cross one; a hole of a fifth of a 24-megapixel photograph is under a fifth of a second of this.
+    let (width, crop_width) = (output.width() as usize, crop.width as usize);
+    let buffer: &[T] = output.as_raw();
+    let mut pixels = Vec::with_capacity(crop_width * crop.height as usize);
+
+    for local in 0..crop.height as usize {
+        let y = crop.y as usize + local;
+        let distances = &squared[local * crop_width..][..crop_width];
+        let row = &buffer[(y * width + crop.x as usize) * 3..][..crop_width * 3];
+
+        for (offset, (squared, pixel)) in distances.iter().zip(row.as_chunks::<3>().0).enumerate() {
+            pixels.push(if in_hole(*squared) {
+                read.rgb(offset as u32, local as u32).map(|fill| RANGE.decode(fill))
+            } else {
+                [pixel[0].to_unit(), pixel[1].to_unit(), pixel[2].to_unit()]
+            });
+        }
+    }
+
+    pixels
+}
+
+/// Pastes `filled`, the composite of `crop`, into `output`, through the feather its `squared` distances give: the fill
+/// where the marks were grown, mixed across the band to the hole's edge, and nothing beyond it.
+fn paste<T: Channel>(output: &mut ImageBuffer<Rgb<T>, Vec<T>>, crop: Rect, squared: &[u16], filled: &[[f32; 3]])
+where
+    Rgb<T>: image::Pixel<Subpixel = T>,
+{
     let width = output.width() as usize;
     let buffer: &mut [T] = output.as_mut();
 
     for local in 0..crop.height as usize {
         let y = crop.y as usize + local;
         let distances = &squared[local * crop.width as usize..][..crop.width as usize];
+        let fills = &filled[local * crop.width as usize..][..crop.width as usize];
         let row = &mut buffer[y * width * 3..(y + 1) * width * 3];
 
-        for (offset, squared) in distances.iter().enumerate() {
+        for (offset, (squared, fill)) in distances.iter().zip(fills).enumerate() {
             if !in_hole(*squared) {
                 continue;
             }
@@ -274,12 +353,12 @@ where
                 continue;
             }
 
-            let fill = read.rgb(offset as u32, local as u32);
             let column = crop.x as usize + offset;
             let pixel = &mut row[column * 3..column * 3 + 3];
 
             for (channel, fill) in pixel.iter_mut().zip(fill) {
-                let fill = RANGE.decode(fill);
+                // Clamped before the mix: noise added to a fill at the range's edge must not reach past it.
+                let fill = fill.clamp(0.0, 1.0);
 
                 // Exactly the fill where the weight is whole, rather than the photograph plus a difference that rounds.
                 *channel = if weight >= 1.0 {
@@ -393,7 +472,7 @@ mod tests {
     /// The removal pipeline at [`SMALL`], over `mask`, named as Lima's own seam would name it.
     fn removing(mask: Arc<Mask>) -> Shared<Fake> {
         let removal = Remove::new(RemoveVariant::Lima(FloatPrecision::Fp32), Arc::clone(&mask));
-        Arc::new(Removal::new(removal.display_name(), removal.artifact(), removal.profile(), mask, SMALL))
+        Arc::new(Removal::new(removal.display_name(), removal.artifact(), removal.profile(), mask, SMALL, FINISH))
     }
 
     /// A photograph of a gradient, so no two neighbouring pixels are alike.
@@ -477,6 +556,66 @@ mod tests {
         assert!(hole.iter().all(|value| *value == 0.0 || *value == 1.0));
         assert!(hole.contains(&1.0) && hole[0] == 0.0, "{hole:?}");
         assert!(tensor[..3 * side * side].iter().all(|value| (0.0..=1.0).contains(value)));
+    }
+
+    #[test]
+    fn grain_is_matched_in_a_fill_the_model_made_from_a_reduced_crop_and_nowhere_else() {
+        // A grainy grey photograph, a hole in it whose crop (the whole 300 x 240 frame) is reduced to the square, and a
+        // fill as flat as the fake's.
+        let (width, height) = (300, 240);
+        let grain = |x: u32, y: u32| {
+            let hashed = (x.wrapping_mul(2_654_435_761) ^ y.wrapping_mul(2_246_822_519)).rotate_left(13);
+            (hashed % 21) as u8
+        };
+        let source = DynamicImage::ImageRgb8(ImageBuffer::from_fn(width, height, |x, y| Rgb([118 + grain(x, y); 3])));
+        let marked = rect(130, 100, 40, 40);
+        let (handle, _) = session();
+
+        let produced = removing(mask(width, height, &[marked]))
+            .run(&source, std::slice::from_ref(&handle), ChannelDepth::Eight, None, &|| false)
+            .unwrap()
+            .into_rgb8();
+
+        // Inside the marks the fill is green, with grain: its green channel is not all one level, though it is close.
+        let greens: Vec<u8> = (marked.y..marked.bottom())
+            .flat_map(|y| (marked.x..marked.right()).map(move |x| (x, y)))
+            .map(|(x, y)| produced.get_pixel(x, y).0[1])
+            .collect();
+        let (low, high) = (greens.iter().min().unwrap(), greens.iter().max().unwrap());
+        assert!(*low < 250 && *high == 255, "the fill was given no grain: {low} to {high}");
+
+        // Past the hole the photograph is as it was.
+        let source = source.into_rgb8();
+        assert_eq!(produced.get_pixel(5, 5), source.get_pixel(5, 5));
+        assert_eq!(produced.get_pixel(150, 100 - 17), source.get_pixel(150, 100 - 17));
+    }
+
+    #[test]
+    fn a_fill_the_model_made_at_about_the_crops_own_resolution_is_given_no_grain() {
+        // The same grainy photograph and hole, on a square as large as the crop: the fill is the fake's, flat.
+        let (width, height) = (300, 240);
+        let source = DynamicImage::ImageRgb8(ImageBuffer::from_fn(width, height, |x, y| {
+            Rgb([118 + ((x * 7 + y * 13) % 21) as u8; 3])
+        }));
+        let marked = rect(130, 100, 40, 40);
+        let removal = Remove::new(RemoveVariant::Lima(FloatPrecision::Fp32), mask(width, height, &[marked]));
+        let pipeline: Shared<Fake> = Arc::new(Removal::new(
+            removal.display_name(),
+            removal.artifact(),
+            removal.profile(),
+            Arc::clone(removal.mask()),
+            width,
+            FINISH,
+        ));
+        let (handle, _) = session();
+
+        let produced = pipeline
+            .run(&source, std::slice::from_ref(&handle), ChannelDepth::Eight, None, &|| false)
+            .unwrap()
+            .into_rgb8();
+
+        assert_eq!(produced.get_pixel(150, 120).0, [0, 255, 0]);
+        assert_eq!(produced.get_pixel(131, 139).0, [0, 255, 0]);
     }
 
     #[test]

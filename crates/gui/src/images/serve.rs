@@ -444,8 +444,20 @@ fn produce<R: tauri::Runtime>(app: &AppHandle<R>, asked: &Asked) -> Result<Rendi
     };
 
     // A refusal drops the guard on the way out, which releases the claim and wakes whatever was waiting on it.
+    let started = std::time::Instant::now();
     let rendition = render(pixels, asked)?;
     producing.keep(&rendition);
+
+    // `info`, at most once per photograph, bound and framing (a hit above writes nothing): what a click costs before
+    // the canvas can draw is a decode, an encode and a webview decode, and this is the half the window cannot time.
+    tracing::info!(
+        identity = %asked.identity,
+        bound = asked.bound,
+        cropped = asked.crop.is_some(),
+        bytes = rendition.bytes.len(),
+        duration = ?started.elapsed(),
+        "rendition produced"
+    );
 
     Ok(rendition)
 }
@@ -732,6 +744,20 @@ mod tests {
             Some(10)
         );
         assert_eq!(asked("opai://localhost/cafebabecafebabe?precrop=nonsense").map(|r| r.crop), Some(None));
+    }
+
+    #[test]
+    fn the_run_an_enhanced_address_names_is_for_the_webview_and_changes_nothing_served() {
+        // `resultUrl` in `frontend/ipc/images.ts` names the run beside the identity, so the same result from a later run
+        // is a new address the webview loads afresh. What is served, and what `Renditions` keys on, is the identity alone.
+        assert_eq!(
+            asked("opai://localhost/cafebabecafebabe?run=9e985ju3-3"),
+            asked("opai://localhost/cafebabecafebabe"),
+        );
+        assert_eq!(
+            asked("http://opai.localhost/cafebabecafebabe?run=9e985ju3-3"),
+            asked("opai://localhost/cafebabecafebabe"),
+        );
     }
 
     // ── The downscale ─────────────────────────────────────────────────────────────────────────────────────────────

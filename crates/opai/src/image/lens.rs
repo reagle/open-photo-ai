@@ -86,7 +86,7 @@ pub fn read_lens(path: &Path) -> LensExif {
 }
 
 /// The lens `exif` records, every field bounded.
-fn lens_of(exif: &exif::Exif) -> LensExif {
+pub(super) fn lens_of(exif: &exif::Exif) -> LensExif {
     let number = |tag| exif.get_field(tag, In::PRIMARY).and_then(|field| first_number(&field.value));
 
     // `PixelXDimension` and `PixelYDimension` only: the first directory's `ImageWidth` is often a RAW's embedded

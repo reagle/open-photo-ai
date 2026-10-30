@@ -97,7 +97,7 @@ mod live;
 mod resident;
 
 pub(crate) use flight::{Install, Interest, OnPreparing};
-use resident::spawn_sweeper;
+use resident::{Residency, spawn_sweeper};
 pub(crate) use resident::{SessionCache, SessionHandle};
 
 use std::future::Future;
@@ -397,8 +397,10 @@ impl<S: Send + 'static> Sessions<S> {
         // key would make an explicit switch to the CPU build a second identical copy of it.
         let (requested, resolved) = (rung.requested, rung.resolved());
 
+        let residency = if profile.release_after_use { Residency::UntilUnused } else { Residency::Resident };
+
         self.cache
-            .get_or_build(artifact, requested, resolved, interest, |installing| -> BuildFuture<'_, S> {
+            .get_or_build_as(artifact, requested, resolved, residency, interest, |installing| -> BuildFuture<'_, S> {
                 Box::pin(async move {
                     // The flight's install rather than this request's: it is performed inside the single flight, so what
                     // it reports goes to every request waiting on that flight, and what stops it is all of them leaving

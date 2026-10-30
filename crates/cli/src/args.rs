@@ -137,8 +137,9 @@ pub struct Args {
     #[arg(help_heading = "Output", long)]
     pub verbose: bool,
 
-    /// Open the photographs in Open Photo AI instead of processing them. With --lens-blur, each opens with a Lens Blur
-    /// at --lb-f, --lb-amount and --lb-focus and with Autopilot switched off; other options are ignored.
+    /// Open the photographs in Open Photo AI instead of processing them. With --sharpen, each opens with a Sharpen of
+    /// that model at --sh-str, and with --lens-blur, with a Lens Blur at --lb-f, --lb-amount and --lb-focus; either
+    /// switches Autopilot off. Other options are ignored.
     #[arg(help_heading = "Options", long)]
     pub gui: bool,
 
@@ -737,13 +738,16 @@ where
 }
 
 /// The arguments, by clap id, that `--gui` is never warned about: the inputs and `--recursive`, which choose what it
-/// opens, `--gui` itself, and the lens blur it asks the application to add. Every other argument is warned about when
-/// given, so an option added later is covered without being listed; one `--gui` should accept silently is added here.
+/// opens, `--gui` itself, and the sharpen and lens blur it asks the application to add. Every other argument is warned
+/// about when given, so an option added later is covered without being listed; one `--gui` should accept silently is
+/// added here.
 const NOT_IGNORED_BY_GUI: &[&str] = &[
     "inputs",
     "recursive",
     "gui",
     "verbose",
+    "sharpen",
+    "sharpen_strength",
     "lens_blur",
     "lens_blur_f",
     "lens_blur_amount",
@@ -1699,6 +1703,19 @@ mod tests {
         let args = parse("opai a.jpg --gui --lb --lb-amount 80 --lb-edges depth").expect("parses");
         assert_eq!(args.ignored, ["--lb-edges"]);
         assert_eq!(args.selection.lens_blur_amount, Some(80.0));
+    }
+
+    #[test]
+    fn gui_takes_a_sharpen_with_its_strength_but_not_a_quality() {
+        let args = parse("opai a.jpg --gui --sh novgorod --sh-str 150 --lb").expect("parses");
+
+        assert!(args.ignored.is_empty(), "{:?}", args.ignored);
+        assert_eq!(args.selection.sharpen, Some(SharpenModel::Novgorod));
+        assert_eq!(args.selection.sharpen_strength, Some(150));
+
+        let args = parse("opai a.jpg --gui --sharpen -q sd").expect("parses");
+        assert_eq!(args.ignored, ["--quality"]);
+        assert_eq!(args.selection.sharpen, Some(SharpenModel::Moscow));
     }
 
     #[test]

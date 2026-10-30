@@ -1,10 +1,32 @@
-//! Moscow: a Restormer sharpener a front end offers first — the execution-provider profile measured for it. The
-//! sharpening it runs is the shared [`filter`](crate::models::filter), with no guard.
+//! Moscow: a Restormer sharpener a front end offers first — the anchor its tiles are held by and the
+//! execution-provider profile measured for it. The sharpening it runs is the shared
+//! [`filter`](crate::models::filter), with no guard.
 
 // Deleting the model is deleting this directory plus the arms in `SharpenVariant` that name it.
 
+use crate::models::filter::Anchor;
 use crate::models::precision::Precision;
 use crate::providers::profile::{EpProfile, cpu_and_gpu_at_fp16};
+
+// Moscow's tiles are held to their input's local brightness because they are not, on their own. A Restormer normalises
+// and attends over the whole tile it is shown, so what it does to a tile's brightness depends on everything in the
+// tile: over the same sky one tile comes out three grey levels brighter than its neighbour, and each tile is a flat
+// patch meeting the next across the 16-pixel ramp, a grid at the 240-pixel tile step. Measured at the default strength
+// over a synthetic 3000x2000 gradient with fine grain and three AIM-500 photographs with large flat areas, at FP16 and
+// FP32 alike: a step at every seam of 0.4 to 1.4 grey levels on average and 0.8 to 3.3 at the 90th percentile, against
+// 0.1 to 0.6 across the middle of a tile, with tiles up to 11 levels apart; and the photograph as a whole up to 7
+// levels brighter. No smaller period was found: no checkerboard, nothing at 2, 4, 8 or 16 pixels above 0.06 of a
+// level.
+//
+// The anchor takes the steps to 0.04 to 0.09 on average and at most 0.3 at the 90th percentile, and it takes the
+// brightening with them, which was never the photograph's. What it costs is the coarsest part of what the model
+// changes: over two of the photographs, all of its change finer than 4 pixels is kept and 86% to 88% of its change
+// between 4 and 12. A wider box keeps more of that and less of the fix: at 24, 92% to 93%, with steps reaching 0.5 at
+// the 90th percentile; at 48, 1.4. A narrower one, 8, keeps 65% to 68%. Measured cost: a tenth of a second on a
+// 17-second 6-megapixel run, within run-to-run spread. Moscow paints no low-frequency texture of its own over a flat
+// area (its change between 16 and 64 pixels is under a tenth of a level), so nothing finer is needed.
+/// How Moscow's tiles are held to their input's local brightness: a box 16 pixels in radius, twice.
+pub(crate) const ANCHOR: Anchor = Anchor { radius: 16 };
 
 /// The execution-provider tuning measured for this model, at the precision it carries: CoreML off the Neural Engine
 /// at FP16, and the provider defaults at FP32.
@@ -124,6 +146,17 @@ mod tests {
 
     use crate::models::precision::FloatPrecision;
     use crate::models::sharpen::SharpenVariant;
+
+    #[test]
+    fn moscow_is_anchored_at_the_measured_radius() {
+        // Pinned as a literal, for the reason `ANCHOR` gives: the radius is measured, and nothing else would notice it
+        // moving.
+        assert_eq!(ANCHOR, Anchor { radius: 16 });
+
+        for precision in FloatPrecision::ALL {
+            assert_eq!(SharpenVariant::Moscow(precision).anchor(), Some(ANCHOR), "{precision:?}");
+        }
+    }
 
     #[test]
     fn moscow_adds_its_webgpu_nodes_to_the_shared_fp16_profile() {

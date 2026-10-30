@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "Não disponível nesta instalação",
+        "unavailableLabel": "{{model}} (não disponível)"
     },
     "settings": {
         "title": "Configurações",
@@ -60,6 +62,10 @@
             "analytics": {
                 "title": "Análise de uso",
                 "description": "Enviar dados de uso anônimos. Imagens ou dados pessoais nunca são coletados."
+            },
+            "askBeforePause": {
+                "title": "Perguntar antes de pausar um lote",
+                "description": "Ao escolher outra foto enquanto um lote é processado, perguntar antes. Desativado, pausa o lote e mostra a foto."
             }
         },
         "performance": {
@@ -143,7 +149,8 @@
                 "openOptions7": "Opções da melhoria 7",
                 "openOptions8": "Opções da melhoria 8",
                 "cropRotate": "Recortar/Girar",
-                "showShortcuts": "Mostrar atalhos de teclado"
+                "showShortcuts": "Mostrar atalhos de teclado",
+                "toggleInfo": "Mostrar ou ocultar as informações da foto"
             },
             "add": "Adicionar atalho",
             "addLabel": "Adicionar atalho para {{action}}",
@@ -210,6 +217,12 @@
             "full": "Completa",
             "sideBySide": "Lado a lado",
             "split": "Dividida"
+        },
+        "badge": {
+            "queued": "A aguardar melhoria",
+            "processing": "A melhorar",
+            "done": "Melhorada",
+            "failed": "A melhoria falhou"
         }
     },
     "faces": {
@@ -557,7 +570,25 @@
             "loading": "Carregando o modelo {{model}}",
             "firstUse": "Só no primeiro uso, pode levar alguns minutos",
             "firstUseAbout_one": "Só no primeiro uso, pode levar cerca de {{count}} minuto",
-            "firstUseAbout_other": "Só no primeiro uso, pode levar cerca de {{count}} minutos"
+            "firstUseAbout_other": "Só no primeiro uso, pode levar cerca de {{count}} minutos",
+            "waiting": "Aguardando…"
+        },
+        "info": {
+            "title": "Informações da foto",
+            "equivalent": "{{value}} mm equiv.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm equiv. (corte)",
+            "simulated": "{{value}} simulado",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "Mapa de ganho HDR",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Local registado",
+            "edits": "Edições",
+            "blurredEarlier": "Desfoque de lente já aplicado ({{value}} simulado)",
+            "enhancedEarlier": "Já melhorada com o Open Photo AI"
         }
     },
     "menu": {
@@ -612,7 +643,9 @@
             "title": "Algo deu errado",
             "message": "O Open Photo AI encontrou um erro inesperado e não pode continuar. Recarregar normalmente resolve; suas configurações são mantidas, mas qualquer trabalho não salvo nesta sessão será perdido.",
             "reload": "Recarregar"
-        }
+        },
+        "modelUnavailable": "{{model}} ({{precision}}) não está disponível nesta instalação; use {{alternative}}.",
+        "modelUnavailableAlone": "{{model}} ({{precision}}) não está disponível nesta instalação."
     },
     "shortcuts": {
         "title": "Atalhos de teclado",
@@ -631,6 +664,36 @@
             "pan": "Mover",
             "images": "Imagem anterior / Próxima imagem",
             "options": "Opções da melhoria 1–8"
+        }
+    },
+    "batch": {
+        "processing": "A processar {{current}} de {{total}}",
+        "pause": "Pausar",
+        "paused": "Em pausa — faltam {{left}}",
+        "resume": "Retomar",
+        "processAll": "Processar todas ({{count}})",
+        "exportHeld": "A exportação fica disponível quando o processamento estiver em pausa ou terminado",
+        "finished_one": "{{count}} fotografia processada",
+        "finished_other": "{{count}} fotografias processadas",
+        "finishedWithFailures_one": "{{count}} fotografia processada, {{failed}} falharam",
+        "finishedWithFailures_other": "{{count}} fotografias processadas, {{failed}} falharam",
+        "done": "Concluído — {{processed}} processadas",
+        "doneWithFailures": "Concluído — {{processed}} processadas ({{failed}} com falha)",
+        "list": {
+            "title": "Fotos deste lote"
+        },
+        "state": {
+            "done": "Concluída",
+            "processing": "Processando",
+            "pending": "Pendente",
+            "failed": "Falhou"
+        },
+        "ask": {
+            "title": "Pausar o processamento e ver esta fotografia?",
+            "body": "O processamento para onde está. Retome-o mais tarde para continuar com as fotografias que faltam.",
+            "pause": "Pausar e ver",
+            "keep": "Continuar a processar",
+            "dontAsk": "Não perguntar novamente"
         }
     }
 }

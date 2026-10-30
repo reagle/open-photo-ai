@@ -2,6 +2,7 @@ import { act, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EnhancementRun } from "@/hooks/useEnhancementRun";
 import { useShortcuts } from "@/hooks/useShortcuts";
+import { useStandIn } from "@/hooks/useStandIn";
 import "@/i18n";
 import type { Family } from "@/ipc/catalogue";
 import { cropQuery } from "@/ipc/crop";
@@ -19,6 +20,7 @@ import { usePreviewStore } from "@/stores/preview";
 import { type ImageTransform, panCurrent, useTransformStore } from "@/stores/transform";
 import { FRAMING, frame, HOLIDAY, openFiles, render, resetCropStore, resetFileStore, SUNSET } from "@/test/support";
 import { PreviewImage } from "./PreviewImage";
+import { SERVED_GRACE_MS } from "./ProgressBar";
 
 // `convertFileSrc` reads a global Tauri's init script installs, which jsdom has none of. Mocked to
 // answer the identity it was asked for, so a test can tell which photograph a pane is drawing without
@@ -34,6 +36,18 @@ vi.mock("@tauri-apps/api/core", () => ({
 // The tint over a mask being painted asks Rust for its picture; what it does with the answer is
 // `MaskOverlay.test.tsx`'s subject, and here only that it is drawn, or not, over the pane it should be.
 vi.mock("@/ipc/mask", () => ({ maskPreview: vi.fn(() => new Promise(() => {})) }));
+
+// The stand-in's stages are `hooks/useStandIn.test.tsx`'s; here it answers the photograph at its own size, so a pane's
+// URL says which photograph and which framing it draws and nothing about how far its decodes have got.
+vi.mock("@/hooks/useStandIn", async () => {
+    const { renditionFor } = await import("@/ipc/images");
+
+    return {
+        useStandIn: vi.fn((file: Parameters<typeof renditionFor>[0], crop: Parameters<typeof renditionFor>[2]) =>
+            renditionFor(file, 0, crop),
+        ),
+    };
+});
 
 // The run itself is `hooks/useEnhancementRun.test.tsx`'s subject - what it asks for, what it stops
 // and what it does with the answers. Mocked here so this file stays about what the canvas *draws*
@@ -52,7 +66,7 @@ vi.mock("@/hooks/useEnhancementRun", () => ({
 let run: Partial<EnhancementRun> = { running: false };
 
 /** The result of a run, as the hook reports one. A 2x enlargement of HOLIDAY's 3000x2000. */
-const ENHANCED = { identity: "fedcba9876543210", width: 6000, height: 4000 };
+const ENHANCED = { identity: "fedcba9876543210", width: 6000, height: 4000, run: "run-7" };
 
 /** One report about a run in flight. */
 const progress = (extra: Partial<RunProgress> = {}): RunProgress => ({
@@ -193,12 +207,14 @@ describe("the canvas", () => {
         }
     });
 
-    it("asks for the photograph at its own size, with no bound", () => {
+    it("asks the stand-in for the photograph at its own size once it is magnified", () => {
         draw("full");
+        expect(vi.mocked(useStandIn).mock.lastCall?.[2]).toBe(false);
 
-        // `renditionUrl(identity)` rather than a canvas-sized rendition: the zoom a later slice adds
-        // goes to 8x, and a bounded rendition would be an eight-times-magnified thumbnail.
-        expect(sources()[0]).not.toContain("size=");
+        magnify({ scale: 2, x: 0, y: 0 });
+
+        // A screen-sized rendition magnified 8x would be an eight-times-magnified thumbnail.
+        expect(vi.mocked(useStandIn).mock.lastCall?.[2]).toBe(true);
     });
 
     it("asks for the framing when the current image carries one", () => {
@@ -233,7 +249,7 @@ describe("the canvas", () => {
         const [original, enhanced] = sources();
 
         expect(original).toContain(`crop=${cropQuery(FRAMING)}`);
-        expect(enhanced).toBe(`opai://localhost/${ENHANCED.identity}`);
+        expect(enhanced).toBe(`opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`);
     });
 
     it("draws nothing rather than the wrong pixels for a file it could not read", () => {
@@ -866,7 +882,10 @@ describe("what the enhanced pane draws", () => {
 
         // Which is what makes the two-pane and split comparisons show a comparison for the first
         // time: the original pane goes on drawing the photograph as it was.
-        expect(sources()).toEqual([`opai://localhost/${HOLIDAY.identity}`, `opai://localhost/${ENHANCED.identity}`]);
+        expect(sources()).toEqual([
+            `opai://localhost/${HOLIDAY.identity}`,
+            `opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`,
+        ]);
     });
 
     it("draws the result across the whole canvas in full", () => {
@@ -874,7 +893,7 @@ describe("what the enhanced pane draws", () => {
 
         draw("full");
 
-        expect(sources()).toEqual([`opai://localhost/${ENHANCED.identity}`]);
+        expect(sources()).toEqual([`opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`]);
     });
 
     it("moves both panes together although they draw different pixels", () => {
@@ -895,7 +914,7 @@ describe("what the enhanced pane draws", () => {
         run = { running: false, enhanced: ENHANCED };
         const view = draw("side");
 
-        expect(sources()[1]).toBe(`opai://localhost/${ENHANCED.identity}`);
+        expect(sources()[1]).toBe(`opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`);
 
         run = { running: false };
         view.rerender(<PreviewImage />);
@@ -967,7 +986,7 @@ describe("while the original is held", () => {
     const labels = () => [...document.querySelectorAll("[data-slot='preview-chip']")].map((chip) => chip.textContent);
     const hold = (showing: boolean) => act(() => usePeekStore.getState().setShowingOriginal(showing));
     const SOURCE = `opai://localhost/${HOLIDAY.identity}`;
-    const RESULT = `opai://localhost/${ENHANCED.identity}`;
+    const RESULT = `opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`;
 
     beforeEach(() => {
         run = { running: false, enhanced: ENHANCED };
@@ -1034,16 +1053,24 @@ describe("what the canvas reports about a run", () => {
         expect(bar()).toBeNull();
     });
 
-    it("shows an empty bar as soon as a run starts, before it has reported", () => {
+    it("says it is waiting, over a sweeping bar, moments after a run starts and before it has reported", () => {
+        vi.useFakeTimers();
         run = { running: true };
 
         draw("side");
 
+        // Not at once: a photograph the run cache already holds is served in tens of milliseconds, and a bar
+        // flashed for it reads as work that never happened.
+        expect(bar()).toBeNull();
+
+        act(() => vi.advanceTimersByTime(SERVED_GRACE_MS));
+
         // A run spends its first seconds loading a model and reports nothing while it does. Waiting
-        // for the first report put the bar on screen long after the enhancement was added, and the
-        // interval in between read as the application having ignored it.
-        expect(bar()).toHaveTextContent("Enhancing");
-        expect(filled()).toHaveStyle({ transform: "translateX(-100%)" });
+        // for the first report put the bar on screen long after the enhancement was added; a bar
+        // standing at 0% then read as a stall. Neither says what is true: the run has not spoken yet.
+        expect(bar()).toHaveTextContent("Waiting…");
+        expect(bar()?.querySelector("[role='progressbar']")).not.toHaveAttribute("aria-valuenow");
+        vi.useRealTimers();
     });
 
     it("says what the enhancement being run is doing, in the interface's own language", () => {
@@ -1174,7 +1201,7 @@ describe("the faces in the photograph on the canvas", () => {
 
         draw("side");
 
-        expect(sources()).toContain(`opai://localhost/${ENHANCED.identity}`);
+        expect(sources()).toContain(`opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`);
         expect(boxes()).toHaveLength(0);
     });
 });

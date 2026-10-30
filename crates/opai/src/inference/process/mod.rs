@@ -50,7 +50,7 @@ use crate::image::{GainMap, Picture};
 use crate::mask::Mask;
 use crate::models::remove::RemovedAt;
 use crate::models::{Depth, DepthMap, Detection, Faces, Family, Matte, Matting, Operation, Remove};
-use crate::pipeline::{Backend, Shared};
+use crate::pipeline::{Backend, Shared, session};
 use crate::providers::ExecutionProvider;
 use crate::sessions::SessionHandle;
 use crate::task::spawn_blocking;
@@ -469,7 +469,13 @@ where
         (Some(mask), _) => identity_masked(&identity_after(source.identity(), operations, depth), mask.signature()),
         (None, _) => identity_after(source.identity(), operations, depth),
     };
-    let picture = source.derive(pixels, named).with_shared_gain_map(gain_map);
+    // The record of what was done goes on beside the pixels: the chain, whether a mask limited it, and the growth of an
+    // upscale as a scale of the frame — what an export rewrites the subject's position and the focal plane by.
+    let edits =
+        source
+            .edits()
+            .after(operations, limiting.is_some(), source.dimensions(), (pixels.width(), pixels.height()));
+    let picture = source.derive(pixels, named).with_shared_gain_map(gain_map).with_edits(edits);
 
     Ok(Enhanced { picture, providers, faces, matte })
 }
@@ -1104,11 +1110,16 @@ pub(crate) async fn run<B: Backend>(
                     // so the store's writer and the rest of the chain hold one buffer rather than two. A stop is the
                     // step's wherever it came from; any other failure of the gain map is the gain map's alone, settled
                     // below.
-                    let produced = match &map {
+                    //
+                    // Terminable: a stop lands inside the graph rather than after it (`session::terminable`). A
+                    // terminated run fails as a model would, so its failure — the gain map's included, which would
+                    // otherwise be stored as that map's reason — is made the stop it was before anything reads it.
+                    let (produced, terminated) = session::terminable(&cancelled, || match &map {
                         Some(map) => pipeline.run_with_gain_map(&input, map, &sessions, depth, report, &stopped),
                         None => pipeline.run(&input, &sessions, depth, report, &stopped).map(|image| (image, None)),
-                    };
-                    let produced = match produced {
+                    });
+                    let produced = match session::settled(produced, terminated) {
+                        Ok((_, Some(Err(_)))) if terminated => Err(InferenceError::Cancelled),
                         Ok((_, Some(Err(error)))) if error.stop_reason().is_some() => Err(error),
                         produced => produced.map(|(image, rewritten)| (Arc::new(image), rewritten)),
                     };

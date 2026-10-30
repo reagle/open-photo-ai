@@ -15,9 +15,18 @@
 // guarantee the compiler keeps for a driver that allocates its scratch at exactly the tile shape, and a parameter is a
 // guarantee a caller can get wrong. Four contracts, four functions.
 
-use ort::session::Session;
-use ort::value::TensorRef;
+use std::cell::RefCell;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::thread::JoinHandle;
+use std::time::Duration;
 
+use ort::session::{RunOptions, Session};
+use ort::value::TensorRef;
+use tokio_util::sync::CancellationToken;
+
+use crate::error::InferenceError;
 use crate::sessions::SessionHandle;
 
 // Stated rather than inferred, which is the whole of what `run_graph` adds over `run_tile`: a latent-space graph takes
@@ -72,10 +81,14 @@ pub(crate) fn run_tile(handle: &SessionHandle<Session>, input: &[f32], output: &
     // of the first — minutes. Per tile it interleaves them at tile granularity, for one uncontended lock of tens of
     // nanoseconds against hundreds of milliseconds of work.
     let mut session = handle.session();
+    let stop = armed();
     // The graph's tensor names are deliberately not spelled. `Session::run` with positional inputs uses the session's
     // own declared names, so a conventionally exported graph — one tensor in, one out, which is every fixed-shape
     // model this project ships — needs no name here, and a graph that declared something else still runs.
-    let outputs = session.run(ort::inputs![tensor])?;
+    let outputs = match &stop {
+        Some(options) => session.run_with_options(ort::inputs![tensor], options)?,
+        None => session.run(ort::inputs![tensor])?,
+    };
 
     // Positionally, and without panicking on a graph that declared no output: `SessionOutputs`' own indexing
     // panics there, and a malformed graph is a message rather than a crash on a user's machine.
@@ -125,7 +138,11 @@ pub(crate) fn run_graph(
     let tensor = TensorRef::from_array_view((input_shape.dims(), input))?;
 
     let mut session = handle.session();
-    let outputs = session.run(ort::inputs![tensor])?;
+    let stop = armed();
+    let outputs = match &stop {
+        Some(options) => session.run_with_options(ort::inputs![tensor], options)?,
+        None => session.run(ort::inputs![tensor])?,
+    };
 
     accept_first(&outputs, output, output_shape)
 }
@@ -172,7 +189,11 @@ pub(crate) fn run_weighted(
     // shape error on its first run rather than producing a plausible wrong answer. Naming them would buy nothing and
     // would instead make this call fail on a graph that declared its inputs under names other than the ones this
     // crate spelled — which is the argument `run_tile` and `run_graph` already make.
-    let outputs = session.run(ort::inputs![tensor, weight])?;
+    let stop = armed();
+    let outputs = match &stop {
+        Some(options) => session.run_with_options(ort::inputs![tensor, weight], options)?,
+        None => session.run(ort::inputs![tensor, weight])?,
+    };
 
     accept_first(&outputs, output, output_shape)
 }
@@ -240,7 +261,11 @@ pub(crate) fn run_named_outputs(
 
     let mut session = handle.session();
     // The input is still positional, because there is still exactly one of it.
-    let produced = session.run(ort::inputs![tensor])?;
+    let stop = armed();
+    let produced = match &stop {
+        Some(options) => session.run_with_options(ort::inputs![tensor], options)?,
+        None => session.run(ort::inputs![tensor])?,
+    };
 
     // Every named tensor extracted before anything is written, so that a graph missing the third one leaves the first
     // two untouched — the guarantee `accept_named` is written for, which a write-as-you-go loop could not give.
@@ -257,6 +282,135 @@ pub(crate) fn run_named_outputs(
     // Converted here rather than raised here, so that a caller of this seam sees one error type and the
     // disagreement itself stays checkable without a runtime.
     accept_named(outputs, &extracted).map_err(|error| ort::Error::new(error.to_string()))
+}
+
+// **Stopping a graph while it runs.** A stop used to be honoured only between graphs: at a tile boundary, or at a
+// pipeline's own checkpoints. One graph is one uninterruptible call into the runtime — Bilbao's is 6 s on an idle
+// machine and was measured at up to 100 s on a busy one — so a window that paged away from a photograph waited that
+// long for the run it displaced to notice, and the run computed beside the next one meanwhile. ONNX Runtime has the
+// answer: a `RunOptions` whose terminate flag, set from any thread, makes the `Run` in flight return an error at its
+// next node (on Core ML a fused partition is one node). So every graph call above runs with the options of the
+// `terminable` scope it is in, and a watcher thread sets the flag the moment the run's token is cancelled.
+//
+// A thread-local rather than a parameter: the four helpers are reached through `Backend`'s associated functions from
+// every driver and every pipeline, and none of them needs to know about stopping — the scope is opened once, where a
+// run is handed to its blocking thread (`execute`'s analysis and the chain's step), and everything the run does on that
+// thread inherits it. The options are made at the first graph call rather than when the scope opens, so a run whose
+// backend is a fake — every suite in this crate — never touches the runtime at all.
+
+/// How often the watcher looks at a run's token. Short against a node and long against nothing: a stop lands within
+/// this plus one node, and the watcher costs one wake-up per interval for the length of the run.
+const WATCH_EVERY: Duration = Duration::from_millis(20);
+
+thread_local! {
+    /// The `terminable` scope this thread is running in, if any.
+    static SCOPE: RefCell<Option<Scope>> = const { RefCell::new(None) };
+}
+
+/// What one `terminable` scope holds: the run's token, whether the watcher has stopped its graphs, and — once a graph
+/// has been run — the options every graph call is run with and the watcher that terminates them.
+struct Scope {
+    cancel: CancellationToken,
+    fired: Arc<AtomicBool>,
+    armed: Option<(Arc<RunOptions>, Watcher)>,
+}
+
+/// The options this thread's graph calls run with, made (and the watcher started) on the scope's first call.
+///
+/// `None` outside a scope, and where the runtime could not make the options or the thread could not be started: the
+/// graph then runs as it always did, stoppable only at its pipeline's checkpoints.
+fn armed() -> Option<Arc<RunOptions>> {
+    SCOPE.with_borrow_mut(|scope| {
+        let scope = scope.as_mut()?;
+        if scope.armed.is_none() {
+            let options = Arc::new(RunOptions::new().ok()?);
+            let terminating = Arc::clone(&options);
+            let watcher = Watcher::spawn(scope.cancel.clone(), Arc::clone(&scope.fired), move || {
+                // An error here is the runtime declining to set a flag; the run then stops at its next checkpoint.
+                let _ = terminating.terminate();
+            })?;
+            scope.armed = Some((options, watcher));
+        }
+
+        scope.armed.as_ref().map(|(options, _)| Arc::clone(options))
+    })
+}
+
+/// Runs `work` on this thread with every graph it runs **terminated** as soon as `cancel` is cancelled, and says
+/// whether that happened.
+///
+/// A terminated graph returns an error that reads like any other failure of the model, so the caller passes what
+/// `work` returned through [`settled`], which makes it the stop it was: otherwise a stopped run would be reported as a
+/// broken model, and an `Auto` request would decline its accelerator for good over it.
+pub(crate) fn terminable<T>(cancel: &CancellationToken, work: impl FnOnce() -> T) -> (T, bool) {
+    // Restored on the way out, including by an unwind, so a panic in one run cannot leave the next run on this pooled
+    // thread inside its scope.
+    struct Restore(Option<Scope>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            // The watcher is joined as the scope drops, which is after the last graph call has returned.
+            let _ = SCOPE.replace(self.0.take());
+        }
+    }
+
+    let fired = Arc::new(AtomicBool::new(false));
+    let opened = Scope { cancel: cancel.clone(), fired: Arc::clone(&fired), armed: None };
+    let restore = Restore(SCOPE.replace(Some(opened)));
+    let produced = work();
+    drop(restore);
+
+    (produced, fired.load(Ordering::Acquire))
+}
+
+/// What a `terminable` run's result is once its graphs may have been terminated: any failure of a run whose graphs
+/// were stopped is that stop, and a result that was finished is kept whatever arrived afterwards.
+///
+/// Kept, because the flag can be set after the last graph has returned — Bilbao has a sigmoid left to do — and that
+/// matte is finished work the run cache can still store.
+pub(crate) fn settled<T>(produced: Result<T, InferenceError>, terminated: bool) -> Result<T, InferenceError> {
+    match produced {
+        Err(_) if terminated => Err(InferenceError::Cancelled),
+        produced => produced,
+    }
+}
+
+/// A thread that calls `stop` once, when a token is cancelled, unless it is dropped first.
+///
+/// Polled with `recv_timeout` rather than awaited: the run is on a blocking thread with no runtime to await on, and the
+/// channel is what ends the wait at once when the run finishes.
+struct Watcher {
+    done: Option<mpsc::Sender<()>>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Watcher {
+    /// Starts watching `cancel`, or `None` where the thread could not be started.
+    fn spawn(cancel: CancellationToken, fired: Arc<AtomicBool>, stop: impl FnOnce() + Send + 'static) -> Option<Self> {
+        let (done, finished) = mpsc::channel::<()>();
+        let thread = std::thread::Builder::new()
+            .name("opai-graph-stop".into())
+            .spawn(move || {
+                while let Err(mpsc::RecvTimeoutError::Timeout) = finished.recv_timeout(WATCH_EVERY) {
+                    if cancel.is_cancelled() {
+                        fired.store(true, Ordering::Release);
+                        stop();
+                        return;
+                    }
+                }
+            })
+            .ok()?;
+
+        Some(Self { done: Some(done), thread: Some(thread) })
+    }
+}
+
+impl Drop for Watcher {
+    fn drop(&mut self) {
+        drop(self.done.take());
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
 }
 
 // This crate's own error rather than an `ort::Error`, for the reason `GraphOutput` gives. Naming the output is the whole
@@ -426,7 +580,14 @@ fn accept(output: &mut [f32], produced: Option<&[f32]>, shape: GraphShape) -> Re
 mod tests {
     use std::convert::Infallible;
 
-    use super::{GraphShape, NamedOutput, NamedOutputError, accept, accept_named};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::time::{Duration, Instant};
+
+    use tokio_util::sync::CancellationToken;
+
+    use super::{GraphShape, NamedOutput, NamedOutputError, Watcher, accept, accept_named, settled, terminable};
+    use crate::error::InferenceError;
 
     use image::{DynamicImage, ImageBuffer, Rgb};
 
@@ -758,5 +919,79 @@ mod tests {
             matches!(error, super::GraphOutput::Length { .. }),
             "reported as something other than the model's: {error}"
         );
+    }
+
+    #[test]
+    fn a_cancelled_token_stops_the_graph_within_a_fraction_of_a_second() {
+        let cancel = CancellationToken::new();
+        let fired = Arc::new(AtomicBool::new(false));
+        let stops = Arc::new(AtomicUsize::new(0));
+        let counting = Arc::clone(&stops);
+        let watcher = Watcher::spawn(cancel.clone(), Arc::clone(&fired), move || {
+            counting.fetch_add(1, Ordering::SeqCst);
+        })
+        .expect("the watcher thread could not be started");
+
+        let asked = Instant::now();
+        cancel.cancel();
+        while stops.load(Ordering::SeqCst) == 0 && asked.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        drop(watcher);
+
+        // The acceptance is a second from the click; the watcher's share of that is one interval.
+        assert_eq!(stops.load(Ordering::SeqCst), 1, "the graph was never told to stop");
+        assert!(asked.elapsed() < Duration::from_millis(500), "the stop took {:?}", asked.elapsed());
+        assert!(fired.load(Ordering::SeqCst), "the scope was not told its graphs were stopped");
+    }
+
+    #[test]
+    fn a_run_that_ends_before_any_stop_terminates_nothing_and_is_not_kept_waiting() {
+        let cancel = CancellationToken::new();
+        let fired = Arc::new(AtomicBool::new(false));
+        let stops = Arc::new(AtomicUsize::new(0));
+        let counting = Arc::clone(&stops);
+        let watcher = Watcher::spawn(cancel.clone(), Arc::clone(&fired), move || {
+            counting.fetch_add(1, Ordering::SeqCst);
+        })
+        .expect("the watcher thread could not be started");
+
+        let ending = Instant::now();
+        drop(watcher);
+        cancel.cancel();
+
+        // Dropping the watcher joins it, so a cancel after the run cannot reach the next run's graphs.
+        assert!(
+            ending.elapsed() < Duration::from_millis(200),
+            "the run waited {:?} for its watcher",
+            ending.elapsed()
+        );
+        assert_eq!(stops.load(Ordering::SeqCst), 0);
+        assert!(!fired.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn a_failure_of_a_terminated_run_is_its_stop_and_a_finished_result_is_kept() {
+        let broken = || Err::<(), _>(InferenceError::Shutdown);
+
+        // Read as a broken model, a terminated graph would decline its accelerator for good.
+        assert!(matches!(settled(broken(), true), Err(InferenceError::Cancelled)));
+        assert!(matches!(settled(broken(), false), Err(InferenceError::Shutdown)));
+        assert!(
+            matches!(settled(Ok::<_, InferenceError>(7), true), Ok(7)),
+            "a finished matte was thrown away for a late stop"
+        );
+    }
+
+    #[test]
+    fn work_with_no_graph_in_it_runs_untouched_and_reports_nothing_stopped() {
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        // A fake backend never reaches a graph call, so no options are made and the runtime is never loaded.
+        let (produced, terminated) = terminable(&cancel, || 41 + 1);
+
+        assert_eq!(produced, 42);
+        assert!(!terminated);
     }
 }

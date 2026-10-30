@@ -28,7 +28,10 @@ use crate::providers::profile::EpProfile;
 // the output is unchanged. Lifting every tile instead was measured too and is worse: a tile that is dark *and*
 // extremely noisy blows up once lifted, where unaided it denoises cleanly — the lift is a rescue, not a default.
 /// How Stockholm's tiles are judged, and the retry a diverged one gets before it keeps its own input.
-pub(crate) const GUARD: Guard = Guard { magnitude: 3.0, rescue: Some(Rescue { drift: 0.01, exposure: 0.25 }) };
+// No invention limit: measured on Petersburg's tiles only, and a denoiser's change is the grain it takes out, which no
+// photograph here has been seen to exceed or not.
+pub(crate) const GUARD: Guard =
+    Guard { magnitude: 3.0, invention: None, rescue: Some(Rescue { drift: 0.01, exposure: 0.25 }) };
 
 /// The execution-provider tuning measured for this model, at the precision it carries: the provider defaults at both
 /// precisions, because nothing measured beat them, except for the nodes WebGPU cannot run correctly at FP16.
@@ -94,6 +97,7 @@ mod tests {
         // Pinned as literals, for the reason `GUARD` gives: the magnitude is carried over and the rescue measured,
         // neither derived, so nothing else would notice either moving.
         assert_eq!(GUARD.magnitude, 3.0);
+        assert_eq!(GUARD.invention, None);
         assert_eq!(GUARD.rescue, Some(Rescue { drift: 0.01, exposure: 0.25 }));
 
         for precision in FloatPrecision::ALL {

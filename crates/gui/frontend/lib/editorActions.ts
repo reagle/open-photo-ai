@@ -11,6 +11,7 @@ import { useCropDialogStore } from "@/stores/cropDialog";
 import { useDrawerStore } from "@/stores/drawer";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useFileStore } from "@/stores/files";
+import { useInfoCardStore } from "@/stores/infoCard";
 import { useMaskStore } from "@/stores/mask";
 import { useOptionsPanelStore } from "@/stores/optionsPanel";
 import { nextPreviewMode, usePreviewStore } from "@/stores/preview";
@@ -146,6 +147,14 @@ export const cyclePreview = (): boolean => {
     setPreviewMode(mode);
     track("preview_mode_changed", { mode });
 
+    return true;
+};
+
+/** Shows or hides the information card over the preview. Nothing with no image open: there is nothing to describe. */
+export const toggleInfo = (): boolean => {
+    if (!currentFile()) return false;
+
+    useInfoCardStore.getState().toggle();
     return true;
 };
 

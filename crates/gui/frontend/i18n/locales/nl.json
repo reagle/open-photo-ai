@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "Niet beschikbaar in deze installatie",
+        "unavailableLabel": "{{model}} (niet beschikbaar)"
     },
     "settings": {
         "title": "Instellingen",
@@ -60,6 +62,10 @@
             "analytics": {
                 "title": "Analyse",
                 "description": "Anonieme gebruiksgegevens verzenden. Er worden nooit afbeeldingen of persoonsgegevens verzameld."
+            },
+            "askBeforePause": {
+                "title": "Vragen voordat een reeks pauzeert",
+                "description": "Als je een andere foto kiest terwijl een reeks wordt verwerkt, eerst vragen. Uit pauzeert de reeks en toont de foto."
             }
         },
         "performance": {
@@ -143,7 +149,8 @@
                 "openOptions7": "Opties van verbetering 7",
                 "openOptions8": "Opties van verbetering 8",
                 "cropRotate": "Bijsnijden/Draaien",
-                "showShortcuts": "Sneltoetsen tonen"
+                "showShortcuts": "Sneltoetsen tonen",
+                "toggleInfo": "Foto-info tonen of verbergen"
             },
             "add": "Sneltoets toevoegen",
             "addLabel": "Sneltoets toevoegen voor {{action}}",
@@ -210,6 +217,12 @@
             "full": "Volledig",
             "sideBySide": "Naast elkaar",
             "split": "Gesplitst"
+        },
+        "badge": {
+            "queued": "Wacht op verbetering",
+            "processing": "Wordt verbeterd",
+            "done": "Verbeterd",
+            "failed": "Verbetering mislukt"
         }
     },
     "faces": {
@@ -557,7 +570,25 @@
             "loading": "Model {{model}} laden",
             "firstUse": "Alleen de eerste keer, kan enkele minuten duren",
             "firstUseAbout_one": "Alleen de eerste keer, kan ongeveer {{count}} minuut duren",
-            "firstUseAbout_other": "Alleen de eerste keer, kan ongeveer {{count}} minuten duren"
+            "firstUseAbout_other": "Alleen de eerste keer, kan ongeveer {{count}} minuten duren",
+            "waiting": "Wachten…"
+        },
+        "info": {
+            "title": "Foto-info",
+            "equivalent": "{{value}} mm equiv.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm equiv. (bijsnijding)",
+            "simulated": "{{value}} gesimuleerd",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR-gainmap",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Locatie vastgelegd",
+            "edits": "Bewerkingen",
+            "blurredEarlier": "Lensvervaging al toegepast ({{value}} gesimuleerd)",
+            "enhancedEarlier": "Al verbeterd met Open Photo AI"
         }
     },
     "menu": {
@@ -612,7 +643,9 @@
             "title": "Er is iets misgegaan",
             "message": "Open Photo AI liep tegen een onverwachte fout aan en kan niet verder. Opnieuw laden lost het meestal op; je instellingen blijven behouden, maar niet-opgeslagen werk in de huidige sessie gaat verloren.",
             "reload": "Opnieuw laden"
-        }
+        },
+        "modelUnavailable": "{{model}} ({{precision}}) is niet beschikbaar in deze installatie; gebruik {{alternative}}.",
+        "modelUnavailableAlone": "{{model}} ({{precision}}) is niet beschikbaar in deze installatie."
     },
     "shortcuts": {
         "title": "Sneltoetsen",
@@ -631,6 +664,36 @@
             "pan": "Schuiven",
             "images": "Vorige afbeelding / Volgende afbeelding",
             "options": "Opties van verbetering 1–8"
+        }
+    },
+    "batch": {
+        "processing": "Verwerken {{current}} van {{total}}",
+        "pause": "Pauzeren",
+        "paused": "Gepauzeerd — nog {{left}}",
+        "resume": "Hervatten",
+        "processAll": "Alles verwerken ({{count}})",
+        "exportHeld": "Exporteren kan zodra de verwerking is gepauzeerd of klaar is",
+        "finished_one": "{{count}} foto verwerkt",
+        "finished_other": "{{count}} foto’s verwerkt",
+        "finishedWithFailures_one": "{{count}} foto verwerkt, {{failed}} mislukt",
+        "finishedWithFailures_other": "{{count}} foto’s verwerkt, {{failed}} mislukt",
+        "done": "Klaar — {{processed}} verwerkt",
+        "doneWithFailures": "Klaar — {{processed}} verwerkt ({{failed}} mislukt)",
+        "list": {
+            "title": "Foto's in deze reeks"
+        },
+        "state": {
+            "done": "Klaar",
+            "processing": "Bezig",
+            "pending": "Wachtend",
+            "failed": "Mislukt"
+        },
+        "ask": {
+            "title": "Verwerking pauzeren en deze foto bekijken?",
+            "body": "De verwerking stopt waar ze is. Hervat haar later om verder te gaan met de resterende foto’s.",
+            "pause": "Pauzeren & bekijken",
+            "keep": "Doorgaan met verwerken",
+            "dontAsk": "Niet meer vragen"
         }
     }
 }

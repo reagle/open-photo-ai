@@ -387,6 +387,39 @@ mod tests {
     }
 
     #[test]
+    fn a_superseded_run_ending_late_leaves_the_newer_runs_result_alone_even_when_it_is_the_same_identity() {
+        // The batch's Pause & view, as the review build logged it: the clicked photograph done once, a run over another
+        // one started and displaced, the clicked photograph run again from the cache to the same identity, and only then
+        // the displaced run's end, stopped or with a result.
+        let runs = Runs::default();
+
+        runs.start("run-1", SOURCE);
+        runs.finish("run-1", picture_of("aaaaaaaaaaaaaaaa"));
+        runs.start("run-2", OTHER);
+        runs.start("run-3", SOURCE);
+
+        // Between the start and the finish the earlier result is gone: the address the window must not draw.
+        assert!(matches!(runs.resolve("aaaaaaaaaaaaaaaa"), Some(Resident::Displaced)));
+
+        assert!(
+            runs.finish("run-3", picture_of("aaaaaaaaaaaaaaaa")),
+            "the run in the slot did not keep its result"
+        );
+
+        assert!(!runs.stop("run-2"), "a stop for the displaced run claimed to have stopped something");
+        assert!(
+            !runs.finish("run-2", picture_of("bbbbbbbbbbbbbbbb")),
+            "the displaced run's late result was kept"
+        );
+        assert!(!runs.release(OTHER), "a release for the displaced run's photograph dropped something");
+
+        assert!(
+            matches!(runs.resolve("aaaaaaaaaaaaaaaa"), Some(Resident::Picture(_))),
+            "the displaced run's late end let go of the newer run's result"
+        );
+    }
+
+    #[test]
     fn stopping_names_the_run_and_leaves_another_alone() {
         let runs = Runs::default();
 
