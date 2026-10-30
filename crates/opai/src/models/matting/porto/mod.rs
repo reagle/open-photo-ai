@@ -12,10 +12,15 @@
 //   run_graph        1 x 4 x 1024 x 1024 -> `alphas`, 1 x 1 x 1024 x 1024
 //   tiles::Joined    the tiles' alphas cross-faded over their overlap; known pixels the trimap's own
 //
-// Which weights these are: `hustvl/vitmatte-small-composition-1k` (weights Apache-2.0, code MIT) as exported to ONNX by
-// `Xenova/vitmatte-small-composition-1k` (opset 12), its input fixed to 1 x 4 x 1024 x 1024 so Core ML compiles it for
-// one shape; checked against the dynamic graph to 1e-5. The graph is the fork's own for now, installed beside the
-// published models through the fork's local listing, until its hosting is decided.
+// Which weights these are: `hustvl/vitmatte-small-composition-1k` (weights Apache-2.0, code MIT), exported to ONNX by
+// the fork from `transformers`' `VitMatteForImageMatting` (opset 17, `pixel_values` 1 x 4 x 1024 x 1024 -> `alphas`, a
+// shape fixed so Core ML compiles it for one) with the two relative-position `einsum`s of its windowed attention
+// written as batched `MatMul`s, then folded with `onnxslim`. The same weights as
+// `Xenova/vitmatte-small-composition-1k`, the graph this slot first ran, and the same matte to 1e-6: what changed is
+// that Xenova's 24 `Einsum`s and rank-5 reshapes were left by Core ML to the CPU between 29 partitions, and this graph
+// has 17. The graph is the fork's own for now (119 MB, SHA-256
+// `6224fecd0d5181d5d05651e2aea80d54d39dcd256db83aaf1f6cba8e2ade72e6`), installed beside the published models through
+// the fork's local listing, until its hosting is decided.
 
 pub(crate) mod tiles;
 
@@ -40,11 +45,16 @@ use tiles::{Joined, PLANES, TILE};
 /// The execution-provider tuning measured for Porto at `precision`: the provider defaults at FP32.
 pub(crate) fn profile(precision: Precision) -> EpProfile {
     // Measured on an M4 Pro Mac mini (24 GB) with ONNX Runtime's Core ML provider (ML Program) against the CPU
-    // provider, on the tiles of three photographs: 0.41 s a tile on Core ML's CPU and GPU after a first tile of 3.0 s
-    // (the compile), 0.58 s on Core ML's CPU alone, and 0.65 s on the CPU provider. Core ML takes 896 of the graph's
-    // 968 nodes; the rest (the windowed attention's rank-5 reshapes, an `Einsum` and a `Pad`) run on the CPU between
-    // its partitions. The matte agrees between the two to 1.3e-5. At FP32 Core ML keeps a program off the Neural
+    // provider, on the tiles of three photographs, with the graph this slot first ran (Xenova's export): 0.41 s a tile
+    // on Core ML's CPU and GPU after a first tile of 3.0 s (the compile), 0.58 s on Core ML's CPU alone, and 0.65 s on
+    // the CPU provider. The matte agrees between the two to 1.3e-5. At FP32 Core ML keeps a program off the Neural
     // Engine anyway, so the shared profile's FP16 setting does not apply.
+    //
+    // With the graph re-exported without `Einsum` (see the head of this file), Core ML takes 764 of the 812 nodes the
+    // runtime leaves after its own optimisations, in 17 partitions; Xenova's took 896 of 968 in 29. Through the CLI on
+    // four of the benchmark's photographs a whole matte went from 18.3 to 5.3 s (the session 12.7 -> 3.3 s, the tiles
+    // 5.6 -> 2.0 s), and `footprint` puts what the session adds once it has run at 4.8 GB of `IOAccelerator` and 0.5
+    // GB of `IOSurface`, against 6.6 and 4.3 GB: a lens blur's peak footprint 6 GB lower.
     cpu_and_gpu_at_fp16(precision)
 }
 
