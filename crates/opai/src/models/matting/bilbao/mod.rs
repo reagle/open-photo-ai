@@ -5,7 +5,8 @@
 //! matte kept at that size — what the lens blur reads of it is coarse (where a hole is, not its edge, which Porto
 //! draws), so a megapixel is all it needs and all the run cache stores. Progress is reported at three phase
 //! boundaries — 0.1 once the tensor is built, 0.9 once the graph returns, 1.0 once the matte is made — and cancellation
-//! is checked at the same three points.
+//! is checked before the graph only: once it has returned, the matte is finished and handed back even to a stopped run,
+//! so the run cache keeps it.
 
 // A run:
 //
@@ -141,7 +142,13 @@ impl<B: Backend> DataPipeline<B> for Bilbao {
         )
         .map_err(InferenceError::run(&self.graph.name, 0))?;
 
-        checkpoint(&report, cancelled, AFTER_GRAPH)?;
+        // Reported, but not a place a stop is honoured. The graph is one call — 6 s on its own, and minutes on a CPU
+        // shared with other runs — which a stop now terminates while it runs (`session::terminable`); one that arrives
+        // after it has returned used to be noticed here, after all of that was spent, and the matte thrown away with it:
+        // paging through a batch of lens blurs cancelled each photograph's Bilbao this way and ran it again from nothing
+        // on the way back. What is left is a sigmoid over a megapixel, so the matte is finished and handed back, which
+        // is what lets `execute` store it; the run it was for notices the stop at its own next checkpoint.
+        report(AFTER_GRAPH);
 
         let coverage: Vec<f32> = logits.iter().map(|&logit| 1.0 / (1.0 + (-logit).exp())).collect();
         tracing::debug!(operation = %self.graph.name, width = input.width(), height = input.height(), "salient subject matted");
@@ -247,6 +254,23 @@ mod tests {
         let outcome = pipeline::<Fake>(&Matting::bilbao()).run(&image, &[handle], None, &cancelled);
 
         assert!(matches!(outcome, Err(InferenceError::Cancelled)), "{outcome:?}");
+    }
+
+    #[test]
+    fn a_stop_that_arrives_while_the_graph_runs_still_hands_back_its_matte() {
+        let handle = SessionHandle::held(FakeSession { means: Arc::default() }, ExecutionProvider::Cpu);
+        let image = DynamicImage::ImageRgb8(image::RgbImage::new(64, 48));
+        // Clear at the two checks before the graph, stopped at every one after it.
+        let checks = std::cell::Cell::new(0_usize);
+        let cancelled = || {
+            checks.set(checks.get() + 1);
+            checks.get() > 2
+        };
+
+        let outcome = pipeline::<Fake>(&Matting::bilbao()).run(&image, &[handle], None, &cancelled);
+
+        // Thrown away, the graph's whole run would be paid for again the next time the photograph is shown.
+        assert!(outcome.is_ok(), "a matte the graph had finished was discarded for a stop: {outcome:?}");
     }
 
     #[test]
