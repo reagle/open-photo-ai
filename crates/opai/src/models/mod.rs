@@ -188,6 +188,19 @@ pub(crate) fn cpu_on_auto(artifact: &ArtifactId) -> bool {
     remove::variant::cpu_on_auto(artifact)
 }
 
+// A residency rather than a tuning, and beside `cpu_on_auto` for the same reason: what a session costs to keep against
+// what it costs to build again is a property of the model and the provider it runs on, which the tuning, `rust-sak`'s,
+// has no field for. Bilbao is the case that put it here: once it has run, its CPU session holds 7.5 to 9 GB of
+// `Malloc Large` that the runtime frees only with the session — the arena, which grew to 15 GB over a second run, and
+// as much again with the arena off; neither the memory planner nor the number of threads changed it — against a
+// rebuild of about a second in the application (0.8 to 1.0 s in its log). It runs once a photograph, and while it was
+// resident it held all of that beside Lisbon and Porto through the rest of a lens blur. See `matting::bilbao`.
+/// Whether `artifact`'s session is let go of as soon as the run using it lets go, rather than kept resident for the
+/// next.
+pub(crate) fn release_after_use(artifact: &ArtifactId) -> bool {
+    matting::variant::release_after_use(artifact)
+}
+
 #[cfg(test)]
 mod tests {
     use super::test_support::{every_artifact_name, every_cache_tag, every_carried_family};
