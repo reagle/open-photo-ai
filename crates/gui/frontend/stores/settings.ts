@@ -123,6 +123,13 @@ export type SettingsData = {
      * which fills in the defaults and keeps any one key press from being claimed twice.
      */
     shortcuts: StoredShortcuts;
+    // A preference rather than a fact of the user's history beside `tensorrtAsked`, although the question's "Don't ask
+    // again" sets it too: the General page turns it back off, so it is drafted, saved and reset like the others, and
+    // Reset to defaults asks again.
+    /**
+     * Whether a click on another photograph while a batch runs pauses it without asking. See `lib/batch.ts`.
+     */
+    pauseBatchWithoutAsking: boolean;
 };
 
 // Beside the preferences rather than among them: `SettingsData` is what the settings dialog drafts,
@@ -132,11 +139,6 @@ export type SettingsData = {
 type SettingsRecord = {
     /** Whether the TensorRT question has been answered, on this launch or any earlier one. */
     tensorrtAsked: boolean;
-    /**
-     * Whether a click on another photograph while a batch runs pauses it without asking: the question's "Don't ask
-     * again". See `lib/batch.ts`.
-     */
-    pauseBatchWithoutAsking: boolean;
 };
 
 type SettingsStore = SettingsData &
@@ -166,6 +168,7 @@ export const settingsData = ({
     autopilotExcluded,
     quality,
     shortcuts,
+    pauseBatchWithoutAsking,
 }: SettingsData): SettingsData => ({
     language,
     background,
@@ -175,6 +178,7 @@ export const settingsData = ({
     autopilotExcluded,
     quality,
     shortcuts,
+    pauseBatchWithoutAsking,
 });
 
 // A function rather than a constant for two reasons: the language is detected, and a record handed
@@ -197,6 +201,8 @@ export const settingsDefaults = (): SettingsData => ({
     quality: {},
     // No choice for any action: each is bound to its defaults.
     shortcuts: {},
+    // Asked.
+    pauseBatchWithoutAsking: false,
 });
 
 /**
@@ -273,8 +279,9 @@ const repairExcluded = (value: unknown): Family[] => {
  * **values** are this application's - see {@link Processor}.
  *
  * **Nothing reaches here until it is kept.** {@link SettingsStore.apply} - the settings dialog's Save -
- * and {@link SettingsStore.answerTensorRT} are the only things that write this store, so a preference
- * the user has not kept cannot be observed by anything - not by a subscriber, and not by the file.
+ * {@link SettingsStore.answerTensorRT} and {@link SettingsStore.stopAskingBeforePause} - two questions' answers - are
+ * the only things that write this store, so a preference the user has not kept cannot be observed by anything - not
+ * by a subscriber, and not by the file.
  *
  * Every field has a stated repair - see `merge` below.
  */
@@ -286,7 +293,6 @@ export const useSettingsStore = create<SettingsStore>()(
             // detected language.
             ...settingsDefaults(),
             tensorrtAsked: false,
-            pauseBatchWithoutAsking: false,
 
             /*
              * One action rather than a setter per field: this store holds what is *in force*, and
@@ -342,7 +348,6 @@ export const useSettingsStore = create<SettingsStore>()(
             partialize: (state: SettingsStore): SettingsData & SettingsRecord => ({
                 ...settingsData(state),
                 tensorrtAsked: state.tensorrtAsked,
-                pauseBatchWithoutAsking: state.pauseBatchWithoutAsking,
             }),
 
             /*
@@ -354,7 +359,7 @@ export const useSettingsStore = create<SettingsStore>()(
              * wrong on a user's machine and right here: a language catalogue is dropped, a graphics
              * driver is removed, a model stops being published.
              *
-             * All nine are repaired on rehydrate below, against something already present at that
+             * All ten are repaired on rehydrate below, against something already present at that
              * moment - the models in shape only. Whether a stored model is still published, and so
              * which model a family defaults to, is resolved where it is drawn, for the reason
              * `ModelChoices` gives. The processor's second repair is the same

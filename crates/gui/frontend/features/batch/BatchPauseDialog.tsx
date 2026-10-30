@@ -12,7 +12,8 @@ import { useBatchStore } from "@/stores/batch";
  * view stops the run the batch is waiting on and goes to the photograph; Keep processing leaves everything as it was.
  *
  * **Don't ask again** is remembered with Pause & view alone - the answer a later click then gives without asking. With
- * Keep processing it would make every later click do nothing, which is no answer to remember.
+ * Keep processing it would make every later click do nothing, which is no answer to remember. Settings' General page
+ * turns the question back on (*Ask before pausing a batch*).
  */
 export const BatchPauseDialog = () => {
     const { t } = useTranslation();
