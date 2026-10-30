@@ -51,7 +51,7 @@ use crate::mask::Mask;
 use crate::models::grain::is_grain_reference;
 use crate::models::remove::RemovedAt;
 use crate::models::{Depth, DepthMap, Detection, Faces, Family, Matte, Matting, Operation, Remove};
-use crate::pipeline::{Backend, Shared};
+use crate::pipeline::{Backend, Shared, session};
 use crate::providers::ExecutionProvider;
 use crate::sessions::SessionHandle;
 use crate::task::spawn_blocking;
@@ -1194,8 +1194,12 @@ pub(crate) async fn run<B: Backend>(
                     // step's wherever it came from; any other failure of the gain map is the gain map's alone, settled
                     // below.
                     //
+                    // Terminable: a stop lands inside the graph rather than after it (`session::terminable`). A
+                    // terminated run fails as a model would, so its failure — the gain map's included, which would
+                    // otherwise be stored as that map's reason — is made the stop it was before anything reads it.
+                    //
                     // A step measured against the photograph is handed it, and leaves the gain map as it was.
-                    let produced = match (&against, &map) {
+                    let (produced, terminated) = session::terminable(&cancelled, || match (&against, &map) {
                         (Some(photograph), _) => pipeline
                             .run_against(&input, photograph, &sessions, depth, report, &stopped)
                             .map(|image| (image, None)),
@@ -1205,8 +1209,9 @@ pub(crate) async fn run<B: Backend>(
                         (None, None) => {
                             pipeline.run(&input, &sessions, depth, report, &stopped).map(|image| (image, None))
                         }
-                    };
-                    let produced = match produced {
+                    });
+                    let produced = match session::settled(produced, terminated) {
+                        Ok((_, Some(Err(_)))) if terminated => Err(InferenceError::Cancelled),
                         Ok((_, Some(Err(error)))) if error.stop_reason().is_some() => Err(error),
                         produced => produced.map(|(image, rewritten)| (Arc::new(image), rewritten)),
                     };
