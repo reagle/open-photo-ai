@@ -6,7 +6,7 @@
 //! as it opens a drop: the extension check, the refusal notice and `describe_images`, which is still the only way a
 //! file is admitted to [`crate::images::Opened`].
 //!
-//! A batch `opai --gui --lens-blur` handed over also carries the lens blur it asked for, in the
+//! A batch `opai --gui --sharpen` or `--lens-blur` handed over also carries the enhancements it asked for, in the
 //! [`opai::open_request`] the command line wrote beside the handover: [`deliver`] claims it as the paths arrive, and
 //! the window takes it with [`take_open_request`] in the same drain, before it opens them.
 
@@ -48,7 +48,7 @@ impl Inbox {
     }
 }
 
-/// The lens blur a batch handed over by `opai --gui` asked for, claimed and not taken by the window yet.
+/// The enhancements a batch handed over by `opai --gui` asked for, claimed and not taken by the window yet.
 #[derive(Debug, Default)]
 pub(crate) struct Requested(Mutex<Option<Request>>);
 
@@ -59,7 +59,10 @@ pub(crate) struct Requested(Mutex<Option<Request>>);
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Request {
     paths: Vec<String>,
-    lens_blur: LensBlur,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lens_blur: Option<LensBlur>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sharpen: Option<Sharpen>,
 }
 
 /// A lens blur as the command line asked for it; what is absent is the window's own default.
@@ -76,18 +79,32 @@ struct LensBlur {
     focus_y: Option<f64>,
 }
 
+/// A sharpen as the command line asked for it: its model by codename, and its strength as the fraction the window's
+/// slider and the catalogue use, where one was given. The precision is the window's to pick.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Sharpen {
+    model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    strength: Option<f64>,
+}
+
 impl From<OpenRequest> for Request {
     fn from(request: OpenRequest) -> Self {
-        let blur = request.lens_blur;
         Self {
             // A path that is not Unicode cannot cross to the window, and `take_opened_files` leaves it out too.
             paths: request.paths.into_iter().filter_map(|path| path.into_os_string().into_string().ok()).collect(),
-            lens_blur: LensBlur {
+            lens_blur: request.lens_blur.map(|blur| LensBlur {
                 f_number: blur.f_number,
                 amount: blur.amount,
                 focus_x: blur.focus.map(|(x, _)| x),
                 focus_y: blur.focus.map(|(_, y)| y),
-            },
+            }),
+            // `--sh-str` is a percentage, as a run reads it.
+            sharpen: request.sharpen.map(|sharpen| Sharpen {
+                model: sharpen.model,
+                strength: sharpen.strength.map(|percent| f64::from(percent) / 100.0),
+            }),
         }
     }
 }
@@ -137,7 +154,12 @@ pub(crate) fn deliver<R: Runtime>(app: &AppHandle<R>, paths: Vec<PathBuf>) {
 
     // Claimed before the paths are pushed, so a drain that takes them finds what they asked for beside them.
     if let Some(request) = claim_request(&paths) {
-        tracing::info!(count = request.paths.len(), "the command line asked for a lens blur on the files");
+        tracing::info!(
+            count = request.paths.len(),
+            lens_blur = request.lens_blur.is_some(),
+            sharpen = request.sharpen.is_some(),
+            "the command line asked for enhancements on the files"
+        );
         *lock(&app.state::<Requested>().0) = Some(request.into());
     }
 
@@ -226,11 +248,30 @@ mod tests {
     #[test]
     fn a_request_reaches_the_window_with_its_focus_as_two_fractions_and_nothing_it_left_out() {
         let blur = open_request::LensBlurRequest { f_number: Some(1.4), amount: None, focus: Some((0.3, 0.6)) };
-        let request = Request::from(OpenRequest::new(vec![PathBuf::from("/photos/a.jpg")], blur));
+        let request = Request::from(OpenRequest::new(vec![PathBuf::from("/photos/a.jpg")], Some(blur), None));
 
         let json = serde_json::to_string(&request).expect("serializes");
 
         assert_eq!(json, r#"{"paths":["/photos/a.jpg"],"lensBlur":{"fNumber":1.4,"focusX":0.3,"focusY":0.6}}"#);
+    }
+
+    #[test]
+    fn a_sharpen_reaches_the_window_with_its_strength_as_a_fraction_and_beside_a_lens_blur() {
+        let paths = vec![PathBuf::from("/photos/a.jpg")];
+        let sharpen = |strength| open_request::SharpenRequest { model: "novgorod".to_owned(), strength };
+
+        let alone = Request::from(OpenRequest::new(paths.clone(), None, Some(sharpen(Some(150)))));
+        assert_eq!(
+            serde_json::to_string(&alone).expect("serializes"),
+            r#"{"paths":["/photos/a.jpg"],"sharpen":{"model":"novgorod","strength":1.5}}"#
+        );
+
+        let blur = open_request::LensBlurRequest::default();
+        let both = Request::from(OpenRequest::new(paths, Some(blur), Some(sharpen(None))));
+        assert_eq!(
+            serde_json::to_string(&both).expect("serializes"),
+            r#"{"paths":["/photos/a.jpg"],"lensBlur":{},"sharpen":{"model":"novgorod"}}"#
+        );
     }
 
     // Unix only because the URLs are Unix paths, which is what macOS - the one platform that sends URLs - hands over.

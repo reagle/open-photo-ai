@@ -3,9 +3,9 @@
 //! ```text
 //! ignored options  --> ⚠️ naming each option given besides the inputs and -r; they are the window's to set
 //! inputs           --> expanded and checked as a run's are; nothing to open refuses it
-//! lens blur        --> with --lens-blur, `opai::open_request` written for the application to claim when the paths
-//!                      arrive: a Lens Blur on each and Autopilot off. One that cannot be written is a warning, and the
-//!                      photographs open without it
+//! enhancements     --> with --sharpen or --lens-blur, `opai::open_request` written for the application to claim when
+//!                      the paths arrive: a Sharpen, a Lens Blur or both on each and Autopilot off. One that cannot be
+//!                      written is a warning, and the photographs open without them
 //! hand over        --> macOS: `open -b io.vinicius.opai <paths>`, which delivers them as an "open documents" Apple
 //!                      Event whether or not the application is running
 //!                      Windows, Linux: the application's binary, beside this one or on PATH, started detached with
@@ -20,7 +20,8 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use opai::open_request::{self, LensBlurRequest, OpenRequest};
+use clap::ValueEnum;
+use opai::open_request::{self, LensBlurRequest, OpenRequest, SharpenRequest};
 
 use crate::args::Args;
 use crate::error::CliError;
@@ -66,7 +67,7 @@ pub fn open(args: &Args, look: Look) -> Result<(), CliError> {
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    if let Some(warning) = request_lens_blur(args, &paths) {
+    if let Some(warning) = request_enhancements(args, &paths) {
         eprintln!("{}", look::warning(warning, look.color));
     }
 
@@ -89,27 +90,42 @@ fn ignored_warning(ignored: &[String]) -> Option<String> {
     Some(format!("{names} {verb} ignored with --gui; set {them} in {APP} instead"))
 }
 
-/// Writes the request for the application to add the lens blur `args` asks for to each of `paths`, where it asks for
-/// one; answers the warning to give where the request could not be written.
-fn request_lens_blur(args: &Args, paths: &[PathBuf]) -> Option<String> {
-    let selection = &args.selection;
-    selection.lens_blur?;
-
-    let lens_blur = LensBlurRequest {
-        f_number: selection.lens_blur_f,
-        amount: selection.lens_blur_amount,
-        focus: selection.lens_blur_focus,
+/// Writes the request for the application to add the sharpen and the lens blur `args` asks for to each of `paths`,
+/// where it asks for either; answers the warning to give where the request could not be written.
+fn request_enhancements(args: &Args, paths: &[PathBuf]) -> Option<String> {
+    let request = request_of(args, paths)?;
+    let what = match (&request.sharpen, &request.lens_blur) {
+        (Some(_), Some(_)) => "sharpen and lens blur",
+        (Some(_), None) => "sharpen",
+        _ => "lens blur",
     };
-    let request = OpenRequest::new(paths.to_vec(), lens_blur);
 
     let written = open_request::path(opai::APP_NAME)
         .map_err(|error| error.to_string())
         .and_then(|path| open_request::write_at(&path, &request).map_err(|error| error.to_string()));
 
     written.err().map(|error| {
-        tracing::warn!(%error, "the lens blur for the GUI could not be requested");
-        format!("could not ask {APP} for the lens blur ({error}); the photographs open without it")
+        tracing::warn!(%error, "the {what} for the GUI could not be requested");
+        format!("could not ask {APP} for the {what} ({error}); the photographs open without it")
     })
+}
+
+/// The request `args` makes of the application for `paths`, or `None` where it asks for neither a sharpen nor a lens
+/// blur. The sharpen's model is the one a run would use, Moscow for a bare `--sharpen`.
+fn request_of(args: &Args, paths: &[PathBuf]) -> Option<OpenRequest> {
+    let selection = &args.selection;
+
+    let sharpen = selection.sharpen.map(|model| SharpenRequest {
+        model: model.to_possible_value().expect("no model is skipped").get_name().to_owned(),
+        strength: selection.sharpen_strength,
+    });
+    let lens_blur = selection.lens_blur.map(|_| LensBlurRequest {
+        f_number: selection.lens_blur_f,
+        amount: selection.lens_blur_amount,
+        focus: selection.lens_blur_focus,
+    });
+
+    (sharpen.is_some() || lens_blur.is_some()).then(|| OpenRequest::new(paths.to_vec(), lens_blur, sharpen))
 }
 
 /// `🖼️ Opening N images in Open Photo AI`, or `1 image`.
@@ -221,6 +237,25 @@ mod tests {
             ignored_warning(&names(&["--upscale", "--quality", "--output"])).as_deref(),
             Some("--upscale, --quality and --output are ignored with --gui; set them in Open Photo AI instead")
         );
+    }
+
+    #[test]
+    fn the_request_carries_the_sharpen_and_lens_blur_asked_for_and_nothing_without_them() {
+        let request_for = |line: &str| {
+            let args = crate::args::parse_from(line.split_whitespace()).expect("parses");
+            request_of(&args, &[PathBuf::from("/photos/a.jpg")])
+        };
+
+        let bare = request_for("opai a.jpg --gui --sh").expect("a request");
+        assert_eq!(bare.sharpen, Some(SharpenRequest { model: "moscow".to_owned(), strength: None }));
+        assert_eq!((bare.lens_blur, bare.version), (None, open_request::VERSION));
+
+        let both = request_for("opai a.jpg --gui --lb --lb-f 2 --sh petersburg --sh-str 40").expect("a request");
+        assert_eq!(both.sharpen, Some(SharpenRequest { model: "petersburg".to_owned(), strength: Some(40) }));
+        assert_eq!(both.lens_blur.and_then(|blur| blur.f_number), Some(2.0));
+
+        assert_eq!(request_for("opai a.jpg --gui --lb").map(|request| request.version), Some(1));
+        assert_eq!(request_for("opai a.jpg --gui --up"), None);
     }
 
     #[test]
