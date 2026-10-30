@@ -291,6 +291,16 @@ describe("the TensorRT question", () => {
         expect(useSettingsStore.getState().pauseBatchWithoutAsking).toBe(false);
     });
 
+    it("is a preference the settings surface holds, so Settings can turn the question back on and a reset asks again", () => {
+        useSettingsStore.getState().stopAskingBeforePause();
+
+        expect(settingsData(useSettingsStore.getState())).toMatchObject({ pauseBatchWithoutAsking: true });
+        expect(settingsDefaults()).toMatchObject({ pauseBatchWithoutAsking: false });
+
+        useSettingsStore.getState().apply({ pauseBatchWithoutAsking: false });
+        expect(persisted()).toMatchObject({ pauseBatchWithoutAsking: false });
+    });
+
     it("is not a preference the settings surface holds", () => {
         useSettingsStore.getState().answerTensorRT(true);
 

@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Análise de uso",
                 "description": "Enviar dados de uso anônimos. Imagens ou dados pessoais nunca são coletados."
+            },
+            "askBeforePause": {
+                "title": "Perguntar antes de pausar um lote",
+                "description": "Ao escolher outra foto enquanto um lote é processado, perguntar antes. Desativado, pausa o lote e mostra a foto."
             }
         },
         "performance": {
@@ -632,13 +636,25 @@
     "batch": {
         "processing": "A processar {{current}} de {{total}}",
         "pause": "Pausar",
-        "resume": "Retomar (faltam {{count}})",
+        "paused": "Em pausa — faltam {{left}}",
+        "resume": "Retomar",
         "processAll": "Processar todas ({{count}})",
         "exportHeld": "A exportação fica disponível quando o processamento estiver em pausa ou terminado",
         "finished_one": "{{count}} fotografia processada",
         "finished_other": "{{count}} fotografias processadas",
         "finishedWithFailures_one": "{{count}} fotografia processada, {{failed}} falharam",
         "finishedWithFailures_other": "{{count}} fotografias processadas, {{failed}} falharam",
+        "done": "Concluído — {{processed}} processadas",
+        "doneWithFailures": "Concluído — {{processed}} processadas ({{failed}} com falha)",
+        "list": {
+            "title": "Fotos deste lote"
+        },
+        "state": {
+            "done": "Concluída",
+            "processing": "Processando",
+            "pending": "Pendente",
+            "failed": "Falhou"
+        },
         "ask": {
             "title": "Pausar o processamento e ver esta fotografia?",
             "body": "O processamento para onde está. Retome-o mais tarde para continuar com as fotografias que faltam.",

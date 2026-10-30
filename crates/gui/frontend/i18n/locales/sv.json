@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Analys",
                 "description": "Skicka anonym användningsdata. Inga bilder eller personuppgifter samlas någonsin in."
+            },
+            "askBeforePause": {
+                "title": "Fråga innan en omgång pausas",
+                "description": "När du väljer ett annat foto medan en omgång bearbetas, fråga först. Av pausar omgången och visar fotot."
             }
         },
         "performance": {
@@ -632,13 +636,25 @@
     "batch": {
         "processing": "Bearbetar {{current}} av {{total}}",
         "pause": "Pausa",
-        "resume": "Fortsätt ({{count}} kvar)",
+        "paused": "Pausad — {{left}} kvar",
+        "resume": "Återuppta",
         "processAll": "Bearbeta alla ({{count}})",
         "exportHeld": "Export blir tillgänglig när bearbetningen är pausad eller klar",
         "finished_one": "{{count}} foto bearbetat",
         "finished_other": "{{count}} foton bearbetade",
         "finishedWithFailures_one": "{{count}} foto bearbetat, {{failed}} misslyckades",
         "finishedWithFailures_other": "{{count}} foton bearbetade, {{failed}} misslyckades",
+        "done": "Klart — {{processed}} bearbetade",
+        "doneWithFailures": "Klart — {{processed}} bearbetade ({{failed}} misslyckades)",
+        "list": {
+            "title": "Foton i den här omgången"
+        },
+        "state": {
+            "done": "Klar",
+            "processing": "Bearbetas",
+            "pending": "Väntar",
+            "failed": "Misslyckades"
+        },
         "ask": {
             "title": "Pausa bearbetningen och visa det här fotot?",
             "body": "Bearbetningen stannar där den är. Fortsätt senare med de foton som är kvar.",

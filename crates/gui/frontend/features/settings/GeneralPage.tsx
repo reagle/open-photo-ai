@@ -85,6 +85,30 @@ const AnalyticsRow = () => {
 };
 
 /**
+ * Whether a click on another photograph while a batch runs asks first - *Pause processing and view this photo?* - or
+ * pauses the batch and goes there. On is asking, the question's own default; the question's **Don't ask again** turns
+ * it off, and this is where it is turned back on. Written to the draft, like the rows above.
+ */
+const AskBeforePauseRow = () => {
+    const { t } = useTranslation();
+    const { values, update } = useSettingsDraft();
+
+    return (
+        <SettingsRow
+            label={t("settings.app.askBeforePause.title")}
+            description={t("settings.app.askBeforePause.description")}
+            control={
+                <SettingsSwitch
+                    checked={!values.pauseBatchWithoutAsking}
+                    onCheckedChange={(ask) => update({ pauseBatchWithoutAsking: !ask })}
+                    aria-label={t("settings.app.askBeforePause.title")}
+                />
+            }
+        />
+    );
+};
+
+/**
  * What a tile shows of its surface: the real particle field at the design's sample density, or the
  * canvas's own dot at a pitch that reads as a grid in 52px.
  *
@@ -191,12 +215,13 @@ const LogsRow = () => {
     );
 };
 
-/** Screen 16: the language and analytics, the preview background, and the logs - three cards. */
+/** Screen 16: the language, analytics and the batch's question, the preview background, and the logs - three cards. */
 export const GeneralPage = () => (
     <>
         <SettingsCard>
             <LanguageRow />
             <AnalyticsRow />
+            <AskBeforePauseRow />
         </SettingsCard>
 
         <BackgroundCard />

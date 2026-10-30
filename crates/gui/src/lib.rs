@@ -13,6 +13,7 @@ mod analytics;
 mod autopilot;
 mod catalogue;
 mod command;
+mod dock;
 mod enhance;
 mod export;
 mod faces;
@@ -216,7 +217,8 @@ pub fn run(prepared: Result<(), opai::InitError>) {
             images::files::input_extensions,
             opened::take_opened_files,
             opened::take_open_request,
-            window::window_ready
+            window::window_ready,
+            dock::dock_progress
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Open Photo AI application")

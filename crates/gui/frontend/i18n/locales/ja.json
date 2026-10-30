@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "利用状況の分析",
                 "description": "匿名の使用状況データを送信します。画像や個人データが収集されることはありません。"
+            },
+            "askBeforePause": {
+                "title": "一括処理を一時停止する前に確認",
+                "description": "一括処理中に別の写真を選んだとき、先に確認します。オフにすると、一括処理を一時停止して写真を表示します。"
             }
         },
         "performance": {
@@ -621,11 +625,23 @@
     "batch": {
         "processing": "{{total}} 枚中 {{current}} 枚目を処理中",
         "pause": "一時停止",
-        "resume": "再開（残り {{count}} 枚）",
+        "paused": "一時停止中 — 残り {{left}} 枚",
+        "resume": "再開",
         "processAll": "すべて処理（{{count}}）",
         "exportHeld": "処理を一時停止するか完了すると書き出せます",
         "finished_other": "{{count}} 枚の写真を処理しました",
         "finishedWithFailures_other": "{{count}} 枚の写真を処理しました（{{failed}} 枚は失敗）",
+        "done": "完了 — {{processed}} 枚を処理",
+        "doneWithFailures": "完了 — {{processed}} 枚を処理（{{failed}} 枚は失敗）",
+        "list": {
+            "title": "この一括処理の写真"
+        },
+        "state": {
+            "done": "完了",
+            "processing": "処理中",
+            "pending": "待機中",
+            "failed": "失敗"
+        },
         "ask": {
             "title": "処理を一時停止してこの写真を表示しますか？",
             "body": "処理はその場で止まります。残りの写真は後で再開して処理できます。",

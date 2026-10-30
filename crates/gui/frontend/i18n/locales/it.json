@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Statistiche",
                 "description": "Invia dati di utilizzo anonimi. Immagini e dati personali non vengono mai raccolti."
+            },
+            "askBeforePause": {
+                "title": "Chiedi prima di mettere in pausa un gruppo",
+                "description": "Quando scegli un'altra foto mentre un gruppo è in elaborazione, chiedi prima. Disattivato, mette in pausa il gruppo e mostra la foto."
             }
         },
         "performance": {
@@ -643,13 +647,25 @@
     "batch": {
         "processing": "Elaborazione {{current}} di {{total}}",
         "pause": "Pausa",
-        "resume": "Riprendi (ne restano {{count}})",
+        "paused": "In pausa — {{left}} rimanenti",
+        "resume": "Riprendi",
         "processAll": "Elabora tutte ({{count}})",
         "exportHeld": "L’esportazione è disponibile quando l’elaborazione è in pausa o terminata",
         "finished_one": "{{count}} foto elaborata",
         "finished_other": "{{count}} foto elaborate",
         "finishedWithFailures_one": "{{count}} foto elaborata, {{failed}} non riuscite",
         "finishedWithFailures_other": "{{count}} foto elaborate, {{failed}} non riuscite",
+        "done": "Fatto — {{processed}} elaborate",
+        "doneWithFailures": "Fatto — {{processed}} elaborate ({{failed}} non riuscite)",
+        "list": {
+            "title": "Foto in questo gruppo"
+        },
+        "state": {
+            "done": "Fatta",
+            "processing": "In elaborazione",
+            "pending": "In attesa",
+            "failed": "Non riuscita"
+        },
         "ask": {
             "title": "Mettere in pausa l’elaborazione e vedere questa foto?",
             "body": "L’elaborazione si ferma dove si trova. Riprendila più tardi per continuare con le foto rimanenti.",

@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Analyse",
                 "description": "Anonyme Nutzungsdaten senden. Bilder oder persönliche Daten werden nie erfasst."
+            },
+            "askBeforePause": {
+                "title": "Vor dem Pausieren fragen",
+                "description": "Wenn Sie während der Stapelverarbeitung ein anderes Foto wählen, zuerst fragen. Aus pausiert die Verarbeitung und zeigt das Foto."
             }
         },
         "performance": {
@@ -632,13 +636,25 @@
     "batch": {
         "processing": "Verarbeite {{current}} von {{total}}",
         "pause": "Pausieren",
-        "resume": "Fortsetzen (noch {{count}})",
+        "paused": "Pausiert — noch {{left}}",
+        "resume": "Fortsetzen",
         "processAll": "Alle verarbeiten ({{count}})",
         "exportHeld": "Der Export ist verfügbar, sobald die Verarbeitung pausiert oder beendet ist",
         "finished_one": "{{count}} Foto verarbeitet",
         "finished_other": "{{count}} Fotos verarbeitet",
         "finishedWithFailures_one": "{{count}} Foto verarbeitet, {{failed}} fehlgeschlagen",
         "finishedWithFailures_other": "{{count}} Fotos verarbeitet, {{failed}} fehlgeschlagen",
+        "done": "Fertig — {{processed}} verarbeitet",
+        "doneWithFailures": "Fertig — {{processed}} verarbeitet ({{failed}} fehlgeschlagen)",
+        "list": {
+            "title": "Fotos in dieser Stapelverarbeitung"
+        },
+        "state": {
+            "done": "Fertig",
+            "processing": "In Arbeit",
+            "pending": "Ausstehend",
+            "failed": "Fehlgeschlagen"
+        },
         "ask": {
             "title": "Verarbeitung pausieren und dieses Foto ansehen?",
             "body": "Die Verarbeitung hält an, wo sie ist. Setzen Sie sie später fort, um die übrigen Fotos zu verarbeiten.",

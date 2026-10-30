@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ImageRecord } from "@/ipc/images";
-import { type Badge, badgeOf, progressOf, unprocessedCount } from "@/lib/batch";
+import { type Badge, badgeOf, batchRows, progressOf, unprocessedCount } from "@/lib/batch";
 import { useBatchStore } from "@/stores/batch";
 import { useCropStore } from "@/stores/crop";
 import { useEnhancementStore } from "@/stores/enhancements";
@@ -59,3 +59,10 @@ const sameCounts = (a: BatchCounts, b: BatchCounts) =>
 
 /** How far the batch has got, and how many open photographs a "Process all" would go through. */
 export const useBatchCounts = () => useLooked(counts, sameCounts);
+
+const sameRows = (a: ReturnType<typeof batchRows>, b: ReturnType<typeof batchRows>) =>
+    a.length === b.length &&
+    a.every((row, at) => row.file === b[at]?.file && row.index === b[at]?.index && row.state === b[at]?.state);
+
+/** The batch's photographs in the strip's order with where each stands, as {@link batchRows} answers them. */
+export const useBatchRows = () => useLooked(batchRows, sameRows);

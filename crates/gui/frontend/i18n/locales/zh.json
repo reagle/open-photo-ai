@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "使用分析",
                 "description": "发送匿名使用数据。绝不会收集图像或个人数据。"
+            },
+            "askBeforePause": {
+                "title": "暂停批处理前询问",
+                "description": "批处理进行时选择其他照片，先询问。关闭后会暂停批处理并显示该照片。"
             }
         },
         "performance": {
@@ -621,11 +625,23 @@
     "batch": {
         "processing": "正在处理第 {{current}} 张，共 {{total}} 张",
         "pause": "暂停",
-        "resume": "继续（剩余 {{count}} 张）",
+        "paused": "已暂停 — 剩余 {{left}} 张",
+        "resume": "继续",
         "processAll": "全部处理（{{count}}）",
         "exportHeld": "暂停或完成处理后即可导出",
         "finished_other": "已处理 {{count}} 张照片",
         "finishedWithFailures_other": "已处理 {{count}} 张照片，{{failed}} 张失败",
+        "done": "完成 — 已处理 {{processed}} 张",
+        "doneWithFailures": "完成 — 已处理 {{processed}} 张（{{failed}} 张失败）",
+        "list": {
+            "title": "此批次中的照片"
+        },
+        "state": {
+            "done": "完成",
+            "processing": "处理中",
+            "pending": "等待中",
+            "failed": "失败"
+        },
         "ask": {
             "title": "暂停处理并查看这张照片？",
             "body": "处理将在当前位置停止。稍后可继续处理剩余的照片。",

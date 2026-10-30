@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Analytics",
                 "description": "Send anonymous usage data. No images or personal data are ever collected."
+            },
+            "askBeforePause": {
+                "title": "Ask before pausing a batch",
+                "description": "When you pick another photo while a batch is processing, ask first. Off pauses the batch and shows the photo."
             }
         },
         "performance": {
@@ -632,13 +636,25 @@
     "batch": {
         "processing": "Processing {{current}} of {{total}}",
         "pause": "Pause",
-        "resume": "Resume ({{count}} left)",
+        "paused": "Paused — {{left}} left",
+        "resume": "Resume",
         "processAll": "Process all ({{count}})",
         "exportHeld": "Export is available once processing is paused or finished",
         "finished_one": "{{count}} photo processed",
         "finished_other": "{{count}} photos processed",
         "finishedWithFailures_one": "{{count}} photo processed, {{failed}} failed",
         "finishedWithFailures_other": "{{count}} photos processed, {{failed}} failed",
+        "done": "Done — {{processed}} processed",
+        "doneWithFailures": "Done — {{processed}} processed ({{failed}} failed)",
+        "list": {
+            "title": "Photos in this batch"
+        },
+        "state": {
+            "done": "Done",
+            "processing": "Processing",
+            "pending": "Pending",
+            "failed": "Failed"
+        },
         "ask": {
             "title": "Pause processing and view this photo?",
             "body": "Processing stops where it is. Resume it later to carry on with the photos that are left.",

@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Analitik",
                 "description": "Kirim data penggunaan anonim. Gambar atau data pribadi tidak pernah dikumpulkan."
+            },
+            "askBeforePause": {
+                "title": "Tanya sebelum menjeda batch",
+                "description": "Saat Anda memilih foto lain ketika batch sedang diproses, tanya dulu. Jika nonaktif, batch dijeda dan foto ditampilkan."
             }
         },
         "performance": {
@@ -621,11 +625,23 @@
     "batch": {
         "processing": "Memproses {{current}} dari {{total}}",
         "pause": "Jeda",
-        "resume": "Lanjutkan ({{count}} tersisa)",
+        "paused": "Dijeda — tersisa {{left}}",
+        "resume": "Lanjutkan",
         "processAll": "Proses semua ({{count}})",
         "exportHeld": "Ekspor tersedia setelah pemrosesan dijeda atau selesai",
         "finished_other": "{{count}} foto diproses",
         "finishedWithFailures_other": "{{count}} foto diproses, {{failed}} gagal",
+        "done": "Selesai — {{processed}} diproses",
+        "doneWithFailures": "Selesai — {{processed}} diproses ({{failed}} gagal)",
+        "list": {
+            "title": "Foto dalam batch ini"
+        },
+        "state": {
+            "done": "Selesai",
+            "processing": "Memproses",
+            "pending": "Menunggu",
+            "failed": "Gagal"
+        },
         "ask": {
             "title": "Jeda pemrosesan dan lihat foto ini?",
             "body": "Pemrosesan berhenti di tempatnya. Lanjutkan nanti untuk meneruskan foto yang tersisa.",

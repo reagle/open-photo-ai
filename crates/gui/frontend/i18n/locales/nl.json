@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Analyse",
                 "description": "Anonieme gebruiksgegevens verzenden. Er worden nooit afbeeldingen of persoonsgegevens verzameld."
+            },
+            "askBeforePause": {
+                "title": "Vragen voordat een reeks pauzeert",
+                "description": "Als je een andere foto kiest terwijl een reeks wordt verwerkt, eerst vragen. Uit pauzeert de reeks en toont de foto."
             }
         },
         "performance": {
@@ -632,13 +636,25 @@
     "batch": {
         "processing": "Verwerken {{current}} van {{total}}",
         "pause": "Pauzeren",
-        "resume": "Hervatten (nog {{count}})",
+        "paused": "Gepauzeerd — nog {{left}}",
+        "resume": "Hervatten",
         "processAll": "Alles verwerken ({{count}})",
         "exportHeld": "Exporteren kan zodra de verwerking is gepauzeerd of klaar is",
         "finished_one": "{{count}} foto verwerkt",
         "finished_other": "{{count}} foto’s verwerkt",
         "finishedWithFailures_one": "{{count}} foto verwerkt, {{failed}} mislukt",
         "finishedWithFailures_other": "{{count}} foto’s verwerkt, {{failed}} mislukt",
+        "done": "Klaar — {{processed}} verwerkt",
+        "doneWithFailures": "Klaar — {{processed}} verwerkt ({{failed}} mislukt)",
+        "list": {
+            "title": "Foto's in deze reeks"
+        },
+        "state": {
+            "done": "Klaar",
+            "processing": "Bezig",
+            "pending": "Wachtend",
+            "failed": "Mislukt"
+        },
         "ask": {
             "title": "Verwerking pauzeren en deze foto bekijken?",
             "body": "De verwerking stopt waar ze is. Hervat haar later om verder te gaan met de resterende foto’s.",
