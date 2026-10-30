@@ -551,6 +551,39 @@ pub(crate) fn joined(plain: &Matte, seeded: &Matte, saliency: &Matte) -> Matte {
     Matte::new(width, height, &alpha)
 }
 
+/// Bilbao's coverage at and above which a pixel is surely the subject, for [`firmed`].
+const SURELY_SALIENT: f32 = 0.98;
+
+/// `matte` with every pixel Porto calls mostly the subject (alpha a half or more) made the whole subject where Bilbao's
+/// `saliency` is sure of it ([`SURELY_SALIENT`], eroded by the seeds' inset); or `None` where that changes nothing.
+///
+/// Porto, asked about a band of unknown on a busy, solid subject (the camel's saddle, its straps and bundles against a
+/// pale sky), answers a half to nine tenths in patches, and the render lets the blurred background show through that
+/// much of the sharp subject: pale, washed patches on the saddle. Where Bilbao, which sees the whole object, is sure,
+/// such a partial answer is the matting model's hesitation, not a strand or a gap: those Bilbao is never sure of, and
+/// an alpha under a half (a gap Porto draws) is left as it is.
+pub(crate) fn firmed(matte: &Matte, saliency: &Matte) -> Option<Matte> {
+    let (width, height) = matte.dimensions();
+    let ring = unknown_radius(width, height);
+    let salient = saliency.plane().resized(width, height);
+    let sure = eroded(
+        &plane_of(width, height, |x, y| salient.as_slice()[y * width as usize + x] >= SURELY_SALIENT),
+        seed_inset(ring),
+    );
+    let mut alpha = matte.coverage();
+    let mut changed = 0_usize;
+    for (value, &sure) in alpha.iter_mut().zip(sure.as_slice()) {
+        if sure > 0.5 && (0.5..1.0).contains(value) {
+            *value = 1.0;
+            changed += 1;
+        }
+    }
+
+    tracing::debug!(changed, "the matte made whole where Bilbao is sure of the subject");
+
+    (changed > 0).then(|| Matte::new(width, height, &alpha))
+}
+
 /// The largest island of the subject the seeds may take away and the join gives back as a speck, in pixels: a square a
 /// quarter of the `ring` on a side, 64 px for a ring of 34.
 fn speck_area(ring: u32) -> usize {
@@ -977,6 +1010,26 @@ mod tests {
 
         // Nothing sure at all.
         assert!(seeded(&Plane::new(400, 300, 0.5), &Matte::new(1, 1, &[1.0]), None).is_none());
+    }
+
+    #[test]
+    fn porto_s_hesitation_on_a_subject_bilbao_is_sure_of_is_made_whole_and_a_gap_or_a_strand_is_not() {
+        // A 400 x 300 matte: Porto answers 0.7 on the left half, which Bilbao is sure of (0.99), and 0.3 in a gap it
+        // draws there; 0.7 on the right half, a strand Bilbao is less sure of (0.9).
+        let (width, height) = (400_u32, 300_u32);
+        let pixels = || (0..height).flat_map(move |y| (0..width).map(move |x| (x, y)));
+        let gap = |x: u32, y: u32| (90..110).contains(&x) && (140..160).contains(&y);
+        let alpha: Vec<f32> = pixels().map(|(x, y)| if gap(x, y) { 0.3 } else { 0.7 }).collect();
+        let saliency: Vec<f32> = pixels().map(|(x, _)| if x < 200 { 0.99 } else { 0.9 }).collect();
+        let (matte, saliency) = (Matte::new(width, height, &alpha), Matte::new(width, height, &saliency));
+
+        let firm = firmed(&matte, &saliency).expect("the subject was made whole");
+        assert!((firm.alpha_at(50, 50) - 1.0).abs() < 1e-3, "the sure subject is whole");
+        assert!((firm.alpha_at(100, 150) - 0.3).abs() < 0.01, "the gap Porto draws is kept");
+        assert!((firm.alpha_at(300, 150) - 0.7).abs() < 0.01, "the strand Bilbao is not sure of is kept");
+
+        // Nothing Bilbao is sure of: nothing changes.
+        assert!(firmed(&matte, &Matte::new(width, height, &vec![0.9; (width * height) as usize])).is_none());
     }
 
     #[test]
