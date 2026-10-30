@@ -183,6 +183,7 @@ describe("the editor's defaults", () => {
             expect(actionFor(key("e"), DEFAULT_SHORTCUTS, mac)).toBe("addEnhancement");
             expect(actionFor(key("c"), DEFAULT_SHORTCUTS, mac)).toBe("cropRotate");
             expect(actionFor(key("v"), DEFAULT_SHORTCUTS, mac)).toBe("cyclePreview");
+            expect(actionFor(key("i"), DEFAULT_SHORTCUTS, mac)).toBe("toggleInfo");
             expect(actionFor(key("Delete"), DEFAULT_SHORTCUTS, mac)).toBe("removeEnhancement");
             expect(actionFor(key("Backspace"), DEFAULT_SHORTCUTS, mac)).toBe("removeEnhancement");
 
