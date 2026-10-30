@@ -5,10 +5,12 @@ import { type CropInfo, sameCrop } from "@/ipc/crop";
 import { cancelEnhance, enhance, onEnhanceProgress, type RunProgress } from "@/ipc/enhance";
 import type { Face } from "@/ipc/faces";
 import type { ImageRecord } from "@/ipc/images";
+import { keyOf } from "@/lib/batch";
 import { runnable } from "@/lib/enhancements";
 import { withChoice } from "@/lib/faces";
 import { regionOf, toWire, withRemoval } from "@/lib/mask";
 import { report } from "@/lib/report";
+import { useBatchStore } from "@/stores/batch";
 import { useFileEnhancements } from "@/stores/enhancements";
 import { useFaceChoice, useFacesStore } from "@/stores/faces";
 import { useFileMask } from "@/stores/mask";
@@ -277,6 +279,8 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
             if (incoming.run !== mine.current) return;
 
             setIndicator(incoming);
+            // The strip's spinner is for a photograph actually computing, which a run is once it has reported.
+            useBatchStore.getState().started();
         });
 
         /*
@@ -312,6 +316,7 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
             setRunning(false);
             setResult(undefined);
             setIndicator(undefined);
+            useBatchStore.getState().showing(undefined);
             return;
         }
 
@@ -324,9 +329,24 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
         computing.current = !cheap;
 
         const chain = withRemoval(withChoice(operations, choice), region);
-        const { run, done } = enhance(source, chain, processor, crop, sent);
+        /*
+         * Told to the batch and the strip's badges: which photograph is working, and how its run ended for the request
+         * it was - keyed as `lib/batch.ts` keys what it compares, so a photograph finished here, by the batch or by the
+         * user paging to it, reads as finished there. Whether the batch is the one showing it is for the log alone.
+         */
+        const path = file?.path;
+        const key = keyOf({ source, operations: chain, processor, ...(crop && { crop }), ...(sent && { mask: sent }) });
+        const batch = useBatchStore.getState();
+        const { run, done } =
+            batch.phase === "running" && batch.current === path
+                ? enhance(source, chain, processor, crop, sent, "batch")
+                : enhance(source, chain, processor, crop, sent);
         mine.current = run;
         setRunning(true);
+        useBatchStore.getState().showing(path);
+        const outcomeOf = (failed: boolean) => {
+            if (path !== undefined) useBatchStore.getState().record(path, key, failed);
+        };
 
         // Only for the run that is still current: an older run resolving after a newer one started
         // would otherwise take the bar down over a run that is still working, and wipe the newer
@@ -337,6 +357,7 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
             computing.current = false;
             setRunning(false);
             setIndicator(undefined);
+            useBatchStore.getState().showing(undefined);
         };
 
         /*
@@ -364,6 +385,7 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
 
                 if (outcome.outcome !== "enhanced") return;
 
+                if (current) outcomeOf(false);
                 setResult({
                     source,
                     ...(crop && { crop }),
@@ -394,6 +416,7 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
                 }
             },
             (error: unknown) => {
+                if (mine.current === run) outcomeOf(true);
                 ended();
 
                 // The reason in full is reported and the catalogue's own sentence goes to
@@ -405,6 +428,7 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
         );
 
         return () => {
+            if (mine.current === run) useBatchStore.getState().showing(undefined);
             cancelEnhance(run).catch((error: unknown) =>
                 // A stop that cannot be delivered means the bridge is gone, which the next run would
                 // discover anyway. There is nobody to propagate it to from a cleanup.
