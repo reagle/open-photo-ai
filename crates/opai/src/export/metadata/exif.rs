@@ -10,6 +10,7 @@
 //! | ImageWidth `0x0100`, ImageLength `0x0101` | IFD0 | the exported size, where the source has them |
 //! | Orientation `0x0112` | IFD0 | 1, where the source has it: the decode already turned the pixels upright |
 //! | IFD1 and its thumbnail | — | removed: it shows the unenhanced, uncropped original |
+//! | ImageEditingSoftware `0xA43B` (EXIF 3.0) | Exif | `Open Photo AI <version>` for edited pixels: replaced where present, added only to an EXIF 3.0 block |
 //! | SubjectArea, SubjectLocation, FocalPlaneX/YResolution | Exif | moved and scaled with the pixels, afterwards, by [`pixels`](super::pixels) |
 //!
 //! Everything else — capture dates and offsets, camera, lens, aperture, focal length, exposure, GPS, the MakerNote — is
@@ -39,6 +40,8 @@ const OFFSET_TIME: u16 = 0x9010;
 const SUB_SEC_TIME: u16 = 0x9290;
 const PIXEL_X_DIMENSION: u16 = 0xA002;
 const PIXEL_Y_DIMENSION: u16 = 0xA003;
+const EXIF_VERSION: u16 = 0x9000;
+const IMAGE_EDITING_SOFTWARE: u16 = 0xA43B;
 
 /// What the rewrite needs to know about the export.
 pub(crate) struct Context<'a> {
@@ -51,6 +54,8 @@ pub(crate) struct Context<'a> {
     pub(crate) now: DateTime<FixedOffset>,
     /// The most the target format holds, if it is bounded (JPEG).
     pub(crate) limit: Option<usize>,
+    /// Whether the pixels were edited — framed or enhanced — rather than written as the source's.
+    pub(crate) edited: bool,
 }
 
 /// The Software value an export records: the application, its version and the export's date.
@@ -58,10 +63,10 @@ pub(crate) fn software(now: DateTime<FixedOffset>) -> String {
     format!("Open Photo AI {} ({})", env!("CARGO_PKG_VERSION"), now.format("%Y-%m-%d"))
 }
 
-/// The edits of the module's table, for `context`.
-pub(crate) fn edits(context: &Context<'_>) -> Vec<ExifEdit> {
+/// The edits of the module's table, for `context`, over the source's `exif`.
+pub(crate) fn edits(exif: &[u8], context: &Context<'_>) -> Vec<ExifEdit> {
     let dimension = |value: u32| u16::try_from(value).map_or(ExifValue::Long(value), ExifValue::Short);
-    vec![
+    let mut edits = vec![
         ExifEdit::DropThumbnail,
         ExifEdit::Set { ifd: ExifIfd::Primary, tag: SOFTWARE, value: ExifValue::Ascii(software(context.now)) },
         ExifEdit::Set {
@@ -85,7 +90,24 @@ pub(crate) fn edits(context: &Context<'_>) -> Vec<ExifEdit> {
         ExifEdit::Replace { ifd: ExifIfd::Primary, tag: IMAGE_WIDTH, value: dimension(context.width) },
         ExifEdit::Replace { ifd: ExifIfd::Primary, tag: IMAGE_LENGTH, value: dimension(context.height) },
         ExifEdit::Replace { ifd: ExifIfd::Primary, tag: ORIENTATION, value: ExifValue::Short(1) },
-    ]
+    ];
+    // EXIF 3.0's editing software, for edited pixels: replaced where the source names one, which is no longer the last
+    // to edit them, and added only to a 3.0 block, as OffsetTime is never added to a block older than it.
+    if context.edited {
+        let value = ExifValue::Ascii(format!("Open Photo AI {}", env!("CARGO_PKG_VERSION")));
+        let tag = IMAGE_EDITING_SOFTWARE;
+        edits.push(if exif_version(exif).is_some_and(|version| version >= *b"0300") {
+            ExifEdit::Set { ifd: ExifIfd::Exif, tag, value }
+        } else {
+            ExifEdit::Replace { ifd: ExifIfd::Exif, tag, value }
+        });
+    }
+    edits
+}
+
+/// The block's ExifVersion (`0x9000`, four ASCII digits stored as UNDEFINED, `0232`), if it records one.
+fn exif_version(exif: &[u8]) -> Option<[u8; 4]> {
+    super::pixels::undefined_four(exif, EXIF_VERSION)
 }
 
 /// `exif` rewritten for `context`, or `None` when it cannot be made true and is left out.
@@ -96,7 +118,7 @@ pub(crate) fn edits(context: &Context<'_>) -> Vec<ExifEdit> {
 /// reason. A block whose structure does not parse is left out and logged: no rewrite
 /// of it can be trusted to be true, and copying it unchanged is what this module exists to prevent.
 pub(crate) fn rewrite(exif: &[u8], context: &Context<'_>) -> Option<Vec<u8>> {
-    let edits = edits(context);
+    let edits = edits(exif, context);
     let source = context.source.display().to_string();
 
     let reason = match patch_exif(exif, &edits) {
@@ -144,7 +166,7 @@ mod tests {
     }
 
     fn context(width: u32, height: u32, limit: Option<usize>) -> Context<'static> {
-        Context { source: Path::new("/pictures/source.jpg"), width, height, now: now(), limit }
+        Context { source: Path::new("/pictures/source.jpg"), width, height, now: now(), limit, edited: false }
     }
 
     fn ascii(text: &str) -> Option<ExifValue> {
@@ -303,6 +325,38 @@ mod tests {
             panic!("expected one record:\n{log}")
         };
         assert_eq!(field(record, "reason"), Some("the thumbnail could not be removed in place"), "{record}");
+    }
+
+    /// A little-endian block whose Exif IFD holds only ExifVersion `version`.
+    fn versioned(version: &[u8; 4]) -> Vec<u8> {
+        let mut b = b"II\x2a\0\x08\0\0\0".to_vec();
+        // IFD0 at 8: the Exif pointer, to 26.
+        b.extend(1_u16.to_le_bytes());
+        b.extend([0x69, 0x87, 4, 0, 1, 0, 0, 0, 26, 0, 0, 0]);
+        b.extend(0_u32.to_le_bytes());
+        // Exif IFD at 26: ExifVersion, UNDEFINED[4], inline.
+        b.extend(1_u16.to_le_bytes());
+        b.extend([0x00, 0x90, 7, 0, 4, 0, 0, 0]);
+        b.extend(version);
+        b.extend(0_u32.to_le_bytes());
+        b
+    }
+
+    #[test]
+    fn edited_pixels_name_their_editor_in_an_exif_3_block_and_add_nothing_to_an_older_one() {
+        let edited = Context { edited: true, ..context(8, 8, None) };
+        let version = env!("CARGO_PKG_VERSION");
+
+        let rewritten = rewrite(&versioned(b"0300"), &edited).expect("rewritten");
+        assert_eq!(
+            exif_field(&rewritten, ExifIfd::Exif, IMAGE_EDITING_SOFTWARE),
+            ascii(&format!("Open Photo AI {version}"))
+        );
+        let rewritten = rewrite(&versioned(b"0232"), &edited).expect("rewritten");
+        assert_eq!(exif_field(&rewritten, ExifIfd::Exif, IMAGE_EDITING_SOFTWARE), None);
+        // Nor is it written for pixels that are the source's own.
+        let rewritten = rewrite(&versioned(b"0300"), &context(8, 8, None)).expect("rewritten");
+        assert_eq!(exif_field(&rewritten, ExifIfd::Exif, IMAGE_EDITING_SOFTWARE), None);
     }
 
     #[test]
