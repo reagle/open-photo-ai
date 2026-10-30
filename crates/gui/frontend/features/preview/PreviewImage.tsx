@@ -6,7 +6,7 @@ import { BrushCursor } from "@/features/mask/BrushCursor";
 import { MaskOverlay } from "@/features/mask/MaskOverlay";
 import { useEnhancementRun } from "@/hooks/useEnhancementRun";
 import { useResizeObserver } from "@/hooks/useResizeObserver";
-import { useSettledFile } from "@/hooks/useSettledFile";
+import { useStandIn } from "@/hooks/useStandIn";
 import { framedDimensions } from "@/ipc/crop";
 import { renditionFor } from "@/ipc/images";
 import { DRAWER_HEIGHT, PAN_KEY_STEP, ZOOM_MIN, ZOOM_WHEEL_STEP } from "@/lib/constants";
@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useDrawerStore } from "@/stores/drawer";
 import { useEnhancementStore, useFileEnhancements } from "@/stores/enhancements";
+import { useCurrentFile } from "@/stores/files";
 import { useFocusPickStore, useIsArmed } from "@/stores/focusPick";
 import { useIsEditing, useMaskStore } from "@/stores/mask";
 import { usePeekStore } from "@/stores/peek";
@@ -31,7 +32,7 @@ import {
 } from "@/stores/transform";
 import { CLICK_SLOP, FocusHint, FocusPick } from "./FocusPick";
 import { constrain, constrainPosition, fitInside, imageFraction, type Size } from "./geometry";
-import { ProgressBar } from "./ProgressBar";
+import { ProgressBar, useShownProgress } from "./ProgressBar";
 
 /**
  * What a pane does with a press while the mask is being painted: the brush, and what to tell the store as a stroke
@@ -56,7 +57,7 @@ type Paint = {
 
 type PaneProps = {
     // Handed down rather than read from the store here, so that both panes draw the same photograph on
-    // the same render and one preload serves the pair. See `hooks/useSettledFile.ts`.
+    // the same render and one stand-in serves the pair. See `hooks/useStandIn.ts`.
     //
     // The dimensions alone rather than a whole `ImageRecord`, because the enhanced pane's result is
     // not one: it has no path, no format and no size on disk, and a record built by swapping the
@@ -64,7 +65,7 @@ type PaneProps = {
     // everything else - so anything this component read off it would be reading the wrong image's
     // data. Taking what is actually used means there is nothing to fabricate.
     /**
-     * The settled photograph's dimensions. Partial because an unparseable header publishes neither;
+     * The photograph's dimensions. Partial because an unparseable header publishes neither;
      * the decoded image's own size is the fallback.
      */
     published?: Partial<Size>;
@@ -687,7 +688,13 @@ const Pane = ({
              * zoom and pan are a compositor transform and the pane is never repainted. An `<img>` is
              * composited directly from its decoded pixels, so magnification stays sharp.
              */}
+            {/*
+             * Keyed by the photograph, so a new one starts from an empty element rather than a webview that goes on
+             * painting the previous photograph's bitmap into the new box until the new one arrives: the stand-in is
+             * this photograph's own thumbnail, already decoded, so the empty frame is not seen.
+             */}
             <img
+                key={transformKey}
                 {...(source !== undefined && { src: source })}
                 alt={alt}
                 draggable={false}
@@ -769,32 +776,31 @@ const DIVIDER_STEP = 2;
  *   chip reads *Original*, as if there were no result.
  * - The URL carries no size bound; the canvas asks for the photograph at its own size.
  * - Both panes share one transform, so zooming or panning either moves both.
- * - It draws the settled image rather than the current one (`hooks/useSettledFile.ts`).
+ * - It draws the current image at once, from its thumbnail upwards (`hooks/useStandIn.ts`).
  */
 export const PreviewImage = () => {
     const { t } = useTranslation();
     // Everything a pane needs - the URL, the dimensions it is fitted from, the identity its transform
     // is stored under - comes off this one record, so a change of image reaches all of them on the
-    // same render. Reading the current file here instead would put the new photograph's shape on the
-    // old one's pixels for the length of a decode.
-    const file = useSettledFile();
+    // same render. The current one, on the click: every URL drawn for it is its own, from its thumbnail
+    // up (`hooks/useStandIn.ts`), so its shape is never put on another photograph's pixels.
+    const file = useCurrentFile();
     const previewMode = usePreviewStore((state) => state.previewMode);
 
     /*
-     * How the settled photograph is framed, which both panes draw through: the original pane asks the
-     * protocol for the framing, and the enhanced pane draws a result that was *already* made from it,
-     * so its own URL carries no crop. Against the settled file for the reason everything else on the
-     * canvas is - a framing read off the current file would be applied to the outgoing photograph's
-     * pixels for the length of a decode.
+     * How the photograph is framed, which both panes draw through: the original pane asks the protocol
+     * for the framing, and the enhanced pane draws a result that was *already* made from it, so its own
+     * URL carries no crop.
      */
     const crop = useImageCrop(file?.identity);
     /*
      * The run, owned here because this is the component that draws both panes and the bar, and is
-     * mounted for as long as a file is open. Against the *settled* file, like everything else the
-     * canvas keys off: a run started for a photograph that is not drawn yet would land a result on
-     * the one still on screen.
+     * mounted for as long as a file is open. Asked for on the click: Rust decodes its own pixels, so
+     * the run need not wait for the canvas's, and the previous photograph's result is not drawn over
+     * this one's stand-in - it belongs to another identity.
      */
     const { enhanced: result, report, running, fraction } = useEnhancementRun(file, crop);
+    const progressShown = useShownProgress(running, report);
 
     /*
      * While the show-original key is held the result is set aside for this render, and everything
@@ -819,15 +825,17 @@ export const PreviewImage = () => {
      * the encode. Bounding the panes the way the sidebar's miniature is bounded would change what the
      * canvas draws, so it is a decision for the canvas rather than a cleanup.
      *
-     * No bound, which is `getImage(file, 0)` in the reference: the photograph at its own size is what
-     * makes 8x a magnification of real pixels rather than of a canvas-sized rendition.
+     * The strip's thumbnail on the click, a screen-sized rendition once it has decoded, and the photograph at its own
+     * size - `getImage(file, 0)` in the reference - only once it is magnified: that is what makes 8x a magnification of
+     * real pixels rather than of a canvas-sized rendition, and it is a cost the fitted view does not need to pay.
      *
      * Absent for a file whose pixels nothing can serve: the `<img>` then has no source and draws as
      * broken, which is also what a file deleted between being described and being drawn does.
      * Inventing a state for that here would be designing an error screen for a case no user has
      * reached.
      */
-    const source = renditionFor(file, 0, crop);
+    const magnified = useImageTransform(file?.identity).scale > ZOOM_MIN;
+    const source = useStandIn(file, crop, magnified);
 
     /*
      * The pane labels ride above whichever of the drawer's two states is showing, as the design's own
@@ -1040,7 +1048,7 @@ export const PreviewImage = () => {
 
             {armed && <FocusHint />}
 
-            {running && <ProgressBar fraction={fraction} {...(report && { report })} operations={operations} />}
+            {progressShown && <ProgressBar fraction={fraction} {...(report && { report })} operations={operations} />}
 
             {previewMode === "split" && (
                 /*
