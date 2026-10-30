@@ -14,6 +14,7 @@
 //! | `hdrgm:*`, `Container:*`, `Item:*` | dropped, unless the export writes the gain map (below) |
 //! | `exif:SubjectArea`, `exif:SubjectLocation`, `exif:FocalPlaneXResolution`, `exif:FocalPlaneYResolution` | moved and scaled with the pixels, as the EXIF's are ([`pixels`](super::pixels)); removed where they can no longer be true |
 //! | `GImage:*`, `GFocus:*` | dropped from an edited picture: the original image the export no longer is, and the focus it was rendered with |
+//! | `stEvt:parameters` of that event, `opai:*`, `Iptc4xmpExt:DigitalSourceType` | what was rendered, by [`record`](super::record) |
 //! | `GDepth:*` | dropped from an edited picture, unless only an upscale changed its pixels, in which case `GDepth:ImageWidth` and `GDepth:ImageHeight` (the colour image's size, by Google's specification) become the export's |
 //!
 //! **With the gain map written** (a JPEG export of a gain-map JPEG, [`Context::gain_map`]), what describes it is kept:
@@ -40,6 +41,7 @@ use rust_sak::image::{ExifIfd, ExifValue, exif_field};
 use super::exif::software;
 use super::iptc::Iim;
 use super::pixels::{Geometry, scaled_rational};
+use super::record;
 use crate::image::Edits;
 use crate::models::Operation;
 use edit::{Array, Xmp, ns};
@@ -155,8 +157,15 @@ fn apply(xmp: &mut Xmp, context: &Context<'_>) {
     }
     let converted = context.source_type.as_deref().is_none_or(|source| source != context.output_type);
     let mut event = vec![(ns::ST_EVT, "action", if converted { "converted" } else { "saved" }.to_owned())];
-    if converted && let Some(source) = &context.source_type {
-        event.push((ns::ST_EVT, "parameters", format!("from {source} to {}", context.output_type)));
+    let conversion = converted
+        .then(|| context.source_type.as_ref().map(|source| format!("from {source} to {}", context.output_type)))
+        .flatten();
+    let parameters = match (conversion, record::parameters(context.edits)) {
+        (Some(conversion), Some(edits)) => Some(format!("{conversion}; {edits}")),
+        (conversion, edits) => conversion.or(edits),
+    };
+    if let Some(parameters) = parameters {
+        event.push((ns::ST_EVT, "parameters", parameters));
     }
     event.extend([
         (ns::ST_EVT, "changed", "/".to_owned()),
@@ -182,6 +191,13 @@ fn apply(xmp: &mut Xmp, context: &Context<'_>) {
     if let Some(geometry) = context.geometry {
         move_pixel_fields(xmp, geometry);
     }
+
+    // What was rendered, beside what the camera recorded.
+    let focal_35mm = context.exif.and_then(|exif| match exif_field(exif, ExifIfd::Exif, 0xA405) {
+        Some(ExifValue::Short(focal)) => Some(u32::from(focal)),
+        _ => None,
+    });
+    record::record(xmp, context.edits, (context.width, context.height), focal_35mm);
 
     if let Some(iim) = context.iim {
         map_iim(xmp, iim);
