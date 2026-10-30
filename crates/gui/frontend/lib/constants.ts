@@ -50,6 +50,24 @@ export const PAN_KEY_STEP = 0.1;
  */
 export const THUMBNAIL_BOUND = 384;
 
+/** The granularity {@link screenBound} rounds up to, so a window moved a little never asks for a new rendition. */
+const SCREEN_BOUND_STEP = 1024;
+
+/**
+ * Longest edge requested for the canvas's screen-sized rendition, which is drawn until the photograph is magnified:
+ * the screen's longest side in device pixels, rounded up to a multiple of {@link SCREEN_BOUND_STEP}.
+ *
+ * The screen rather than the pane, so resizing the window does not re-fetch; rounded, so the two sizes of one monitor
+ * family share a rendition. On a 1440-point display at 2x that is 3072 px, about half the pixels of a 24-megapixel
+ * original to encode and decode - and the original itself is asked for only once a zoom needs more than this.
+ */
+export const screenBound = () => {
+    const ratio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+    const longest = typeof screen === "undefined" ? 0 : Math.max(screen.width, screen.height);
+
+    return Math.max(SCREEN_BOUND_STEP, Math.ceil((longest * ratio) / SCREEN_BOUND_STEP) * SCREEN_BOUND_STEP);
+};
+
 /**
  * Size (px) of the three-dot menu glyph in the drawer's name bar. Named because the thumbnail menu's
  * `alignOffset` depends on it matching the trigger button's box exactly. The `<Ellipsis>` icon itself
