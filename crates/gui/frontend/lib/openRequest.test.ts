@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fNumberForAmount } from "@/lib/blurAmount";
 import { useEnhancementStore } from "@/stores/enhancements";
+import { useSettingsStore } from "@/stores/settings";
 import { CATALOGUE, HOLIDAY, resetSettingsStore, SUNSET } from "@/test/support";
 import { applyRequest, prepareForRequest } from "./openRequest";
 
@@ -57,6 +58,46 @@ describe("what opai --gui asked for a batch", () => {
             focus_y: 0.5,
         });
         expect(stack(SUNSET.path)?.[0]?.parameters.f_number).toBe(fNumberForAmount(50, 8));
+    });
+
+    it("gives each photograph it names a sharpen of its model at its strength, and nothing else", async () => {
+        await applyRequest({ paths: [HOLIDAY.path], sharpen: { model: "novgorod", strength: 1.5 } }, [HOLIDAY, SUNSET]);
+
+        expect(stack(HOLIDAY.path)).toEqual([
+            { family: "sharpen", codename: "novgorod", precision: "fp32", parameters: { strength: 1.5 } },
+        ]);
+        expect(stack(SUNSET.path)).toBeUndefined();
+    });
+
+    it("runs a sharpen at the tier of the saved sharpen model, as a run without -q does, and its default strength", async () => {
+        useSettingsStore.setState({ models: { sharpen: "moscow_fp16" } });
+
+        await applyRequest({ paths: [HOLIDAY.path], sharpen: { model: "petersburg" } }, [HOLIDAY]);
+
+        expect(stack(HOLIDAY.path)).toEqual([
+            { family: "sharpen", codename: "petersburg", precision: "fp16", parameters: { strength: 1 } },
+        ]);
+    });
+
+    it("adds a sharpen and a lens blur together in the order a chain runs them", async () => {
+        await applyRequest({ paths: [HOLIDAY.path], lensBlur: { fNumber: 2 }, sharpen: { model: "moscow" } }, [
+            HOLIDAY,
+        ]);
+
+        expect(stack(HOLIDAY.path)?.map((operation) => operation.family)).toEqual(["sharpen", "lens_blur"]);
+    });
+
+    it("adds nothing for a sharpen model the catalogue does not publish", async () => {
+        await applyRequest({ paths: [HOLIDAY.path], sharpen: { model: "atlantis" } }, [HOLIDAY]);
+
+        expect(stack(HOLIDAY.path)).toBeUndefined();
+    });
+
+    it("replaces a sharpen the photograph already has rather than adding a second", async () => {
+        await applyRequest({ paths: [HOLIDAY.path], sharpen: { model: "moscow", strength: 0.5 } }, [HOLIDAY]);
+        await applyRequest({ paths: [HOLIDAY.path], sharpen: { model: "novgorod" } }, [HOLIDAY]);
+
+        expect(stack(HOLIDAY.path)?.map((operation) => operation.codename)).toEqual(["novgorod"]);
     });
 
     it("replaces a lens blur the photograph already has rather than adding a second", async () => {

@@ -109,7 +109,7 @@ Where the results go: one file, or a directory. Without it, each result is writt
 
 ### `--gui`
 
-Opens the images in the GUI instead of processing them, and ignores every other option but a lens blur. The inputs are expanded exactly as for a run, `-r` included, and every image found is added to the GUI's open images. If the GUI is already open, they are added to that window; if not, it is started first.
+Opens the images in the GUI instead of processing them, and ignores every other option but a sharpen and a lens blur. The inputs are expanded exactly as for a run, `-r` included, and every image found is added to the GUI's open images. If the GUI is already open, they are added to that window; if not, it is started first.
 
 ```
 $ opai photos -r --gui
@@ -124,10 +124,12 @@ $ opai beach.jpg --up osaka -q sd -o out --gui
 🖼️ Opening 1 image in Open Photo AI
 ```
 
-The one exception is a lens blur: with [`--lens-blur`](#lens-blur---lens-blur-model---lb-model), each image opens with a Lens Blur at `--lb-f` or `--lb-amount` and `--lb-focus`, and Autopilot is switched off in the GUI, as a run refuses `--ap` with an enhancement. What is left out is the GUI's own default for a new Lens Blur; `--lb-edges` is ignored with a warning, since the GUI has no such setting.
+The two exceptions are a sharpen and a lens blur. With [`--sharpen`](#sharpen---sharpen-model---sh-model), each image opens with a Sharpen of that model (Moscow for a bare `--sh`, as in a run) at `--sh-str`, or the default strength of 100 without it. Its precision is the one a run without `-q` would use: the quality (HD or SD) of the Sharpen model saved in the GUI's settings, or HD; `-q` itself is ignored with a warning. With [`--lens-blur`](#lens-blur---lens-blur-model---lb-model), each image opens with a Lens Blur at `--lb-f` or `--lb-amount` and `--lb-focus`; what is left out is the GUI's own default for a new Lens Blur, and `--lb-edges` is ignored with a warning, since the GUI has no such setting. Both may be given together, and each image then gets both, in the order a run applies them (the Sharpen first). Either one switches Autopilot off in the GUI, as a run refuses `--ap` with an enhancement, and no other enhancement is added.
 
 ```
 $ opai beach.jpg --gui --lb --lb-f 1.4 --lb-focus 0.4,0.5
+🖼️ Opening 1 image in Open Photo AI
+$ opai beach.jpg --gui --sh novgorod --sh-str 150 --lb
 🖼️ Opening 1 image in Open Photo AI
 ```
 
