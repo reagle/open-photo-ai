@@ -15,6 +15,10 @@ vi.mock("@/ipc/lens", async (original) => ({
     lensInfo: vi.fn(() => Promise.resolve({ ownFNumber: 8, focal35mm: null, cropFactor: null, origin: "assumed" })),
 }));
 
+// The batch itself is `lib/batch.test.ts`'s; here only that a request sets one going, over what it named.
+vi.mock("@/lib/batch", () => ({ startBatch: vi.fn() }));
+const { startBatch } = await import("@/lib/batch");
+
 const stack = (path: string) => useEnhancementStore.getState().enhancements.get(path);
 
 beforeEach(() => {
@@ -58,6 +62,14 @@ describe("what opai --gui asked for a batch", () => {
             focus_y: 0.5,
         });
         expect(stack(SUNSET.path)?.[0]?.parameters.f_number).toBe(fNumberForAmount(50, 8));
+    });
+
+    it("then pages through the photographs it named, each with its enhancements already in place", async () => {
+        vi.mocked(startBatch).mockImplementationOnce(() => expect(stack(HOLIDAY.path)).toHaveLength(1));
+
+        await applyRequest({ paths: [HOLIDAY.path], sharpen: { model: "novgorod", strength: 1.5 } }, [HOLIDAY, SUNSET]);
+
+        expect(startBatch).toHaveBeenCalledWith([HOLIDAY.path]);
     });
 
     it("gives each photograph it names a sharpen of its model at its strength, and nothing else", async () => {

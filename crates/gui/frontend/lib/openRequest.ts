@@ -2,6 +2,7 @@ import { familyEntry } from "@/hooks/useCatalogue";
 import { catalogue, type FamilyEntry } from "@/ipc/catalogue";
 import type { Operation } from "@/ipc/enhance";
 import type { ImageRecord, OpenRequest } from "@/ipc/images";
+import { startBatch } from "@/lib/batch";
 import { DEFAULT_AMOUNT, fNumberForAmount } from "@/lib/blurAmount";
 import {
     applyOrder,
@@ -62,6 +63,9 @@ const sharpenOperation = (entry: FamilyEntry | undefined, sharpen: NonNullable<O
  * its focus point. One of either already on the photograph is replaced.
  *
  * A photograph opened whole: nothing has been cropped yet, so the lens is its own.
+ *
+ * **Then the batch pages through them** (`lib/batch.ts`): a batch named on the command line is a batch somebody wants
+ * done, not one photograph at a time as they are paged to. A batch already under way takes them on.
  */
 export const applyRequest = async (request: OpenRequest, admitted: readonly ImageRecord[]) => {
     const asked = new Set(request.paths);
@@ -96,4 +100,7 @@ export const applyRequest = async (request: OpenRequest, admitted: readonly Imag
         }
         place(file.path, blur);
     }
+
+    // After the stacks, so the first look at them finds every one in place.
+    startBatch(files.map((file) => file.path));
 };

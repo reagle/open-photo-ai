@@ -132,6 +132,11 @@ export type SettingsData = {
 type SettingsRecord = {
     /** Whether the TensorRT question has been answered, on this launch or any earlier one. */
     tensorrtAsked: boolean;
+    /**
+     * Whether a click on another photograph while a batch runs pauses it without asking: the question's "Don't ask
+     * again". See `lib/batch.ts`.
+     */
+    pauseBatchWithoutAsking: boolean;
 };
 
 type SettingsStore = SettingsData &
@@ -147,6 +152,8 @@ type SettingsStore = SettingsData &
          * either way the question has been answered.
          */
         answerTensorRT: (enable: boolean) => void;
+        /** Records that a click during a batch is to pause it without asking from now on. */
+        stopAskingBeforePause: () => void;
     };
 
 /** The preferences out of a store state, which is what the dialog seeds a draft from and Save hands back. */
@@ -279,6 +286,7 @@ export const useSettingsStore = create<SettingsStore>()(
             // detected language.
             ...settingsDefaults(),
             tensorrtAsked: false,
+            pauseBatchWithoutAsking: false,
 
             /*
              * One action rather than a setter per field: this store holds what is *in force*, and
@@ -318,6 +326,8 @@ export const useSettingsStore = create<SettingsStore>()(
             // depending on nothing having changed the preference first. No is the next best thing
             // on a machine that offers TensorRT, which is installed as a layer on the CUDA libraries.
             answerTensorRT: (enable: boolean) => set({ processor: enable ? "auto" : "cuda", tensorrtAsked: true }),
+
+            stopAskingBeforePause: () => set({ pauseBatchWithoutAsking: true }),
         }),
         {
             // The Wails app's key, unchanged.
@@ -332,6 +342,7 @@ export const useSettingsStore = create<SettingsStore>()(
             partialize: (state: SettingsStore): SettingsData & SettingsRecord => ({
                 ...settingsData(state),
                 tensorrtAsked: state.tensorrtAsked,
+                pauseBatchWithoutAsking: state.pauseBatchWithoutAsking,
             }),
 
             /*
@@ -394,6 +405,7 @@ export const useSettingsStore = create<SettingsStore>()(
                     // it had been - so a user upgrading is not asked a second time. Anything else,
                     // including nothing at all, is a question not yet asked.
                     tensorrtAsked: stored.tensorrtAsked === true || stored.isFirstTensorRT === false,
+                    pauseBatchWithoutAsking: stored.pauseBatchWithoutAsking === true,
                 };
             },
         },

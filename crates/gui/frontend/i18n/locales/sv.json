@@ -210,6 +210,12 @@
             "full": "Hel",
             "sideBySide": "Sida vid sida",
             "split": "Delad"
+        },
+        "badge": {
+            "queued": "Väntar på förbättring",
+            "processing": "Förbättras",
+            "done": "Förbättrad",
+            "failed": "Förbättringen misslyckades"
         }
     },
     "faces": {
@@ -621,6 +627,24 @@
             "pan": "Panorera",
             "images": "Föregående bild / Nästa bild",
             "options": "Alternativ för förbättring 1–8"
+        }
+    },
+    "batch": {
+        "processing": "Bearbetar {{current}} av {{total}}",
+        "pause": "Pausa",
+        "resume": "Fortsätt ({{count}} kvar)",
+        "processAll": "Bearbeta alla ({{count}})",
+        "exportHeld": "Export blir tillgänglig när bearbetningen är pausad eller klar",
+        "finished_one": "{{count}} foto bearbetat",
+        "finished_other": "{{count}} foton bearbetade",
+        "finishedWithFailures_one": "{{count}} foto bearbetat, {{failed}} misslyckades",
+        "finishedWithFailures_other": "{{count}} foton bearbetade, {{failed}} misslyckades",
+        "ask": {
+            "title": "Pausa bearbetningen och visa det här fotot?",
+            "body": "Bearbetningen stannar där den är. Fortsätt senare med de foton som är kvar.",
+            "pause": "Pausa och visa",
+            "keep": "Fortsätt bearbeta",
+            "dontAsk": "Fråga inte igen"
         }
     }
 }

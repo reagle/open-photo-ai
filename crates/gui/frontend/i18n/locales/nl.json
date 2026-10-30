@@ -210,6 +210,12 @@
             "full": "Volledig",
             "sideBySide": "Naast elkaar",
             "split": "Gesplitst"
+        },
+        "badge": {
+            "queued": "Wacht op verbetering",
+            "processing": "Wordt verbeterd",
+            "done": "Verbeterd",
+            "failed": "Verbetering mislukt"
         }
     },
     "faces": {
@@ -621,6 +627,24 @@
             "pan": "Schuiven",
             "images": "Vorige afbeelding / Volgende afbeelding",
             "options": "Opties van verbetering 1–8"
+        }
+    },
+    "batch": {
+        "processing": "Verwerken {{current}} van {{total}}",
+        "pause": "Pauzeren",
+        "resume": "Hervatten (nog {{count}})",
+        "processAll": "Alles verwerken ({{count}})",
+        "exportHeld": "Exporteren kan zodra de verwerking is gepauzeerd of klaar is",
+        "finished_one": "{{count}} foto verwerkt",
+        "finished_other": "{{count}} foto’s verwerkt",
+        "finishedWithFailures_one": "{{count}} foto verwerkt, {{failed}} mislukt",
+        "finishedWithFailures_other": "{{count}} foto’s verwerkt, {{failed}} mislukt",
+        "ask": {
+            "title": "Verwerking pauzeren en deze foto bekijken?",
+            "body": "De verwerking stopt waar ze is. Hervat haar later om verder te gaan met de resterende foto’s.",
+            "pause": "Pauzeren & bekijken",
+            "keep": "Doorgaan met verwerken",
+            "dontAsk": "Niet meer vragen"
         }
     }
 }

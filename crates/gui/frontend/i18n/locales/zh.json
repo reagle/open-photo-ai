@@ -209,6 +209,12 @@
             "full": "整图",
             "sideBySide": "并排",
             "split": "分割"
+        },
+        "badge": {
+            "queued": "等待增强",
+            "processing": "正在增强",
+            "done": "已增强",
+            "failed": "增强失败"
         }
     },
     "faces": {
@@ -610,6 +616,22 @@
             "pan": "平移",
             "images": "上一张图像 / 下一张图像",
             "options": "增强 1–8 的选项"
+        }
+    },
+    "batch": {
+        "processing": "正在处理第 {{current}} 张，共 {{total}} 张",
+        "pause": "暂停",
+        "resume": "继续（剩余 {{count}} 张）",
+        "processAll": "全部处理（{{count}}）",
+        "exportHeld": "暂停或完成处理后即可导出",
+        "finished_other": "已处理 {{count}} 张照片",
+        "finishedWithFailures_other": "已处理 {{count}} 张照片，{{failed}} 张失败",
+        "ask": {
+            "title": "暂停处理并查看这张照片？",
+            "body": "处理将在当前位置停止。稍后可继续处理剩余的照片。",
+            "pause": "暂停并查看",
+            "keep": "继续处理",
+            "dontAsk": "不再询问"
         }
     }
 }

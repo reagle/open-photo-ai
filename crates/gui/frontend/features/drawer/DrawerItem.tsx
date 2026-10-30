@@ -1,7 +1,9 @@
 import { memo } from "react";
+import { Check, CircleAlert, Clock, LoaderCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FileMenuTrigger, FileOptionsMenu, THUMBNAIL_ANCHOR } from "@/features/files/FileOptionsMenu";
+import { useBatchBadge } from "@/hooks/useBatch";
 import type { ImageRecord } from "@/ipc/images";
 import { renditionFor } from "@/ipc/images";
 import { THUMBNAIL_BOUND } from "@/lib/constants";
@@ -48,6 +50,7 @@ const DrawerItemComponent = ({ file, index, current, onClick, drawer }: DrawerIt
     const toggleSelected = useFileStore((state) => state.toggleSelected);
 
     const name = fileName(file.path);
+    const badge = useBatchBadge(file);
 
     return (
         <div
@@ -144,7 +147,37 @@ const DrawerItemComponent = ({ file, index, current, onClick, drawer }: DrawerIt
                 aria-label={t("drawer.selectImage", { name })}
                 className="absolute top-1 right-1 z-10 size-[18px] border-white/70 bg-background/55"
             />
+
+            {/*
+             * How far this photograph's enhancements have got, in the corner the checkbox leaves: the checkbox's own
+             * size and translucent ground, so the two read as one family and neither moves the other. Absent for a
+             * photograph with nothing to run. Named and titled, because a glyph alone says nothing to a screen reader
+             * and little to anybody who has not learnt it; pointer events stay on so the title can show.
+             */}
+            {badge && <EnhancementBadge badge={badge} label={t(`drawer.badge.${badge}`)} />}
         </div>
+    );
+};
+
+/** The glyph each state of a photograph's enhancements draws in the strip. */
+const BADGE_GLYPHS = { queued: Clock, processing: LoaderCircle, done: Check, failed: CircleAlert } as const;
+
+const EnhancementBadge = ({ badge, label }: { badge: keyof typeof BADGE_GLYPHS; label: string }) => {
+    const Glyph = BADGE_GLYPHS[badge];
+
+    return (
+        <span
+            role="img"
+            aria-label={label}
+            title={label}
+            data-badge={badge}
+            className={cn(
+                "absolute top-1 left-1 z-10 flex size-[18px] items-center justify-center rounded-sm bg-background/55",
+                badge === "failed" ? "text-destructive" : "text-foreground",
+            )}
+        >
+            <Glyph aria-hidden className={cn("size-3", badge === "processing" && "animate-spin")} />
+        </span>
     );
 };
 

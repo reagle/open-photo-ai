@@ -209,6 +209,12 @@
             "full": "全体",
             "sideBySide": "左右比較",
             "split": "分割"
+        },
+        "badge": {
+            "queued": "補正待ち",
+            "processing": "補正中",
+            "done": "補正済み",
+            "failed": "補正に失敗しました"
         }
     },
     "faces": {
@@ -610,6 +616,22 @@
             "pan": "移動",
             "images": "前の画像 / 次の画像",
             "options": "補正 1–8 のオプション"
+        }
+    },
+    "batch": {
+        "processing": "{{total}} 枚中 {{current}} 枚目を処理中",
+        "pause": "一時停止",
+        "resume": "再開（残り {{count}} 枚）",
+        "processAll": "すべて処理（{{count}}）",
+        "exportHeld": "処理を一時停止するか完了すると書き出せます",
+        "finished_other": "{{count}} 枚の写真を処理しました",
+        "finishedWithFailures_other": "{{count}} 枚の写真を処理しました（{{failed}} 枚は失敗）",
+        "ask": {
+            "title": "処理を一時停止してこの写真を表示しますか？",
+            "body": "処理はその場で止まります。残りの写真は後で再開して処理できます。",
+            "pause": "一時停止して表示",
+            "keep": "処理を続ける",
+            "dontAsk": "今後は確認しない"
         }
     }
 }

@@ -210,6 +210,12 @@
             "full": "Full",
             "sideBySide": "Side by Side",
             "split": "Split"
+        },
+        "badge": {
+            "queued": "Waiting to be enhanced",
+            "processing": "Being enhanced",
+            "done": "Enhanced",
+            "failed": "Enhancement failed"
         }
     },
     "faces": {
@@ -621,6 +627,24 @@
             "pan": "Pan",
             "images": "Previous image / Next image",
             "options": "Options of enhancement 1–8"
+        }
+    },
+    "batch": {
+        "processing": "Processing {{current}} of {{total}}",
+        "pause": "Pause",
+        "resume": "Resume ({{count}} left)",
+        "processAll": "Process all ({{count}})",
+        "exportHeld": "Export is available once processing is paused or finished",
+        "finished_one": "{{count}} photo processed",
+        "finished_other": "{{count}} photos processed",
+        "finishedWithFailures_one": "{{count}} photo processed, {{failed}} failed",
+        "finishedWithFailures_other": "{{count}} photos processed, {{failed}} failed",
+        "ask": {
+            "title": "Pause processing and view this photo?",
+            "body": "Processing stops where it is. Resume it later to carry on with the photos that are left.",
+            "pause": "Pause & view",
+            "keep": "Keep processing",
+            "dontAsk": "Don't ask again"
         }
     }
 }

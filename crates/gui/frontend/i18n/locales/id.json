@@ -209,6 +209,12 @@
             "full": "Penuh",
             "sideBySide": "Berdampingan",
             "split": "Terbagi"
+        },
+        "badge": {
+            "queued": "Menunggu ditingkatkan",
+            "processing": "Sedang ditingkatkan",
+            "done": "Sudah ditingkatkan",
+            "failed": "Peningkatan gagal"
         }
     },
     "faces": {
@@ -610,6 +616,22 @@
             "pan": "Geser",
             "images": "Gambar sebelumnya / Gambar berikutnya",
             "options": "Opsi peningkatan 1–8"
+        }
+    },
+    "batch": {
+        "processing": "Memproses {{current}} dari {{total}}",
+        "pause": "Jeda",
+        "resume": "Lanjutkan ({{count}} tersisa)",
+        "processAll": "Proses semua ({{count}})",
+        "exportHeld": "Ekspor tersedia setelah pemrosesan dijeda atau selesai",
+        "finished_other": "{{count}} foto diproses",
+        "finishedWithFailures_other": "{{count}} foto diproses, {{failed}} gagal",
+        "ask": {
+            "title": "Jeda pemrosesan dan lihat foto ini?",
+            "body": "Pemrosesan berhenti di tempatnya. Lanjutkan nanti untuk meneruskan foto yang tersisa.",
+            "pause": "Jeda & lihat",
+            "keep": "Terus memproses",
+            "dontAsk": "Jangan tanya lagi"
         }
     }
 }

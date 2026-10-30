@@ -210,6 +210,12 @@
             "full": "Completa",
             "sideBySide": "Lado a lado",
             "split": "Dividida"
+        },
+        "badge": {
+            "queued": "A aguardar melhoria",
+            "processing": "A melhorar",
+            "done": "Melhorada",
+            "failed": "A melhoria falhou"
         }
     },
     "faces": {
@@ -621,6 +627,24 @@
             "pan": "Mover",
             "images": "Imagem anterior / Próxima imagem",
             "options": "Opções da melhoria 1–8"
+        }
+    },
+    "batch": {
+        "processing": "A processar {{current}} de {{total}}",
+        "pause": "Pausar",
+        "resume": "Retomar (faltam {{count}})",
+        "processAll": "Processar todas ({{count}})",
+        "exportHeld": "A exportação fica disponível quando o processamento estiver em pausa ou terminado",
+        "finished_one": "{{count}} fotografia processada",
+        "finished_other": "{{count}} fotografias processadas",
+        "finishedWithFailures_one": "{{count}} fotografia processada, {{failed}} falharam",
+        "finishedWithFailures_other": "{{count}} fotografias processadas, {{failed}} falharam",
+        "ask": {
+            "title": "Pausar o processamento e ver esta fotografia?",
+            "body": "O processamento para onde está. Retome-o mais tarde para continuar com as fotografias que faltam.",
+            "pause": "Pausar e ver",
+            "keep": "Continuar a processar",
+            "dontAsk": "Não perguntar novamente"
         }
     }
 }
