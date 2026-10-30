@@ -21,6 +21,7 @@ export const SHORTCUT_ACTIONS = [
     "panDown",
     "showOriginal",
     "cyclePreview",
+    "toggleInfo",
     "toggleDrawer",
     "previousImage",
     "nextImage",
@@ -71,6 +72,8 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, readonly string[]> = {
     panDown: ["Mod+ArrowDown"],
     // Full, side by side, split and round again: one key for the drawer's three comparison toggles.
     cyclePreview: ["v"],
+    // Lightroom's Info overlay key: what the photograph was taken with, and what the stack makes of it.
+    toggleInfo: ["i"],
     // `Mod \` shows or hides the strip of open images, as an editor's sidebar key does. Not the bare
     // backslash, which shows the original.
     toggleDrawer: ["Mod+\\"],
