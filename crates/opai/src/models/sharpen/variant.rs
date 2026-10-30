@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::super::catalogue::STRENGTH_PARAMETER;
-use super::super::filter::Guard;
+use super::super::filter::{Anchor, Guard};
 use super::super::precision::{FloatPrecision, Precision};
 use super::super::simple::SimpleVariant;
 
@@ -72,6 +72,19 @@ impl SharpenVariant {
         match self {
             Self::Petersburg(_) => Some(petersburg::GUARD),
             Self::Moscow(_) | Self::Novgorod(_) => None,
+        }
+    }
+
+    /// How each tile is held to its input before it is decoded, or `None` for a model that is not: Moscow's is
+    /// [`moscow::ANCHOR`], Petersburg's [`petersburg::ANCHOR`] and Novgorod's [`novgorod::ANCHOR`].
+    pub(crate) const fn anchor(self) -> Option<Anchor> {
+        // Per model, as the guard is, rather than once for the family: what a model's output changes coarser than
+        // detail is a property of its weights, measured on each, and a model retrained without the drift or the
+        // texture its anchor takes out drops the anchor in its own file and its arm here.
+        match self {
+            Self::Moscow(_) => Some(moscow::ANCHOR),
+            Self::Petersburg(_) => Some(petersburg::ANCHOR),
+            Self::Novgorod(_) => Some(novgorod::ANCHOR),
         }
     }
 
@@ -180,6 +193,17 @@ pub(crate) mod tests {
             let guarded = matches!(variant, SharpenVariant::Petersburg(_));
 
             assert_eq!(variant.guard().is_some(), guarded, "{variant:?}");
+        }
+    }
+
+    #[test]
+    fn every_variant_is_anchored_and_only_petersburg_finer_than_the_tile_drift_needs() {
+        // Driven from the traversal, so a variant added to the family and left out of the match fails this. Which
+        // radius each model declares, and why, is pinned in its own directory; what is pinned here is the split.
+        for variant in every_variant() {
+            let radius = if matches!(variant, SharpenVariant::Petersburg(_)) { 3 } else { 16 };
+
+            assert_eq!(variant.anchor(), Some(Anchor { radius }), "{variant:?}");
         }
     }
 
