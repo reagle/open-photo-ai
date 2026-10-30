@@ -180,6 +180,14 @@ pub(crate) fn rewrite_exif(mut exif: Vec<u8>, geometry: &Geometry) -> Vec<u8> {
     exif
 }
 
+/// The four bytes of an UNDEFINED field of the Exif IFD stored in its entry, as ExifVersion is, if the block has it.
+pub(crate) fn undefined_four(exif: &[u8], tag: u16) -> Option<[u8; 4]> {
+    let tiff = Tiff::parse(exif)?;
+    let entry = tiff.find(exif, tiff.exif_ifd(exif)?, tag)?;
+    (entry.kind == UNDEFINED && entry.count == 4).then(|| exif.get(entry.value..entry.value + 4)?.try_into().ok())?
+}
+
+const UNDEFINED: u16 = 7;
 const SHORT: u16 = 3;
 const LONG: u16 = 4;
 const RATIONAL: u16 = 5;
@@ -248,6 +256,7 @@ impl Tiff {
             let kind = self.u16(bytes, at + 2)?;
             let count = self.u32(bytes, at + 4)?;
             let size = match kind {
+                UNDEFINED => 1,
                 SHORT => 2,
                 LONG => 4,
                 RATIONAL => 8,
@@ -281,6 +290,7 @@ impl Tiff {
 impl Entry {
     fn size(&self) -> usize {
         let unit = match self.kind {
+            UNDEFINED => 1,
             SHORT => 2,
             LONG => 4,
             _ => 8,
