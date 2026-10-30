@@ -3,18 +3,21 @@
 
 // Cross-family, because denoise and sharpen both run it unchanged: the reference's `sharpen/process.go` and
 // `sharpen/variant.go` are its denoise files line for line with the prefix changed. What stays with each family is its
-// range, which of its variants are guarded, and the measured profiles. What stays with each model is its guard
-// threshold and the prose behind it.
+// range and the measured profiles. What stays with each model is whether it is guarded and anchored, at what threshold
+// and radius, and the prose behind each: a model retrained upstream drops what it no longer needs in its own file.
 //
 // What a run is:
 //
 //   tile        the whole photograph through `run_tiled` at the default 256/16 geometry, scale 1, in the caller's range
 //   guard       per tile, where the variant has one: a diverged output is retried where the model has a rescue, and a
 //               tile still diverged keeps its own input
+//   anchor      per tile, where the model declares one: what the model changed at scales coarser than a box is taken
+//               back out, so every tile keeps its input's local brightness and neighbouring tiles agree at the seam;
+//               at a small enough box, also the coarse part of what the model changed inside the tile
 //   blend       the photograph moved towards — or past — the tiled result by the run's strength
 //
-// **Only the guard is this file's own.** The grid is `imaging`'s and the blend is `imaging::mix`. The reference's
-// `RunPipeline` then `BlendWithIntensity`, in that order.
+// **Only the guard and the anchor are this file's own.** The grid is `imaging`'s and the blend is `imaging::mix`. The
+// reference's `RunPipeline` then `BlendWithIntensity`, in that order; it has no anchor.
 //
 // The range and the strength arrive from the caller rather than as one family's `RANGE` and `*Params`: both families
 // read `[0, 1]` because each of the reference's two `process.go` files passes `standardize: false`, and a shared file
@@ -31,6 +34,7 @@ use crate::pipeline::Backend;
 use crate::pipeline::{ImagePipeline, OnOneGraph, Shared, SingleGraph, reporter};
 use crate::providers::profile::EpProfile;
 use crate::sessions::SessionHandle;
+use imaging::boxes::box_mean;
 use imaging::mix::blended;
 use imaging::tensor::{Channel, Normalisation, Sampler};
 use imaging::{ChannelDepth, RunTile, TileGeometry, run_tiled};
@@ -43,13 +47,20 @@ use imaging::{ChannelDepth, RunTile, TileGeometry, run_tiled};
 /// How much of the operation's progress range the tile grid reports across. The blend reports the rest.
 const TILES: f64 = 0.95;
 
-/// Whether a tile's raw model output has blown up: any value whose magnitude is **strictly** past `threshold`.
+/// Whether a tile's raw model output has blown up: any value whose magnitude is **strictly** past `threshold`, or that
+/// is not a number at all.
 ///
 /// Strict, as the reference's comparison is, so a tile whose largest value is exactly the threshold is kept.
 fn diverged(output: &[f32], threshold: f32) -> bool {
     // Read off the raw output, before the decode: `from_unit` clamps every value into the channel, so a check made
     // against the decoded pixels could not tell a blow-up from a legitimately bright tile.
-    output.iter().any(|value| value.abs() > threshold)
+    //
+    // NaN as well, which the reference's comparison lets through because every comparison with it is false. It is what
+    // an FP16 graph's blow-up looks like: the value that reaches four figures at FP32 overflows to infinity at FP16 and
+    // becomes NaN a node later. Decoded, NaN is black, so the tile came out as a black square. Measured on Petersburg
+    // FP16 over a synthetic 3000x2000 gradient with fine grain: 19 of its 117 tiles black, every one of them among the
+    // 21 on which FP32 went past the threshold and was kept, and the other two caught by the threshold at FP16 too.
+    output.iter().any(|value| value.is_nan() || value.abs() > threshold)
 }
 
 /// The side of the square blocks [`drift`] compares a tile's input and output over.
@@ -94,11 +105,65 @@ fn drift(input: &[f32], output: &[f32]) -> f32 {
     *shifts.select_nth_unstable_by(middle, f32::total_cmp).1
 }
 
+// Fixed here rather than read off the model's anchor, though it began as Moscow's: the limit Petersburg's guard sets is
+// a ratio measured at this scale, and it would mean something else at another. Petersburg's own anchor is now finer, so
+// part of what is judged here no longer reaches the photograph; the speckle the measure exists for is finer than both.
+/// The radius of the box [`invention`] splits a tile into fine detail and coarse brightness with.
+const INVENTION_RADIUS: usize = 16;
+
+/// The fine detail an input counts as having even where it has none, as an RMS in `[0, 1]`: one 8-bit level, so a
+/// featureless tile — a clipped sky, a black border — is judged against the smallest change anyone could see rather
+/// than divided by nothing.
+const INVENTION_FLOOR: f64 = 1.0 / 255.0;
+
+/// How much fine detail a tile's output has that its input did not: the RMS of the change finer than an
+/// [`INVENTION_RADIUS`] box, for each unit of the input's own detail at the same scale (plus [`INVENTION_FLOOR`]).
+///
+/// `input` and `output` are one planar CHW tile each, three square planes of one shape, and `output` finite.
+fn invention(input: &[f32], output: &[f32]) -> f32 {
+    // A sharpener restores edges that are there and a denoiser takes out grain that is there, so what either changes
+    // finer than the box is of the order of the detail the tile already had: measured on Petersburg over thirteen
+    // AIM-500 photographs and the other tiles of a synthetic gradient, at most 1.77 and 1.97 of it. A NAFNet that has started
+    // to blow up without reaching the magnitude paints texture of its own over a flat area: the synthetic gradient's
+    // tile at (2640, 1200) changed by 13 times its input's detail at FP16 and 33 at FP32, with its largest value 1.4
+    // and 2.5, under the magnitude, and decoded it was a speckled patch a tile wide. A change coarser than the box is
+    // an anchor's to take out, not this.
+    let plane = input.len() / 3;
+    let side = plane.isqrt();
+
+    if side == 0 {
+        return 0.0;
+    }
+
+    let fine = |values: &[f32]| -> f64 {
+        let coarse = box_mean(&box_mean(values, 1, side, side, INVENTION_RADIUS), 1, side, side, INVENTION_RADIUS);
+
+        values.iter().zip(&coarse).map(|(value, coarse)| f64::from(value - coarse).powi(2)).sum()
+    };
+
+    let (mut added, mut own) = (0.0_f64, 0.0_f64);
+
+    for channel in 0..3 {
+        let (input, output) = (&input[channel * plane..][..plane], &output[channel * plane..][..plane]);
+        let change: Vec<f32> = output.iter().zip(input).map(|(after, before)| after - before).collect();
+
+        added += fine(&change);
+        own += fine(input);
+    }
+
+    let count = (3 * plane) as f64;
+
+    ((added / count).sqrt() / ((own / count).sqrt() + INVENTION_FLOOR)) as f32
+}
+
 /// How a guarded model's tiles are judged, and what is tried before a diverged one keeps its own input.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Guard {
     /// The magnitude past which a tile's raw output is a blow-up.
     pub(crate) magnitude: f32,
+    /// The [`invention`] past which an output that did not reach the magnitude is still a blow-up, for the models
+    /// measured to need it; `None` judges by the magnitude alone.
+    pub(crate) invention: Option<f32>,
     /// The second chance a diverged tile gets, for the models measured to need one; `None` keeps it at once.
     pub(crate) rescue: Option<Rescue>,
 }
@@ -106,12 +171,20 @@ pub(crate) struct Guard {
 impl Guard {
     /// A guard that judges a tile by its magnitude alone, and keeps a diverged tile's input at once.
     pub(crate) const fn magnitude(magnitude: f32) -> Self {
-        Self { magnitude, rescue: None }
+        Self { magnitude, invention: None, rescue: None }
+    }
+
+    /// This guard, also judging a tile diverged whose [`invention`] is past `invention`.
+    pub(crate) const fn with_invention(self, invention: f32) -> Self {
+        Self { invention: Some(invention), ..self }
     }
 
     /// Whether `output` is a tile the model produced correctly from `input`.
     fn accepts(&self, input: &[f32], output: &[f32]) -> bool {
-        !diverged(output, self.magnitude) && self.rescue.is_none_or(|rescue| drift(input, output) <= rescue.drift)
+        // The magnitude first: it is what makes the output finite, which the two measures after it assume.
+        !diverged(output, self.magnitude)
+            && self.invention.is_none_or(|limit| invention(input, output) <= limit)
+            && self.rescue.is_none_or(|rescue| drift(input, output) <= rescue.drift)
     }
 }
 
@@ -146,6 +219,58 @@ impl Rescue {
     }
 }
 
+/// How a tile is held to its input's local brightness: what the model changed, averaged over a box twice, is taken
+/// back out of its output.
+///
+/// For a model that only adds or removes detail — a sharpener restores edges, and the blur it undoes moved no pixel's
+/// local mean — so whatever its output changes at scales coarser than the box is not detail but something of the
+/// model's own: at a radius of 16, the tile's drift in brightness; at a few pixels, also the low-frequency texture a
+/// model paints over a flat area. Declared by each model that is measured to need it, at the radius measured for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Anchor {
+    // A box twice rather than a Gaussian: the box is a running sum, so its cost does not grow with the radius, and two
+    // passes make it a tent, whose response falls away as a Gaussian's does, with sidelobes under 5% of its peak. Its
+    // spread is `sqrt(2r(r + 1) / 3)`: 2.8 pixels at a radius of 3, 13.5 at 16.
+    /// The radius of the box, in tile pixels: a change much smaller than it is kept, one much larger is taken out.
+    pub(crate) radius: usize,
+}
+
+impl Anchor {
+    /// Takes the low frequencies of `output - input` back out of `output`: one planar CHW tile each, three square
+    /// planes of one shape.
+    fn hold(&self, input: &[f32], output: &mut [f32]) {
+        // Twice over the box rather than once: a box's own edges are a step in its response, and a second pass
+        // makes it a tent, which leaves no ring around a sharpened edge. The box is clipped at the tile's edges
+        // rather than reflected, which is what an edge of a tile needs: the change near it is compared with what the
+        // model did inside the tile, not with a mirror image of it.
+        let plane = input.len() / 3;
+        let side = plane.isqrt();
+
+        if side == 0 {
+            return;
+        }
+
+        for channel in 0..3 {
+            let (input, output) = (&input[channel * plane..][..plane], &mut output[channel * plane..][..plane]);
+            // A value that is not finite is no change: the box means are running sums, so one NaN or infinity left in
+            // would reach every mean whose box covers it and blacken a strip of the tile. Kept as its input, it is
+            // the one pixel the model failed on and nothing more.
+            for (after, &before) in output.iter_mut().zip(input) {
+                if !after.is_finite() {
+                    *after = before;
+                }
+            }
+
+            let change: Vec<f32> = output.iter().zip(input).map(|(after, before)| after - before).collect();
+            let coarse = box_mean(&box_mean(&change, 1, side, side, self.radius), 1, side, side, self.radius);
+
+            for (value, drift) in output.iter_mut().zip(coarse) {
+                *value -= drift;
+            }
+        }
+    }
+}
+
 // Test-only, and read by each family's live check to report whether its guard fired on a real photograph. A static
 // rather than a field because a live check goes through `Opai::process`, which builds its pipeline where the test
 // cannot reach it. Shared by every family that runs this file, and the fake-backend suite below trips the guard too,
@@ -158,7 +283,19 @@ pub(crate) static GUARDED: std::sync::atomic::AtomicUsize = std::sync::atomic::A
 #[cfg(test)]
 pub(crate) static RESCUED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
+/// The version of what a filter run makes from its tiles, in the cache tag of every family that runs this file: raised
+/// whenever the guard, the anchor or the blend draws a different picture from the same photograph, model and strength,
+/// so the run cache never serves a filtered image an older build drew. 1: the tags that carried no version. 2: every
+/// tile held to its input's local brightness, NaN treated as a blow-up, and a non-finite output value kept as its input.
+/// 3: Petersburg's guard also rejecting a tile that invents detail its input did not have. 4: each model declaring its
+/// own anchor, and Petersburg's at a radius of 3 rather than 16, taking out the mottle it paints over flat areas.
+pub(crate) const FILTER_VERSION: u32 = 4;
+
 /// The pipeline running one filter operation, as a family's contract seam hands it back.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "every one is a family's own fact about its run, and a struct of them would be built inline at each seam"
+)]
 pub(crate) fn pipeline<B: Backend>(
     name: String,
     artifact: ArtifactId,
@@ -166,9 +303,10 @@ pub(crate) fn pipeline<B: Backend>(
     range: Normalisation,
     strength: Strength,
     guard: Option<Guard>,
+    anchor: Option<Anchor>,
     geometry: TileGeometry,
 ) -> Shared<B> {
-    Arc::new(Filter::new(name, artifact, profile, range, strength, guard, geometry))
+    Arc::new(Filter::new(name, artifact, profile, range, strength, guard, anchor, geometry))
 }
 
 /// One filter run: the graph it opens, the settings it opens it under, the range it feeds it, the guard its model
@@ -182,6 +320,8 @@ struct Filter {
     // has to know about.
     /// How a tile's raw output is judged, and what is tried before it is discarded, for the models that need it.
     guard: Option<Guard>,
+    /// How each tile is held to its input's local brightness, for the models that need it.
+    anchor: Option<Anchor>,
     /// How far the photograph is moved towards the tiled result: past it above 1.
     strength: f32,
     /// The tile the graph accepts and how far tiles overlap: the shared default for every model exported at 256.
@@ -189,6 +329,7 @@ struct Filter {
 }
 
 impl Filter {
+    #[expect(clippy::too_many_arguments, reason = "the arguments of `pipeline`, forwarded")]
     fn new(
         name: String,
         artifact: ArtifactId,
@@ -196,6 +337,7 @@ impl Filter {
         range: Normalisation,
         strength: Strength,
         guard: Option<Guard>,
+        anchor: Option<Anchor>,
         geometry: TileGeometry,
     ) -> Self {
         // A retry multiplies the tile, which brightens it about black only in `[0, 1]`.
@@ -208,6 +350,7 @@ impl Filter {
             graph: SingleGraph::new(name, artifact, profile),
             range,
             guard,
+            anchor,
             strength: strength.as_f32(),
             geometry,
         }
@@ -256,7 +399,7 @@ impl<B: Backend> ImagePipeline<B> for Filter {
         // it has seen denoises cleanly. A tile the model handles the first time is never retried, so a rescue changes
         // nothing about a photograph the guard never fired on.
         let mut lifted = Vec::new();
-        let mut tile = |input: &[f32], output: &mut [f32]| -> Result<(), B::Error> {
+        let mut guarded = |input: &[f32], output: &mut [f32]| -> Result<(), B::Error> {
             B::run_tile(session, input, output)?;
 
             let Some(guard) = guard else { return Ok(()) };
@@ -285,6 +428,23 @@ impl<B: Backend> ImagePipeline<B> for Filter {
 
             #[cfg(test)]
             GUARDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+            Ok(())
+        };
+
+        // The order, per tile: the model, the guard, the anchor, then the driver's decode and ramp, and the strength
+        // last, over the whole photograph. After the guard, so the anchor only ever sees a tile that is going to be
+        // used: a kept tile is its own input and has nothing to take out, and a tile that blew up is not one whose
+        // drift can be measured. Before the decode, in the graph's own range, where the change is still unquantised.
+        // One anchor a model rather than a list: a hold at one radius after another at a smaller one finds almost
+        // nothing left to take out, so a model declares only the finest it needs.
+        let anchor = self.anchor;
+        let mut tile = |input: &[f32], output: &mut [f32]| -> Result<(), B::Error> {
+            guarded(input, output)?;
+
+            if let Some(anchor) = anchor {
+                anchor.hold(input, output);
+            }
 
             Ok(())
         };
@@ -356,9 +516,187 @@ mod tests {
         assert!(!diverged(&[], 3.0));
     }
 
+    #[test]
+    fn a_value_that_is_not_a_number_is_a_blow_up() {
+        // What an FP16 graph's blow-up decodes to: black, and every comparison with it false.
+        assert!(diverged(&[0.5, f32::NAN, 0.5], 3.0));
+        assert!(diverged(&[f32::INFINITY], 3.0));
+    }
+
+    /// A 256x256 planar tile of reproducible values in `[0.2, 0.8)`, so a change can be seen against something that
+    /// is not flat.
+    fn textured() -> Vec<f32> {
+        let mut state = 7_u32;
+
+        (0..3 * 256 * 256)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                0.2 + 0.6 * ((state >> 8) as f32 / (1 << 24) as f32)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_anchor_takes_a_shift_over_the_whole_tile_out_entirely() {
+        // Moscow's drift, in its simplest form: the tile brighter by a constant, a different one in each channel.
+        let input = textured();
+        let mut output: Vec<f32> = input
+            .iter()
+            .enumerate()
+            .map(|(index, value)| value + [0.04, -0.02, 0.01][index / (256 * 256)])
+            .collect();
+
+        Anchor { radius: 16 }.hold(&input, &mut output);
+
+        let worst = output.iter().zip(&input).map(|(after, before)| (after - before).abs()).fold(0.0, f32::max);
+        assert!(worst < 1e-5, "a shift over the whole tile left {worst} behind");
+    }
+
+    #[test]
+    fn an_anchor_keeps_a_change_finer_than_its_box() {
+        // What a sharpener adds: detail, here a checkerboard of a twentieth of the range, which averages out over any
+        // box and so is all kept, on top of a shift, which is all taken out.
+        let input = textured();
+        let detail = |index: usize| if (index % 256 + index / 256).is_multiple_of(2) { 0.05 } else { -0.05 };
+        let mut output: Vec<f32> =
+            input.iter().enumerate().map(|(index, value)| value + 0.03 + detail(index)).collect();
+
+        Anchor { radius: 16 }.hold(&input, &mut output);
+
+        let worst = output
+            .iter()
+            .zip(&input)
+            .enumerate()
+            .map(|(index, (after, before))| (after - before - detail(index)).abs())
+            .fold(0.0, f32::max);
+        assert!(worst < 0.002, "the detail came back off by as much as {worst}");
+    }
+
+    #[test]
+    fn a_small_anchor_takes_out_a_coarse_change_and_keeps_a_fine_one() {
+        // Petersburg's mottle in miniature: over a flat tile, a change that rises and falls over 64 pixels, which is
+        // texture the model painted, on top of one that alternates every pixel, which is the sharpening. At a radius of
+        // 3 the first is nearly all taken out and the second is all kept; at 16, the radius the tile drift needs, the
+        // first is barely touched, which is why Petersburg declares its own.
+        let input = flat(0.5);
+        let coarse = |index: usize| 0.02 * (std::f32::consts::TAU * (index % 256) as f32 / 64.0).sin();
+        let fine = speckle(0.02);
+        let model: Vec<f32> =
+            input.iter().enumerate().map(|(index, value)| value + coarse(index) + fine(index)).collect();
+
+        // Away from the tile's edges, where the clipped box sees only one side of the wave.
+        let left = |anchor: Anchor, part: &dyn Fn(usize) -> f32| -> f32 {
+            let mut output = model.clone();
+            anchor.hold(&input, &mut output);
+
+            let (mut along, mut energy) = (0.0_f64, 0.0_f64);
+            for index in (0..256 * 256).filter(|index| (16..240).contains(&(index % 256))) {
+                along += f64::from((output[index] - input[index]) * part(index));
+                energy += f64::from(part(index).powi(2));
+            }
+
+            (along / energy) as f32
+        };
+
+        let (coarse_left, fine_left) = (left(Anchor { radius: 3 }, &coarse), left(Anchor { radius: 3 }, &fine));
+        assert!(coarse_left < 0.06, "a radius of 3 left {coarse_left} of the 64-pixel change");
+        assert!(fine_left > 0.99, "a radius of 3 kept only {fine_left} of the alternating change");
+
+        let wide = left(Anchor { radius: 16 }, &coarse);
+        assert!(wide > 0.5, "a radius of 16 took out all but {wide} of the 64-pixel change");
+    }
+
+    #[test]
+    fn an_anchor_keeps_a_value_that_is_not_a_number_to_its_own_pixel() {
+        // At the radii the shipped models declare and one between them: non-finite values are kept as their input
+        // before any box sum, whatever the box.
+        let input = textured();
+
+        for (anchor, poison) in [3, 8, 16]
+            .into_iter()
+            .flat_map(|radius| [f32::NAN, f32::INFINITY, f32::NEG_INFINITY].map(|poison| (Anchor { radius }, poison)))
+        {
+            let mut clean = input.clone();
+            anchor.hold(&input, &mut clean);
+
+            let mut output = input.clone();
+            let poisoned = output.len() / 3 + 37;
+            output[poisoned] = poison;
+            anchor.hold(&input, &mut output);
+
+            assert!(output.iter().all(|value| value.is_finite()), "{anchor:?}: {poison} reached the anchored tile");
+            for (index, (held, expected)) in output.iter().zip(&clean).enumerate() {
+                if index != poisoned {
+                    assert_eq!(held, expected, "{anchor:?}: {poison} at {poisoned} moved pixel {index}");
+                }
+            }
+            assert_eq!(output[poisoned], input[poisoned], "the poisoned pixel keeps its input");
+        }
+    }
+
     /// A 256x256 planar tile whose every value is `value`.
     fn flat(value: f32) -> Vec<f32> {
         vec![value; 3 * 256 * 256]
+    }
+
+    /// A checkerboard of `amplitude` either side of zero at every value of a 256x256 planar tile: detail finer than
+    /// any box.
+    fn speckle(amplitude: f32) -> impl Fn(usize) -> f32 {
+        move |index| if (index % 256 + index / 256).is_multiple_of(2) { amplitude } else { -amplitude }
+    }
+
+    #[test]
+    fn an_output_that_matches_its_input_invents_nothing() {
+        let input = textured();
+        assert_eq!(invention(&input, &input), 0.0);
+        assert_eq!(invention(&[], &[]), 0.0);
+    }
+
+    #[test]
+    fn detail_strengthened_where_the_input_has_it_is_not_an_invention() {
+        // What a sharpener does: the input's own detail, made half as strong again, plus a shift the anchor takes out.
+        let input = textured();
+        let output: Vec<f32> = input.iter().map(|value| value + 0.5 * (value - 0.5) + 0.02).collect();
+        let invented = invention(&input, &output);
+
+        assert!(invented < 0.6, "strengthened detail read as {invented} times the input's");
+        assert!(Guard::magnitude(3.0).with_invention(5.0).accepts(&input, &output));
+    }
+
+    #[test]
+    fn a_shift_over_a_flat_tile_is_not_an_invention() {
+        // Coarser than the box: the anchor's to take out, not the guard's to reject.
+        let input = flat(0.5);
+        let output = flat(0.56);
+
+        assert!(invention(&input, &output) < 1e-3);
+    }
+
+    #[test]
+    fn texture_painted_over_a_flat_tile_is_an_invention_the_magnitude_alone_lets_through() {
+        // Petersburg's patch in miniature: an output well inside the magnitude, speckled by a tenth of the range where
+        // the input had nothing to sharpen.
+        let input = flat(0.5);
+        let speckle = speckle(0.1);
+        let output: Vec<f32> = input.iter().enumerate().map(|(index, value)| value + speckle(index)).collect();
+        let invented = invention(&input, &output);
+
+        assert!(invented > 20.0, "a speckle over a flat tile read as only {invented} times its detail");
+        assert!(
+            Guard::magnitude(3.0).accepts(&input, &output),
+            "the magnitude alone was meant to let it through"
+        );
+        assert!(!Guard::magnitude(3.0).with_invention(5.0).accepts(&input, &output), "the limit let it through");
+    }
+
+    #[test]
+    fn the_same_speckle_over_a_detailed_tile_is_within_the_limit() {
+        // Judged against the input's own detail, so a change a flat tile could not have is ordinary on a busy one.
+        let input = textured();
+        let speckle = speckle(0.1);
+        let output: Vec<f32> = input.iter().enumerate().map(|(index, value)| value + speckle(index)).collect();
+
+        assert!(Guard::magnitude(3.0).with_invention(5.0).accepts(&input, &output));
     }
 
     #[test]
@@ -464,6 +802,7 @@ mod tests {
             range,
             strength,
             guard,
+            None,
             TileGeometry::DEFAULT,
         )
     }
@@ -471,6 +810,23 @@ mod tests {
     /// A filter over `[0, 1]` at `strength`, guarded by `guard`.
     fn filtering(strength: f64, guard: Option<Guard>) -> Shared<Fake> {
         filtering_in(Normalisation::Unit, strength, guard)
+    }
+
+    /// A filter over `[0, 1]` at a strength of 1, unguarded and held by `anchor`.
+    fn anchored(anchor: Option<Anchor>) -> Shared<Fake> {
+        let strength = Strength::new(1.0).expect("the test supplied a strength in range");
+        let artifact = ArtifactId::new(Family::Sharpen, "fake", None, Precision::Fp32);
+
+        pipeline::<Fake>(
+            "Fake (FP32)".into(),
+            artifact,
+            EpProfile::default(),
+            Normalisation::Unit,
+            strength,
+            None,
+            anchor,
+            TileGeometry::DEFAULT,
+        )
     }
 
     /// A filter whose model is guarded by its magnitude alone.
@@ -616,6 +972,28 @@ mod tests {
     }
 
     #[test]
+    fn an_anchored_run_keeps_a_flat_photograph_flat_across_every_tile_and_seam() {
+        // The fake halves every tile, which over a flat photograph is a change with nothing finer than a tile in it:
+        // anchored, every tile comes back at its input's level, so the tiles agree with each other across each seam.
+        // Unanchored, the same run is the darkened photograph — which is what makes this a test of the anchor.
+        let colour = [200, 120, 40];
+        let source = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(600, 400, Rgb(colour)));
+
+        let held = run(&anchored(Some(Anchor { radius: 16 })), &source, &session(None), ChannelDepth::Eight);
+        let loose = run(&anchored(None), &source, &session(None), ChannelDepth::Eight);
+
+        for (x, y, pixel) in held.as_rgb8().expect("eight-bit").enumerate_pixels() {
+            assert!(
+                pixel.0.iter().zip(colour).all(|(got, want)| got.abs_diff(want) <= 1),
+                "({x}, {y}) came out at {:?} rather than {colour:?}",
+                pixel.0
+            );
+        }
+
+        assert_eq!(loose.as_rgb8().expect("eight-bit").get_pixel(300, 200).0, [100, 60, 20]);
+    }
+
+    #[test]
     fn a_tile_whose_largest_value_is_exactly_the_threshold_is_the_models() {
         let source = photograph(PAIR.0, PAIR.1);
         let handle = session(Some((0, 3.0)));
@@ -662,7 +1040,7 @@ mod tests {
 
     /// A filter guarded at the shipped magnitude, with `rescue`.
     fn rescued(rescue: Rescue) -> Shared<Fake> {
-        filtering(1.0, Some(Guard { magnitude: THRESHOLD, rescue: Some(rescue) }))
+        filtering(1.0, Some(Guard { magnitude: THRESHOLD, invention: None, rescue: Some(rescue) }))
     }
 
     /// Two tiles of night sky: every value at most a tenth of the range, so both can be lifted.

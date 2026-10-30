@@ -225,6 +225,7 @@ impl Restore {
                     kazan::RANGE,
                     params.strength,
                     None,
+                    None,
                     kazan::GEOMETRY,
                 ),
             )),

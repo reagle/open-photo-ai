@@ -1,9 +1,10 @@
-//! Petersburg: the NAFNet sharpener — the magnitude past which its output is discarded, and the execution-provider
-//! profile measured for it. The sharpening it runs is the shared [`filter`](crate::models::filter).
+//! Petersburg: the NAFNet sharpener — the magnitude past which its output is discarded, the anchor that takes out the
+//! texture it paints over flat areas, and the execution-provider profile measured for it. The sharpening it runs is the
+//! shared [`filter`](crate::models::filter).
 
 // Deleting the model is deleting this directory plus the arms in `SharpenVariant` that name it.
 
-use crate::models::filter::Guard;
+use crate::models::filter::{Anchor, Guard};
 use crate::models::precision::Precision;
 use crate::providers::profile::EpProfile;
 
@@ -12,12 +13,45 @@ use crate::providers::profile::EpProfile;
 // of the photograph. Legitimate output is of order 1 — the graph reads and writes `[0, 1]` — so 3.0 sits safely above
 // anything a working tile produces and far below the blow-up.
 //
-// **The threshold is the reference's, carried across on trust.** No photograph known to make Petersburg diverge has
-// been observed in this project, so what is verified here is the mechanism — against a fake model made to explode,
-// in `models::filter` — and not that 3.0 is where to catch it. The live check reports how many tiles the guard
-// kept on the photograph it runs; one that trips it can be added as a fixture without the contract moving.
-/// The magnitude past which a tile's raw output is treated as a blow-up and the tile keeps its own input.
-pub(crate) const GUARD: Guard = Guard::magnitude(3.0);
+// **The threshold is the reference's, carried across on trust.** No real photograph known to make Petersburg diverge
+// has been observed in this project, so what is verified here is the mechanism — against a fake model made to
+// explode, in `models::filter` — and not that 3.0 is where to catch it. The live check reports how many tiles the
+// guard kept on the photograph it runs; one that trips it can be added as a fixture without the contract moving.
+//
+// **The invention limit is measured, and the magnitude alone was not enough.** A synthetic 3000x2000 gradient with fine
+// grain (`/Volumes/opai-bench/overnight/sharpen/in/synth.png`) makes it diverge on 21 of its 117 tiles at FP32 and NaN
+// on 19 at FP16, which the magnitude catches; but one more tile, at (2640, 1200), only starts to: its raw output stays
+// finite and within 1.4 at FP16 and 2.5 at FP32, under the threshold, while it paints a speckle up to 1.65 of the range
+// over a flat area, a patch a tile wide in the photograph. What it changed finer than the anchor's box was 13 times
+// the detail its input had there at FP16 and 33 at FP32. A working tile measured at most 1.77 over thirteen AIM-500
+// photographs (`o_093764ca`, `o_508fa8da`, `o_f12a8afc` at both precisions, and every fiftieth of the set at FP16),
+// and at most 1.97 over the gradient's other tiles, so 5 sits between them by a factor of about 2.5 each way. On the
+// three photographs run end to end, the result is identical to the magnitude-only guard's to the last bit.
+/// How a tile's raw output is judged a blow-up, after which the tile keeps its own input: past the reference's
+/// magnitude, or inventing more than five times the fine detail its input had.
+pub(crate) const GUARD: Guard = Guard::magnitude(3.0).with_invention(5.0);
+
+// **Petersburg paints a faint mottle over flat areas, and its anchor is set to take it out.** Over a smooth gradient or
+// a sky its change is largest between 16 and 64 pixels, where the input has almost no grain to strengthen, and it is
+// uncorrelated with the input in every band from 4 pixels up: not sharpening but texture of the model's own, at FP16
+// and FP32 alike. Measured at the default strength, held at the radius of 16 the tile drift needs, over the synthetic
+// 3000x2000 gradient and `o_f12a8afc`'s sky: about half a grey level RMS in each of those bands, and 4.5 and 3.2 levels
+// from the 1st to the 99th percentile once low-passed at 3 pixels, against Moscow's 0.5 — visible on a smooth 8-bit
+// gradient, where a change of about one level at these scales is at the edge of what can be seen. Its tiles drift too,
+// by at most 1.5 levels, which any anchor takes out.
+//
+// The radius is measured against both halves of the job: the mottle above 16 pixels, and what Petersburg adds to strong
+// edges between 2 and 8. Simulated over the whole photograph, then confirmed end to end at the radius chosen: at 2 (a
+// spread of 2 pixels) the mottle goes to 0.5 but 4 to 8 pixels at edges starts to go and 8 to 16 loses half its gain;
+// at 4 and 5 the mottle stays at 1.1 and 1.4, about the level that can be seen; at 7, 2.1. At 3 the mottle is 0.7 to
+// 0.8, between what Moscow and Novgorod leave, the gain at edges between 2 and 8 pixels moves by at most 0.01 on six
+// photographs, and between 8 and 16 it gives up at most 0.03 of a gain of up to 1.09. Over the whole tile rather than
+// weighted to flat areas: applied everywhere it already leaves the edges' fine gain alone. End to end at 3, against 16:
+// the mottle 4.5 to 0.7 over the gradient and 3.2 to 0.7 over the sky, the seam steps 0.17 to 0.02, and the run no
+// slower, the box's cost not depending on its radius.
+/// How Petersburg's tiles are held to their input: what it changed coarser than a box 3 pixels in radius, twice, is
+/// taken back out.
+pub(crate) const ANCHOR: Anchor = Anchor { radius: 3 };
 
 /// The execution-provider tuning measured for this model, at the precision it carries: the provider defaults at both
 /// precisions, because nothing measured beat them, except for the nodes WebGPU cannot run correctly at FP16.
@@ -75,10 +109,21 @@ mod tests {
     use crate::providers::profile::{CoreMlComputeUnits, CoreMlSpecialization, ExecutionMode};
 
     #[test]
-    fn the_guard_is_the_references_threshold() {
-        // Pinned as a literal, for the reason `GUARD` gives: it is carried over rather than derived, so nothing else
-        // would notice it moving.
-        assert_eq!(GUARD, Guard::magnitude(3.0));
+    fn petersburg_is_anchored_at_the_radius_measured_to_take_out_its_mottle() {
+        // Pinned as a literal, for the reason `ANCHOR` gives, and finer than the family's other two, which is the
+        // point of declaring it here.
+        assert_eq!(ANCHOR, Anchor { radius: 3 });
+
+        for precision in FloatPrecision::ALL {
+            assert_eq!(SharpenVariant::Petersburg(precision).anchor(), Some(ANCHOR), "{precision:?}");
+        }
+    }
+
+    #[test]
+    fn the_guard_is_the_references_threshold_and_the_measured_invention_limit() {
+        // Pinned as literals, for the reason `GUARD` gives: the threshold is carried over and the limit measured, so
+        // nothing else would notice either moving.
+        assert_eq!(GUARD, Guard { magnitude: 3.0, invention: Some(5.0), rescue: None });
 
         for precision in FloatPrecision::ALL {
             assert_eq!(SharpenVariant::Petersburg(precision).guard(), Some(GUARD), "{precision:?}");

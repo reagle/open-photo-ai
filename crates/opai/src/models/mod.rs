@@ -303,8 +303,8 @@ mod tests {
             tags,
             [
                 "up-tokyo-fp32-s2.5",
-                "dn-stockholm-fp16-t0.25",
-                "sh-moscow-fp32-t0.25",
+                "dn-stockholm-fp16-t0.25-v4",
+                "sh-moscow-fp32-t0.25-v4",
                 "la-paris-fp32-b-0.35",
                 "cb-rio-fp16-b-0.35",
                 "fr-athens-fp32-w0.050-f0",
