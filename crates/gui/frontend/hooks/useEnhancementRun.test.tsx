@@ -151,7 +151,7 @@ describe("running the current image's enhancements", () => {
         pending[0]?.settle({ outcome: "enhanced", identity: "abcdef0123456789", width: 6000, height: 4000 });
 
         await waitFor(() =>
-            expect(answer.enhanced).toEqual({ identity: "abcdef0123456789", width: 6000, height: 4000 }),
+            expect(answer.enhanced).toEqual({ identity: "abcdef0123456789", width: 6000, height: 4000, run: "run-1" }),
         );
     });
 
@@ -248,7 +248,7 @@ describe("running the current image's enhancements", () => {
         // shape of what is drawn, so the previous result stays on screen until a newer one lands -
         // which is what stops the scale field flashing the source between keystrokes.
         await waitFor(() => expect(asked).toHaveBeenCalledTimes(2));
-        expect(answer.enhanced).toEqual({ identity: "abcdef0123456789", width: 2400, height: 3200 });
+        expect(answer.enhanced).toEqual({ identity: "abcdef0123456789", width: 2400, height: 3200, run: "run-1" });
     });
 
     it("asks for no run when the framing of an image with no enhancements changes", async () => {
@@ -316,6 +316,87 @@ describe("running the current image's enhancements", () => {
         // Typing in the scale field re-runs on every keystroke; flashing the source between them is
         // what holding the last result avoids.
         await waitFor(() => expect(answer.enhanced?.identity).toBe("abcdef0123456789"));
+    });
+});
+
+/*
+ * The backend holds one result, the latest run's, and drops it the moment the next run is asked for. These are the
+ * page-away-and-back of a batch the user pauses: the photograph that was done, then another one started and left, then
+ * the first again, whose run is served from the cache with the same identity as before.
+ */
+describe("a run another one has superseded", () => {
+    /** Both photographs with a stack, so moving between them starts a run each time. */
+    const stacked = () =>
+        act(() =>
+            useEnhancementStore.setState({
+                enhancements: new Map([
+                    [HOLIDAY.path, [upscale(2)]],
+                    [SUNSET.path, [upscale(2)]],
+                ]),
+            }),
+        );
+
+    const RESULT = { outcome: "enhanced", identity: "abcdef0123456789", width: 6000, height: 4000 } as const;
+
+    it("does not draw a photograph's earlier result when it comes back, since a run over another one let it go", async () => {
+        stacked();
+        const view = mount();
+
+        pending[0]?.settle(RESULT);
+        await waitFor(() => expect(answer.enhanced).toBeDefined());
+
+        // The batch moves on: a run over the sunset displaces the holiday's result in the backend.
+        view.rerender(<Probe file={SUNSET} />);
+        await waitFor(() => expect(asked).toHaveBeenCalledTimes(2));
+
+        // Pause & view: back to the holiday before the sunset's run has ended.
+        view.rerender(<Probe file={HOLIDAY} />);
+        await waitFor(() => expect(asked).toHaveBeenCalledTimes(3));
+
+        // Its earlier address would be answered GONE, and the same address coming back from the new run would never be
+        // asked for again: the pane would keep a broken image under an Enhanced chip.
+        expect(answer.enhanced).toBeUndefined();
+
+        pending[2]?.settle(RESULT);
+        await waitFor(() => expect(answer.enhanced?.run).toBe("run-3"));
+
+        // The sunset's run ends late, stopped; nothing it does reaches the holiday's result.
+        pending[1]?.settle({ outcome: "stopped" });
+        await act(async () => {});
+
+        expect(answer.enhanced).toEqual({ identity: RESULT.identity, width: 6000, height: 4000, run: "run-3" });
+    });
+
+    it("keeps nothing a superseded run hands back, even an enhancement of the photograph on screen", async () => {
+        stacked();
+        const view = mount();
+
+        view.rerender(<Probe file={SUNSET} />);
+        await waitFor(() => expect(asked).toHaveBeenCalledTimes(2));
+        view.rerender(<Probe file={HOLIDAY} />);
+        await waitFor(() => expect(asked).toHaveBeenCalledTimes(3));
+
+        // The first holiday run finished just before the sunset's was asked for, so the backend has already let go of
+        // what it answers.
+        pending[0]?.settle(RESULT);
+        await act(async () => {});
+
+        expect(answer.enhanced).toBeUndefined();
+        expect(answer.running).toBe(true);
+    });
+
+    it("names the run that produced a result in what it answers, so the same identity again is a new address", async () => {
+        stack(HOLIDAY.path, upscale(2));
+        mount();
+
+        pending[0]?.settle(RESULT);
+        await waitFor(() => expect(answer.enhanced?.run).toBe("run-1"));
+
+        stack(HOLIDAY.path, upscale(3));
+        await waitFor(() => expect(asked).toHaveBeenCalledTimes(2));
+        pending[1]?.settle(RESULT);
+
+        await waitFor(() => expect(answer.enhanced?.run).toBe("run-2"));
     });
 });
 
@@ -521,7 +602,7 @@ describe("a chain that restores faces", () => {
         );
         // Recorded as none, so the row says so rather than waiting for an answer that is not coming.
         expect(faces().get(HOLIDAY.identity ?? "")).toEqual({ faces: [] });
-        expect(answer.enhanced).toEqual({ identity: "abcdef0123456789", width: 6000, height: 4000 });
+        expect(answer.enhanced).toEqual({ identity: "abcdef0123456789", width: 6000, height: 4000, run: "run-1" });
     });
 
     it("tells the user when the lens blur's subject could not be matted, and keeps the result", async () => {
@@ -533,7 +614,7 @@ describe("a chain that restores faces", () => {
 
         await waitFor(() => expect(toast()).toHaveTextContent("Failed to matte the subject"));
         expect(logged).toHaveBeenCalledWith("matting the lens blur's subject failed", "Porto failed on tile 3");
-        expect(answer.enhanced).toEqual({ identity: "abcdef0123456789", width: 6000, height: 4000 });
+        expect(answer.enhanced).toEqual({ identity: "abcdef0123456789", width: 6000, height: 4000, run: "run-1" });
     });
 
     it("holds nothing for a photograph that was closed before its run answered", async () => {
