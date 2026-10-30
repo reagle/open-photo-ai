@@ -469,7 +469,13 @@ where
         (Some(mask), _) => identity_masked(&identity_after(source.identity(), operations, depth), mask.signature()),
         (None, _) => identity_after(source.identity(), operations, depth),
     };
-    let picture = source.derive(pixels, named).with_shared_gain_map(gain_map);
+    // The record of what was done goes on beside the pixels: the chain, whether a mask limited it, and the growth of an
+    // upscale as a scale of the frame — what an export rewrites the subject's position and the focal plane by.
+    let edits =
+        source
+            .edits()
+            .after(operations, limiting.is_some(), source.dimensions(), (pixels.width(), pixels.height()));
+    let picture = source.derive(pixels, named).with_shared_gain_map(gain_map).with_edits(edits);
 
     Ok(Enhanced { picture, providers, faces, matte })
 }
