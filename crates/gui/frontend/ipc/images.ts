@@ -99,15 +99,17 @@ export const describeImages = (paths: string[]) => call<ImageRecord[]>(DESCRIBE_
 export const takeOpenedFiles = () => call<string[]>(TAKE_OPENED_FILES_COMMAND);
 
 /**
- * What `opai --gui --lens-blur` asked for the photographs it handed over: a Lens Blur on each, with Autopilot off.
- * What the lens blur leaves out is the window's own default for a freshly added one.
+ * What `opai --gui --sharpen` or `--lens-blur` asked for the photographs it handed over: a Sharpen, a Lens Blur or both
+ * on each, with Autopilot off. What either leaves out is the window's own default for a freshly added one.
  *
  * Matches `Request` in `crates/gui/src/opened.rs`.
  */
 export type OpenRequest = {
     /** The photographs it is for, spelled as {@link takeOpenedFiles} hands them over. */
     paths: string[];
-    lensBlur: { fNumber?: number; amount?: number; focusX?: number; focusY?: number };
+    lensBlur?: { fNumber?: number; amount?: number; focusX?: number; focusY?: number };
+    /** The model by codename, and the strength as the fraction the catalogue publishes it in. */
+    sharpen?: { model: string; strength?: number };
 };
 
 /** What the batch {@link takeOpenedFiles} last handed over asked for besides opening it, once, or `null`. */
