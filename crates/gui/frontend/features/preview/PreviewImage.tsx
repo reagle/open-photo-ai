@@ -8,7 +8,7 @@ import { useEnhancementRun } from "@/hooks/useEnhancementRun";
 import { useResizeObserver } from "@/hooks/useResizeObserver";
 import { useStandIn } from "@/hooks/useStandIn";
 import { framedDimensions } from "@/ipc/crop";
-import { renditionFor } from "@/ipc/images";
+import { resultUrl } from "@/ipc/images";
 import { DRAWER_HEIGHT, PAN_KEY_STEP, ZOOM_MIN, ZOOM_WHEEL_STEP } from "@/lib/constants";
 import { FOCUS_X, FOCUS_Y, withParameter } from "@/lib/enhancements";
 import { OPEN_LAYER } from "@/lib/layers";
@@ -987,8 +987,10 @@ export const PreviewImage = () => {
      * No framing on the result's own URL: the run was given the framed pixels, so what it produced is
      * already the enhancement of the framing and asking for it to be framed again would cut the
      * rectangle out of it a second time.
+     *
+     * Named by the run that produced it as well as by its identity - see `resultUrl`.
      */
-    const enhancedSource = enhanced ? renditionFor(enhanced) : source;
+    const enhancedSource = enhanced ? resultUrl(enhanced) : source;
 
     return (
         <div ref={setCanvas} className="relative flex size-full flex-row gap-0.5 p-0.5">
