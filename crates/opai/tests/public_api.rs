@@ -215,7 +215,7 @@ fn the_five_enhancement_families_are_reachable_from_the_crate_root() {
     let denoise: Operation = Denoise::stockholm(FloatPrecision::Fp32, strength);
     assert_eq!(denoise.display_name(), "Stockholm (FP32)");
     assert_eq!(denoise.precision(), Precision::Fp32);
-    assert_eq!(denoise.cache_tag(), "dn-stockholm-fp32-t0.5");
+    assert_eq!(denoise.cache_tag(), "dn-stockholm-fp32-t0.5-v4");
     let required: Vec<ArtifactId> = denoise.required_artifacts();
     assert_eq!(required.iter().map(ArtifactId::as_str).collect::<Vec<_>>(), vec!["dn_stockholm_fp32"]);
 
