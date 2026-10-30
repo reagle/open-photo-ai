@@ -176,6 +176,36 @@ describe("the analytics row", () => {
     });
 });
 
+describe("the row that asks before pausing a batch", () => {
+    const row = () => screen.getByRole("switch", { name: "Ask before pausing a batch" });
+
+    it("is on while the question is asked, which is the default", () => {
+        renderPage();
+
+        expect(row()).toBeChecked();
+    });
+
+    it("turns the question back on after its Don't ask again", () => {
+        useSettingsStore.getState().stopAskingBeforePause();
+        renderPage();
+        expect(row()).not.toBeChecked();
+
+        fireEvent.click(row());
+
+        expect(drafted().pauseBatchWithoutAsking).toBe(false);
+        // A draft: what is in force waits for Save.
+        expect(useSettingsStore.getState().pauseBatchWithoutAsking).toBe(true);
+    });
+
+    it("turns it off, which is the question's Don't ask again", () => {
+        renderPage();
+
+        fireEvent.click(row());
+
+        expect(drafted().pauseBatchWithoutAsking).toBe(true);
+    });
+});
+
 describe("the background tiles", () => {
     const tile = (background: string) =>
         document.querySelector<HTMLElement>(`[data-slot='background-tile'][for='settings_background_${background}']`);

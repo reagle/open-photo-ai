@@ -107,6 +107,32 @@ export const progressOf = () => {
     return { done, failed, left, total: done + failed + left };
 };
 
+/** Where a photograph stands in the batch's list: through, being worked on now, still to come, or failed. */
+export type RowState = "done" | "processing" | "pending" | "failed";
+
+/**
+ * The batch's photographs in the strip's order, each with its place in the strip and where it stands - the pill's
+ * list. **Processing** is the one the batch is waiting on while it runs; a member with nothing to do (Autopilot
+ * suggested nothing) is left out, as it is left out of the counts.
+ */
+export const batchRows = (): { file: ImageRecord; index: number; state: RowState }[] => {
+    const { phase, current } = useBatchStore.getState();
+    const { files } = useFileStore.getState();
+
+    return walk().flatMap(({ file, standing }) => {
+        if (standing === undefined) return [];
+
+        const state: RowState =
+            standing !== "unfinished"
+                ? standing
+                : phase === "running" && current === file.path
+                  ? "processing"
+                  : "pending";
+
+        return [{ file, index: files.indexOf(file), state }];
+    });
+};
+
 /**
  * How many open photographs a "Process all" would go through: those with work to do that the window has not finished
  * for the request they would send now.
