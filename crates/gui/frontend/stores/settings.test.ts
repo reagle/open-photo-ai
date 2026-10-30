@@ -280,6 +280,17 @@ describe("the TensorRT question", () => {
         expect(useSettingsStore.getState().tensorrtAsked).toBe(false);
     });
 
+    it("remembers Don't ask again before pausing a batch, across a restart, and asks by default", async () => {
+        await useSettingsStore.persist.rehydrate();
+        expect(useSettingsStore.getState().pauseBatchWithoutAsking).toBe(false);
+
+        useSettingsStore.getState().stopAskingBeforePause();
+        expect(persisted()).toMatchObject({ pauseBatchWithoutAsking: true });
+
+        await stored({ ...SOUND, pauseBatchWithoutAsking: "yes" });
+        expect(useSettingsStore.getState().pauseBatchWithoutAsking).toBe(false);
+    });
+
     it("is not a preference the settings surface holds", () => {
         useSettingsStore.getState().answerTensorRT(true);
 
