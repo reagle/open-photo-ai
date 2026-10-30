@@ -127,6 +127,7 @@
                 "panDown": "向下平移",
                 "showOriginal": "按住时显示原图",
                 "cyclePreview": "切换对比视图",
+                "toggleInfo": "显示或隐藏照片信息",
                 "toggleDrawer": "显示或隐藏图片",
                 "previousImage": "上一张图像",
                 "nextImage": "下一张图像",
@@ -536,6 +537,23 @@
             "loading": "正在加载 {{model}} 模型",
             "firstUse": "仅首次使用，可能需要几分钟",
             "firstUseAbout_other": "仅首次使用，可能需要约 {{count}} 分钟"
+        },
+        "info": {
+            "title": "照片信息",
+            "equivalent": "等效 {{value}} mm",
+            "croppedEquivalent": "等效 {{shot}} → {{rendered}} mm（裁剪）",
+            "simulated": "{{value}}（模拟）",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR 增益图",
+                "pq": "HDR（PQ）",
+                "hlg": "HDR（HLG）",
+                "other": "HDR"
+            },
+            "located": "已记录位置",
+            "edits": "编辑",
+            "blurredEarlier": "已应用镜头模糊（模拟 {{value}}）",
+            "enhancedEarlier": "已用 Open Photo AI 增强"
         }
     },
     "menu": {

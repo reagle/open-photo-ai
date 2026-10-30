@@ -127,6 +127,7 @@
                 "panDown": "Pan down",
                 "showOriginal": "Show original while held",
                 "cyclePreview": "Cycle comparison view",
+                "toggleInfo": "Show or hide photo info",
                 "toggleDrawer": "Show or hide images",
                 "previousImage": "Previous image",
                 "nextImage": "Next image",
@@ -547,6 +548,23 @@
             "firstUse": "First use only, may take a few minutes",
             "firstUseAbout_one": "First use only, may take about {{count}} minute",
             "firstUseAbout_other": "First use only, may take about {{count}} minutes"
+        },
+        "info": {
+            "title": "Photo info",
+            "equivalent": "{{value}} mm eq.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm eq. (crop)",
+            "simulated": "{{value}} simulated",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR gain map",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Location recorded",
+            "edits": "Edits",
+            "blurredEarlier": "Lens Blur already applied ({{value}} simulated)",
+            "enhancedEarlier": "Already enhanced by Open Photo AI"
         }
     },
     "menu": {

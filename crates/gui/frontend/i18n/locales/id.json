@@ -127,6 +127,7 @@
                 "panDown": "Geser ke bawah",
                 "showOriginal": "Tampilkan asli selama ditahan",
                 "cyclePreview": "Ganti tampilan perbandingan",
+                "toggleInfo": "Tampilkan atau sembunyikan info foto",
                 "toggleDrawer": "Tampilkan atau sembunyikan gambar",
                 "previousImage": "Gambar sebelumnya",
                 "nextImage": "Gambar berikutnya",
@@ -536,6 +537,23 @@
             "loading": "Memuat model {{model}}",
             "firstUse": "Hanya pada penggunaan pertama, bisa memakan beberapa menit",
             "firstUseAbout_other": "Hanya pada penggunaan pertama, bisa memakan sekitar {{count}} menit"
+        },
+        "info": {
+            "title": "Info foto",
+            "equivalent": "{{value}} mm setara",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm setara (pangkas)",
+            "simulated": "{{value}} simulasi",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "Peta gain HDR",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Lokasi tercatat",
+            "edits": "Suntingan",
+            "blurredEarlier": "Lens Blur sudah diterapkan ({{value}} simulasi)",
+            "enhancedEarlier": "Sudah ditingkatkan dengan Open Photo AI"
         }
     },
     "menu": {

@@ -127,6 +127,7 @@
                 "panDown": "下へ移動",
                 "showOriginal": "押している間は元画像を表示",
                 "cyclePreview": "比較表示を切り替え",
+                "toggleInfo": "写真情報の表示/非表示",
                 "toggleDrawer": "画像の表示/非表示",
                 "previousImage": "前の画像",
                 "nextImage": "次の画像",
@@ -536,6 +537,23 @@
             "loading": "{{model}} モデルを読み込み中",
             "firstUse": "初回のみ。数分かかることがあります",
             "firstUseAbout_other": "初回のみ。約 {{count}} 分かかることがあります"
+        },
+        "info": {
+            "title": "写真情報",
+            "equivalent": "35mm換算 {{value}} mm",
+            "croppedEquivalent": "35mm換算 {{shot}} → {{rendered}} mm（切り抜き）",
+            "simulated": "{{value}}（シミュレーション）",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDRゲインマップ",
+                "pq": "HDR（PQ）",
+                "hlg": "HDR（HLG）",
+                "other": "HDR"
+            },
+            "located": "位置情報あり",
+            "edits": "編集",
+            "blurredEarlier": "レンズぼかし適用済み（{{value}} シミュレーション）",
+            "enhancedEarlier": "Open Photo AIで補正済み"
         }
     },
     "menu": {

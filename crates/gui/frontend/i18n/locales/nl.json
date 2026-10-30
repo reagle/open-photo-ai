@@ -127,6 +127,7 @@
                 "panDown": "Omlaag schuiven",
                 "showOriginal": "Origineel tonen zolang ingedrukt",
                 "cyclePreview": "Vergelijkingsweergave wisselen",
+                "toggleInfo": "Foto-info tonen of verbergen",
                 "toggleDrawer": "Afbeeldingen tonen of verbergen",
                 "previousImage": "Vorige afbeelding",
                 "nextImage": "Volgende afbeelding",
@@ -547,6 +548,23 @@
             "firstUse": "Alleen de eerste keer, kan enkele minuten duren",
             "firstUseAbout_one": "Alleen de eerste keer, kan ongeveer {{count}} minuut duren",
             "firstUseAbout_other": "Alleen de eerste keer, kan ongeveer {{count}} minuten duren"
+        },
+        "info": {
+            "title": "Foto-info",
+            "equivalent": "{{value}} mm equiv.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm equiv. (bijsnijding)",
+            "simulated": "{{value}} gesimuleerd",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR-gainmap",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Locatie vastgelegd",
+            "edits": "Bewerkingen",
+            "blurredEarlier": "Lensvervaging al toegepast ({{value}} gesimuleerd)",
+            "enhancedEarlier": "Al verbeterd met Open Photo AI"
         }
     },
     "menu": {

@@ -127,6 +127,7 @@
                 "panDown": "नीचे खिसकाएँ",
                 "showOriginal": "दबाए रखने तक मूल दिखाएँ",
                 "cyclePreview": "तुलना दृश्य बदलें",
+                "toggleInfo": "फ़ोटो जानकारी दिखाएँ या छिपाएँ",
                 "toggleDrawer": "छवियाँ दिखाएँ या छिपाएँ",
                 "previousImage": "पिछली छवि",
                 "nextImage": "अगली छवि",
@@ -547,6 +548,23 @@
             "firstUse": "सिर्फ़ पहली बार, कुछ मिनट लग सकते हैं",
             "firstUseAbout_one": "सिर्फ़ पहली बार, लगभग {{count}} मिनट लग सकता है",
             "firstUseAbout_other": "सिर्फ़ पहली बार, लगभग {{count}} मिनट लग सकते हैं"
+        },
+        "info": {
+            "title": "फ़ोटो जानकारी",
+            "equivalent": "{{value}} mm समतुल्य",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm समतुल्य (क्रॉप)",
+            "simulated": "{{value}} सिम्युलेटेड",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR गेन मैप",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "स्थान दर्ज है",
+            "edits": "संपादन",
+            "blurredEarlier": "लेंस ब्लर पहले से लागू ({{value}} सिम्युलेटेड)",
+            "enhancedEarlier": "Open Photo AI से पहले ही बेहतर किया गया"
         }
     },
     "menu": {

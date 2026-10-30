@@ -127,6 +127,7 @@
                 "panDown": "Mover para baixo",
                 "showOriginal": "Mostrar original enquanto pressionado",
                 "cyclePreview": "Alternar visualização de comparação",
+                "toggleInfo": "Mostrar ou ocultar as informações da foto",
                 "toggleDrawer": "Mostrar ou ocultar imagens",
                 "previousImage": "Imagem anterior",
                 "nextImage": "Próxima imagem",
@@ -547,6 +548,23 @@
             "firstUse": "Só no primeiro uso, pode levar alguns minutos",
             "firstUseAbout_one": "Só no primeiro uso, pode levar cerca de {{count}} minuto",
             "firstUseAbout_other": "Só no primeiro uso, pode levar cerca de {{count}} minutos"
+        },
+        "info": {
+            "title": "Informações da foto",
+            "equivalent": "{{value}} mm equiv.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm equiv. (corte)",
+            "simulated": "{{value}} simulado",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "Mapa de ganho HDR",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Local registado",
+            "edits": "Edições",
+            "blurredEarlier": "Desfoque de lente já aplicado ({{value}} simulado)",
+            "enhancedEarlier": "Já melhorada com o Open Photo AI"
         }
     },
     "menu": {

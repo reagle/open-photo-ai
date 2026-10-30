@@ -127,6 +127,7 @@
                 "panDown": "Сдвинуть вниз",
                 "showOriginal": "Показывать оригинал, пока нажато",
                 "cyclePreview": "Переключить режим сравнения",
+                "toggleInfo": "Показать или скрыть сведения о фото",
                 "toggleDrawer": "Показать или скрыть изображения",
                 "previousImage": "Предыдущее изображение",
                 "nextImage": "Следующее изображение",
@@ -569,6 +570,23 @@
             "firstUseAbout_few": "Только в первый раз, может занять около {{count}} минут",
             "firstUseAbout_many": "Только в первый раз, может занять около {{count}} минут",
             "firstUseAbout_other": "Только в первый раз, может занять около {{count}} минуты"
+        },
+        "info": {
+            "title": "Сведения о фото",
+            "equivalent": "{{value}} мм экв.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} мм экв. (кадрирование)",
+            "simulated": "{{value}} имитация",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "Карта усиления HDR",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Место съёмки записано",
+            "edits": "Правки",
+            "blurredEarlier": "Размытие объектива уже применено (имитация {{value}})",
+            "enhancedEarlier": "Уже улучшено в Open Photo AI"
         }
     },
     "menu": {

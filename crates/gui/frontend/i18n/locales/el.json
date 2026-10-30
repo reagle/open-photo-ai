@@ -127,6 +127,7 @@
                 "panDown": "Μετακίνηση κάτω",
                 "showOriginal": "Εμφάνιση αρχικής όσο πατιέται",
                 "cyclePreview": "Εναλλαγή προβολής σύγκρισης",
+                "toggleInfo": "Εμφάνιση ή απόκρυψη πληροφοριών φωτογραφίας",
                 "toggleDrawer": "Εμφάνιση ή απόκρυψη εικόνων",
                 "previousImage": "Προηγούμενη εικόνα",
                 "nextImage": "Επόμενη εικόνα",
@@ -547,6 +548,23 @@
             "firstUse": "Μόνο την πρώτη φορά, ίσως διαρκέσει λίγα λεπτά",
             "firstUseAbout_one": "Μόνο την πρώτη φορά, ίσως διαρκέσει περίπου {{count}} λεπτό",
             "firstUseAbout_other": "Μόνο την πρώτη φορά, ίσως διαρκέσει περίπου {{count}} λεπτά"
+        },
+        "info": {
+            "title": "Πληροφορίες φωτογραφίας",
+            "equivalent": "{{value}} mm ισοδ.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm ισοδ. (περικοπή)",
+            "simulated": "{{value}} προσομοίωση",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "Χάρτης κέρδους HDR",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Καταγράφηκε τοποθεσία",
+            "edits": "Επεξεργασίες",
+            "blurredEarlier": "Το θόλωμα φακού έχει ήδη εφαρμοστεί ({{value}} προσομοίωση)",
+            "enhancedEarlier": "Έχει ήδη βελτιωθεί με το Open Photo AI"
         }
     },
     "menu": {

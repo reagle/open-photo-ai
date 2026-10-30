@@ -127,6 +127,7 @@
                 "panDown": "Nach unten schwenken",
                 "showOriginal": "Original anzeigen, solange gedrückt",
                 "cyclePreview": "Vergleichsansicht wechseln",
+                "toggleInfo": "Fotoinfo ein- oder ausblenden",
                 "toggleDrawer": "Bilder ein- oder ausblenden",
                 "previousImage": "Vorheriges Bild",
                 "nextImage": "Nächstes Bild",
@@ -547,6 +548,23 @@
             "firstUse": "Nur beim ersten Mal, kann einige Minuten dauern",
             "firstUseAbout_one": "Nur beim ersten Mal, kann etwa {{count}} Minute dauern",
             "firstUseAbout_other": "Nur beim ersten Mal, kann etwa {{count}} Minuten dauern"
+        },
+        "info": {
+            "title": "Fotoinfo",
+            "equivalent": "{{value}} mm KB",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm KB (Zuschnitt)",
+            "simulated": "{{value}} simuliert",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR-Gain-Map",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Aufnahmeort gespeichert",
+            "edits": "Bearbeitungen",
+            "blurredEarlier": "Objektivunschärfe bereits angewendet ({{value}} simuliert)",
+            "enhancedEarlier": "Bereits mit Open Photo AI verbessert"
         }
     },
     "menu": {

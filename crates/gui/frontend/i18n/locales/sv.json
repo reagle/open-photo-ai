@@ -127,6 +127,7 @@
                 "panDown": "Panorera nedåt",
                 "showOriginal": "Visa original medan tangenten hålls ned",
                 "cyclePreview": "Växla jämförelsevy",
+                "toggleInfo": "Visa eller dölj fotoinfo",
                 "toggleDrawer": "Visa eller dölj bilder",
                 "previousImage": "Föregående bild",
                 "nextImage": "Nästa bild",
@@ -547,6 +548,23 @@
             "firstUse": "Bara första gången, kan ta några minuter",
             "firstUseAbout_one": "Bara första gången, kan ta ungefär {{count}} minut",
             "firstUseAbout_other": "Bara första gången, kan ta ungefär {{count}} minuter"
+        },
+        "info": {
+            "title": "Fotoinfo",
+            "equivalent": "{{value}} mm ekv.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm ekv. (beskärning)",
+            "simulated": "{{value}} simulerad",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR-förstärkningskarta",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Plats registrerad",
+            "edits": "Redigeringar",
+            "blurredEarlier": "Objektivoskärpa redan tillämpad ({{value}} simulerad)",
+            "enhancedEarlier": "Redan förbättrad med Open Photo AI"
         }
     },
     "menu": {
