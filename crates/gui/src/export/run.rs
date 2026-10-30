@@ -159,6 +159,8 @@ pub(crate) async fn export_with<E: Enhancer>(
 
         return Ok(Exported::Stopped);
     };
+    // `info`, with the window run's `kind` field, so one query over `kind` reads every run in the order it held a model.
+    tracing::info!(run = request.run, kind = "export", source = request.source, "export run started");
 
     // A face recovery finds its own faces, inside this export and under its stop, exactly as a canvas run's does — see
     // `prepare_chain`. The row reports it as the head of its `enhancing` bar. What was found is the canvas's to record,
@@ -221,7 +223,7 @@ pub(crate) async fn export_with<E: Enhancer>(
 
             ExportError::Write { path: destination.display().to_string(), message }
         })?;
-    tracing::info!(path = %written.display(), bytes, "a photograph was exported");
+    tracing::info!(kind = "export", path = %written.display(), bytes, "a photograph was exported");
 
     Ok(Exported::Exported { path: written.to_string_lossy().into_owned(), bytes, losses })
 }

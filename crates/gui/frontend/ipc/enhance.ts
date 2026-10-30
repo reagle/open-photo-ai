@@ -173,12 +173,30 @@ export const enhance = (
     processor: Processor,
     crop?: CropInfo,
     mask?: Mask,
+    kind?: RunKind,
 ) => {
     // Minted before the invoke so a cleanup racing the dispatch still has a name to cancel.
     const run = mintRun();
 
-    return { run, done: call<Enhancement>(ENHANCE_COMMAND, { run, source, operations, processor, crop, mask }) };
+    return {
+        run,
+        done: call<Enhancement>(ENHANCE_COMMAND, {
+            run,
+            source,
+            operations,
+            processor,
+            crop,
+            mask,
+            ...(kind && { kind }),
+        }),
+    };
 };
+
+/**
+ * Who asked for a window run, for the log alone: the person looking (`window`, which is what Rust assumes when this
+ * is left out) or the batch paging through the photographs (`batch`).
+ */
+export type RunKind = "window" | "batch";
 
 /**
  * Stops a run by the name {@link enhance} returned.
