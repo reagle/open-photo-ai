@@ -35,12 +35,15 @@ pub(super) const IDLE_LIFE: Duration = Duration::from_secs(5 * 60);
 /// How many sessions stay resident at most, counting those in use.
 ///
 /// A count rather than bytes, because no number this cache can read says what a session costs: a model file's size
-/// is not its footprint (Porto is a 104 MB file and gigabytes of Core ML buffers; Bilbao's CPU arena is several times its
-/// weights), so a byte budget would be a budget over guesses. **Four** is the largest chain plus one: a lens blur holds
-/// three sessions at once (Lisbon, Bilbao, Porto), and the fourth lets a batch that alternates it with a Sharpen or a
-/// Denoise keep both without rebuilding on every photograph. A fifth session is evicted least recently used first, and
-/// a session in use is never evicted — freeing it would be a native use-after-free — so a run that needs more than four
-/// at once is held to what it needs, and nothing beyond.
+/// is not its footprint. Measured with `footprint` on the CLI, a lens blur's sessions once they have run are Lisbon
+/// about 2 GB (a 324 MB file; Core ML's `IOAccelerator` and `IOSurface` buffers), Porto 5.3 GB re-exported and 10.9 GB
+/// as Xenova's graph (a 104 to 119 MB file), and Bilbao 8.5 GB on the CPU (490 MB), so a byte budget would be a budget
+/// over guesses. **Four** is the largest chain plus one: a lens blur holds Lisbon and Porto resident (Bilbao is let go
+/// of after each run, see [`EpProfile::release_after_use`](crate::providers::profile::EpProfile)), a batch that mixes
+/// landscape and portrait photographs keeps both Lisbons, and the fourth lets one that alternates with a Sharpen or a
+/// Denoise keep it too: about 9 GB for a lens-blur batch, all of it given back after [`IDLE_LIFE`]. A fifth session
+/// is evicted least recently used first, and a session in use is never evicted — freeing it would be a native
+/// use-after-free — so a run that needs more than four at once is held to what it needs, and nothing beyond.
 pub(super) const MAX_RESIDENT: usize = 4;
 
 /// How often the background task looks for sessions to release.
@@ -52,6 +55,17 @@ pub(super) const MAX_RESIDENT: usize = 4;
 /// three extra passes per idle life over a map that holds a handful of entries and is already behind a lock a session build
 /// takes anyway.
 pub(super) const SWEEP_INTERVAL: Duration = Duration::from_secs(IDLE_LIFE.as_secs() / 4);
+
+/// Whether a session just built is kept for the next request or only for the ones that asked for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Residency {
+    /// Filed in the cache, and kept until it has gone unused for [`IDLE_LIFE`] or a later build pushes it past
+    /// [`MAX_RESIDENT`]: every model but the ones whose profile says otherwise.
+    Resident,
+    /// Never filed: handed to the requests waiting on its build and freed when the last of them lets go, so the next
+    /// request builds it again. See [`EpProfile::release_after_use`](crate::providers::profile::EpProfile).
+    UntilUnused,
+}
 
 /// What a resident session is filed under: the artifact, the provider it was actually built on, and whether it was
 /// built as a rung of the `Auto` ladder.
@@ -432,11 +446,40 @@ impl<S> SessionCache<S, SessionError> {
     /// # Errors
     ///
     /// Returns whatever `build` reported, to every request that was waiting on it.
+    // The suites' door, which files every session it builds; the application goes through `get_or_build_as` with the
+    // residency its model declares.
+    #[cfg(test)]
     pub(super) async fn get_or_build<F, Fut>(
         &self,
         artifact: &ArtifactId,
         requested: ExecutionProvider,
         resolved: ExecutionProvider,
+        interest: &Interest,
+        build: F,
+    ) -> Result<Option<SessionHandle<S>>, SessionError>
+    where
+        F: FnOnce(Install) -> Fut,
+        Fut: Future<Output = Result<Option<S>, SessionError>>,
+    {
+        self.get_or_build_as(artifact, requested, resolved, Residency::Resident, interest, build).await
+    }
+
+    /// [`get_or_build`](Self::get_or_build), with what is built kept as `residency` says: filed for the next request,
+    /// or handed only to the requests that waited on this build and freed when they let go.
+    ///
+    /// A session that is never filed is never found by [`get`](Self::get), so each request after the last one let go
+    /// builds it again — which is the point — while requests that arrive during one build still share it, through the
+    /// flight. It counts towards nothing: not the cap, not the gauge, not a sweep.
+    ///
+    /// # Errors
+    ///
+    /// As [`get_or_build`](Self::get_or_build).
+    pub(super) async fn get_or_build_as<F, Fut>(
+        &self,
+        artifact: &ArtifactId,
+        requested: ExecutionProvider,
+        resolved: ExecutionProvider,
+        residency: Residency,
         interest: &Interest,
         build: F,
     ) -> Result<Option<SessionHandle<S>>, SessionError>
@@ -591,6 +634,9 @@ impl<S> SessionCache<S, SessionError> {
         // what had just been built — a redundant engine compile of minutes, for a model already in hand.
         let filed = outcome.map(|built| {
             built.map(|built| {
+                if residency == Residency::UntilUnused {
+                    return built;
+                }
                 let mut entries = lock(&self.entries);
                 let entry = Arc::clone(entries.entry(key.clone()).or_insert(built));
                 let evicted = Self::trim(&mut entries, &key, MAX_RESIDENT);

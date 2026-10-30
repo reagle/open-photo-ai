@@ -49,9 +49,17 @@ const AFTER_INPUT: f64 = 0.1;
 const AFTER_GRAPH: f64 = 0.9;
 const AFTER_MATTE: f64 = 1.0;
 
-/// The execution-provider tuning for Bilbao at `precision`: the provider defaults, on the CPU (see [`provider`]).
+/// The execution-provider tuning for Bilbao at `precision`: the provider defaults, on the CPU (see [`provider`]), with
+/// its session released as soon as its run is done.
 pub(crate) fn profile(_precision: Precision) -> EpProfile {
-    EpProfile::default()
+    // Released, because what the session keeps once it has run is the largest thing a lens blur holds. Measured with
+    // the CLI on three photographs (1.7 to 25 megapixels; the graph's input is 1024 x 1024 either way), `footprint`
+    // per stage: Bilbao's run took `Malloc Large` from 0.6 to 8.5 GB, and the session kept it through Porto, the render
+    // and the write, so a lens blur peaked at 24 to 27 GB (18 to 21 GB with the re-exported Porto). Released, it falls
+    // back to 0.5 GB as Porto starts and the peak is 11 to 12 GB, with the same output. What it costs is a rebuild per
+    // photograph, 0.8 to 1.0 s in the application's log. The arena alone was not it: with the arena off the session
+    // still kept 9 to 11 GB.
+    EpProfile { release_after_use: true, ..EpProfile::default() }
 }
 
 /// The provider Bilbao runs on when `requested` is asked for: the CPU wherever Core ML would be tried.
@@ -280,5 +288,12 @@ mod tests {
         assert_eq!(provider(ExecutionProvider::Auto), moved);
         assert_eq!(provider(ExecutionProvider::Cpu), ExecutionProvider::Cpu);
         assert_eq!(provider(ExecutionProvider::Cuda), ExecutionProvider::Cuda);
+    }
+
+    #[test]
+    fn bilbao_is_let_go_of_once_its_run_is_done_and_nothing_else_changes() {
+        for precision in [Precision::Fp16, Precision::Fp32] {
+            assert_eq!(profile(precision), EpProfile { release_after_use: true, ..EpProfile::default() });
+        }
     }
 }
