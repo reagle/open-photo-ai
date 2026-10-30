@@ -183,6 +183,17 @@ export const renditionUrl = (identity: string, bound = 0, crop?: CropInfo) => {
 };
 
 /**
+ * Builds the URL to draw an enhanced result from, at its own size, naming the run that produced it.
+ *
+ * The run is not read by Rust, which ignores a parameter it does not build and serves the identity alone. It is there
+ * for the webview: a chain run again from the cache answers the same identity, and an `<img>` handed the address it
+ * already holds asks for nothing, so one whose earlier load was answered `GONE` would keep its broken image. Named by
+ * its run, each result is a new address and is loaded afresh; Rust's `Renditions` still answers it by identity.
+ */
+export const resultUrl = (result: { identity: string; run: string }) =>
+    `${renditionUrl(result.identity)}?run=${encodeURIComponent(result.run)}`;
+
+/**
  * Like {@link renditionUrl}, but for a record that may have no `identity` - returns `undefined` in that
  * case rather than a URL that would 404. Centralizes the `file?.identity ? renditionUrl(...) : undefined`
  * pattern used across the canvas, preload and sidebar.

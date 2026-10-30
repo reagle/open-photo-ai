@@ -66,7 +66,7 @@ vi.mock("@/hooks/useEnhancementRun", () => ({
 let run: Partial<EnhancementRun> = { running: false };
 
 /** The result of a run, as the hook reports one. A 2x enlargement of HOLIDAY's 3000x2000. */
-const ENHANCED = { identity: "fedcba9876543210", width: 6000, height: 4000 };
+const ENHANCED = { identity: "fedcba9876543210", width: 6000, height: 4000, run: "run-7" };
 
 /** One report about a run in flight. */
 const progress = (extra: Partial<RunProgress> = {}): RunProgress => ({
@@ -249,7 +249,7 @@ describe("the canvas", () => {
         const [original, enhanced] = sources();
 
         expect(original).toContain(`crop=${cropQuery(FRAMING)}`);
-        expect(enhanced).toBe(`opai://localhost/${ENHANCED.identity}`);
+        expect(enhanced).toBe(`opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`);
     });
 
     it("draws nothing rather than the wrong pixels for a file it could not read", () => {
@@ -882,7 +882,10 @@ describe("what the enhanced pane draws", () => {
 
         // Which is what makes the two-pane and split comparisons show a comparison for the first
         // time: the original pane goes on drawing the photograph as it was.
-        expect(sources()).toEqual([`opai://localhost/${HOLIDAY.identity}`, `opai://localhost/${ENHANCED.identity}`]);
+        expect(sources()).toEqual([
+            `opai://localhost/${HOLIDAY.identity}`,
+            `opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`,
+        ]);
     });
 
     it("draws the result across the whole canvas in full", () => {
@@ -890,7 +893,7 @@ describe("what the enhanced pane draws", () => {
 
         draw("full");
 
-        expect(sources()).toEqual([`opai://localhost/${ENHANCED.identity}`]);
+        expect(sources()).toEqual([`opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`]);
     });
 
     it("moves both panes together although they draw different pixels", () => {
@@ -911,7 +914,7 @@ describe("what the enhanced pane draws", () => {
         run = { running: false, enhanced: ENHANCED };
         const view = draw("side");
 
-        expect(sources()[1]).toBe(`opai://localhost/${ENHANCED.identity}`);
+        expect(sources()[1]).toBe(`opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`);
 
         run = { running: false };
         view.rerender(<PreviewImage />);
@@ -983,7 +986,7 @@ describe("while the original is held", () => {
     const labels = () => [...document.querySelectorAll("[data-slot='preview-chip']")].map((chip) => chip.textContent);
     const hold = (showing: boolean) => act(() => usePeekStore.getState().setShowingOriginal(showing));
     const SOURCE = `opai://localhost/${HOLIDAY.identity}`;
-    const RESULT = `opai://localhost/${ENHANCED.identity}`;
+    const RESULT = `opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`;
 
     beforeEach(() => {
         run = { running: false, enhanced: ENHANCED };
@@ -1198,7 +1201,7 @@ describe("the faces in the photograph on the canvas", () => {
 
         draw("side");
 
-        expect(sources()).toContain(`opai://localhost/${ENHANCED.identity}`);
+        expect(sources()).toContain(`opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`);
         expect(boxes()).toHaveLength(0);
     });
 });

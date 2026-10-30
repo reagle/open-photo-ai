@@ -746,6 +746,20 @@ mod tests {
         assert_eq!(asked("opai://localhost/cafebabecafebabe?precrop=nonsense").map(|r| r.crop), Some(None));
     }
 
+    #[test]
+    fn the_run_an_enhanced_address_names_is_for_the_webview_and_changes_nothing_served() {
+        // `resultUrl` in `frontend/ipc/images.ts` names the run beside the identity, so the same result from a later run
+        // is a new address the webview loads afresh. What is served, and what `Renditions` keys on, is the identity alone.
+        assert_eq!(
+            asked("opai://localhost/cafebabecafebabe?run=9e985ju3-3"),
+            asked("opai://localhost/cafebabecafebabe"),
+        );
+        assert_eq!(
+            asked("http://opai.localhost/cafebabecafebabe?run=9e985ju3-3"),
+            asked("opai://localhost/cafebabecafebabe"),
+        );
+    }
+
     // ── The downscale ─────────────────────────────────────────────────────────────────────────────────────────────
     //
     // These came from `opai::image::resize`, with the crate. The contract they pin did not change when the function
