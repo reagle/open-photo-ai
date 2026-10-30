@@ -1,7 +1,7 @@
 //! What stays resident, what a release frees, and when the idle sweep lets a session go.
 
 use super::*;
-use crate::sessions::resident::{IDLE_LIFE, MAX_RESIDENT, SWEEP_INTERVAL};
+use crate::sessions::resident::{IDLE_LIFE, MAX_RESIDENT, Residency, SWEEP_INTERVAL};
 
 #[tokio::test]
 async fn the_same_model_requested_twice_is_opened_once_and_both_requests_are_served_it() {
@@ -123,6 +123,65 @@ async fn a_session_a_run_is_holding_is_freed_when_that_run_ends_and_not_before()
     drop(running);
 
     assert_eq!(lock(&released).clone(), vec![0, 1], "the session in use was not freed when its run ended");
+}
+
+#[tokio::test]
+async fn a_session_built_until_unused_is_freed_when_its_run_lets_go_and_built_again_for_the_next() {
+    // Bilbao's case: a session whose memory is worth more than the second it takes to build again. It is handed to
+    // the run that asked, never filed, so nothing but that run holds it, and the next request opens it afresh.
+    let cache: SessionCache<Dropping> = SessionCache::default();
+    let released = Arc::new(Mutex::new(Vec::new()));
+    let (id, interest) = (tokyo(), Interest::default());
+    let request = |serial| {
+        let released = Arc::clone(&released);
+        cache.get_or_build_as(
+            &id,
+            ExecutionProvider::Cpu,
+            ExecutionProvider::Cpu,
+            Residency::UntilUnused,
+            &interest,
+            move |_| async move { Ok::<Option<Dropping>, SessionError>(Some(Dropping { serial, released })) },
+        )
+    };
+
+    let running = request(0).await.unwrap().expect("the build was not stopped");
+
+    assert_eq!(cache.resident(), 0, "a session built until unused was filed");
+    assert!(lock(&released).is_empty(), "the session was freed while its run held it");
+
+    drop(running);
+
+    assert_eq!(lock(&released).clone(), vec![0], "the session outlived the run that used it");
+
+    let again = request(1).await.unwrap().expect("the build was not stopped");
+
+    assert_eq!(again.session().serial, 1, "the next request was not built a session of its own");
+    assert_eq!(cache.resident(), 0);
+}
+
+#[tokio::test]
+async fn a_session_built_until_unused_takes_no_place_from_the_resident_ones() {
+    // Never filed, so it counts towards nothing: four resident sessions stay resident beside it.
+    let (cache, builds) = counting_cache();
+    for (id, provider) in five_keys().into_iter().take(MAX_RESIDENT) {
+        drop(build_through(&cache, &builds, &id, provider).await.unwrap());
+    }
+
+    let held = cache
+        .get_or_build_as(
+            &tokyo(),
+            ExecutionProvider::Cuda,
+            ExecutionProvider::Cuda,
+            Residency::UntilUnused,
+            &Interest::default(),
+            |_| async { Ok(Some(Fake(99))) },
+        )
+        .await
+        .unwrap()
+        .expect("the build was not stopped");
+
+    assert_eq!(*held.session(), Fake(99));
+    assert_eq!(cache.resident(), MAX_RESIDENT, "a session built until unused evicted a resident one");
 }
 
 #[tokio::test]
