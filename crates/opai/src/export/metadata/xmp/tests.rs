@@ -7,6 +7,9 @@ use chrono::DateTime;
 use super::edit::{Array, Xmp, ns};
 use super::{Context, iim_date, rewrite};
 use crate::export::metadata::iptc;
+use crate::export::metadata::pixels::Geometry;
+use crate::image::{Affine, Edits};
+use crate::models::{FloatPrecision, Scale, Sharpen, Strength, Upscale};
 
 /// A packet shaped as Lightroom writes one: most properties as attributes of one description, Camera Raw settings,
 /// a gain-map description, a history whose events are attribute-form `rdf:li`s, a `DerivedFrom` written as an empty
@@ -103,8 +106,12 @@ fn context<'a>(output_type: &'static str, exif: Option<&'a [u8]>, iim: Option<&'
         exif,
         iim,
         gain_map: None,
+        edits: &NO_EDITS,
+        geometry: None,
     }
 }
+
+static NO_EDITS: Edits = Edits::NONE;
 
 fn rewritten(packet: Option<&str>, described: bool, context: &Context<'_>) -> (String, Xmp) {
     let bytes = rewrite(packet.map(str::as_bytes), described, context).expect("a packet");
@@ -615,4 +622,69 @@ fn a_gain_map_declared_on_rdf_rdf_keeps_its_declaration_only_while_written() {
     // Not written: neither does, so the SDR export is not read as carrying a gain map.
     let (text, _) = rewritten(Some(packet), true, &context("image/jpeg", None, None));
     assert!(!text.contains("hdr-gain-map") && !text.contains("hdrgm"), "{text}");
+}
+
+// ── Pixels and the original ─────────────────────────────────────────────────────────────────────────────────────
+
+/// A packet as an old Google Camera Lens Blur writes one: the original image, its focus, its depth map, and the
+/// subject's position and focal plane mirrored from the EXIF.
+const LENS_BLUR: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:GImage="http://ns.google.com/photos/1.0/image/" xmlns:GFocus="http://ns.google.com/photos/1.0/focus/" xmlns:GDepth="http://ns.google.com/photos/1.0/depthmap/" xmlns:exif="http://ns.adobe.com/exif/1.0/" GImage:Mime="image/jpeg" GImage:Data="T1JJR0lOQUw=" GFocus:BlurAtInfinity="0.01" GFocus:FocalPointX="0.5" GDepth:Format="RangeInverse" GDepth:ImageWidth="4000" GDepth:ImageHeight="3000" GDepth:Data="REVQVEg=" exif:FocalPlaneXResolution="4000/1"><exif:SubjectArea><rdf:Seq><rdf:li>3000</rdf:li><rdf:li>1000</rdf:li><rdf:li>400</rdf:li><rdf:li>200</rdf:li></rdf:Seq></exif:SubjectArea></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+
+/// The context of an export of `edits` at `size`, its geometry worked out as the export works it out.
+fn edited(edits: &'static Edits, size: (u32, u32)) -> Context<'static> {
+    let geometry = Geometry::of(None, edits, size).map(|geometry| &*Box::leak(Box::new(geometry)));
+    Context { width: size.0, height: size.1, edits, geometry, ..context("image/jpeg", None, None) }
+}
+
+#[test]
+fn an_unedited_export_keeps_googles_original_and_depth() {
+    let (_, xmp) = rewritten(Some(LENS_BLUR), true, &edited(&NO_EDITS, (4000, 3000)));
+    assert_eq!(xmp.get(ns::GIMAGE, "Data").as_deref(), Some("T1JJR0lOQUw="));
+    assert_eq!(xmp.get(ns::GDEPTH, "Data").as_deref(), Some("REVQVEg="));
+    assert_eq!(xmp.seq_values(ns::EXIF, "SubjectArea").map(|values| values.len()), Some(4));
+}
+
+#[test]
+fn an_edited_export_drops_the_original_its_focus_and_its_depth_map() {
+    let edits = Box::leak(Box::new(Edits::NONE.after(
+        &[Sharpen::moscow(FloatPrecision::Fp32, Strength::new(1.0).expect("a strength"))],
+        false,
+        (4000, 3000),
+        (4000, 3000),
+    )));
+    let (text, xmp) = rewritten(Some(LENS_BLUR), true, &edited(edits, (4000, 3000)));
+    assert!(!text.contains("GImage") && !text.contains("T1JJR0lOQUw="), "{text}");
+    assert!(!text.contains("GFocus") && !text.contains("GDepth") && !text.contains("REVQVEg="), "{text}");
+    // Nothing moved, so the subject is where it was.
+    assert_eq!(xmp.seq_values(ns::EXIF, "SubjectArea").map(|values| values.len()), Some(4));
+}
+
+#[test]
+fn an_upscale_alone_keeps_the_depth_map_sized_for_the_export_and_moves_the_pixel_fields() {
+    let edits = Box::leak(Box::new(Edits::NONE.after(
+        &[Upscale::kyoto(FloatPrecision::Fp16, Scale::new(2.0).expect("a scale"))],
+        false,
+        (4000, 3000),
+        (8000, 6000),
+    )));
+    let (text, xmp) = rewritten(Some(LENS_BLUR), true, &edited(edits, (8000, 6000)));
+    assert!(!text.contains("GImage") && !text.contains("GFocus"), "{text}");
+    assert_eq!(xmp.get(ns::GDEPTH, "Data").as_deref(), Some("REVQVEg="));
+    assert_eq!(xmp.get(ns::GDEPTH, "ImageWidth").as_deref(), Some("8000"));
+    assert_eq!(xmp.get(ns::GDEPTH, "ImageHeight").as_deref(), Some("6000"));
+    assert_eq!(
+        xmp.seq_values(ns::EXIF, "SubjectArea"),
+        Some(["6000", "2000", "800", "400"].map(String::from).to_vec())
+    );
+    assert_eq!(xmp.get(ns::EXIF, "FocalPlaneXResolution").as_deref(), Some("8000/1"));
+}
+
+#[test]
+fn a_crop_that_leaves_the_subject_out_removes_its_mirror_and_the_depth_map() {
+    let edits = Box::leak(Box::new(Edits::NONE.framed((4000, 3000), Affine::IDENTITY)));
+    let (text, xmp) = rewritten(Some(LENS_BLUR), true, &edited(edits, (2000, 3000)));
+    assert!(!xmp.has(ns::EXIF, "SubjectArea"), "{text}");
+    assert!(!text.contains("GDepth"), "{text}");
+    // A crop leaves the pixel pitch as it was.
+    assert_eq!(xmp.get(ns::EXIF, "FocalPlaneXResolution").as_deref(), Some("4000/1"));
 }

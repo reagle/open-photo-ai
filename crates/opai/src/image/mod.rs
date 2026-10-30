@@ -120,6 +120,7 @@
 // survive an export and how the rest are rewritten is this crate's policy, in `export/metadata/`.
 
 mod descriptive;
+mod edits;
 mod encode;
 mod error;
 mod extensions;
@@ -141,6 +142,7 @@ mod test_log;
 pub(crate) mod test_support;
 
 pub use descriptive::without_descriptive;
+pub use edits::{Affine, Edits, Frame};
 pub use encode::{encode, encode_blocking};
 pub use error::ImageIoError;
 pub use extensions::{extensions_of, input_extensions};
