@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { ShineBorder } from "@/components/ui/shine-border";
+import { InfoCard } from "@/features/preview/InfoCard";
 import { PreviewEmpty } from "@/features/preview/PreviewEmpty";
 import { PreviewImage } from "@/features/preview/PreviewImage";
 import { useDroppedImages } from "@/hooks/useDroppedImages";
@@ -78,6 +79,9 @@ export const Preview = () => {
             <div className="relative z-10 flex h-full w-full items-center justify-center">
                 {file ? <PreviewImage /> : <PreviewEmpty />}
             </div>
+
+            {/* Over the photograph and under the drop region, which stays the topmost layer for the shine it draws. */}
+            {file && <InfoCard bottom={covered} />}
 
             {/*
              * Where a dragged file will be taken: the rectangle the drop is hit-tested against, and

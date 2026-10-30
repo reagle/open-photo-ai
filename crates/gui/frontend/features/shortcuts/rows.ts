@@ -39,6 +39,7 @@ export const LIST_SECTIONS: readonly ListSection[] = [
             { id: "pan", label: "shortcuts.rows.pan", actions: ["panLeft", "panRight", "panUp", "panDown"] },
             single("showOriginal"),
             single("cyclePreview"),
+            single("toggleInfo"),
             single("toggleDrawer"),
             single("showShortcuts"),
         ],
