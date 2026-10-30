@@ -48,7 +48,7 @@ use crate::inference::execute::ExecuteOptions;
 use crate::models::lens_blur::lens::Blur;
 use crate::models::lens_blur::render::Refined;
 use crate::models::lens_blur::trimap::{
-    Band, cut_at_steps, joined, matted_focus, seeded, trimap, widened, worth_matting,
+    Band, cut_at_steps, firmed, joined, matted_focus, seeded, trimap, widened, worth_matting,
 };
 use crate::models::{Depth, DepthMap, Lens, LensBlur, Matte, Matting, Operation, OwnLens};
 use crate::task::spawn_blocking;
@@ -386,6 +386,7 @@ where
         // Recorded by `execute`, where it happened; this only notes what the chain does about it.
         match matte(matting.clone().with_trimap(trimap), next()).await {
             Ok(plain) => {
+                let firm = saliency.clone();
                 let found = match (seeded, saliency) {
                     (Some(seeded), Some(saliency)) => {
                         match matte(matting.with_trimap(Arc::new(seeded)), next()).await {
@@ -408,6 +409,14 @@ where
                         }
                         plain
                     }
+                };
+                // Where Bilbao is sure of the subject, Porto's hesitation made whole.
+                let found = match firm {
+                    Some(saliency) => {
+                        spawn_blocking::<_, InferenceError, _>(move || firmed(&found, &saliency).unwrap_or(found))
+                            .await?
+                    }
+                    None => found,
                 };
                 bench_dump("matte", found.dimensions(), found.plane().as_slice());
                 outcome = outcome.and(ChainMatte::Matted);
