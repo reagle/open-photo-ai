@@ -20,12 +20,13 @@ use serde::Deserialize;
 /// The target every record from the window is written under.
 pub(crate) const TARGET: &str = "gui::frontend";
 
-// Two only. A render crash is what the window does not survive, and every other failure it observes is a warning. It
-// has nothing informational to say yet; when it does, a third variant is one line here and one in `ipc/log.ts`.
-/// How severe the window judged its failure.
+// A render crash is what the window does not survive, and every other failure it observes is a warning. `info` is not
+// a failure: it is the window's own timings — a click to the first frame drawn — which only the window can measure.
+/// How severe the window judged its failure, or `Info` for a timing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Level {
+    Info,
     Warn,
     Error,
 }
@@ -77,6 +78,16 @@ pub(crate) fn log(record: WindowRecord) {
     // `tracing`'s macros take the level at compile time, hence one arm per level. A field left `None` is not written.
     // The fields sit in a block of their own because a constant's name, the marker, cannot lead a level macro's list.
     match record.level {
+        Level::Info => tracing::info!(
+            target: TARGET,
+            {
+                error = error.as_deref(),
+                stack = stack.as_deref(),
+                component_stack = component_stack.as_deref(),
+                { opai::logging::FILE_ONLY } = true,
+            },
+            "{message}"
+        ),
         Level::Warn => tracing::warn!(
             target: TARGET,
             {
@@ -122,7 +133,11 @@ mod tests {
 
     #[test]
     fn each_level_lands_at_its_own_under_the_windows_target() {
-        for (level, expected) in [(Level::Warn, TracingLevel::WARN), (Level::Error, TracingLevel::ERROR)] {
+        for (level, expected) in [
+            (Level::Info, TracingLevel::INFO),
+            (Level::Warn, TracingLevel::WARN),
+            (Level::Error, TracingLevel::ERROR),
+        ] {
             let (recorded, ()) = recorded(|| log(record(level, "the preview could not be drawn")));
 
             let [event] = recorded.events.as_slice() else { panic!("{:#?}", recorded.events) };
@@ -225,7 +240,7 @@ mod tests {
             serde_json::from_value(serde_json::json!({ "level": "warn", "message": "m" })).expect("optional texts");
         assert_eq!((bare.level, bare.error), (Level::Warn, None));
 
-        let refused = serde_json::from_value::<WindowRecord>(serde_json::json!({ "level": "info", "message": "m" }));
+        let refused = serde_json::from_value::<WindowRecord>(serde_json::json!({ "level": "debug", "message": "m" }));
         assert!(refused.is_err(), "an unknown level was accepted");
     }
 }

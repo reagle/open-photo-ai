@@ -557,7 +557,8 @@
             "firstUse": "Solo al primo utilizzo, può richiedere qualche minuto",
             "firstUseAbout_one": "Solo al primo utilizzo, può richiedere circa {{count}} minuto",
             "firstUseAbout_many": "Solo al primo utilizzo, può richiedere circa {{count}} minuti",
-            "firstUseAbout_other": "Solo al primo utilizzo, può richiedere circa {{count}} minuti"
+            "firstUseAbout_other": "Solo al primo utilizzo, può richiedere circa {{count}} minuti",
+            "waiting": "In attesa…"
         }
     },
     "menu": {

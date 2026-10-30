@@ -444,8 +444,20 @@ fn produce<R: tauri::Runtime>(app: &AppHandle<R>, asked: &Asked) -> Result<Rendi
     };
 
     // A refusal drops the guard on the way out, which releases the claim and wakes whatever was waiting on it.
+    let started = std::time::Instant::now();
     let rendition = render(pixels, asked)?;
     producing.keep(&rendition);
+
+    // `info`, at most once per photograph, bound and framing (a hit above writes nothing): what a click costs before
+    // the canvas can draw is a decode, an encode and a webview decode, and this is the half the window cannot time.
+    tracing::info!(
+        identity = %asked.identity,
+        bound = asked.bound,
+        cropped = asked.crop.is_some(),
+        bytes = rendition.bytes.len(),
+        duration = ?started.elapsed(),
+        "rendition produced"
+    );
 
     Ok(rendition)
 }

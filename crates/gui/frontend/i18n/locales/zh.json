@@ -535,7 +535,8 @@
             "compiling": "正在编译 {{model}} 模型",
             "loading": "正在加载 {{model}} 模型",
             "firstUse": "仅首次使用，可能需要几分钟",
-            "firstUseAbout_other": "仅首次使用，可能需要约 {{count}} 分钟"
+            "firstUseAbout_other": "仅首次使用，可能需要约 {{count}} 分钟",
+            "waiting": "等待中…"
         }
     },
     "menu": {

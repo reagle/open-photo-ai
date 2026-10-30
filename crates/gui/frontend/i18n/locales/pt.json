@@ -546,7 +546,8 @@
             "loading": "Carregando o modelo {{model}}",
             "firstUse": "Só no primeiro uso, pode levar alguns minutos",
             "firstUseAbout_one": "Só no primeiro uso, pode levar cerca de {{count}} minuto",
-            "firstUseAbout_other": "Só no primeiro uso, pode levar cerca de {{count}} minutos"
+            "firstUseAbout_other": "Só no primeiro uso, pode levar cerca de {{count}} minutos",
+            "waiting": "Aguardando…"
         }
     },
     "menu": {

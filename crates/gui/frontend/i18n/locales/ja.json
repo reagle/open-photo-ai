@@ -535,7 +535,8 @@
             "compiling": "{{model}} モデルをコンパイル中",
             "loading": "{{model}} モデルを読み込み中",
             "firstUse": "初回のみ。数分かかることがあります",
-            "firstUseAbout_other": "初回のみ。約 {{count}} 分かかることがあります"
+            "firstUseAbout_other": "初回のみ。約 {{count}} 分かかることがあります",
+            "waiting": "待機中…"
         }
     },
     "menu": {

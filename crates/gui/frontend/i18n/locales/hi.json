@@ -546,7 +546,8 @@
             "loading": "{{model}} मॉडल लोड हो रहा है",
             "firstUse": "सिर्फ़ पहली बार, कुछ मिनट लग सकते हैं",
             "firstUseAbout_one": "सिर्फ़ पहली बार, लगभग {{count}} मिनट लग सकता है",
-            "firstUseAbout_other": "सिर्फ़ पहली बार, लगभग {{count}} मिनट लग सकते हैं"
+            "firstUseAbout_other": "सिर्फ़ पहली बार, लगभग {{count}} मिनट लग सकते हैं",
+            "waiting": "प्रतीक्षा…"
         }
     },
     "menu": {

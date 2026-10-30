@@ -546,7 +546,8 @@
             "loading": "Model {{model}} laden",
             "firstUse": "Alleen de eerste keer, kan enkele minuten duren",
             "firstUseAbout_one": "Alleen de eerste keer, kan ongeveer {{count}} minuut duren",
-            "firstUseAbout_other": "Alleen de eerste keer, kan ongeveer {{count}} minuten duren"
+            "firstUseAbout_other": "Alleen de eerste keer, kan ongeveer {{count}} minuten duren",
+            "waiting": "Wachten…"
         }
     },
     "menu": {

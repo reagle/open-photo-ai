@@ -546,7 +546,8 @@
             "loading": "Modell {{model}} wird geladen",
             "firstUse": "Nur beim ersten Mal, kann einige Minuten dauern",
             "firstUseAbout_one": "Nur beim ersten Mal, kann etwa {{count}} Minute dauern",
-            "firstUseAbout_other": "Nur beim ersten Mal, kann etwa {{count}} Minuten dauern"
+            "firstUseAbout_other": "Nur beim ersten Mal, kann etwa {{count}} Minuten dauern",
+            "waiting": "Warten…"
         }
     },
     "menu": {

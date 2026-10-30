@@ -546,7 +546,8 @@
             "loading": "Läser in modellen {{model}}",
             "firstUse": "Bara första gången, kan ta några minuter",
             "firstUseAbout_one": "Bara första gången, kan ta ungefär {{count}} minut",
-            "firstUseAbout_other": "Bara första gången, kan ta ungefär {{count}} minuter"
+            "firstUseAbout_other": "Bara första gången, kan ta ungefär {{count}} minuter",
+            "waiting": "Väntar…"
         }
     },
     "menu": {

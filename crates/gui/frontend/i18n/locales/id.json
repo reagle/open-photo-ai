@@ -535,7 +535,8 @@
             "compiling": "Mengompilasi model {{model}}",
             "loading": "Memuat model {{model}}",
             "firstUse": "Hanya pada penggunaan pertama, bisa memakan beberapa menit",
-            "firstUseAbout_other": "Hanya pada penggunaan pertama, bisa memakan sekitar {{count}} menit"
+            "firstUseAbout_other": "Hanya pada penggunaan pertama, bisa memakan sekitar {{count}} menit",
+            "waiting": "Menunggu…"
         }
     },
     "menu": {
