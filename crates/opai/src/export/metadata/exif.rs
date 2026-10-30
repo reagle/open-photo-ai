@@ -10,8 +10,10 @@
 //! | ImageWidth `0x0100`, ImageLength `0x0101` | IFD0 | the exported size, where the source has them |
 //! | Orientation `0x0112` | IFD0 | 1, where the source has it: the decode already turned the pixels upright |
 //! | IFD1 and its thumbnail | — | removed: it shows the unenhanced, uncropped original |
+//! | SubjectArea, SubjectLocation, FocalPlaneX/YResolution | Exif | moved and scaled with the pixels, afterwards, by [`pixels`](super::pixels) |
 //!
-//! Everything else — capture dates and offsets, camera, lens, exposure, GPS, the MakerNote — is kept byte for byte.
+//! Everything else — capture dates and offsets, camera, lens, aperture, focal length, exposure, GPS, the MakerNote — is
+//! kept byte for byte.
 //!
 //! **OffsetTime is replaced, never added.** It exists only from EXIF 2.31 on, and a source without it is usually an
 //! older EXIF, where an added one is itself an error a validator reports; its DateTime then stays offset-less, as the

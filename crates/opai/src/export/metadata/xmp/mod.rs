@@ -12,6 +12,9 @@
 //! | `tiff:Orientation` | 1, where present, as the EXIF's: the decode already turned the pixels upright |
 //! | `crs:*`, `xmpNote:HasExtendedXMP` | dropped |
 //! | `hdrgm:*`, `Container:*`, `Item:*` | dropped, unless the export writes the gain map (below) |
+//! | `exif:SubjectArea`, `exif:SubjectLocation`, `exif:FocalPlaneXResolution`, `exif:FocalPlaneYResolution` | moved and scaled with the pixels, as the EXIF's are ([`pixels`](super::pixels)); removed where they can no longer be true |
+//! | `GImage:*`, `GFocus:*` | dropped from an edited picture: the original image the export no longer is, and the focus it was rendered with |
+//! | `GDepth:*` | dropped from an edited picture, unless only an upscale changed its pixels, in which case `GDepth:ImageWidth` and `GDepth:ImageHeight` (the colour image's size, by Google's specification) become the export's |
 //!
 //! **With the gain map written** (a JPEG export of a gain-map JPEG, [`Context::gain_map`]), what describes it is kept:
 //! the `hdrgm:` properties as written, and a `Container:Directory` with its `Primary` item (its optional `Item:Length`
@@ -36,6 +39,9 @@ use rust_sak::image::{ExifIfd, ExifValue, exif_field};
 
 use super::exif::software;
 use super::iptc::Iim;
+use super::pixels::{Geometry, scaled_rational};
+use crate::image::Edits;
+use crate::models::Operation;
 use edit::{Array, Xmp, ns};
 
 /// What the rewrite needs to know about the export.
@@ -59,6 +65,10 @@ pub(crate) struct Context<'a> {
     pub(crate) iim: Option<&'a Iim>,
     /// The length of the gain-map JPEG the export writes after the primary, if it writes one.
     pub(crate) gain_map: Option<usize>,
+    /// What was done to the source to make the exported pixels.
+    pub(crate) edits: &'a Edits,
+    /// How the source's pixels moved onto the exported ones, or `None` where they did not.
+    pub(crate) geometry: Option<&'a Geometry>,
 }
 
 /// The XMP to write: `packet` rewritten for `context`; a new packet when the source had none but carried EXIF or
@@ -100,6 +110,9 @@ fn apply(xmp: &mut Xmp, context: &Context<'_>) {
         }
     }
     xmp.remove(ns::XMP_NOTE, "HasExtendedXMP");
+    if !context.edits.is_empty() {
+        without_original(xmp, context);
+    }
 
     // A new file, derived from the source.
     xmp.set(ns::XMP_MM, "DocumentID", &context.document_id);
@@ -166,6 +179,9 @@ fn apply(xmp: &mut Xmp, context: &Context<'_>) {
     replace(ns::EXIF, "PixelXDimension", context.width.to_string());
     replace(ns::EXIF, "PixelYDimension", context.height.to_string());
     replace(ns::TIFF, "Orientation", "1".to_owned());
+    if let Some(geometry) = context.geometry {
+        move_pixel_fields(xmp, geometry);
+    }
 
     if let Some(iim) = context.iim {
         map_iim(xmp, iim);
@@ -199,6 +215,64 @@ fn keep_gain_map(xmp: &mut Xmp, length: usize) {
     }
     xmp.remove_starting(ns::GCAMERA, "MotionPhoto");
     xmp.remove_namespace_if_unused(ns::GCAMERA);
+}
+
+/// Google's description of the original photograph, taken out of an edited one's: `GImage:` holds the original image
+/// itself — with whatever an erase removed still in it — and `GFocus:` the focus its blur was rendered at. `GDepth:`
+/// goes too, its map outlining what was edited, unless only an upscale changed the pixels: the map then still
+/// describes the same scene, and its `ImageWidth` and `ImageHeight`, the colour image's size, become the export's.
+fn without_original(xmp: &mut Xmp, context: &Context<'_>) {
+    xmp.remove_namespace(ns::GIMAGE);
+    xmp.remove_namespace(ns::GFOCUS);
+
+    let upscaled_only = context.edits.operations().iter().all(|operation| matches!(operation, Operation::Upscale(_)))
+        && !context.edits.masked()
+        && context.edits.frame().is_none_or(|frame| frame.to_pixels.is_scale());
+    if upscaled_only && !context.edits.operations().is_empty() {
+        let mut replace = |local: &str, value: u32| {
+            if xmp.has(ns::GDEPTH, local) {
+                xmp.set(ns::GDEPTH, local, &value.to_string());
+            }
+        };
+        replace("ImageWidth", context.width);
+        replace("ImageHeight", context.height);
+    } else {
+        xmp.remove_namespace(ns::GDEPTH);
+    }
+}
+
+/// The `exif:` mirrors of the fields [`pixels`](super::pixels) moves in the EXIF, moved the same way from their own
+/// values, so that a packet whose EXIF lacks them is made true too. One that cannot be read or moved is removed.
+fn move_pixel_fields(xmp: &mut Xmp, geometry: &Geometry) {
+    for local in ["SubjectArea", "SubjectLocation"] {
+        let Some(values) = xmp.seq_values(ns::EXIF, local) else {
+            if xmp.has(ns::EXIF, local) {
+                xmp.remove(ns::EXIF, local);
+            }
+            continue;
+        };
+        let numbers: Option<Vec<u32>> = values.iter().map(|value| value.trim().parse().ok()).collect();
+        xmp.remove(ns::EXIF, local);
+        if let Some(moved) = numbers.and_then(|numbers| geometry.subject(&numbers)) {
+            let moved: Vec<String> = moved.iter().map(u32::to_string).collect();
+            xmp.set_array(ns::EXIF, local, Array::Seq, &moved);
+        }
+    }
+
+    let (x, y) = geometry.pitch();
+    for (local, by) in [("FocalPlaneXResolution", x), ("FocalPlaneYResolution", y)] {
+        let Some(value) = xmp.get(ns::EXIF, local).filter(|_| (by - 1.0).abs() >= 1e-6) else {
+            continue;
+        };
+        let rational = value.split_once('/').map_or_else(
+            || value.trim().parse().ok().map(|numerator| (numerator, 1)),
+            |(numerator, denominator)| Some((numerator.trim().parse().ok()?, denominator.trim().parse().ok()?)),
+        );
+        match rational.and_then(|(numerator, denominator)| scaled_rational(numerator, denominator, by)) {
+            Some((numerator, denominator)) => xmp.set(ns::EXIF, local, &format!("{numerator}/{denominator}")),
+            None => xmp.remove(ns::EXIF, local),
+        }
+    }
 }
 
 /// How each IPTC Core dataset of record 2 is written in XMP, by the IPTC Photo Metadata Standard.

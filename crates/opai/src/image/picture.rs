@@ -7,6 +7,7 @@ use std::sync::Arc;
 use ::image::DynamicImage;
 use rust_sak::image::Metadata;
 
+use super::edits::{Affine, Edits};
 use super::fidelity::Fidelity;
 use super::gain_map::GainMap;
 
@@ -55,6 +56,13 @@ use super::gain_map::GainMap;
 /// keeps it, because an enhancement — fresh or served from the run cache — does not move the frame, and a crop, which
 /// does, replaces it with a reframed copy through [`with_gain_map`](Self::with_gain_map). [`Picture::new`] has none.
 ///
+/// # Edits
+///
+/// [`edits`](Self::edits) is what was done to the source to make these pixels — how a crop or an upscale moved its
+/// frame, and the enhancements that ran — which an export reads to rewrite the fields that describe pixels and to
+/// record what was rendered. [`derive`](Self::derive) keeps it; a crop adds its move through [`framed`](Self::framed),
+/// and a run its operations. [`Picture::new`] has none.
+///
 /// # Cost of cloning
 ///
 /// Cloning shares the pixels and the metadata rather than copying them, which after an 8x upscale is the difference
@@ -78,6 +86,8 @@ pub struct Picture {
     fidelity: Arc<Fidelity>,
     /// The source's HDR gain map, covering what `pixels` cover; shared like the pixels.
     gain_map: Option<Arc<GainMap>>,
+    /// What was done to the source to make these pixels, shared like the metadata.
+    edits: Arc<Edits>,
 }
 
 impl Picture {
@@ -100,6 +110,7 @@ impl Picture {
             metadata: Arc::default(),
             fidelity,
             gain_map: None,
+            edits: Arc::default(),
         }
     }
 
@@ -145,7 +156,27 @@ impl Picture {
             metadata: Arc::clone(&self.metadata),
             fidelity: Arc::clone(&self.fidelity),
             gain_map: self.gain_map.clone(),
+            edits: Arc::clone(&self.edits),
         }
+    }
+
+    /// This picture with its frame moved by `transform`, from the picture `before` in size it was derived from — how a
+    /// crop records its flips, its turn and its cut, so an export can say where the subject now is.
+    #[must_use]
+    pub fn framed(self, before: (u32, u32), transform: Affine) -> Self {
+        let edits = Arc::new(self.edits.framed(before, transform));
+        Self { edits, ..self }
+    }
+
+    /// This picture with `edits` in place of what it recorded — how a run records the chain it ran.
+    #[must_use]
+    pub(crate) fn with_edits(self, edits: Edits) -> Self {
+        Self { edits: Arc::new(edits), ..self }
+    }
+
+    /// What was done to the source to make these pixels; see the type's documentation.
+    pub fn edits(&self) -> &Edits {
+        &self.edits
     }
 
     /// Where the pixels were read from.

@@ -11,12 +11,19 @@
 //!   the EXIF mirrors made current, Camera Raw properties dropped, and gain-map properties dropped unless the gain map is
 //!   written, in which case they are made true of it — and, for a PNG or WebP export, given the IPTC Core values those
 //!   formats cannot hold as IIM.
+//! - The fields that state facts about the source's **pixels** — the subject's position, the focal-plane resolution —
+//!   are moved with them by [`pixels`], in the EXIF and their XMP mirrors, through the crop, the turn and the upscale
+//!   the picture's [`edits`](Picture::edits) record. What the camera measured is never rewritten.
+//! - An edited picture loses Google's **depth and original-image** XMP (`GImage:`, `GFocus:`, and `GDepth:` unless only
+//!   an upscale changed the pixels): the original would carry what an erase took out, and the depth map would outline
+//!   it.
 //! - The **ICC profile** is passed on as it is.
 //! - The **ISO 21496-1 version marker** is kept only when the gain map is written; the gain-map image itself is
 //!   [`export::write`](fn@super::write)'s to add.
 
 pub(crate) mod exif;
 pub(crate) mod iptc;
+pub(crate) mod pixels;
 pub(crate) mod xmp;
 
 use chrono::{DateTime, FixedOffset};
@@ -49,6 +56,8 @@ pub(crate) fn for_export_with(
     let carried = picture.metadata();
     let (width, height) = picture.dimensions();
     let raw = crate::image::is_raw(picture.path());
+    let edits = picture.edits();
+    let geometry = pixels::Geometry::of(carried.exif.as_deref(), edits, (width, height));
 
     let exif_context = exif::Context {
         source: picture.path(),
@@ -75,11 +84,21 @@ pub(crate) fn for_export_with(
         exif: carried.exif.as_deref(),
         iim: iim.as_ref(),
         gain_map,
+        edits,
+        geometry: geometry.as_ref(),
     };
     let described = carried.exif.is_some() || carried.iptc.is_some();
 
     let mut written = crate::image::without_descriptive(carried);
-    written.exif = carried.exif.as_deref().and_then(|block| exif::rewrite(block, &exif_context));
+    written.exif =
+        carried
+            .exif
+            .as_deref()
+            .and_then(|block| exif::rewrite(block, &exif_context))
+            .map(|block| match &geometry {
+                Some(geometry) => pixels::rewrite_exif(block, geometry),
+                None => block,
+            });
     written.iptc = carried.iptc.as_deref().and_then(|block| iptc::filter(block, picture.path()));
     written.xmp = xmp::rewrite(carried.xmp.as_deref(), described, &xmp_context);
     if gain_map.is_some() {
@@ -136,6 +155,32 @@ mod tests {
         assert!(xmp.contains("<xmp:ModifyDate>2026-10-22T09:30:00-04:00</xmp:ModifyDate>"), "{xmp}");
         assert!(xmp.contains("<rdf:li>hawk</rdf:li>"), "{xmp}");
         assert_eq!(written.icc_profile.as_deref(), Some(DISPLAY_P3));
+    }
+
+    #[test]
+    fn a_cropped_export_moves_the_subject_with_the_pixels_and_keeps_what_the_camera_measured() {
+        use crate::image::Affine;
+        use pixels::tests::{block, read};
+
+        let source = Picture::new("/pictures/framed.jpg", Arc::new(::image::DynamicImage::new_rgb8(400, 300)), "00")
+            .with_metadata({
+                let mut metadata = Metadata::default();
+                metadata.exif = Some(block(1));
+                metadata
+            });
+        // A tenth of the 4000x3000 the EXIF describes: the subject at (3000, 1000) is decoded at (300, 100).
+        let cropped = source
+            .derive(Arc::new(::image::DynamicImage::new_rgb8(150, 150)), "01")
+            .framed((400, 300), Affine::translation(-200.0, -50.0));
+        let now = DateTime::parse_from_rfc3339("2026-10-30T09:30:00-04:00").expect("a time");
+
+        let written = for_export(&cropped, ImageFormat::Jpeg, now, None);
+        let exif = written.exif.as_deref().expect("EXIF");
+
+        assert_eq!(read(exif, pixels::SUBJECT_LOCATION), Some(vec![100, 50]));
+        assert_eq!(read(exif, pixels::SUBJECT_AREA), Some(vec![100, 50, 40, 20]));
+        // The focal plane is measured against PixelXDimension, now 150 for 4000: a tenth the pixels per unit.
+        assert_eq!(read(exif, pixels::FOCAL_PLANE_X_RESOLUTION), Some(vec![400, 1]));
     }
 
     #[test]
