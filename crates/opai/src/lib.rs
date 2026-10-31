@@ -252,12 +252,12 @@ pub use models::{
     ColorizationVariant, Confidence, DataOperation, Denoise, DenoiseParams, DenoiseVariant, Depth, DepthMap,
     DepthVariant, Detection, DetectionOutput, DetectionVariant, FNumber, FOCUS_X, FOCUS_Y, Face, FaceRecovery,
     FaceRecoveryParams, FaceRecoveryVariant, Faces, Family, FamilyEntry, Fidelity, FloatPrecision, Fraction, Grain,
-    GrainAmount, GrainMode, GrainParams, GrainVariant, GraphRole, Lens, LensBlur, LensBlurEdges, LensBlurVariant,
-    LensOrigin, LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant, Matte, Matting, MattingVariant,
-    Operation, OsakaPrecision, OwnLens, ParameterEntry, ParameterKind, ParameterValues, Pass, Point, Precision,
-    RangeError, Rect, Remove, RemoveVariant, Resolution, Restore, RestoreParams, RestoreVariant, Scale, Sharpen,
-    SharpenParams, SharpenVariant, Strength, Subject, UnknownRole, Upscale, UpscaleParams, UpscaleVariant,
-    VariantEntry, catalogue,
+    GrainAmount, GrainMode, GrainParams, GrainVariant, GraphRole, Lens, LensBlur, LensBlurEdges, LensBlurRefine,
+    LensBlurVariant, LensOrigin, LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant, Matte, Matting,
+    MattingVariant, Operation, OsakaPrecision, OwnLens, ParameterEntry, ParameterKind, ParameterValues, Pass, Point,
+    Precision, RangeError, Rect, RefineStroke, Remove, RemoveVariant, Resolution, Restore, RestoreParams,
+    RestoreVariant, Scale, Sharpen, SharpenParams, SharpenVariant, Strength, Subject, UnknownRole, Upscale,
+    UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
 };
 pub use progress::{Dependency, OnPlan, OnProgress, Phase, PlannedDependency, Progress};
 pub use providers::{ExecutionProvider, SupportedProviders};
