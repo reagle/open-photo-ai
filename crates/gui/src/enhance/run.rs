@@ -60,6 +60,10 @@ impl From<Processor> for ExecutionProvider {
 #[serde(tag = "outcome", rename_all = "camelCase")]
 pub(crate) enum Enhancement {
     /// The chain ran and its result is being held.
+    // The fields camel-cased too, as `frontend/ipc/enhance.ts` reads them: the enum's `rename_all` names the variants
+    // alone, so without this `faces_error` and `matte_error` crossed as written and the window's `facesError` and
+    // `matteError` never saw a failure.
+    #[serde(rename_all = "camelCase")]
     Enhanced {
         /// What the result's pixels are addressed by, composed from the source's identity and every operation
         /// applied.
@@ -81,6 +85,10 @@ pub(crate) enum Enhancement {
         /// matting model that is not installed is not one: it is expected until its graph is published.
         #[serde(skip_serializing_if = "Option::is_none")]
         matte_error: Option<String>,
+        /// Whether a lens blur in the chain added too little blur to see ([`ChainMatte::LittleBlur`]), which the Lens
+        /// Blur panel says, with what to change. Absent where it did not.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        little_blur: bool,
     },
     /// The run was stopped, by the window or by a later run displacing it. No image at all.
     Stopped,
@@ -402,12 +410,17 @@ pub(crate) async fn enhance_with<E: Enhancer>(
                 ChainFaces::Failed(error) => (None, Some(error.to_string())),
             };
 
+            let little_blur = matches!(matte, ChainMatte::LittleBlur);
             let matte_error = match matte {
                 ChainMatte::Failed(error) => Some(error.to_string()),
-                ChainMatte::NotAsked | ChainMatte::Matted | ChainMatte::Skipped | ChainMatte::Unavailable(_) => None,
+                ChainMatte::NotAsked
+                | ChainMatte::Matted
+                | ChainMatte::Skipped
+                | ChainMatte::LittleBlur
+                | ChainMatte::Unavailable(_) => None,
             };
 
-            Ok(Enhancement::Enhanced { identity, width, height, faces, faces_error, matte_error })
+            Ok(Enhancement::Enhanced { identity, width, height, faces, faces_error, matte_error, little_blur })
         }
         // Not a failure — a user who changed their mind and a run displaced on their behalf both arrive here.
         Err(InferenceError::Cancelled) => {
@@ -1078,6 +1091,7 @@ mod tests {
             faces: None,
             faces_error: None,
             matte_error: None,
+            little_blur: false,
         };
         assert_eq!(Answer::ended(&answer).cell(), "finished");
         assert_eq!(Answer::ended(&Enhancement::Stopped).cell(), "stopped");
@@ -1093,6 +1107,7 @@ mod tests {
             faces: None,
             faces_error: None,
             matte_error: None,
+            little_blur: false,
         };
 
         assert_eq!(
@@ -1210,6 +1225,59 @@ mod tests {
             // `opai`'s own sentence, as a failed detection's is answered.
             let Enhancement::Enhanced { matte_error, .. } = answer else { panic!("stopped: {answer:?}") };
             assert_eq!(matte_error, said.then(|| porto_failed().to_string()));
+        }
+    }
+
+    #[test]
+    fn an_answer_names_its_fields_as_the_window_reads_them() {
+        // `facesError` and `matteError`, as `frontend/ipc/enhance.ts` reads them, rather than as Rust spells them.
+        let answer = Enhancement::Enhanced {
+            identity: "cafebabecafebabe".to_string(),
+            width: 8,
+            height: 6,
+            faces: None,
+            faces_error: Some("a".to_string()),
+            matte_error: Some("b".to_string()),
+            little_blur: true,
+        };
+
+        assert_eq!(
+            serde_json::to_value(&answer).expect("an outcome serializes"),
+            serde_json::json!({
+                "outcome": "enhanced",
+                "identity": "cafebabecafebabe",
+                "width": 8,
+                "height": 6,
+                "facesError": "a",
+                "matteError": "b",
+                "littleBlur": true,
+            })
+        );
+    }
+
+    #[test]
+    fn a_lens_blur_too_small_to_see_is_answered_and_only_then() {
+        // What the Lens Blur panel says "focus on something nearer" off. Absent on the wire otherwise, so an answer
+        // that has nothing to say keeps the shape it always had.
+        let outcomes: [(fn() -> ChainMatte, bool); 3] = [
+            (|| ChainMatte::LittleBlur, true),
+            (|| ChainMatte::Skipped, false),
+            (|| ChainMatte::Matted, false),
+        ];
+
+        for (matte, said) in outcomes {
+            let (_dir, opened, runs, identity) = fixture();
+            let answer = run_now(&Matting { matte }, &opened, &runs, request("run-1", &identity, vec![kyoto()]))
+                .expect("the chain runs");
+
+            let wire = serde_json::to_value(&answer).expect("an outcome serializes");
+            let Enhancement::Enhanced { little_blur, matte_error, .. } = answer else {
+                panic!("stopped: {answer:?}")
+            };
+            assert_eq!(little_blur, said);
+            assert_eq!(matte_error, None);
+            assert_eq!(wire.get("littleBlur"), said.then_some(&serde_json::Value::Bool(true)), "{wire}");
+            assert!(wire.get("little_blur").is_none(), "{wire}");
         }
     }
 
