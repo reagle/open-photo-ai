@@ -182,6 +182,12 @@
             "cropped": "Cropped",
             "output": "Output"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "This photograph has an HDR gain map. Exporting as JPEG keeps it; the other formats are written as SDR for now.",
+            "transfer": "This photograph is HDR ({{transfer}}). Every format is written as SDR for now.",
+            "other": "This photograph is HDR. Every format is written as SDR for now."
+        },
         "about_dialog": {
             "iconAlt": "App Icon",
             "version": "Version {{version}}"
