@@ -397,6 +397,123 @@ pub(crate) fn widened(trimap: &Plane, saliency: &Matte, refined: &Refined, band:
     (changed > 0).then_some(out)
 }
 
+// The fringe. Even with the strands left unknown, a fine hair Bilbao gives under a twentieth of coverage, or one cut
+// off from the ring by a gap of sky, stays sure background, so the matting model never draws it. Beyond the unknown
+// ring, by up to `FRINGE` rings, sure background is left unknown where Bilbao gives it any coverage at all, or where
+// the photograph has a fine detail (a pixel apart from the mean around it by more than `DETAIL`) and Bilbao still sees
+// a trace of the subject: what a strand of hair looks like against the sky behind it. Never in front of the band.
+
+/// How far beyond the unknown ring the fringe reaches, in rings.
+const FRINGE: f32 = 1.5;
+
+/// Bilbao's coverage above which a pixel of sure background in the fringe may be the subject's.
+const FAINT: f32 = 0.01;
+
+/// Bilbao's coverage above which a fine detail in the fringe may be a strand of the subject's.
+const TRACE: f32 = 0.002;
+
+/// How far a pixel's brightness, in `[0, 1]`, must lie from the mean of the 5 x 5 pixels around it to be a fine detail.
+const DETAIL: f32 = 0.06;
+
+/// `trimap` with its sure background left unknown in the fringe beyond its unknown ring where Bilbao's `saliency` is
+/// faint but not nothing, or `photo` has a fine detail and Bilbao a trace; never in front of `band` by `refined`, the
+/// depth the trimap was drawn on. `None` where that changes nothing, or Bilbao found another subject (see
+/// [`MIN_SALIENT`]).
+pub(crate) fn fringed(
+    trimap: &Plane,
+    saliency: &Matte,
+    refined: &Refined,
+    band: Band,
+    photo: Option<&RgbImage>,
+) -> Option<Plane> {
+    let (width, height) = (trimap.width(), trimap.height());
+    let (columns, rows) = (width as usize, height as usize);
+    if (refined.plane.width(), refined.plane.height()) != (width, height) {
+        return None;
+    }
+    let salient = saliency.plane().resized(width, height);
+    let (known, salience, depth) = (trimap.as_slice(), salient.as_slice(), refined.plane.as_slice());
+    agreed_share(known, salience)?;
+
+    let ring = unknown_radius(width, height);
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a radius of a few dozen pixels"
+    )]
+    let reach = (FRINGE * ring as f32).round() as u32;
+    let fringe = dilated(&plane_of(width, height, |x, y| known[y * columns + x] == 0.5), reach.max(1));
+
+    // The photograph's fine detail: its brightness against the mean of the 5 x 5 pixels around it.
+    let detail = photo.filter(|photo| photo.dimensions() == (width, height)).map(|photo| {
+        let brightness: Vec<f32> = photo
+            .pixels()
+            .map(|pixel| {
+                let [r, g, b] = pixel.0.map(f32::from);
+                (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
+            })
+            .collect();
+        let mean = box_mean(&brightness, columns, rows, 2);
+        brightness.iter().zip(mean).map(|(value, mean)| (value - mean).abs()).collect::<Vec<f32>>()
+    });
+
+    let candidate = |index: usize| {
+        known[index] == 0.0
+            && fringe.as_slice()[index] > 0.5
+            && !band.in_front(depth[index] * refined.nearest)
+            && (salience[index] > FAINT
+                || salience[index] > TRACE && detail.as_ref().is_some_and(|detail| detail[index] > DETAIL))
+    };
+    let picked = plane_of(width, height, |x, y| candidate(y * columns + x));
+    // Grown by a pixel, so a strand is unknown across, and kept to the fringe.
+    let grown = dilated(&picked, 1);
+
+    let mut out = trimap.clone();
+    let mut changed = 0_usize;
+    for (index, value) in out.as_mut_slice().iter_mut().enumerate() {
+        if *value == 0.0
+            && grown.as_slice()[index] > 0.5
+            && fringe.as_slice()[index] > 0.5
+            && !band.in_front(depth[index] * refined.nearest)
+        {
+            *value = 0.5;
+            changed += 1;
+        }
+    }
+
+    tracing::debug!(changed, "the subject's fringe left unknown");
+
+    (changed > 0).then_some(out)
+}
+
+/// The mean of `values` (a `columns` x `rows` plane) over the square of `radius` pixels around each pixel, the square
+/// clipped at the plane's edges.
+fn box_mean(values: &[f32], columns: usize, rows: usize, radius: usize) -> Vec<f32> {
+    let pass = |values: &[f32], columns: usize, rows: usize| {
+        let mut out = vec![0.0_f32; values.len()];
+        for_each_row(&mut out, columns, rows, |y, out| {
+            let row = &values[y * columns..][..columns];
+            for (x, value) in out.iter_mut().enumerate() {
+                let window = &row[x.saturating_sub(radius)..(x + radius + 1).min(columns)];
+                #[allow(clippy::cast_precision_loss, reason = "a window of a few pixels")]
+                let mean = window.iter().sum::<f32>() / window.len() as f32;
+                *value = mean;
+            }
+        });
+        out
+    };
+    let transposed = |values: &[f32], columns: usize, rows: usize| {
+        (0..columns * rows)
+            .map(|index| values[(index % rows) * columns + index / rows])
+            .collect::<Vec<f32>>()
+    };
+
+    let across = pass(values, columns, rows);
+    let down = pass(&transposed(&across, columns, rows), rows, columns);
+
+    transposed(&down, rows, columns)
+}
+
 /// The largest island of sure background, in pixels, that may be a false hole in the subject: a square four `ring`s on a
 /// side, 1,936 px on the bench's photographs. The background around a subject is one island far larger.
 fn false_hole_area(ring: u32) -> usize {

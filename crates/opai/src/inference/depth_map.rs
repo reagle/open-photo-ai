@@ -48,7 +48,7 @@ use crate::inference::execute::ExecuteOptions;
 use crate::models::lens_blur::lens::Blur;
 use crate::models::lens_blur::render::Refined;
 use crate::models::lens_blur::trimap::{
-    Band, cut_at_steps, firmed, joined, matted_focus, seeded, trimap, widened, worth_matting,
+    Band, cut_at_steps, firmed, fringed, joined, matted_focus, seeded, trimap, widened, worth_matting,
 };
 use crate::models::{Depth, DepthMap, Lens, LensBlur, Matte, Matting, Operation, OwnLens};
 use crate::task::spawn_blocking;
@@ -357,9 +357,11 @@ where
         // The strands the depth cannot see, where Bilbao sees them, left to the matting model.
         let (trimap, refined) = match &saliency {
             Some(saliency) => {
-                let saliency = Arc::clone(saliency);
+                let (saliency, pixels) = (Arc::clone(saliency), source.shared_pixels());
                 spawn_blocking::<_, InferenceError, _>(move || {
                     let found = widened(&trimap, &saliency, &refined, band).unwrap_or(trimap);
+                    // The fringe beyond the ring, where Bilbao or the photograph's fine detail hints at a strand.
+                    let found = fringed(&found, &saliency, &refined, band, Some(&pixels.to_rgb8())).unwrap_or(found);
                     (found, refined)
                 })
                 .await?
