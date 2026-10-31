@@ -22,7 +22,8 @@ export type Family =
     | "colorization"
     | "sharpen"
     | "upscale"
-    | "restore";
+    | "restore"
+    | "grain";
 
 /** The numeric precision one model artifact is published at, as Rust's `Precision` spells it. */
 export type Precision = "fp32" | "fp16" | "int8";

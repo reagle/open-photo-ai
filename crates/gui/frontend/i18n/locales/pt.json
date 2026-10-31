@@ -337,11 +337,21 @@
             "name": "Restauração",
             "size": "Tamanho",
             "generative": "Generativo: redesenha os detalhes e pode alterar rostos, texturas e letras.",
-            "grain": "Granulação",
-            "grainHint": "Devolve o ruído próprio da foto que a restauração suavizou.",
             "models": {
                 "kazan": "Use este modelo quando o desfoque é forte demais para Nitidez — p. ex., um rosto fora de foco ou uma foto de uma câmera antiga que nunca foi bem nítida. Ele redesenha detalhes plausíveis em vez de recuperá-los, então pode alterar rostos, texturas e textos pequenos; reduza a intensidade se o resultado parecer inventado. É lento e um download grande.",
                 "osaka": "Use este modelo quando você quer a restauração mais completa possível. Ele reconstrói o detalhe em vez de apenas realçá-lo, e é o que vai mais longe em fotos suaves ou muito comprimidas. No entanto, é lento e precisa de uma GPU potente para rodar bem."
+            }
+        },
+        "grain": {
+            "name": "Granulação",
+            "amount": "Quantidade",
+            "match": "Igual ao original",
+            "matchHint": "Devolve o ruído próprio da foto onde as melhorias o suavizaram; após uma redução de ruído, o ruído que ela deixou.",
+            "addHint": "Adiciona em toda a foto a granulação de um sensor de câmara, seja qual for o ruído que ela já tem.",
+            "matched": "igualada",
+            "added": "adicionada",
+            "models": {
+                "sensor": "Use isto para devolver a uma foto melhorada o aspeto de uma captura real: o ruído de um sensor digital, sobretudo na luminosidade com um pouco de cor, um pouco mais grosso do que um píxel. Não executa nenhum modelo de IA nem precisa de transferência."
             }
         },
         "add": "Adicionar melhoria",
@@ -368,7 +378,8 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
-        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}"
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
+        "infoGrain": "{{name}}, {{intensity}}%, {{mode}}"
     },
     "preview": {
         "empty": {
@@ -390,6 +401,7 @@
             "upscale": "Ampliação",
             "sharpen": "Nitidez",
             "restore": "Restauração",
+            "grain": "Granulação",
             "enhancing": "Melhorando"
         }
     },

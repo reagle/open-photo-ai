@@ -337,11 +337,21 @@
             "name": "Restaurering",
             "size": "Storlek",
             "generative": "Generativ: ritar om detaljer och kan ändra ansikten, texturer och text.",
-            "grain": "Korn",
-            "grainHint": "Lägger tillbaka fotots eget brus som restaureringen jämnade ut.",
             "models": {
                 "kazan": "Använd den här modellen när oskärpan är för kraftig för Skärpa — t.ex. ett ansikte ur fokus, eller ett foto från en gammal kamera som aldrig var riktigt skarpt. Den ritar om trovärdiga detaljer i stället för att återställa dem, så den kan ändra ansikten, texturer och liten text; sänk styrkan om resultatet ser påhittat ut. Den är långsam och en stor nedladdning.",
                 "osaka": "Använd den här modellen när du vill ha den mest grundliga restaureringen som finns. Den bygger upp detaljer på nytt i stället för att bara skärpa dem, och går längst på mjuka eller hårt komprimerade foton. Den är dock långsam och kräver ett kraftfullt grafikkort för att fungera bra."
+            }
+        },
+        "grain": {
+            "name": "Brus",
+            "amount": "Mängd",
+            "match": "Matcha originalet",
+            "matchHint": "Ger tillbaka fotots eget brus där förbättringarna jämnade ut det; efter brusreducering, bruset som den lämnade.",
+            "addHint": "Lägger till en kamerasensors brus överallt, oavsett vilket brus fotot redan har.",
+            "matched": "matchat",
+            "added": "tillagt",
+            "models": {
+                "sensor": "Använd detta för att ge ett förbättrat foto utseendet av en riktig bild igen: en digital sensors brus, mest i ljusstyrkan med lite färg, något grövre än en pixel. Den kör ingen AI-modell och behöver ingen nedladdning."
             }
         },
         "add": "Lägg till förbättring",
@@ -368,7 +378,8 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
-        "infoRestore": "{{name}}, {{scale}}x, {{intensity}} %, {{quality}}"
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}} %, {{quality}}",
+        "infoGrain": "{{name}}, {{intensity}} %, {{mode}}"
     },
     "preview": {
         "empty": {
@@ -390,6 +401,7 @@
             "upscale": "Uppskalning",
             "sharpen": "Skärpa",
             "restore": "Restaurering",
+            "grain": "Brus",
             "enhancing": "Förbättrar"
         }
     },

@@ -53,8 +53,8 @@ describe("the order a chain runs in", () => {
 });
 
 describe("the enhancements this application presents", () => {
-    it("names eight", () => {
-        expect(ENHANCEMENTS).toHaveLength(8);
+    it("names nine", () => {
+        expect(ENHANCEMENTS).toHaveLength(9);
     });
 
     it("names only families the catalogue publishes", () => {
@@ -85,6 +85,7 @@ describe("the enhancements this application presents", () => {
             "sharpen",
             "upscale",
             "restore",
+            "grain",
         ]);
     });
 });
@@ -238,6 +239,7 @@ describe("what the progress chip calls the family a report carries", () => {
         sharpen: true,
         upscale: true,
         restore: true,
+        grain: true,
     };
 
     it("answers a name for every family a report can carry", () => {
@@ -579,6 +581,7 @@ describe("which enhancements Autopilot may suggest", () => {
     it("is every one but restore, which a user chooses for a photograph and an analysis never does", () => {
         expect(ENHANCEMENTS.filter(({ family }) => !isSuggestible(family)).map(({ family }) => family)).toEqual([
             "restore",
+            "grain",
         ]);
         expect(isSuggestible("detection")).toBe(false);
     });
@@ -595,12 +598,13 @@ describe("the operation an Autopilot suggestion becomes", () => {
         face_recovery: "santorini_fp32",
         upscale: "saitama_fp16",
         restore: "kazan_fp16",
+        grain: "sensor_fp32",
     };
 
-    // Not restore, which no analysis suggests.
+    // Not restore or grain, which no analysis suggests.
     it.each(
         ENHANCEMENTS.map(({ family }) => family).filter(
-            (family): family is Exclude<Family, "detection" | "upscale" | "restore"> =>
+            (family): family is Exclude<Family, "detection" | "upscale" | "restore" | "grain"> =>
                 family !== "upscale" && isSuggestible(family),
         ),
     )("is exactly what the add menu builds for %s, with the user's stored model", (family) => {

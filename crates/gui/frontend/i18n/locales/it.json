@@ -345,11 +345,21 @@
             "name": "Restauro",
             "size": "Dimensione",
             "generative": "Generativo: ridisegna i dettagli e può alterare volti, texture e scritte.",
-            "grain": "Grana",
-            "grainHint": "Restituisce il rumore proprio della foto che il restauro ha levigato.",
             "models": {
                 "kazan": "Usa questo modello quando la sfocatura è troppo forte per Nitidezza — ad es. un volto fuori fuoco, o una foto di una vecchia fotocamera che non è mai stata davvero nitida. Ridisegna dettagli plausibili invece di recuperarli, quindi può alterare volti, texture e testo piccolo; riduci l'intensità se il risultato sembra inventato. È lento e richiede un download pesante.",
                 "osaka": "Usalo quando vuoi il restauro più approfondito possibile. Ricostruisce i dettagli invece di limitarsi ad aumentare la nitidezza, ottenendo il massimo su foto morbide o molto compresse. È però lento e richiede una GPU potente per funzionare bene."
+            }
+        },
+        "grain": {
+            "name": "Grana",
+            "amount": "Quantità",
+            "match": "Come l'originale",
+            "matchHint": "Restituisce alla foto il suo rumore dove i miglioramenti lo hanno levigato; dopo una riduzione del rumore, il rumore che questa ha lasciato.",
+            "addHint": "Aggiunge ovunque la grana di un sensore fotografico, qualunque sia il rumore che la foto ha già.",
+            "matched": "abbinata",
+            "added": "aggiunta",
+            "models": {
+                "sensor": "Usalo per ridare a una foto migliorata l'aspetto di uno scatto reale: il rumore di un sensore digitale, soprattutto nella luminosità con un po' di colore, poco più grosso di un pixel. Non esegue alcun modello di IA e non richiede download."
             }
         },
         "add": "Aggiungi miglioramento",
@@ -378,7 +388,8 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
-        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}"
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
+        "infoGrain": "{{name}}, {{intensity}}%, {{mode}}"
     },
     "preview": {
         "empty": {
@@ -400,6 +411,7 @@
             "upscale": "Ingrandimento",
             "sharpen": "Nitidezza",
             "restore": "Restauro",
+            "grain": "Grana",
             "enhancing": "Miglioramento"
         }
     },

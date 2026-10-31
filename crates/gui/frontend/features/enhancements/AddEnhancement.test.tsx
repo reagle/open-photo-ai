@@ -87,7 +87,7 @@ describe("adding an enhancement", () => {
         expect(await upscale()).toBeInTheDocument();
 
         // Denoise first, then face recovery, colorization, light adjustment, colour balance and sharpen in
-        // that order and all before upscale, then restore last, and the menu says so: it draws `ENHANCEMENTS`
+        // that order and all before upscale, then restore and grain last, and the menu says so: it draws `ENHANCEMENTS`
         // itself, which is what keeps the menu and the chain in one order.
         const offered = screen.getAllByRole("menuitem");
         expect(offered.map((item) => item.textContent)).toEqual([
@@ -99,6 +99,7 @@ describe("adding an enhancement", () => {
             "Sharpen",
             "Upscale",
             "Restore",
+            "Grain",
         ]);
     });
 
@@ -259,6 +260,7 @@ describe("adding an enhancement", () => {
             "Sharpen",
             "Upscale",
             "Restore",
+            "Grain",
         ]);
         expect(await upscale()).not.toHaveAttribute("data-disabled");
 

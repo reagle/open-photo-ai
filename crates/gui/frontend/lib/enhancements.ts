@@ -1,5 +1,6 @@
 import type { ParseKeys, TFunction } from "i18next";
 import {
+    Grip,
     type LucideIcon,
     Maximize2,
     Paintbrush,
@@ -51,7 +52,7 @@ export type Enhancement = {
 };
 
 /**
- * The eight enhancements, in the order the add menu offers them.
+ * The nine enhancements, in the order the add menu offers them.
  *
  * **This is the frontend's only list of domain names, and it is not model vocabulary.** It is which
  * enhancements this application presents and in what order - a presentation decision, which is why
@@ -116,6 +117,13 @@ export const ENHANCEMENTS = [
         nameKey: "enhancements.restore.name",
         shortNameKey: "preview.progress.restore",
         icon: Sparkles,
+        manual: true,
+    },
+    {
+        family: "grain",
+        nameKey: "enhancements.grain.name",
+        shortNameKey: "preview.progress.grain",
+        icon: Grip,
         manual: true,
     },
 ] as const satisfies readonly Enhancement[];

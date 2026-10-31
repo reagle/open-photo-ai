@@ -337,11 +337,21 @@
             "name": "Restauratie",
             "size": "Grootte",
             "generative": "Generatief: tekent details opnieuw en kan gezichten, texturen en letters veranderen.",
-            "grain": "Korrel",
-            "grainHint": "Brengt de eigen ruis van de foto terug die het herstel heeft gladgestreken.",
             "models": {
                 "kazan": "Gebruik dit model wanneer de onscherpte te sterk is voor Verscherpen — bijv. een onscherp gezicht, of een foto van een oude camera die nooit echt scherp was. Het tekent aannemelijke details opnieuw in plaats van ze te herstellen, dus het kan gezichten, texturen en kleine tekst veranderen; verlaag de sterkte als het resultaat verzonnen lijkt. Het is traag en een grote download.",
                 "osaka": "Gebruik dit model wanneer je de grondigste restauratie wilt die er is. Het bouwt detail opnieuw op in plaats van het alleen te verscherpen en gaat het verst bij zachte of sterk gecomprimeerde foto's. Het is wel traag en heeft een krachtige GPU nodig om goed te draaien."
+            }
+        },
+        "grain": {
+            "name": "Korrel",
+            "amount": "Hoeveelheid",
+            "match": "Gelijk aan origineel",
+            "matchHint": "Geeft de foto zijn eigen ruis terug waar de verbeteringen die hebben gladgestreken; na ruisonderdrukking de ruis die daarna overbleef.",
+            "addHint": "Voegt overal de korrel van een camerasensor toe, ongeacht de ruis die de foto al heeft.",
+            "matched": "gelijk",
+            "added": "toegevoegd",
+            "models": {
+                "sensor": "Gebruik dit om een verbeterde foto weer de uitstraling van een echte opname te geven: de ruis van een digitale sensor, vooral in de helderheid met een beetje kleur, iets grover dan een pixel. Er draait geen AI-model en er is geen download nodig."
             }
         },
         "add": "Toevoegen",
@@ -368,7 +378,8 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
-        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}"
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
+        "infoGrain": "{{name}}, {{intensity}}%, {{mode}}"
     },
     "preview": {
         "empty": {
@@ -390,6 +401,7 @@
             "upscale": "Opschalen",
             "sharpen": "Verscherpen",
             "restore": "Restauratie",
+            "grain": "Korrel",
             "enhancing": "Verbeteren"
         }
     },

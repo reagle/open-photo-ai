@@ -13,11 +13,11 @@ vi.mock("@tauri-apps/api/core", () => ({
     convertFileSrc: vi.fn((identity: string) => `opai://localhost/${identity}`),
 }));
 
-const restore = (scale: number, strength = 1, precision: Operation["precision"] = "fp16", grain = 0): Operation => ({
+const restore = (scale: number, strength = 1, precision: Operation["precision"] = "fp16"): Operation => ({
     family: "restore",
     codename: "kazan",
     precision,
-    parameters: { scale, strength, grain },
+    parameters: { scale, strength },
 });
 
 const upscale: Operation = { family: "upscale", codename: "kyoto", precision: "fp32", parameters: { scale: 4 } };
@@ -93,27 +93,6 @@ describe("a restore's options", () => {
 
         await waitFor(() => expect(stack()).toEqual([restore(4)]));
         expect(before).toEqual([restore(1)]);
-    });
-
-    it("offer the grain from none to all, starting off, and say what it puts back", async () => {
-        await open([restore(1)]);
-
-        const slider = screen.getByRole("slider", { name: "Grain" });
-        expect(slider).toHaveAttribute("aria-valuenow", "0");
-        expect(slider).toHaveAttribute("aria-valuemin", "0");
-        expect(slider).toHaveAttribute("aria-valuemax", "100");
-        expect(document.querySelector("[data-slot='restore-grain']")).toHaveTextContent(
-            "Puts back the photograph's own noise that the restoration smoothed away.",
-        );
-    });
-
-    it("write a typed grain, keeping the size and the strength", async () => {
-        await open([restore(2, 0.5)]);
-
-        const field = screen.getByRole("textbox", { name: "Grain" });
-        fireEvent.change(field, { target: { value: "60" } });
-
-        await waitFor(() => expect(stack()).toEqual([restore(2, 0.5, "fp16", 0.6)]));
     });
 
     it("report the size and the strength on the row", async () => {

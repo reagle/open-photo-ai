@@ -337,11 +337,21 @@
             "name": "Restore",
             "size": "Size",
             "generative": "Generative: redraws detail, and may change faces, textures and lettering.",
-            "grain": "Grain",
-            "grainHint": "Puts back the photograph's own noise that the restoration smoothed away.",
             "models": {
                 "kazan": "Use this model when the blur is too strong for Sharpen — e.g. an out-of-focus face, or a photo from an old camera that was never quite sharp. It redraws plausible detail rather than recovering it, so it can change faces, textures and small text; lower the strength if the result looks invented. It is slow and a large download.",
                 "osaka": "Use this model when you want the most thorough restoration available. It rebuilds detail rather than just sharpening it, going furthest on photos that are soft or heavily compressed. It's slow, though, and needs a powerful GPU to run well."
+            }
+        },
+        "grain": {
+            "name": "Grain",
+            "amount": "Amount",
+            "match": "Match source",
+            "matchHint": "Puts back the photograph's own noise where the enhancements smoothed it away; after a denoise, the noise the denoise left.",
+            "addHint": "Adds a camera sensor's grain everywhere, whatever noise the photograph already has.",
+            "matched": "matched",
+            "added": "added",
+            "models": {
+                "sensor": "Use this to give an enhanced photo the look of a real capture again: a digital sensor's noise, mostly in brightness with a little colour, slightly coarser than a pixel. It runs no AI model and needs no download."
             }
         },
         "add": "Add enhancement",
@@ -368,7 +378,8 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
-        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}"
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
+        "infoGrain": "{{name}}, {{intensity}}%, {{mode}}"
     },
     "preview": {
         "empty": {
@@ -390,6 +401,7 @@
             "upscale": "Upscale",
             "sharpen": "Sharpen",
             "restore": "Restore",
+            "grain": "Grain",
             "enhancing": "Enhancing"
         }
     },

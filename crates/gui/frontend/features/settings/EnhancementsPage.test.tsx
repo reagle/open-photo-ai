@@ -73,7 +73,7 @@ describe("the enhancements table", () => {
 
         // Published by the library and drawn by nothing: it is not an enhancement a user adds.
         expect(screen.queryByRole("combobox", { name: "Detection" })).not.toBeInTheDocument();
-        expect(screen.getAllByRole("combobox")).toHaveLength(8);
+        expect(screen.getAllByRole("combobox")).toHaveLength(9);
     });
 
     it("fetches the catalogue once for all seven", async () => {
@@ -207,7 +207,7 @@ describe("the Autopilot switches", () => {
         for (const name of NAMES) {
             expect(screen.getByRole("switch", { name: `Autopilot: ${name}` })).toBeInTheDocument();
         }
-        expect(screen.getAllByRole("switch")).toHaveLength(8);
+        expect(screen.getAllByRole("switch")).toHaveLength(9);
     });
 
     it("are off and unavailable for restore, which Autopilot never suggests", async () => {

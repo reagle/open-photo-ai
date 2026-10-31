@@ -329,11 +329,21 @@
             "name": "Restorasi",
             "size": "Ukuran",
             "generative": "Generatif: menggambar ulang detail, dan dapat mengubah wajah, tekstur, dan tulisan.",
-            "grain": "Grain",
-            "grainHint": "Mengembalikan noise asli foto yang dihaluskan oleh restorasi.",
             "models": {
                 "kazan": "Gunakan model ini saat keburaman terlalu kuat untuk Penajaman — mis. wajah yang tidak fokus, atau foto dari kamera lama yang memang tidak pernah benar-benar tajam. Model ini menggambar ulang detail yang masuk akal alih-alih memulihkannya, sehingga dapat mengubah wajah, tekstur, dan teks kecil; turunkan kekuatannya jika hasilnya tampak dibuat-buat. Model ini lambat dan unduhannya besar.",
                 "osaka": "Gunakan model ini saat Anda menginginkan restorasi paling menyeluruh yang tersedia. Model ini membangun ulang detail alih-alih sekadar menajamkannya, dan hasilnya paling jauh pada foto yang lembut atau sangat terkompresi. Namun, model ini lambat dan membutuhkan GPU yang bertenaga agar berjalan dengan baik."
+            }
+        },
+        "grain": {
+            "name": "Butiran",
+            "amount": "Jumlah",
+            "match": "Sesuaikan dengan asli",
+            "matchHint": "Mengembalikan noise asli foto di bagian yang dihaluskan oleh peningkatan; setelah denoise, noise yang ditinggalkan denoise.",
+            "addHint": "Menambahkan butiran sensor kamera di seluruh foto, berapa pun noise yang sudah ada.",
+            "matched": "disesuaikan",
+            "added": "ditambahkan",
+            "models": {
+                "sensor": "Gunakan ini untuk mengembalikan tampilan tangkapan asli pada foto yang ditingkatkan: noise sensor digital, terutama pada kecerahan dengan sedikit warna, sedikit lebih kasar dari satu piksel. Tidak menjalankan model AI dan tidak perlu diunduh."
             }
         },
         "add": "Tambah peningkatan",
@@ -358,7 +368,8 @@
         },
         "infoFaces": "{{name}}, {{faces}}, {{quality}}",
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
-        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}"
+        "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
+        "infoGrain": "{{name}}, {{intensity}}%, {{mode}}"
     },
     "preview": {
         "empty": {
@@ -380,6 +391,7 @@
             "upscale": "Perbesaran",
             "sharpen": "Penajaman",
             "restore": "Restorasi",
+            "grain": "Butiran",
             "enhancing": "Meningkatkan"
         }
     },
