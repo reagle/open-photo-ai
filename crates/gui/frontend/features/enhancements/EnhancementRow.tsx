@@ -414,9 +414,9 @@ export const EnhancementRow = ({
 
     /*
      * **A painted enhancement's row opens the brush, not a popover.** Its whole setting is what is painted over the
-     * preview, and a popover would close on the first press there (Radix's outside click). The row toggles the brush
-     * panel in the sidebar, under the list, and reads as pressed while it is up - the open row's paint, as a popover's
-     * row has it.
+     * preview, and its controls - size, softness, undo - belong beside the list rather than floating over the
+     * photograph being painted. The row toggles the brush panel in the sidebar, under the list, and reads as pressed
+     * while it is up - the open row's paint, as a popover's row has it.
      */
     const brush = enhancement.painted === true;
 
@@ -477,7 +477,7 @@ export const EnhancementRow = ({
                         </PopoverTrigger>
                     </HintTooltip>
 
-                    <OptionsPanel title={t(enhancement.nameKey)}>
+                    <OptionsPanel title={t(enhancement.nameKey)} onDone={() => setPanelOpen(false)}>
                         {suspended ? (
                             <>
                                 <p className="text-muted-foreground text-xs" data-slot="enhancement-suspended">

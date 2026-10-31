@@ -14,6 +14,7 @@ import { useOpenImages } from "@/hooks/useOpenImages";
 import { useShortcutHint, useShortcutKeys } from "@/hooks/useShortcuts";
 import { ZOOM_MAX, ZOOM_MIN } from "@/lib/constants";
 import { track } from "@/lib/faro";
+import { KEEPS_LIVE_SURFACE } from "@/lib/layers";
 import type { ShortcutAction } from "@/lib/shortcuts";
 import { useDrawerStore } from "@/stores/drawer";
 import { useCurrentFile, useFileStore, useHasFiles } from "@/stores/files";
@@ -295,7 +296,12 @@ export const DrawerHeader = ({ open }: DrawerHeaderProps) => {
 
             <Separator orientation="vertical" className="mx-1.5 data-[orientation=vertical]:h-5" />
 
-            <div className="flex min-w-26 flex-[0_1_11.5rem] items-center gap-2.5" data-slot="drawer-zoom">
+            <div
+                className="flex min-w-26 flex-[0_1_11.5rem] items-center gap-2.5"
+                data-slot="drawer-zoom"
+                // The zoom is the view's, which an open options panel stays open for - see `lib/layers.ts`.
+                {...{ [KEEPS_LIVE_SURFACE]: "" }}
+            >
                 {/*
                  * Real buttons where the design draws bare glyphs, which is the same call the fold
                  * toggle got: the mockup draws *every* control as a styled `<span>`, including the
