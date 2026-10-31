@@ -210,7 +210,7 @@ Default models are in **bold**.
 | Color Balance    | `--color-balance`    | `--cb` | **rio**, saopaulo                              | `--cb-bias` (-100 to 100)  |
 | Sharpen          | `--sharpen`          | `--sh` | **moscow**, petersburg, novgorod               | `--sh-str` (1 to 300)      |
 | Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, saitama                      | `--scale` (1.0 to 8.0)     |
-| Restore          | `--restore`          | `--rs` | **kazan**, osaka                               | `--rs-scale` (1, 2 or 4), `--rs-str` (1 to 100) |
+| Restore          | `--restore`          | `--rs` | **kazan**, osaka                               | `--rs-scale` (1, 2 or 4), `--rs-str` (1 to 100), `--rs-grain` (0 to 100) |
 
 The sections below explain each enhancement briefly. For more detail on when to pick each model, see the [Enhancements section of the README](../README.md#-enhancements).
 
@@ -357,11 +357,14 @@ Options:
 
 - `--rs-scale <FACTOR>`, the size to restore at: `1` (the photo's own size, the default), `2` or `4`. Above `1` the photo is enlarged first and restored at the new size, so it **cannot be combined with `--up`**: use one or the other. At `1` it can follow an upscale, and then restores the upscaled image.
 - `--rs-str <STRENGTH>`, a whole number from 1 to 100 (default 100). See [Strength and bias](#strength-and-bias).
+- `--rs-grain <PERCENT>`, how much of the photo's own noise to put back, from 0 (none, the default) to 100. A restoration draws clean detail, so a grainy photo comes back smoother than any camera would record it; the grain is measured in the photo and in the result, per brightness, and the share you ask for of what the restoration took away is added back as fine, mostly luminance noise. `100` matches the photo's noise; `50` puts back half of it (in standard deviation); a photo without noise gets none at any amount. The noise is drawn from each pixel's position, so the same command gives the same image every time. At `--rs-scale 2` or `4` it is drawn at the enlarged image's pixels, at the level the photo had per pixel.
 
 ```bash
 # Restore a soft photo at its own size, then at twice the size with a little less of the model's redraw
 opai soft.jpg --rs -o soft-restored.png
 opai soft.jpg --rs --rs-scale 2 --rs-str 70 -o soft-2x.png
+# Restore a grainy photo and keep its grain
+opai grainy.jpg --rs --rs-grain 100 -o grainy-restored.png
 ```
 
 ## Autopilot
@@ -372,7 +375,7 @@ opai soft.jpg --rs --rs-scale 2 --rs-str 70 -o soft-2x.png
 opai photos --ap -o enhanced
 ```
 
-- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--rs`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--rs-scale`, `--rs-str`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
+- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--rs`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--rs-scale`, `--rs-str`, `--rs-grain`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
 - **Each enhancement uses its default strength or bias**: strength `100` for denoise and sharpen, bias `50` for light adjustment and color balance. An upscale runs at the factor the image's size calls for (see [Upscale](#upscale---upscale-model---up-model)); an image above 4 MP is not upscaled.
 - **An image that needs nothing is still written**, unchanged, in the format asked for. Its row ends with `Enhancements applied to` as any other.
 - **If face detection can't run** (for example, its model can't be downloaded), the image still gets the other enhancements, without face recovery, and the [log file](#log-file) records a warning.

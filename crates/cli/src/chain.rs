@@ -5,7 +5,7 @@
 //! [`opai::suggested_scale`], and a model's builds and parameter defaults are the ones its catalogue row publishes,
 //! none restated.
 
-use opai::{Bias, Operation, ParameterKind, ParameterValues, Strength, Subject, Suggestion, VariantEntry};
+use opai::{Bias, Grain, Operation, ParameterKind, ParameterValues, Strength, Subject, Suggestion, VariantEntry};
 
 use crate::args::{Quality, Selection};
 use crate::autopilot::{AutopilotModels, CatalogueModel};
@@ -99,6 +99,7 @@ pub fn plan(selection: &Selection, quality: Quality, width: u32, height: u32) ->
                 *values = std::mem::take(values).with_scale(scale);
             }
             set(values, Strength::NAME, selection.restore_strength);
+            set(values, Grain::NAME, selection.restore_grain);
         }));
     }
 
@@ -295,6 +296,28 @@ mod tests {
                 Upscale::tokyo(FloatPrecision::Fp32, scale(4.0)),
                 Restore::kazan(FloatPrecision::Fp32, scale(1.0), strength(1.0))
             ]
+        );
+    }
+
+    #[test]
+    fn a_restore_puts_back_the_grain_asked_for_and_none_otherwise() {
+        let grained = |operation: Operation, grain: f64| match operation {
+            Operation::Restore(restore) => Operation::Restore(restore.with_grain(Grain::new(grain).expect("in range"))),
+            other => panic!("not a restore: {other:?}"),
+        };
+
+        assert_eq!(
+            plan("opai photo.jpg --rs --rs-grain 50 -o out.png", 4000, 3000).operations,
+            vec![grained(Restore::kazan(FloatPrecision::Fp32, scale(1.0), strength(1.0)), 0.5)]
+        );
+        assert_eq!(
+            plan("opai photo.jpg --rs osaka --rs-scale 2 --rs-grain 100 -o out.png", 1000, 800).operations,
+            vec![grained(Restore::osaka(OsakaPrecision::Fp16, scale(2.0), strength(1.0)), 1.0)]
+        );
+        // 0 is off, the same operation as no flag at all.
+        assert_eq!(
+            plan("opai photo.jpg --rs --rs-grain 0 -o out.png", 4000, 3000).operations,
+            plan("opai photo.jpg --rs -o out.png", 4000, 3000).operations
         );
     }
 
