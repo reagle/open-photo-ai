@@ -62,7 +62,7 @@ export const InfoCard = ({ bottom }: { bottom: number }) => {
         <section
             data-slot="info-card"
             aria-label={t("preview.info.title")}
-            className="pointer-events-none absolute left-3 z-[15] max-w-[min(30rem,calc(100%-1.5rem))] rounded-xl border border-border/60 bg-background/65 px-3 py-2 text-xs leading-relaxed text-foreground shadow-sm backdrop-blur-sm"
+            className="pointer-events-none absolute left-3 z-[15] max-w-[min(34rem,calc(100%-1.5rem))] rounded-xl border border-border/60 bg-background/65 px-3 py-2 text-sm leading-relaxed text-foreground shadow-sm backdrop-blur-sm"
             style={{ bottom: bottom + 12 }}
         >
             {rows.map((row) => (
