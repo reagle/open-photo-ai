@@ -5,7 +5,10 @@
 //! [`opai::suggested_scale`], and a model's builds and parameter defaults are the ones its catalogue row publishes,
 //! none restated.
 
-use opai::{Bias, Operation, ParameterKind, ParameterValues, Strength, Subject, Suggestion, VariantEntry};
+use opai::{
+    Bias, GrainAmount, GrainMode, Operation, ParameterKind, ParameterValues, Strength, Subject, Suggestion,
+    VariantEntry,
+};
 
 use crate::args::{Quality, Selection};
 use crate::autopilot::{AutopilotModels, CatalogueModel};
@@ -99,6 +102,19 @@ pub fn plan(selection: &Selection, quality: Quality, width: u32, height: u32) ->
                 *values = std::mem::take(values).with_scale(scale);
             }
             set(values, Strength::NAME, selection.restore_strength);
+        }));
+    }
+
+    // After everything, the restore included, as the library runs it: the photograph's own grain at the catalogue's
+    // default amount, all of it, unless an amount or adding was asked for.
+    if let Some(model) = selection.grain {
+        operations.push(build(model, quality, |values| {
+            set(values, GrainAmount::NAME, selection.grain_amount);
+            if selection.grain_add {
+                values
+                    .set(GrainMode::NAME, GrainMode::Add.as_switch())
+                    .expect("the mode is published by its name");
+            }
         }));
     }
 
@@ -348,8 +364,28 @@ mod tests {
     }
 
     #[test]
+    fn a_grain_matches_the_photograph_at_the_full_amount_unless_asked_otherwise() {
+        use opai::{Grain, GrainAmount, GrainMode};
+
+        let amount = |value| GrainAmount::new(value).expect("in range");
+        let cases = [
+            ("--gr", Grain::sensor(amount(1.0), GrainMode::Match)),
+            ("--gr --gr-amount 40", Grain::sensor(amount(0.4), GrainMode::Match)),
+            ("--gr --gr-add --gr-amount 25", Grain::sensor(amount(0.25), GrainMode::Add)),
+            ("--gr --gr-add", Grain::sensor(amount(1.0), GrainMode::Add)),
+        ];
+
+        for (flags, expected) in cases {
+            for quality in ["hd", "sd"] {
+                let planned = plan(&format!("opai photo.jpg {flags} -q {quality} -o out.png"), 1000, 800);
+                assert_eq!(planned.operations, vec![expected.clone()], "{flags} -q {quality}");
+            }
+        }
+    }
+
+    #[test]
     fn the_chain_is_pushed_in_the_librarys_apply_order() {
-        let plan = plan("opai photo.jpg --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
+        let plan = plan("opai photo.jpg --gr --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
         let families: Vec<_> = plan.operations.iter().map(Operation::family).collect();
 
         assert_eq!(families, Family::APPLY_ORDER);

@@ -210,7 +210,8 @@ Default models are in **bold**.
 | Color Balance    | `--color-balance`    | `--cb` | **rio**, saopaulo                              | `--cb-bias` (-100 to 100)  |
 | Sharpen          | `--sharpen`          | `--sh` | **moscow**, petersburg, novgorod               | `--sh-str` (1 to 300)      |
 | Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, saitama                      | `--scale` (1.0 to 8.0)     |
-| Restore          | `--restore`          | `--rs` | **kazan**, osaka                               | `--rs-scale` (1, 2 or 4), `--rs-str` (1 to 100), `--rs-grain` (0 to 100) |
+| Restore          | `--restore`          | `--rs` | **kazan**, osaka                               | `--rs-scale` (1, 2 or 4), `--rs-str` (1 to 100) |
+| Grain            | `--grain`            | `--gr` | **sensor**                                     | `--gr-amount` (0 to 100), `--gr-add` |
 
 The sections below explain each enhancement briefly. For more detail on when to pick each model, see the [Enhancements section of the README](../README.md#-enhancements).
 
@@ -346,7 +347,7 @@ Option: `--scale <FACTOR>`, the upscale factor, from `1.0` to `8.0`. Decimals ar
 
 ### Restore: `--restore [MODEL]`, `--rs [MODEL]`
 
-Restores detail generatively: the model **redraws** plausible detail where the photo lost it, rather than recovering what was there. Use it when the faithful models can't do enough, such as an out-of-focus face or a photo from an old camera that was never sharp. It can change faces, textures and lettering, so lower `--rs-str` if the result looks invented. Restore always runs **last**.
+Restores detail generatively: the model **redraws** plausible detail where the photo lost it, rather than recovering what was there. Use it when the faithful models can't do enough, such as an out-of-focus face or a photo from an old camera that was never sharp. It can change faces, textures and lettering, so lower `--rs-str` if the result looks invented. Restore runs after every other enhancement but [Grain](#grain---grain-model---gr-model), which you can add after it to give the restored photo its own noise back.
 
 | Model      | Use it for                                                                                        |
 |------------|---------------------------------------------------------------------------------------------------|
@@ -357,14 +358,31 @@ Options:
 
 - `--rs-scale <FACTOR>`, the size to restore at: `1` (the photo's own size, the default), `2` or `4`. Above `1` the photo is enlarged first and restored at the new size, so it **cannot be combined with `--up`**: use one or the other. At `1` it can follow an upscale, and then restores the upscaled image.
 - `--rs-str <STRENGTH>`, a whole number from 1 to 100 (default 100). See [Strength and bias](#strength-and-bias).
-- `--rs-grain <PERCENT>`, how much of the photo's own noise to put back, from 0 (none, the default) to 100. A restoration draws clean detail, so a grainy photo comes back smoother than any camera would record it; the grain is measured in the photo and in the result, per brightness, and the share you ask for of what the restoration took away is added back as fine, mostly luminance noise. `100` matches the photo's noise; `50` puts back half of it (in standard deviation); a photo without noise gets none at any amount. The noise is drawn from each pixel's position, so the same command gives the same image every time. At `--rs-scale 2` or `4` it is drawn at the enlarged image's pixels, at the level the photo had per pixel.
 
 ```bash
 # Restore a soft photo at its own size, then at twice the size with a little less of the model's redraw
 opai soft.jpg --rs -o soft-restored.png
 opai soft.jpg --rs --rs-scale 2 --rs-str 70 -o soft-2x.png
-# Restore a grainy photo and keep its grain
-opai grainy.jpg --rs --rs-grain 100 -o grainy-restored.png
+```
+
+### Grain: `--grain [MODEL]`, `--gr [MODEL]`
+
+Adds grain, **last**, after every other enhancement. A denoise, a restore or a sharpen can leave a photo smoother than any camera records ("plastic" skin and skies); by default the grain puts back the photo's **own** sensor noise, measured per brightness on the original, only where the enhancements smoothed it away, so a clean photo gets none and a grainy one gets its own back. If the command also denoises (`--dn`), the noise the denoise **left** is matched instead, so the grain never undoes the denoise. Grain runs no model and needs no download. On an upscaled photo it's drawn at the new pixels, finer than an enlarged copy of the original's grain.
+
+| Model      | Use it for                                                       |
+|------------|------------------------------------------------------------------|
+| `sensor` (default) | A digital sensor's noise: mostly brightness, a little colour, slightly coarser than a pixel. |
+
+Options:
+
+- `--gr-amount <AMOUNT>`, a whole number from 0 to 100 (default 100): how much of the missing noise is put back. `50` puts back half of it.
+- `--gr-add`: add grain everywhere, whatever noise the photo has, instead of matching the photo's own. `--gr-amount` is then a share of a high-ISO sensor's grain (about 4 levels of fine noise at mid-grey at `100`), as Lightroom's Grain Amount is.
+
+```bash
+# Restore a soft photo and give it its own noise back
+opai soft.jpg --rs --gr -o soft-restored.png
+# Add a little grain on purpose
+opai portrait.jpg --gr --gr-add --gr-amount 30 -o portrait-grain.png
 ```
 
 ## Autopilot
@@ -375,7 +393,7 @@ opai grainy.jpg --rs --rs-grain 100 -o grainy-restored.png
 opai photos --ap -o enhanced
 ```
 
-- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--rs`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--rs-scale`, `--rs-str`, `--rs-grain`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
+- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--rs`, `--gr`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--rs-scale`, `--rs-str`, `--gr-amount`, `--gr-add`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
 - **Each enhancement uses its default strength or bias**: strength `100` for denoise and sharpen, bias `50` for light adjustment and color balance. An upscale runs at the factor the image's size calls for (see [Upscale](#upscale---upscale-model---up-model)); an image above 4 MP is not upscaled.
 - **An image that needs nothing is still written**, unchanged, in the format asked for. Its row ends with `Enhancements applied to` as any other.
 - **If face detection can't run** (for example, its model can't be downloaded), the image still gets the other enhancements, without face recovery, and the [log file](#log-file) records a warning.
@@ -419,7 +437,7 @@ OPAI_AP_SHARPEN=off OPAI_AP_FACE=off OPAI_AP_DENOISE=malmo opai photos --ap -o o
 The enhancements always run in this order, no matter what order you type the flags in:
 
 ```
-Denoise → Face Recovery → Colorization → Light Adjustment → Color Balance → Sharpen → Upscale → Restore
+Denoise → Face Recovery → Colorization → Light Adjustment → Color Balance → Sharpen → Upscale → Restore → Grain
 ```
 
 So these two commands do exactly the same thing:

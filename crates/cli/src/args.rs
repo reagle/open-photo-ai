@@ -133,6 +133,12 @@ pub enum RestoreModel {
     Osaka,
 }
 
+/// The grain models, as the command line names them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum GrainModel {
+    Sensor,
+}
+
 /// The colorization models, as the command line names them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum ColorizationModel {
@@ -389,6 +395,29 @@ pub struct Selection {
     /// The restore strength, from 1 to 100 percent of the model's own output; default 100.
     #[arg(long = "rs-str", value_name = "STRENGTH", value_parser = parse_restore_strength, requires = "restore")]
     pub restore_strength: Option<u16>,
+
+    /// Add grain last of all, after every other enhancement, with MODEL or Sensor where none is named: the
+    /// photograph's own sensor noise, put back where the enhancements smoothed it away. After a denoise, the noise the
+    /// denoise left is matched instead, so the grain never undoes it; a clean photograph gets none.
+    #[arg(
+        long = "grain",
+        visible_alias = "gr",
+        value_name = "MODEL",
+        num_args = 0..=1,
+        default_missing_value = "sensor",
+        ignore_case = true
+    )]
+    pub grain: Option<GrainModel>,
+
+    /// The grain amount, from 0 to 100 percent; default 100. The share of the photograph's own noise put back, or with
+    /// --gr-add of a sensor's high-ISO grain.
+    #[arg(long = "gr-amount", value_name = "AMOUNT", value_parser = parse_grain_amount, requires = "grain")]
+    pub grain_amount: Option<u16>,
+
+    /// Add the grain everywhere, at --gr-amount of a sensor's high-ISO grain, whatever noise the photograph has,
+    /// rather than matching the photograph's own.
+    #[arg(long = "gr-add", requires = "grain")]
+    pub grain_add: bool,
 }
 
 impl Selection {
@@ -402,6 +431,7 @@ impl Selection {
             && self.sharpen.is_none()
             && self.upscale.is_none()
             && self.restore.is_none()
+            && self.grain.is_none()
     }
 
     /// Whether a restore enlarges the photograph, which an upscale cannot be combined with.
@@ -424,8 +454,8 @@ where
         return Err(Args::command().error(
             clap::error::ErrorKind::MissingRequiredArgument,
             "at least one enhancement is required: --denoise (--dn), --face-recovery (--fr), --colorization (--cl), \
-             --light-adjustment (--la), --color-balance (--cb), --sharpen (--sh), --upscale (--up), --restore (--rs) \
-             or --autopilot (--ap)",
+             --light-adjustment (--la), --color-balance (--cb), --sharpen (--sh), --upscale (--up), --restore (--rs), \
+             --grain (--gr) or --autopilot (--ap)",
         ));
     }
 
@@ -513,6 +543,15 @@ fn parse_restore_strength(text: &str) -> Result<u16, String> {
         .ok()
         .filter(|value| (STRENGTH_MIN..=RESTORE_STRENGTH_MAX).contains(value))
         .ok_or_else(|| format!("the strength must be a whole number from {STRENGTH_MIN} to {RESTORE_STRENGTH_MAX}"))
+}
+
+/// A `--gr-amount` value: a whole percentage from 0 (no grain) to 100, refused with the accepted range otherwise.
+fn parse_grain_amount(text: &str) -> Result<u16, String> {
+    text.trim()
+        .parse()
+        .ok()
+        .filter(|value| *value <= 100)
+        .ok_or_else(|| "the grain amount must be a whole number from 0 to 100".to_owned())
 }
 
 /// The lowest `--dn-str`, `--sh-str` or `--rs-str`. Not the library's 0: a strength of 0 applies nothing, which on a command line is
@@ -675,6 +714,7 @@ mod tests {
             ("--sharpen", "--sh"),
             ("--upscale", "--up"),
             ("--restore", "--rs"),
+            ("--grain", "--gr"),
             ("--autopilot", "--ap"),
         ] {
             assert!(message.contains(&format!("{flag} ({alias})")), "{flag} is not listed in: {message}");
@@ -837,6 +877,30 @@ mod tests {
     }
 
     #[test]
+    fn a_bare_grain_is_a_sensors_matching_the_photograph_at_the_full_amount() {
+        let args = parse("opai photo.jpg --gr -o out.png").expect("parses");
+        assert_eq!(args.selection.grain, Some(GrainModel::Sensor));
+        assert_eq!((args.selection.grain_amount, args.selection.grain_add), (None, false));
+
+        let args = parse("opai photo.jpg --grain SENSOR --gr-amount 0 --gr-add -o out.png").expect("parses");
+        assert_eq!((args.selection.grain_amount, args.selection.grain_add), (Some(0), true));
+
+        for amount in ["101", "50.5", "half"] {
+            let error = parse(&format!("opai photo.jpg --gr --gr-amount {amount} -o out.png")).expect_err(amount);
+
+            assert_eq!(error.kind(), ErrorKind::ValueValidation, "{amount}: {error}");
+            assert!(error.to_string().contains("a whole number from 0 to 100"), "{error}");
+        }
+    }
+
+    #[test]
+    fn a_grain_is_not_chosen_by_autopilot() {
+        let error = parse("opai photo.jpg --ap --gr -o out.png").expect_err("autopilot never adds grain");
+
+        assert_eq!(error.kind(), ErrorKind::ArgumentConflict, "{error}");
+    }
+
+    #[test]
     fn a_restore_size_is_one_of_the_three_offered() {
         for size in ["1", "2", "4"] {
             let args = parse(&format!("opai photo.jpg --rs --rs-scale {size} -o out.png")).expect(size);
@@ -902,6 +966,8 @@ mod tests {
             ("--la --cb-bias 20", "--color-balance"),
             ("--up --rs-scale 2", "--restore"),
             ("--sh --rs-str 50", "--restore"),
+            ("--rs --gr-amount 50", "--grain"),
+            ("--rs --gr-add", "--grain"),
         ] {
             let error = parse(&format!("opai photo.jpg {flags} -o out.png")).expect_err(flags);
 
