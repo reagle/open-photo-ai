@@ -5,7 +5,7 @@ import { type CropInfo, sameCrop } from "@/ipc/crop";
 import { cancelEnhance, enhance, onEnhanceProgress, type RunProgress } from "@/ipc/enhance";
 import type { Face } from "@/ipc/faces";
 import type { ImageRecord } from "@/ipc/images";
-import { runnable } from "@/lib/enhancements";
+import { maskLimits, runnable } from "@/lib/enhancements";
 import { withChoice } from "@/lib/faces";
 import { refineOf, regionOf, toWire, withRefine, withRemoval } from "@/lib/mask";
 import { report } from "@/lib/report";
@@ -201,9 +201,14 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
      * next one, which is the store's version counter by another name. A stroke is committed when the pointer comes up,
      * so one being drawn is in no entry and re-runs nothing. Memoised on the entry so the run effect sees one mask
      * between changes, not a new object per render.
+     *
+     * None for a stack the mask limits nothing in ({@link maskLimits}), however much is painted: its section is not
+     * shown there, so it must not act unseen - as the mask that keeps a lens blur's subject in focus, which Refine is
+     * for. The strokes stay in the store and are sent again once an enhancement the mask can limit is added.
      */
     const painted = useFileMask(file?.path);
-    const mask = useMemo(() => toWire(painted), [painted]);
+    const limited = maskLimits(operations);
+    const mask = useMemo(() => (limited ? toWire(painted) : undefined), [painted, limited]);
 
     /*
      * What Remove is to take out: the strokes painted for it, settled for a moment, as the wire carries them - an empty

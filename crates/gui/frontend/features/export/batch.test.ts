@@ -290,6 +290,7 @@ describe("the order", () => {
     });
 
     it("sends each photograph's own mask, and none for one that was never painted", async () => {
+        stack(HOLIDAY, [upscale]);
         act(() => {
             const { beginStroke, endStroke } = useMaskStore.getState();
 
@@ -307,6 +308,22 @@ describe("the order", () => {
             inverted: true,
         });
         expect(exporting[1]?.mask).toBeUndefined();
+    });
+
+    it("sends no mask where the stack gives it nothing to limit, as the preview sends none", async () => {
+        const grain: Operation = { family: "grain", codename: "sensor", precision: "fp32", parameters: { amount: 1 } };
+        stack(HOLIDAY, [grain]);
+        act(() => {
+            const { beginStroke, endStroke } = useMaskStore.getState();
+
+            beginStroke(HOLIDAY.path, 0.3, 0.3, false);
+            endStroke(0.6, 0.3);
+        });
+
+        void run([HOLIDAY]);
+        await settle();
+
+        expect(exporting[0]?.mask).toBeUndefined();
     });
 
     it("sends each photograph's Remove the area painted for it, apart from the mask, and an empty one unpainted", async () => {
