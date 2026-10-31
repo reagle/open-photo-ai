@@ -6,7 +6,8 @@
 //!
 //! ```text
 //! $OPAI_LIVE_DIR/bonsai.jpg                         a 5:4 landscape, a copper tag hanging below the canopy
-//! $OPAI_LIVE_DIR/opai-live-remove/models/...        rm_lima_fp32, installed (install_lima.py EXPORT APP_DIR)
+//! $OPAI_LIVE_DIR/opai-live-remove/models/...        rm_lima_fp32 and rm_lima_1024_fp32, installed
+//!                                                   (install_lima.py EXPORT APP_DIR)
 //!
 //! cargo test -p opai models::remove::live -- --ignored --nocapture --test-threads=1
 //! ```
@@ -68,12 +69,15 @@ async fn photograph() -> Option<Picture> {
 /// The application, installed under [`LIVE_DIR`], or `None` with the reason printed where Lima is not installed.
 async fn application() -> Option<Opai> {
     let dir = kept_dir(NAME);
-    let artifact = Remove::new(RemoveVariant::Lima(FloatPrecision::Fp32), tag()).artifact();
-    let graph = dir.join("models").join(artifact.as_str()).join(format!("{artifact}.onnx"));
+    let removal = Remove::new(RemoveVariant::Lima(FloatPrecision::Fp32), tag());
 
-    if !graph.exists() {
-        println!("skipped: {} is not installed", graph.display());
-        return None;
+    for artifact in removal.required_artifacts() {
+        let graph = dir.join("models").join(artifact.as_str()).join(format!("{artifact}.onnx"));
+
+        if !graph.exists() {
+            println!("skipped: {} is not installed", graph.display());
+            return None;
+        }
     }
 
     Some(live_application_at(NAME, &dir).await)
@@ -157,4 +161,73 @@ async fn lima_removes_the_tag_under_core_ml() {
     let (Some(source), Some(opai)) = (photograph().await, application().await) else { return };
 
     removes_on(&opai, &source, ExecutionProvider::CoreMl).await;
+}
+
+/// The environment variable naming the bench's jobs: a file of lines `photograph<TAB>mask<TAB>output`, white in the
+/// mask removed, the result written as PNG.
+const BENCH_JOBS: &str = "OPAI_REMOVE_BENCH";
+
+/// The environment variable naming what the bench runs: `small` (the small square alone, as before 2026-10-31),
+/// `large` (the large square for large crops), and either with `+grain`.
+const BENCH_FINISH: &str = "OPAI_REMOVE_FINISH";
+
+/// The finish `name` names, as [`BENCH_FINISH`] spells it.
+fn finish_named(name: &str) -> super::process::Finish {
+    let mut parts = name.split('+');
+    let large = match parts.next() {
+        Some("small") => false,
+        Some("large") => true,
+        other => panic!("{BENCH_FINISH}={name}: {other:?} is neither small nor large"),
+    };
+    let mut finish = super::process::Finish { large, grain: false };
+
+    for part in parts {
+        match part {
+            "grain" => finish.grain = true,
+            other => panic!("{BENCH_FINISH}={name}: {other} is not a finish"),
+        }
+    }
+
+    finish
+}
+
+/// The fork's Remove bench (`remove/README.md` in its notes): each job removed on the CPU, uncached, under the finish
+/// [`BENCH_FINISH`] names, with the seconds the removal took printed as `bench<TAB>output<TAB>seconds`. The first job is
+/// run once more before the rest and not reported, so every reported time is warm.
+#[tokio::test]
+#[ignore = "the fork's bench: needs OPAI_REMOVE_BENCH, OPAI_REMOVE_FINISH and Lima installed under OPAI_LIVE_DIR"]
+async fn bench() {
+    let (Some(jobs), Some(finish)) = (std::env::var_os(BENCH_JOBS), std::env::var(BENCH_FINISH).ok()) else {
+        println!("skipped: {BENCH_JOBS} or {BENCH_FINISH} is not set");
+        return;
+    };
+    let Some(opai) = application().await else { return };
+    *super::process::BENCH_FINISH.lock().unwrap() = Some(finish_named(&finish));
+
+    let jobs = std::fs::read_to_string(&jobs).expect("the bench's jobs are readable");
+    let jobs: Vec<Vec<&str>> = jobs.lines().filter(|line| !line.is_empty()).map(|line| line.split('\t').collect()).collect();
+
+    for (index, job) in std::iter::once(&jobs[0]).chain(&jobs).enumerate() {
+        let [photograph, mask, output] = job[..] else { panic!("a job is three paths: {job:?}") };
+        let source = crate::image::load(std::path::Path::new(photograph)).await.expect("the photograph decodes");
+        let mask = crate::image::load(std::path::Path::new(mask)).await.expect("the mask decodes");
+        let operation = Remove::lima(Arc::new(Mask::from_image(mask.pixels())));
+        let options = ProcessOptions { provider: ExecutionProvider::Cpu, cache: false, ..Default::default() };
+
+        let started = Instant::now();
+        let run = opai.process(&source, std::slice::from_ref(&operation), Some(options)).await.unwrap();
+        let seconds = started.elapsed().as_secs_f64();
+
+        if index == 0 {
+            continue;
+        }
+
+        let path = PathBuf::from(output);
+        crate::image::save(run.picture.shared_pixels(), run.picture.shared_metadata(), &path, ImageFormat::Png, None)
+            .await
+            .expect("the result encodes");
+        println!("bench\t{output}\t{seconds:.3}");
+    }
+
+    *super::process::BENCH_FINISH.lock().unwrap() = None;
 }
