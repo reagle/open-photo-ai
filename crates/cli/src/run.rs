@@ -44,8 +44,8 @@ use std::time::Instant;
 
 use opai::{
     APP_NAME, CLI, CancellationToken, ChainFaces, ChainMatte, Enhanced, ExecuteOptions, ExecutionProvider,
-    FaceSelection, InitOptions, Mask, OnInference, Opai, OutputDepth, Picture, ProcessOptions, ProviderVerdict, Remove,
-    Suggestions, default_face_selection, image,
+    FaceSelection, InitOptions, LensBlurRefine, Mask, OnInference, Opai, Operation, OutputDepth, Picture,
+    ProcessOptions, ProviderVerdict, Remove, Suggestions, default_face_selection, image,
 };
 
 use tracing::Instrument;
@@ -102,6 +102,10 @@ pub async fn run(mut args: Args, look: Look) -> Result<(), CliError> {
         },
         remove: match &args.remove {
             Some(path) => Some(read_mask(path, "the removal mask").await?),
+            None => None,
+        },
+        refine: match &args.lens_blur_refine {
+            Some(path) => Some(read_refine(path).await?),
             None => None,
         },
     };
@@ -384,12 +388,14 @@ enum Planner<'a> {
     Autopilot(&'a AutopilotModels),
 }
 
-/// The two mask files a command can be given, each read once for every image.
+/// The mask files a command can be given, each read once for every image.
 struct Masks {
     /// `--mask`'s: where the enhancements apply, and what a lens blur keeps in focus, as `--mask-use` says.
     limit: Option<Arc<Mask>>,
     /// `--remove`'s: what is taken out first.
     remove: Option<Arc<Mask>>,
+    /// `--lb-refine`'s: what the lens blur keeps sharp and blurs, over what the depth and the matte say.
+    refine: Option<Arc<LensBlurRefine>>,
 }
 
 /// Enhances `source`, the image at `index`, with the chain `planner` gives for its own size, after removing what
@@ -416,6 +422,9 @@ async fn enhance_one(
             check_mask(mask, source.width, source.height, what)?;
         }
     }
+    if let Some(refine) = &masks.refine {
+        check_fits(refine.base_dimensions(), source.width, source.height, "lens blur's refine image")?;
+    }
 
     // A file whose header read cleanly but whose pixels do not decode fails this image, not the batch. The library's
     // message names the path.
@@ -438,6 +447,17 @@ async fn enhance_one(
         plan.operations.insert(0, Remove::lima(Arc::clone(remove)));
         plan.applied
             .insert(0, chain::Applied { family: opai::Family::Remove, model: "Lima", detail: None });
+    }
+    // Handed to every lens blur, as a mask's weight is: the strokes are not a parameter of the catalogue.
+    if let Some(refine) = &masks.refine {
+        for operation in &mut plan.operations {
+            if let Operation::LensBlur(blur) = operation {
+                *blur = blur.clone().with_refine(Arc::clone(refine));
+            }
+        }
+        for applied in plan.applied.iter_mut().filter(|applied| applied.family == opai::Family::LensBlur) {
+            applied.detail = applied.detail.take().map(|detail| format!("{detail}, refined"));
+        }
     }
     let operations = &plan.operations;
 
@@ -643,12 +663,32 @@ async fn read_mask(path: &Path, what: &str) -> Result<Arc<Mask>, CliError> {
     Ok(Arc::new(Mask::from_image(picture.pixels())))
 }
 
+/// `--lb-refine`'s image at `path`, read once for every image of the run: its luminance above mid-grey is focus and
+/// below it blur, and any alpha is ignored. Refused as a usage error where it cannot be read.
+async fn read_refine(path: &Path) -> Result<Arc<LensBlurRefine>, CliError> {
+    let picture = image::load(path)
+        .await
+        .map_err(|error| CliError::Usage(format!("the lens blur's refine image could not be read: {error}")))?;
+
+    Ok(Arc::new(LensBlurRefine::from_image(picture.pixels())))
+}
+
 /// Refuses `mask` for a `width` x `height` photograph whose aspect ratio differs from the mask's by more than
 /// [`MASK_ASPECT_TOLERANCE`], naming both and calling the mask `what`. A mask with no base, which a file never gives,
 /// fits anything.
 fn check_mask(mask: &Mask, width: u32, height: u32, what: &str) -> Result<(), CliError> {
-    let Some(base) = &mask.base else { return Ok(()) };
-    let (mask_width, mask_height) = (base.plane().width(), base.plane().height());
+    check_fits(
+        mask.base.as_ref().map(|base| (base.plane().width(), base.plane().height())),
+        width,
+        height,
+        what,
+    )
+}
+
+/// Refuses an image of `dimensions` (`None` for none, which fits anything) for a `width` x `height` photograph whose
+/// aspect ratio differs from it by more than [`MASK_ASPECT_TOLERANCE`], naming both and calling the image `what`.
+fn check_fits(dimensions: Option<(u32, u32)>, width: u32, height: u32, what: &str) -> Result<(), CliError> {
+    let Some((mask_width, mask_height)) = dimensions else { return Ok(()) };
     let ratio = |width: u32, height: u32| f64::from(width) / f64::from(height);
     let (theirs, ours) = (ratio(mask_width, mask_height), ratio(width, height));
 
