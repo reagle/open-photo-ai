@@ -129,12 +129,14 @@ describe("what a restart reads back", () => {
         ["below the bounds", { jpeg: MIN_QUALITY - 1 }],
         ["not a number", { jpeg: "high" }],
         ["for a format this application has no name for", { jpeg: 50, raw: 50 }],
+        // Ultra HDR is written as JPEG, at JPEG's quality: it is a choice, not a format with a quality of its own.
+        ["for a choice that is not a format", { jpeg: 50, uhdr: 50, preserve: 50 }],
     ])("drops a %s quality, which reads as that format's published starting value", async (_case, quality) => {
         await stored({ ...SOUND, quality: { ...quality, avif: 42 } });
 
         const repaired = useSettingsStore.getState().quality as Record<string, number | undefined>;
-        if (_case.startsWith("for a format")) {
-            expect(repaired.raw).toBeUndefined();
+        if (_case.startsWith("for a ")) {
+            expect([repaired.raw, repaired.uhdr, repaired.preserve]).toEqual([undefined, undefined, undefined]);
             expect(repaired.jpeg).toBe(50);
         } else {
             expect(repaired.jpeg).toBeUndefined();

@@ -36,9 +36,17 @@ export type ExportFormat = "bmp" | "gif" | "jpeg" | "png" | "tiff" | "avif" | "h
 
 /**
  * What the user picks as the format: the source's own where it can be written - TIFF for one that cannot, such as
- * camera RAW - or one format for every file. Rust's `FormatChoice`, spelled as it reads it.
+ * camera RAW - one format for every file, or `uhdr`, a JPEG keeping the source's HDR gain map. Rust's `FormatChoice`,
+ * spelled as it reads it.
+ *
+ * **Plain `jpeg` is SDR by choice**: it leaves a gain map out, for the sites and apps that mishandle an Ultra HDR JPEG.
+ * `uhdr` is written as `jpeg` too - the same extension and the same quality - and so is no {@link ExportFormat} of its
+ * own; Preserve keeps a gain map as `uhdr` does.
  */
-export type FormatChoice = "preserve" | ExportFormat;
+export type FormatChoice = "preserve" | "uhdr" | ExportFormat;
+
+/** What an export does with a source's HDR gain map: Rust's `GainMapChoice`. Only plain JPEG drops it. */
+export type GainMapChoice = "keep" | "drop";
 
 /** What a lossy format's quality may be, and what it is written at before a user moves a slider. */
 export type QualityRange = { min: number; max: number; default: number };
@@ -93,6 +101,8 @@ export type ExportName = {
     format: ExportFormat;
     /** The extension written, without its dot. */
     extension: string;
+    /** What is done with a gain map the source carries: `drop` only under plain JPEG. */
+    gainMap: GainMapChoice;
 };
 
 /** Bits per channel, and whether the samples are floating point. Rust's `opai::image::Depth`. */
@@ -106,10 +116,15 @@ export type Depth = { bits: number; float: boolean };
 export type Loss =
     /**
      * An HDR source written as SDR. `cause` is `format` where the format is written as SDR only (every format for PQ
-     * and HLG, every format but JPEG for a gain map), and `notCarried` where a gain-map JPEG written as JPEG could not
-     * carry its gain map.
+     * and HLG, every format but JPEG for a gain map), `notCarried` where a gain-map JPEG written as JPEG could not
+     * carry its gain map, and `chosen` where it was written as plain JPEG, which leaves the gain map out by choice.
      */
-    | { kind: "hdr"; hdr: "gainMap" | "pq" | "hlg" | "other"; format: string; cause: "format" | "notCarried" }
+    | {
+          kind: "hdr";
+          hdr: "gainMap" | "pq" | "hlg" | "other";
+          format: string;
+          cause: "format" | "notCarried" | "chosen";
+      }
     /** Fewer bits per channel than the source, or integers where it had floats. */
     | { kind: "depth"; from: Depth; to: Depth; format: string }
     /** The source's colour profile, or its coded colour description, is not in the file. */
@@ -130,8 +145,11 @@ export type Loss =
           cause: "format" | "colourModel" | "discarded" | "coded" | "notWritten";
       };
 
-/** What one queued file will lose in its chosen format, as {@link exportLosses} answers it. */
-export type ExportLosses = { path: string; losses: Loss[] };
+/**
+ * What one queued file will lose in its chosen format, as {@link exportLosses} answers it, and whether its source
+ * declares an HDR gain map - an Ultra HDR JPEG - which a row names it by. A file Rust did not read declares none.
+ */
+export type ExportLosses = { path: string; losses: Loss[]; gainMap: boolean };
 
 /** Where an export is written, and how. */
 export type ExportRequest = {
