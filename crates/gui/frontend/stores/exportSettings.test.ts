@@ -60,6 +60,12 @@ describe("the export settings", () => {
         expect(useExportSettingsStore.getState().format).toBe("jpeg");
     });
 
+    it("keep a remembered JPG (Ultra HDR)", async () => {
+        await stored({ prefix: "", suffix: "", overwrite: false, format: "uhdr" });
+
+        expect(useExportSettingsStore.getState().format).toBe("uhdr");
+    });
+
     it("read a format this application has no name for as PNG", async () => {
         await stored({ prefix: "", suffix: "", overwrite: false, format: "jxl" });
 

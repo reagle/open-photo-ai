@@ -106,7 +106,9 @@ pub struct Args {
     pub output: Option<PathBuf>,
 
     /// The format every result is written in, unless the output is a file: `preserve` (each source's own, TIFF for
-    /// camera RAW; the default), avif, bmp, gif, heic, jpeg, png, tiff or webp.
+    /// camera RAW; the default), avif, bmp, gif, heic, jpeg, png, tiff or webp, or `uhdr`, a JPEG keeping the source's
+    /// HDR gain map (Ultra HDR). A plain `jpeg` is SDR: the gain map is left out. `preserve` and an output file ending
+    /// in .jpg keep it.
     #[arg(help_heading = "Output", long, value_name = "FORMAT", value_parser = parse_format)]
     pub format: Option<FormatChoice>,
 
@@ -776,7 +778,7 @@ fn parse_format(text: &str) -> Result<FormatChoice, String> {
         .or_else(|| ExportFormat::preserving(&word).map(FormatChoice::Format))
         .ok_or_else(|| {
             let names: Vec<_> = ExportFormat::ALL.into_iter().map(ExportFormat::name).collect();
-            format!("{text:?} is not a format; use preserve, {}", names.join(", "))
+            format!("{text:?} is not a format; use preserve, {}, {}", names.join(", "), FormatChoice::ULTRA_HDR)
         })
 }
 
@@ -1753,6 +1755,8 @@ mod tests {
             ("tiff", ExportFormat::Tiff.into()),
             ("Tif", ExportFormat::Tiff.into()),
             ("WebP", ExportFormat::Webp.into()),
+            ("uhdr", FormatChoice::UltraHdr),
+            ("UHDR", FormatChoice::UltraHdr),
         ] {
             let args = parse(&format!("opai photos --up --format {word} -o out")).expect(word);
             assert_eq!(args.format, Some(choice), "{word}");
@@ -1766,7 +1770,7 @@ mod tests {
         assert_eq!(error.kind(), ErrorKind::ValueValidation);
         assert_eq!(error.exit_code(), 2);
         let message = error.to_string();
-        for name in ["preserve", "avif", "bmp", "gif", "heic", "jpeg", "png", "tiff", "webp"] {
+        for name in ["preserve", "avif", "bmp", "gif", "heic", "jpeg", "png", "tiff", "webp", "uhdr"] {
             assert!(message.contains(name), "{name} is not listed in: {message}");
         }
     }

@@ -341,7 +341,12 @@ export const answerExportNames = async (paths: readonly string[], naming: Export
         const stem = dot > 0 ? file.slice(0, dot) : file;
         const own = dot > 0 ? file.slice(dot + 1).toLowerCase() : "";
         const preserved = EXPORT_FORMATS.formats.find((capability) => capability.preserves.includes(own));
-        const format = naming.format !== "preserve" ? naming.format : (preserved?.format ?? EXPORT_FORMATS.fallback);
+        const format =
+            naming.format === "uhdr"
+                ? "jpeg"
+                : naming.format !== "preserve"
+                  ? naming.format
+                  : (preserved?.format ?? EXPORT_FORMATS.fallback);
         const extension =
             naming.format === "preserve" && preserved
                 ? own
@@ -349,7 +354,10 @@ export const answerExportNames = async (paths: readonly string[], naming: Export
         const name = `${naming.prefix}${stem}${naming.suffix}.${extension}`;
         const folder = naming.location ?? path.slice(0, Math.max(slash, 0));
 
-        return { path, name, destination: `${folder}/${name}`, format, extension };
+        // Only plain JPEG leaves a gain map out, as `FormatChoice::gain_map` decides.
+        const gainMap = naming.format === "jpeg" ? "drop" : "keep";
+
+        return { path, name, destination: `${folder}/${name}`, format, extension, gainMap };
     });
 
 /** What each lossy format in {@link EXPORT_FORMATS} starts at, by format - the quality a user never moved. */

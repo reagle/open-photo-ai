@@ -184,7 +184,7 @@
         },
         "hdr": {
             "label": "HDR",
-            "gainMap": "This photograph has an HDR gain map. Exporting as JPEG keeps it; the other formats are written as SDR for now.",
+            "gainMap": "This photograph has an HDR gain map. Exporting as JPG (Ultra HDR) keeps it; plain JPG leaves it out, and the other formats are written as SDR for now.",
             "transfer": "This photograph is HDR ({{transfer}}). Every format is written as SDR for now.",
             "other": "This photograph is HDR. Every format is written as SDR for now."
         },
@@ -301,7 +301,8 @@
             },
             "format": {
                 "title": "Format",
-                "preserve": "Preserve"
+                "preserve": "Preserve",
+                "ultraHdr": "{{format}} (Ultra HDR)"
             },
             "quality": {
                 "title": "Quality"
@@ -343,8 +344,10 @@
         "loss": {
             "notice": "{{count}} of {{total}} images will lose quality in this format. Hover the warning on a row to see what.",
             "warning": "Quality lost in this format",
+            "chosen": "Left out by the chosen format",
             "hdrGainMap": "HDR gain map dropped: {{format}} output is SDR only for now",
             "hdrGainMapNotCarried": "HDR gain map dropped: it could not be carried",
+            "hdrGainMapLeftOut": "Written as SDR (gain map left out)",
             "hdrTransfer": "HDR ({{transfer}}) dropped: {{format}} output is SDR only for now",
             "depth": "{{from}} → {{to}} in {{format}}",
             "bits": "{{bits}}-bit",

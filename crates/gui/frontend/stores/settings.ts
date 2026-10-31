@@ -5,7 +5,7 @@ import type { Family } from "@/ipc/catalogue";
 import type { ExportFormat } from "@/ipc/export";
 import type { SupportedProviders } from "@/ipc/setup";
 import { familiesWhere } from "@/lib/enhancements";
-import { isFormatChoice } from "@/lib/export";
+import { isExportFormat } from "@/lib/export";
 import { repairShortcuts, type StoredShortcuts } from "@/lib/shortcuts";
 import { clampTo } from "@/lib/utils";
 
@@ -212,8 +212,7 @@ const repairQuality = (value: unknown): QualityChoices => {
         Object.entries(value).flatMap(([format, stored]) => {
             const quality = Number(stored);
 
-            return isFormatChoice(format) &&
-                format !== "preserve" &&
+            return isExportFormat(format) &&
                 Number.isFinite(quality) &&
                 quality >= MIN_QUALITY &&
                 quality <= MAX_QUALITY

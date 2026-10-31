@@ -3,7 +3,8 @@ import { TriangleAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ExportRow } from "@/features/export/ExportRow";
 import type { ExportNames } from "@/features/export/useExportNames";
-import type { Loss } from "@/ipc/export";
+import type { ExportLosses } from "@/ipc/export";
+import { warnsOf } from "@/lib/export";
 import { useExportBatchStore } from "@/stores/exportBatch";
 
 /** The keys that scroll a list, which stop it following as a wheel does. */
@@ -11,8 +12,9 @@ const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home
 
 /**
  * The queue: one row per photograph picked when the dialog opened, in the order they are exported, and above it, while
- * nothing runs, a notice counting the photographs `losses` says will lose something in the chosen format.
- * `losses` is what each will lose, as Rust predicts it - see `useExportLosses` - and each row warns of its own.
+ * nothing runs, a notice counting the photographs `losses` says will lose something in the chosen format - not a gain
+ * map plain JPEG leaves out, which was chosen. `losses` is what each will lose, as Rust predicts it - see
+ * `useExportLosses` - and each row warns of its own.
  *
  * The order is the batch store's snapshot, grouped so photographs needing the same models are next to each other,
  * which the header says. It does not change while the dialog is open. `names` is what each is exported as, as Rust
@@ -26,13 +28,13 @@ export const ExportQueue = ({
     losses,
 }: {
     names: ExportNames | undefined;
-    losses?: ReadonlyMap<string, Loss[]> | undefined;
+    losses?: ReadonlyMap<string, ExportLosses> | undefined;
 }) => {
     const { t } = useTranslation();
     const queue = useExportBatchStore((state) => state.queue);
     const running = useExportBatchStore((state) => state.phase === "running");
     const idle = useExportBatchStore((state) => state.phase === "idle");
-    const lossy = queue.filter((path) => (losses?.get(path)?.length ?? 0) > 0).length;
+    const lossy = queue.filter((path) => warnsOf(losses?.get(path)?.losses ?? [])).length;
     const [following, setFollowing] = useState(true);
     const listRef = useRef<HTMLDivElement>(null);
 
@@ -88,7 +90,8 @@ export const ExportQueue = ({
                         key={path}
                         path={path}
                         name={names?.byPath.get(path)}
-                        predicted={losses?.get(path)}
+                        predicted={losses?.get(path)?.losses}
+                        gainMap={losses?.get(path)?.gainMap ?? false}
                         follow={following}
                     />
                 ))}

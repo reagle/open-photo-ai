@@ -105,15 +105,21 @@ impl FromStr for ExportFormat {
     }
 }
 
-/// A word that names neither a format nor Preserve.
+/// A word that names neither a format nor Preserve nor Ultra HDR.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("`{0}` is not a format an export can be written in")]
 pub struct UnknownFormat(pub String);
 
-/// The format a user picks for an export: one format for every file, or each source's own where it can be written.
+/// The format a user picks for an export: one format for every file, each source's own where it can be written, or
+/// JPEG keeping a source's HDR gain map.
 ///
-/// Spelled as one lowercase word — `preserve`, or an [`ExportFormat`]'s [`name`](ExportFormat::name) — by
+/// Spelled as one lowercase word — `preserve`, `uhdr`, or an [`ExportFormat`]'s [`name`](ExportFormat::name) — by
 /// [`Display`](fmt::Display), [`FromStr`] and serde alike, so what a front end stores is what crosses its wire.
+///
+/// **Plain JPEG is SDR by choice**: [`Format(Jpeg)`](ExportFormat::Jpeg) leaves a source's gain map out, for the sites
+/// and apps that mishandle an Ultra HDR JPEG, and [`UltraHdr`](Self::UltraHdr) writes it. Both are written as
+/// [`ExportFormat::Jpeg`], so they share its extension and its quality; only [`gain_map`](Self::gain_map) tells them
+/// apart. Preserve keeps the gain map, so a gain-map JPEG written back as itself is an Ultra HDR JPEG again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FormatChoice {
     /// The source's own format where one writes it back, and TIFF for the rest — camera RAW, and a file with no
@@ -122,11 +128,39 @@ pub enum FormatChoice {
     Preserve,
     /// This format, whatever the source.
     Format(ExportFormat),
+    /// JPEG, whatever the source, with the source's HDR gain map written after it: an Ultra HDR JPEG wherever the
+    /// source has a gain map, and a plain JPEG wherever it has none.
+    UltraHdr,
+}
+
+/// What an export does with an HDR gain map its source carries.
+///
+/// Only a JPEG can carry one today, so for every other format the two are written alike, without it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GainMapChoice {
+    /// Written after the primary image, as an Ultra HDR JPEG: what every export did before plain JPEG became SDR.
+    #[default]
+    Keep,
+    /// Left out, with every declaration of it (`hdrgm:` XMP, the ISO 21496-1 marker, the MPF index): an SDR file.
+    Drop,
 }
 
 impl FormatChoice {
     /// What a Preserve export writes a source no format writes back as itself.
     pub const FALLBACK: ExportFormat = ExportFormat::Tiff;
+
+    /// The spelling of [`UltraHdr`](Self::UltraHdr).
+    pub const ULTRA_HDR: &str = "uhdr";
+
+    /// What this choice does with a source's gain map: [`Drop`](GainMapChoice::Drop) for plain JPEG, which is SDR by
+    /// choice, and [`Keep`](GainMapChoice::Keep) for every other, whose format either carries it or cannot.
+    pub const fn gain_map(self) -> GainMapChoice {
+        match self {
+            Self::Format(ExportFormat::Jpeg) => GainMapChoice::Drop,
+            Self::Preserve | Self::Format(_) | Self::UltraHdr => GainMapChoice::Keep,
+        }
+    }
 }
 
 impl From<ExportFormat> for FormatChoice {
@@ -139,6 +173,7 @@ impl fmt::Display for FormatChoice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Preserve => f.write_str("preserve"),
+            Self::UltraHdr => f.write_str(Self::ULTRA_HDR),
             Self::Format(format) => format.fmt(f),
         }
     }
@@ -150,6 +185,7 @@ impl FromStr for FormatChoice {
     fn from_str(word: &str) -> Result<Self, Self::Err> {
         match word {
             "preserve" => Ok(Self::Preserve),
+            Self::ULTRA_HDR => Ok(Self::UltraHdr),
             name => name.parse().map(Self::Format),
         }
     }
@@ -412,8 +448,10 @@ mod tests {
 
     #[test]
     fn every_format_choice_round_trips_through_its_one_spelling() {
-        let choices = std::iter::once(FormatChoice::Preserve).chain(ExportFormat::ALL.map(FormatChoice::Format));
-        let spelled = ["preserve", "avif", "bmp", "gif", "heic", "jpeg", "png", "tiff", "webp"];
+        let choices = [FormatChoice::Preserve, FormatChoice::UltraHdr]
+            .into_iter()
+            .chain(ExportFormat::ALL.map(FormatChoice::Format));
+        let spelled = ["preserve", "uhdr", "avif", "bmp", "gif", "heic", "jpeg", "png", "tiff", "webp"];
 
         for (choice, spelling) in choices.zip(spelled) {
             assert_eq!(choice.to_string(), spelling);
@@ -424,8 +462,37 @@ mod tests {
     }
 
     #[test]
+    fn only_plain_jpeg_leaves_a_gain_map_out() {
+        let choices = [FormatChoice::Preserve, FormatChoice::UltraHdr]
+            .into_iter()
+            .chain(ExportFormat::ALL.map(FormatChoice::Format));
+
+        for choice in choices {
+            let expected = if choice == FormatChoice::Format(ExportFormat::Jpeg) {
+                GainMapChoice::Drop
+            } else {
+                GainMapChoice::Keep
+            };
+            assert_eq!(choice.gain_map(), expected, "{choice}");
+        }
+        assert_eq!(serde_json::to_value(GainMapChoice::Drop).expect("serializes"), serde_json::json!("drop"));
+    }
+
+    #[test]
+    fn ultra_hdr_is_a_choice_and_not_a_format_of_its_own() {
+        // It is written as JPEG, so the table a front end reads its extension and its quality from has no row for it.
+        assert!(
+            capabilities()
+                .formats
+                .iter()
+                .all(|capability| capability.format.name() != FormatChoice::ULTRA_HDR)
+        );
+        assert_eq!("uhdr".parse::<ExportFormat>(), Err(UnknownFormat("uhdr".to_owned())));
+    }
+
+    #[test]
     fn an_extension_or_an_unknown_word_is_not_a_format_choice() {
-        for word in ["heif", "jpg", "tif", "raw", "", "JPEG", "Preserve"] {
+        for word in ["heif", "jpg", "tif", "raw", "", "JPEG", "Preserve", "UHDR", "ultrahdr"] {
             assert_eq!(word.parse::<FormatChoice>(), Err(UnknownFormat(word.to_owned())), "`{word}`");
             assert!(serde_json::from_value::<FormatChoice>(serde_json::json!(word)).is_err(), "`{word}`");
         }

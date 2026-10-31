@@ -1,11 +1,23 @@
 import type { TFunction } from "i18next";
 import type { Operation } from "@/ipc/enhance";
-import type { Depth, ExportFormat, ExportFormats, ExportNaming, FormatChoice, Loss, QualityRange } from "@/ipc/export";
+import type {
+    Depth,
+    ExportFormat,
+    ExportFormats,
+    ExportName,
+    ExportNaming,
+    FormatChoice,
+    Loss,
+    QualityRange,
+} from "@/ipc/export";
 import { directoryOf, fileName } from "@/lib/paths";
 
 export type { FormatChoice };
 
-/** Every format a user can pick, in the order the chooser offers them: Preserve, then alphabetical by label. */
+/**
+ * Every format a user can pick, in the order the chooser offers them: Preserve, then alphabetical by label, with
+ * JPEG (Ultra HDR) right after the plain JPEG it is written as.
+ */
 export const FORMAT_CHOICES = [
     "preserve",
     "avif",
@@ -13,6 +25,7 @@ export const FORMAT_CHOICES = [
     "gif",
     "heic",
     "jpeg",
+    "uhdr",
     "png",
     "tiff",
     "webp",
@@ -20,6 +33,37 @@ export const FORMAT_CHOICES = [
 
 export const isFormatChoice = (value: unknown): value is FormatChoice =>
     typeof value === "string" && (FORMAT_CHOICES as readonly string[]).includes(value);
+
+/**
+ * Whether `value` names a format a file is written in - a choice but Preserve and Ultra HDR, which is written as
+ * JPEG. What a quality is kept under.
+ */
+export const isExportFormat = (value: unknown): value is ExportFormat =>
+    isFormatChoice(value) && value !== "preserve" && value !== "uhdr";
+
+/**
+ * `JPG (Ultra HDR)` for `extension` where `ultraHdr` holds, `JPG` where it does not: how a format reads in the chooser
+ * and on a row. "Ultra HDR" is a product name and is not translated; only the way it is put beside the format is.
+ */
+export const typeLabel = (t: TFunction, extension: string, ultraHdr: boolean) => {
+    const format = extension.toUpperCase();
+
+    return ultraHdr ? t("export.settings.format.ultraHdr", { format }) : format;
+};
+
+/** Whether `loss` is a gain map left out because plain JPEG was chosen: asked for, so noted rather than warned of. */
+export const isChosen = (loss: Loss) => loss.kind === "hdr" && loss.cause === "chosen";
+
+/** Whether any of `losses` is one to warn of: one the user did not choose. */
+export const warnsOf = (losses: readonly Loss[]) => losses.some((loss) => !isChosen(loss));
+
+/**
+ * Whether the file named `name` is written as an Ultra HDR JPEG: its source declares a gain map (`gainMap`), it is
+ * written as JPEG keeping it, and `losses` - what Rust foresees, or answered for the write - lose no HDR, as a gain map
+ * that could not be carried would.
+ */
+export const writesUltraHdr = (name: ExportName, gainMap: boolean, losses: readonly Loss[]) =>
+    gainMap && name.format === "jpeg" && name.gainMap === "keep" && !losses.some((loss) => loss.kind === "hdr");
 
 /**
  * Only the naming's own fields of `settings` - the prefix, suffix, folder and format - whatever else it holds, and no
@@ -176,6 +220,9 @@ export const formatLoss = (t: TFunction, loss: Loss): string => {
         case "hdr":
             if (loss.cause === "notCarried") {
                 return t("export.loss.hdrGainMapNotCarried");
+            }
+            if (loss.cause === "chosen") {
+                return t("export.loss.hdrGainMapLeftOut");
             }
             return loss.hdr === "gainMap"
                 ? t("export.loss.hdrGainMap", { format })

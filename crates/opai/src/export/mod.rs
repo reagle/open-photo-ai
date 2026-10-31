@@ -3,8 +3,8 @@
 //! Three parts, each a question every front end asks of the same rule:
 //!
 //! - [`mod@format`]: the eight formats an export can be written in, spelled as the front ends spell them
-//!   ([`ExportFormat`]), a [`FormatChoice`] that is one of them or Preserve, and what each can do
-//!   ([`capabilities`]).
+//!   ([`ExportFormat`]), a [`FormatChoice`] that is one of them, Preserve, or Ultra HDR (JPEG keeping the source's gain
+//!   map, which plain JPEG leaves out: [`GainMapChoice`]), and what each can do ([`capabilities`]).
 //! - [`mod@name`]: the name and the destination a source is exported under ([`name_for`], [`destination_for`]): the
 //!   prefix, the source's name, the suffix and the extension the format choice decides, inside the chosen folder or
 //!   beside the source. Pure: it touches no file and cannot fail, so it is cheap enough to ask on every keystroke.
@@ -23,9 +23,10 @@
 //!   on [`Written::losses`].
 //!   It embeds the source's metadata as the export policy rewrites it: the EXIF with every field true of the file and
 //!   its MakerNote kept where safe, the XMP with a new identity and history, the IPTC-IIM, and the ICC profile.
-//!   Written as JPEG, a picture with a gain map is an Ultra HDR JPEG again (`gain_map` prepares the gain map: the
-//!   source's own bytes where nothing reframed or shrank it, otherwise encoded at its own resolution, never enlarged,
-//!   at the export's quality or 90); every other format leaves the gain map out.
+//!   Written as JPEG keeping its gain map (Ultra HDR or Preserve), a picture with a gain map is an Ultra HDR JPEG again
+//!   (`gain_map` prepares the gain map: the source's own bytes where nothing reframed or shrank it, otherwise encoded
+//!   at its own resolution, never enlarged, at the export's quality or 90); plain JPEG leaves it out by choice, with
+//!   its `hdrgm` XMP, ISO marker and MPF index, and every other format leaves it out because it cannot hold one.
 //!   **Known caveat:** light adjustment, colour balance and colourisation change the base image's brightness or
 //!   colour and leave the gain map's ratios computed against the old base, so the HDR rendition is slightly off;
 //!   recomputing the gain map is a later slice.
@@ -46,8 +47,9 @@ pub mod write;
 
 pub use claim::{Claim, claim};
 pub use format::{
-    ExportFormat, ExportFormats, FormatCapability, FormatChoice, QualityRange, UnknownFormat, capabilities,
+    ExportFormat, ExportFormats, FormatCapability, FormatChoice, GainMapChoice, QualityRange, UnknownFormat,
+    capabilities,
 };
-pub use loss::{HdrCause, Loss, ProfileCause, losses, predict_blocking};
+pub use loss::{HdrCause, Loss, Prediction, ProfileCause, losses, predict_blocking, predict_export_blocking};
 pub use name::{Named, Naming, destination_for, name_for};
 pub use write::{WriteError, WriteOptions, Written, write};
