@@ -16,6 +16,7 @@ import {
     familiesWhere,
     isPainted,
     isSuggestible,
+    maskLimits,
     modelChoice,
     newOperation,
     parameterOf,
@@ -771,5 +772,28 @@ describe("the operation an Autopilot suggestion becomes", () => {
     it("builds nothing for a family the catalogue publishes no model for", () => {
         expect(suggestedOperation({ family: "denoise" }, undefined, undefined)).toBeUndefined();
         expect(suggestedOperation({ family: "upscale", scale: 2 }, undefined, undefined)).toBeUndefined();
+    });
+});
+
+describe("what a limiting mask has to limit", () => {
+    const of = (...families: Operation["family"][]): Operation[] =>
+        families.map((family) => ({ family, codename: "x", precision: "fp32", parameters: {} }));
+
+    it("is nothing in a stack of only Remove, Lens Blur and Grain, as the library rules", () => {
+        for (const families of [
+            [],
+            ["remove"],
+            ["grain"],
+            ["lens_blur"],
+            ["lens_blur", "grain"],
+            ["remove", "lens_blur", "grain"],
+        ] as Operation["family"][][]) {
+            expect(maskLimits(of(...families))).toBe(false);
+        }
+    });
+
+    it("is any other enhancement between them", () => {
+        expect(maskLimits(of("remove", "sharpen", "lens_blur", "grain"))).toBe(true);
+        expect(maskLimits(of("denoise", "grain"))).toBe(true);
     });
 });
