@@ -23,6 +23,7 @@
 // enhancements apply, this says what to take out, and the two are painted separately.
 
 mod gain_map;
+mod grain;
 pub(crate) mod lima;
 #[cfg(test)]
 mod live;
@@ -141,7 +142,12 @@ impl Remove {
     pub(crate) fn pipeline<B: Backend>(&self) -> Shared<B> {
         // One arm and no `Result`: the one variant has a graph, a contract and a profile, and an empty mask is answered
         // by the pipeline with the photograph rather than refused.
-        process::pipeline::<B>(self.display_name(), self.artifact(), self.profile(), Arc::clone(&self.mask))
+        process::pipeline::<B>(
+            self.display_name(),
+            [self.artifact(), self.large_artifact()],
+            self.profile(),
+            Arc::clone(&self.mask),
+        )
     }
 
     /// The name a user interface shows: `Lima (FP32)`.
@@ -149,25 +155,34 @@ impl Remove {
         self.to_string()
     }
 
-    /// The artifact serving this operation.
+    /// The artifact serving this operation's regions whose crop fits the small square: `rm_lima_fp32`.
     pub fn artifact(&self) -> ArtifactId {
         single_artifact(Family::Remove, self.variant.codename(), self.precision())
     }
 
-    /// The artifacts that must be on disk before this operation can run: always exactly one.
-    pub fn required_artifacts(&self) -> Vec<ArtifactId> {
-        vec![self.artifact()]
+    /// The same weights at the large square, for a region whose crop is larger than the small one: `rm_lima_1024_fp32`.
+    pub fn large_artifact(&self) -> ArtifactId {
+        ArtifactId::suffixed(Family::Remove, self.variant.codename(), lima::LARGE_SUFFIX, self.precision())
     }
 
-    /// The key the run cache stores this operation's result under: `rm-lima-fp32-m<signature>`.
+    /// The artifacts that must be on disk before this operation can run: the small graph, then the large one.
     ///
-    /// Carries the mask's signature, so a removal of another region is another image, and nothing else: the grow, the
-    /// context and the feather are constants of the family, and a change to one of them changes every removal.
+    /// Both, whatever the mask: which a region runs on is a question of its crop's size at the chain input's
+    /// resolution, which is not known until the run.
+    pub fn required_artifacts(&self) -> Vec<ArtifactId> {
+        vec![self.artifact(), self.large_artifact()]
+    }
+
+    /// The key the run cache stores this operation's result under: `rm-lima-fp32-r2-m<signature>`.
+    ///
+    /// Carries the mask's signature, so a removal of another region is another image, and the [`REVISION`] of how a
+    /// region is filled, and nothing else: the grow, the context and the feather are constants of the family, and a
+    /// change to one of them changes every removal.
     pub fn cache_tag(&self) -> String {
         // Written deliberately rather than derived from the serialized form, so that renaming a field cannot silently
         // invalidate every cached image.
         format!(
-            "{}-{}-{}-m{:016x}",
+            "{}-{}-{}-r{REVISION}-m{:016x}",
             Family::Remove.prefix(),
             self.variant.codename(),
             self.variant.precision(),
@@ -206,6 +221,11 @@ impl std::fmt::Display for Remove {
         write!(f, "{} ({})", self.variant.label(), self.variant.precision().label())
     }
 }
+
+/// How a region is filled, as the run cache knows it: raised whenever the same mask would give another fill, so a store
+/// written by an earlier build is not served for it. 1 was the small square alone (the tag carried no revision then); 2
+/// is the large square for large crops, with the photograph's grain matched in the fill.
+const REVISION: u32 = 2;
 
 /// The longest side a removal's mask is rasterised at to be asked about single points: a face's centre is a coarse
 /// question, and a 24-megapixel plane per removal to answer it would be the run's largest allocation but one.
@@ -262,9 +282,12 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn lima_names_the_artifact_the_fork_exports() {
-        assert_eq!(lima(dot(0.5, 0.5)).artifact().as_str(), "rm_lima_fp32");
-        assert_eq!(lima(dot(0.5, 0.5)).required_artifacts(), vec![lima(dot(0.5, 0.5)).artifact()]);
+    fn lima_names_the_two_artifacts_the_fork_exports() {
+        let removal = lima(dot(0.5, 0.5));
+
+        assert_eq!(removal.artifact().as_str(), "rm_lima_fp32");
+        assert_eq!(removal.large_artifact().as_str(), "rm_lima_1024_fp32");
+        assert_eq!(removal.required_artifacts(), vec![removal.artifact(), removal.large_artifact()]);
         assert_eq!(lima(dot(0.5, 0.5)).display_name(), "Lima (FP32)");
     }
 
@@ -273,7 +296,7 @@ pub(crate) mod tests {
         let mask = dot(0.25, 0.75);
         let tag = lima(Arc::clone(&mask)).cache_tag();
 
-        assert_eq!(tag, format!("rm-lima-fp32-m{:016x}", mask.signature()));
+        assert_eq!(tag, format!("rm-lima-fp32-r2-m{:016x}", mask.signature()));
         assert!(!tag.contains('_'), "{tag}");
         assert_ne!(tag, lima(dot(0.25, 0.7)).cache_tag(), "two regions shared a tag");
     }

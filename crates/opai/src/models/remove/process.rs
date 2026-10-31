@@ -8,13 +8,19 @@
 // (`imaging::present`); the hole is reduced by any-coverage rather than nearest, so a thin string is not lost; and the
 // feather is a smoothstep across the band between the grown marks and the hole rather than a Gaussian of the grown marks
 // (see `region::fill_weight`).
+//
+// Two departures since (2026-10-31): a crop larger than the small square is filled on the large one, the same weights
+// exported at 1024, so a large region is reduced half as far; and the fill is given the photograph's grain where the
+// reduction and the read-back smoothed it away (`grain`). Both judged on the fork's bench (`remove/README.md` in its
+// notes): ground truth inside synthetic holes in the background of AIM-500 photographs, and the three prototype cases.
 
 use std::sync::Arc;
 
 use image::{DynamicImage, ImageBuffer, Rgb};
 
 use super::gain_map::{self, Filled};
-use super::lima::{PLANES_IN, PLANES_OUT};
+use super::grain::{self, Composite};
+use super::lima::{LARGE_SIDE, PLANES_IN, PLANES_OUT, SIDE};
 use super::region::{Bicubic, Marks, Rect, crops, distances, fill_weight, hole_plane, in_hole, regions};
 
 use crate::error::InferenceError;
@@ -22,7 +28,7 @@ use crate::image::GainMap;
 use crate::mask::Mask;
 use crate::models::ArtifactId;
 use crate::pipeline::session::GraphShape;
-use crate::pipeline::{Backend, ImagePipeline, OnOneGraph, Shared, SingleGraph, checkpoint, reporter};
+use crate::pipeline::{Backend, ImagePipeline, Model, Shared, checkpoint, reporter};
 use crate::providers::profile::EpProfile;
 use crate::sessions::SessionHandle;
 use imaging::ChannelDepth;
@@ -41,37 +47,79 @@ const STEPS_PER_REGION: usize = 3;
 /// over the regions' crops at the gain map's resolution, a small fraction of a model run.
 const COLOUR_SHARE: f64 = 0.95;
 
-/// The pipeline running one removal, as the family's contract seam hands it back.
+/// What a removal does past the model's own fill at the small square.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Finish {
+    /// Whether a crop larger than the small square is filled on the large one.
+    pub(crate) large: bool,
+    /// Whether the fill is given the photograph's grain.
+    pub(crate) grain: bool,
+}
+
+/// What every removal does: both.
+pub(crate) const FINISH: Finish = Finish { large: true, grain: true };
+
+/// What the bench (`live::bench`) runs in place of [`FINISH`], to compare one with another in a build: never set
+/// outside it.
+#[cfg(test)]
+pub(crate) static BENCH_FINISH: std::sync::Mutex<Option<Finish>> = std::sync::Mutex::new(None);
+
+/// The pipeline running one removal, as the family's contract seam hands it back: `artifacts` are the small graph's
+/// and the large one's.
 pub(crate) fn pipeline<B: Backend>(
     name: String,
-    artifact: ArtifactId,
+    artifacts: [ArtifactId; 2],
     profile: EpProfile,
     mask: Arc<Mask>,
 ) -> Shared<B> {
-    Arc::new(Removal::new(name, artifact, profile, mask, super::lima::SIDE))
+    #[cfg(test)]
+    let finish = BENCH_FINISH.lock().expect("the bench's finish is never held across a panic").unwrap_or(FINISH);
+    #[cfg(not(test))]
+    let finish = FINISH;
+
+    Arc::new(Removal::new(name, artifacts, profile, mask, [SIDE, LARGE_SIDE], finish))
 }
 
-/// One removal run: the graph it opens, the square it runs at, and what it takes out.
+/// One removal run: the two graphs it opens, the squares they run at, and what it takes out.
 struct Removal {
-    /// The graph this operation runs, and the name it reports a failure in.
-    graph: SingleGraph,
-    /// The square the graph was exported at.
-    side: u32,
+    /// The small graph's artifact, then the large one's: one model at two squares.
+    artifacts: [ArtifactId; 2],
+    /// The measured tuning both sessions are opened under: the same weights, so the same answer.
+    profile: EpProfile,
+    /// The operation's display name, for naming it in a failure.
+    name: String,
+    /// The square each graph was exported at, the small one's first.
+    sides: [u32; 2],
     /// What to take out.
     mask: Arc<Mask>,
+    /// What is done past the model's fill.
+    finish: Finish,
 }
 
 impl Removal {
-    fn new(name: String, artifact: ArtifactId, profile: EpProfile, mask: Arc<Mask>, side: u32) -> Self {
-        Self { graph: SingleGraph::new(name, artifact, profile), side, mask }
+    fn new(
+        name: String,
+        artifacts: [ArtifactId; 2],
+        profile: EpProfile,
+        mask: Arc<Mask>,
+        sides: [u32; 2],
+        finish: Finish,
+    ) -> Self {
+        Self { artifacts, profile, name, sides, mask, finish }
     }
 
-    /// The tensor the graph is shown for `crop` of `input`, whose distances from the marks are `squared`, and the size
-    /// the crop was resampled to inside the square.
-    fn presented(&self, input: &DynamicImage, crop: Rect, squared: &[u16]) -> (Vec<f32>, (u32, u32)) {
-        let side = self.side as usize;
+    /// Which graph fills `crop`, by its index in [`artifacts`](Self::artifacts): the small one where the crop fits its
+    /// square, so a small region is never enlarged further than it was, and the large one otherwise.
+    fn graph_for(&self, crop: Rect) -> usize {
+        usize::from(self.finish.large && crop.width.max(crop.height) > self.sides[0])
+    }
+
+    /// The tensor the graph of `side` is shown for `crop` of `input`, whose distances from the marks are `squared`, and
+    /// the size the crop was resampled to inside the square.
+    fn presented(&self, input: &DynamicImage, crop: Rect, squared: &[u16], side: u32) -> (Vec<f32>, (u32, u32)) {
+        let planned = plan(crop.width, crop.height, side);
+        let side = side as usize;
         let area = side * side;
-        let planned = plan(crop.width, crop.height, self.side);
         let scaled = (planned.scaled_width, planned.scaled_height);
 
         // The colour planes through the presentation every square-run family shares: Lanczos3 onto the planned size,
@@ -161,28 +209,38 @@ impl Removal {
             return Ok(output);
         }
 
-        let session = &sessions[0];
-        let side = self.side as usize;
         let steps = (filling.len() * STEPS_PER_REGION) as f64;
         let at = |region: usize, step: usize| (region * STEPS_PER_REGION + step) as f64 / steps;
 
         for (index, Filled { crop, squared }) in filling.iter().enumerate() {
             let (crop, squared) = (*crop, squared.as_slice());
-            let (tensor, scaled) = self.presented(input, crop, squared);
+            let graph = self.graph_for(crop);
+            let side = self.sides[graph];
+            let (tensor, scaled) = self.presented(input, crop, squared, side);
             checkpoint(&report, cancelled, at(index, 1))?;
 
-            let mut filled = vec![0.0_f32; PLANES_OUT * side * side];
+            let square = side as usize;
+            let mut filled = vec![0.0_f32; PLANES_OUT * square * square];
             B::run_graph(
-                session,
+                &sessions[graph],
                 &tensor,
-                GraphShape::new(PLANES_IN, side, side),
+                GraphShape::new(PLANES_IN, square, square),
                 &mut filled,
-                GraphShape::new(PLANES_OUT, side, side),
+                GraphShape::new(PLANES_OUT, square, square),
             )
-            .map_err(InferenceError::run(&self.graph.name, index))?;
+            .map_err(InferenceError::run(&self.name, index))?;
             checkpoint(&report, cancelled, at(index, 2))?;
 
-            paste(&mut output, crop, squared, &Bicubic::new(&filled, self.side, scaled, (crop.width, crop.height)));
+            let read = Bicubic::new(&filled, side, scaled, (crop.width, crop.height));
+            let mut pixels = composite(&output, crop, squared, &read);
+            let mut composite = Composite { pixels: &mut pixels, width: crop.width as usize, height: crop.height as usize };
+            if self.finish.grain
+                && let Some((photograph, fill)) = grain::grains(&composite, squared)
+            {
+                grain::matched(&mut composite, squared, (crop.x, crop.y), photograph, fill);
+            }
+
+            paste(&mut output, crop, squared, &pixels);
             checkpoint(&report, cancelled, at(index, 3))?;
         }
 
@@ -190,14 +248,19 @@ impl Removal {
     }
 }
 
-impl OnOneGraph for Removal {
-    fn graph(&self) -> &SingleGraph {
-        &self.graph
+impl<B: Backend> Model<B> for Removal {
+    fn required(&self) -> &[ArtifactId] {
+        &self.artifacts
+    }
+
+    /// Both graphs, under the one profile: which a region runs on is not known until its crop is.
+    fn sessions(&self) -> Vec<(&ArtifactId, &EpProfile)> {
+        self.artifacts.iter().map(|artifact| (artifact, &self.profile)).collect()
     }
 }
 
 impl<B: Backend> ImagePipeline<B> for Removal {
-    /// One graph, run once per region.
+    /// One graph run per region, on one square or the other.
     fn stages(&self) -> usize {
         1
     }
@@ -240,31 +303,59 @@ impl<B: Backend> ImagePipeline<B> for Removal {
         let removed = self.removed::<B>(input, &filling, sessions, depth, Some(&colour), cancelled)?;
 
         let rewritten = gain_map::rewritten(gain_map, (input.width(), input.height()), &filling)
-            .map_err(|reason| InferenceError::GainMap { operation: self.graph.name.clone(), reason });
+            .map_err(|reason| InferenceError::GainMap { operation: self.name.clone(), reason });
         checkpoint(&report, cancelled, 1.0)?;
 
         Ok((removed, Some(rewritten)))
     }
 }
 
-/// Pastes the fill `read` gives for `crop` into `output`, through the feather its `squared` distances give: the fill
-/// where the marks were grown, mixed across the band to the hole's edge, and nothing beyond it.
-fn paste<T: Channel>(output: &mut ImageBuffer<Rgb<T>, Vec<T>>, crop: Rect, squared: &[u16], read: &Bicubic<'_>)
+/// `crop` of `output`, the photograph, in the unit range, with the fill `read` gives in place over the hole its
+/// `squared` distances describe: what the grain is measured in and matched over before the paste.
+fn composite<T: Channel>(output: &ImageBuffer<Rgb<T>, Vec<T>>, crop: Rect, squared: &[u16], read: &Bicubic<'_>) -> Vec<[f32; 3]>
 where
     Rgb<T>: image::Pixel<Subpixel = T>,
 {
     // Reading the fill only where it is used: a crop four thousand pixels across is read back at the pixels of its
     // hole rather than resized whole. On one thread, since a channel type generic over both depths is not known to
     // cross one; a hole of a fifth of a 24-megapixel photograph is under a fifth of a second of this.
+    let (width, crop_width) = (output.width() as usize, crop.width as usize);
+    let buffer: &[T] = output.as_raw();
+    let mut pixels = Vec::with_capacity(crop_width * crop.height as usize);
+
+    for local in 0..crop.height as usize {
+        let y = crop.y as usize + local;
+        let distances = &squared[local * crop_width..][..crop_width];
+        let row = &buffer[(y * width + crop.x as usize) * 3..][..crop_width * 3];
+
+        for (offset, (squared, pixel)) in distances.iter().zip(row.chunks_exact(3)).enumerate() {
+            pixels.push(if in_hole(*squared) {
+                read.rgb(offset as u32, local as u32).map(|fill| RANGE.decode(fill))
+            } else {
+                [pixel[0].to_unit(), pixel[1].to_unit(), pixel[2].to_unit()]
+            });
+        }
+    }
+
+    pixels
+}
+
+/// Pastes `filled`, the composite of `crop`, into `output`, through the feather its `squared` distances give: the fill
+/// where the marks were grown, mixed across the band to the hole's edge, and nothing beyond it.
+fn paste<T: Channel>(output: &mut ImageBuffer<Rgb<T>, Vec<T>>, crop: Rect, squared: &[u16], filled: &[[f32; 3]])
+where
+    Rgb<T>: image::Pixel<Subpixel = T>,
+{
     let width = output.width() as usize;
     let buffer: &mut [T] = output.as_mut();
 
     for local in 0..crop.height as usize {
         let y = crop.y as usize + local;
         let distances = &squared[local * crop.width as usize..][..crop.width as usize];
+        let fills = &filled[local * crop.width as usize..][..crop.width as usize];
         let row = &mut buffer[y * width * 3..(y + 1) * width * 3];
 
-        for (offset, squared) in distances.iter().enumerate() {
+        for (offset, (squared, fill)) in distances.iter().zip(fills).enumerate() {
             if !in_hole(*squared) {
                 continue;
             }
@@ -274,12 +365,11 @@ where
                 continue;
             }
 
-            let fill = read.rgb(offset as u32, local as u32);
             let column = crop.x as usize + offset;
             let pixel = &mut row[column * 3..column * 3 + 3];
 
             for (channel, fill) in pixel.iter_mut().zip(fill) {
-                let fill = RANGE.decode(fill);
+                let fill = fill.clamp(0.0, 1.0);
 
                 // Exactly the fill where the weight is whole, rather than the photograph plus a difference that rounds.
                 *channel = if weight >= 1.0 {
@@ -310,8 +400,12 @@ mod tests {
     use crate::pipeline::test_support::stub_backend_runs;
     use crate::providers::ExecutionProvider;
 
-    /// A square small enough for a test to run a whole removal over, in place of the 512 Lima ships at.
-    const SMALL: u32 = 32;
+    /// A square small enough for a test to run a whole removal over, in place of the 512 Lima ships at: the crop of a
+    /// mark a few pixels across fits it (its context alone is 64 px a side), and the crop of a larger one does not.
+    const SMALL: u32 = 192;
+
+    /// The large square at the same scale, in place of the 1024.
+    const LARGE: u32 = 384;
 
     /// The colour the fake graph fills with, in its own `[0, 1]` range.
     const FILL: [f32; 3] = [0.0, 1.0, 0.0];
@@ -370,10 +464,12 @@ mod tests {
         stub_backend_runs!("a removal takes one output and no weight"; run_named_outputs, run_weighted);
     }
 
-    /// A handle on a fake session, and the log it records into.
-    fn session() -> (SessionHandle<FakeSession>, Arc<Mutex<Log>>) {
+    /// Handles on the two fake sessions, the small graph's and the large one's, and the log both record into.
+    fn session() -> ([SessionHandle<FakeSession>; 2], Arc<Mutex<Log>>) {
         let log: Arc<Mutex<Log>> = Arc::default();
-        (SessionHandle::held(FakeSession { log: Arc::clone(&log) }, ExecutionProvider::Cpu), log)
+        let handle = || SessionHandle::held(FakeSession { log: Arc::clone(&log) }, ExecutionProvider::Cpu);
+
+        ([handle(), handle()], log)
     }
 
     /// A mask whose base is `width` x `height`, white over `marked` and black elsewhere.
@@ -393,7 +489,9 @@ mod tests {
     /// The removal pipeline at [`SMALL`], over `mask`, named as Lima's own seam would name it.
     fn removing(mask: Arc<Mask>) -> Shared<Fake> {
         let removal = Remove::new(RemoveVariant::Lima(FloatPrecision::Fp32), Arc::clone(&mask));
-        Arc::new(Removal::new(removal.display_name(), removal.artifact(), removal.profile(), mask, SMALL))
+        let artifacts = [removal.artifact(), removal.large_artifact()];
+
+        Arc::new(Removal::new(removal.display_name(), artifacts, removal.profile(), mask, [SMALL, LARGE], FINISH))
     }
 
     /// A photograph of a gradient, so no two neighbouring pixels are alike.
@@ -420,7 +518,7 @@ mod tests {
         let source = photograph(90, 60);
 
         let produced = removing(mask(90, 60, &[]))
-            .run(&source, std::slice::from_ref(&handle), ChannelDepth::Eight, None, &|| false)
+            .run(&source, &handle, ChannelDepth::Eight, None, &|| false)
             .unwrap();
 
         assert_eq!(produced.into_rgb8(), source.into_rgb8());
@@ -434,7 +532,7 @@ mod tests {
         let marked = rect(90, 60, 12, 20);
 
         let produced = removing(mask(200, 150, &[marked]))
-            .run(&source, std::slice::from_ref(&handle), ChannelDepth::Eight, None, &|| false)
+            .run(&source, &handle, ChannelDepth::Eight, None, &|| false)
             .unwrap()
             .into_rgb8();
         let source = source.into_rgb8();
@@ -462,12 +560,13 @@ mod tests {
         let marked = rect(90, 60, 12, 20);
 
         removing(mask(200, 150, &[marked]))
-            .run(&photograph(200, 150), std::slice::from_ref(&handle), ChannelDepth::Eight, None, &|| false)
+            .run(&photograph(200, 150), &handle, ChannelDepth::Eight, None, &|| false)
             .unwrap();
 
+        // The crop is the whole 200 x 150 frame, larger than the small square: the large graph fills it.
         let log = log.lock().unwrap();
         let (tensor, input, output) = &log.tensors[0];
-        let side = SMALL as usize;
+        let side = LARGE as usize;
         assert_eq!(*input, GraphShape::new(4, side, side));
         assert_eq!(*output, GraphShape::new(3, side, side));
 
@@ -480,12 +579,55 @@ mod tests {
     }
 
     #[test]
+    fn a_crop_that_fits_the_small_square_is_filled_on_it_and_a_larger_one_on_the_large_square() {
+        let (handle, log) = session();
+        // A speck, whose crop is its context, about 150 px across; and a long stroke, whose crop is about 400.
+        let marked = [rect(100, 100, 4, 4), rect(500, 300, 200, 20)];
+
+        removing(mask(1000, 700, &marked)).run(&photograph(1000, 700), &handle, ChannelDepth::Eight, None, &|| false).unwrap();
+
+        let sides: Vec<usize> = log.lock().unwrap().tensors.iter().map(|(_, input, _)| input.width).collect();
+        assert_eq!(sides, vec![SMALL as usize, LARGE as usize], "the squares chosen for a small and a large crop");
+    }
+
+    #[test]
+    fn grain_is_matched_in_a_fill_smoother_than_the_photograph_and_nowhere_else() {
+        // A grainy grey photograph, a hole in it, and a fill as flat as the fake's.
+        let (width, height) = (300, 240);
+        let grain = |x: u32, y: u32| {
+            let hashed = (x.wrapping_mul(2_654_435_761) ^ y.wrapping_mul(2_246_822_519)).rotate_left(13);
+            (hashed % 21) as u8
+        };
+        let source = DynamicImage::ImageRgb8(ImageBuffer::from_fn(width, height, |x, y| Rgb([118 + grain(x, y); 3])));
+        let marked = rect(130, 100, 40, 40);
+        let (handle, _) = session();
+
+        let produced = removing(mask(width, height, &[marked]))
+            .run(&source, &handle, ChannelDepth::Eight, None, &|| false)
+            .unwrap()
+            .into_rgb8();
+
+        // Inside the marks the fill is green, with grain: its green channel is not all one level, though it is close.
+        let greens: Vec<u8> = (marked.y..marked.bottom())
+            .flat_map(|y| (marked.x..marked.right()).map(move |x| (x, y)))
+            .map(|(x, y)| produced.get_pixel(x, y).0[1])
+            .collect();
+        let (low, high) = (greens.iter().min().unwrap(), greens.iter().max().unwrap());
+        assert!(*low < 250 && *high == 255, "the fill was given no grain: {low} to {high}");
+
+        // Past the hole the photograph is as it was.
+        let source = source.into_rgb8();
+        assert_eq!(produced.get_pixel(5, 5), source.get_pixel(5, 5));
+        assert_eq!(produced.get_pixel(130 + 20, 100 - 17), source.get_pixel(130 + 20, 100 - 17));
+    }
+
+    #[test]
     fn two_regions_far_apart_are_two_inferences_and_each_is_filled() {
         let (handle, log) = session();
         let marked = [rect(40, 40, 8, 8), rect(900, 600, 8, 8)];
 
         let produced = removing(mask(1000, 700, &marked))
-            .run(&photograph(1000, 700), std::slice::from_ref(&handle), ChannelDepth::Eight, None, &|| false)
+            .run(&photograph(1000, 700), &handle, ChannelDepth::Eight, None, &|| false)
             .unwrap()
             .into_rgb8();
 
@@ -502,7 +644,7 @@ mod tests {
         }));
 
         let produced = removing(mask(120, 80, &[rect(55, 35, 6, 6)]))
-            .run(&source, std::slice::from_ref(&handle), ChannelDepth::Sixteen, None, &|| false)
+            .run(&source, &handle, ChannelDepth::Sixteen, None, &|| false)
             .unwrap();
 
         let (produced, source) = (produced.into_rgb16(), source.into_rgb16());
@@ -516,7 +658,7 @@ mod tests {
         let source = DynamicImage::ImageRgba8(ImageBuffer::from_pixel(60, 40, Rgba([200, 100, 50, 255])));
 
         let produced = removing(mask(60, 40, &[rect(28, 18, 4, 4)]))
-            .run(&source, std::slice::from_ref(&handle), ChannelDepth::Eight, None, &|| false)
+            .run(&source, &handle, ChannelDepth::Eight, None, &|| false)
             .unwrap()
             .into_rgb8();
 
@@ -533,7 +675,7 @@ mod tests {
         removing(mask(1000, 700, &marked))
             .run(
                 &photograph(1000, 700),
-                std::slice::from_ref(&handle),
+                &handle,
                 ChannelDepth::Eight,
                 Some(&|fraction| reported.lock().unwrap().push(fraction)),
                 &|| false,
@@ -551,7 +693,7 @@ mod tests {
 
             let outcome = removing(mask(1000, 700, &marked)).run(
                 &photograph(1000, 700),
-                std::slice::from_ref(&handle),
+                &handle,
                 ChannelDepth::Eight,
                 None,
                 &|| checked.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= boundary,
@@ -576,14 +718,14 @@ mod tests {
             .run_with_gain_map(
                 &source,
                 &gain_map,
-                std::slice::from_ref(&handle),
+                &handle,
                 ChannelDepth::Eight,
                 Some(&|fraction| reported.lock().unwrap().push(fraction)),
                 &|| false,
             )
             .unwrap();
         let without = removing(mask(200, 150, &[marked]))
-            .run(&source, std::slice::from_ref(&handle), ChannelDepth::Eight, None, &|| false)
+            .run(&source, &handle, ChannelDepth::Eight, None, &|| false)
             .unwrap();
 
         assert_eq!(with.as_bytes(), without.as_bytes());
@@ -605,7 +747,7 @@ mod tests {
             .run_with_gain_map(
                 &photograph(60, 40),
                 &larger,
-                std::slice::from_ref(&handle),
+                &handle,
                 ChannelDepth::Eight,
                 None,
                 &|| false,
@@ -625,7 +767,7 @@ mod tests {
         let (handle, _) = session();
         let outcome = removing(mask(4, 4, &[rect(1, 1, 1, 1)])).run(
             &DynamicImage::ImageRgb8(ImageBuffer::new(0, 5)),
-            std::slice::from_ref(&handle),
+            &handle,
             ChannelDepth::Eight,
             None,
             &|| false,

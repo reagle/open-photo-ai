@@ -9,14 +9,26 @@
 // 255. Checked against the source graph on random input: 4e-5 apart. Packed rather than given a two-input session seam
 // of its own, so it runs through `run_graph` as Porto's RGB + trimap does.
 //
+// The same export at a 1024 square, `rm_lima_1024_fp32` (2026-10-31): the source computes its Fourier units' DFT
+// matrices from the tensors' shapes, so only the declared dims change, and Big-LaMa's fast Fourier convolutions, which
+// see the whole square at every scale, generalise to resolutions well above the 256 px it was trained at. A region whose
+// crop is larger than the small square is filled on the large one, at a quarter of the reduction: a crop 2000 px across
+// is filled at half its size rather than a quarter, and read back sharper by as much.
+//
 // The weights are labelled Apache-2.0 and were trained on Places365, whose terms are non-commercial research: the
 // reason the family is the fork's alone.
 
 use crate::models::precision::Precision;
 use crate::providers::profile::EpProfile;
 
-/// The side of the square the graph was exported at, and the only one it accepts.
+/// The side of the square the small graph was exported at, and the only one it accepts.
 pub(crate) const SIDE: u32 = 512;
+
+/// The side of the square the large graph was exported at: the same weights, for a crop larger than [`SIDE`].
+pub(crate) const LARGE_SIDE: u32 = 1024;
+
+/// What tells the large graph's artifact from the small one's: `rm_lima_1024_fp32`.
+pub(crate) const LARGE_SUFFIX: &str = "_1024";
 
 /// How many planes the graph reads: the three colour planes in `[0, 1]`, then the hole, 1 where it is to be filled.
 pub(crate) const PLANES_IN: usize = 4;
