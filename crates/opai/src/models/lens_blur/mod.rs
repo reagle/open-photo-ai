@@ -12,9 +12,14 @@
 //! fur and every leaf tip that is part sharp subject and part blurred background — and hands the blur the [`Matte`].
 //! The render then fills the background in behind the subject, blurs it, and composites the subject over it as one
 //! sharp layer, so the street seen between the strands of a fur hood is blurred and the strands are not.
+//!
+//! **Where that is still wrong, a brush puts it right** ([`Refine`], handed in with [`LensBlur::with_refine`]): focus
+//! strokes are matted and kept sharp, blur strokes are taken out of the subject and blurred, as Lightroom's Refine
+//! brush does.
 
 pub(crate) mod gain_map;
 pub(crate) mod lens;
+pub(crate) mod refine;
 pub(crate) mod render;
 pub(crate) mod trimap;
 pub(crate) mod variant;
@@ -39,6 +44,7 @@ use crate::providers::profile::EpProfile;
 
 use lens::Blur;
 pub use lens::{Lens, LensOrigin, OwnLens};
+pub use refine::{Refine, RefineStroke};
 use render::Refined;
 pub(crate) use variant::ALL;
 pub use variant::LensBlurVariant;
@@ -109,6 +115,11 @@ pub struct LensBlur {
     /// A weight in `0..=1` at any resolution that keeps pixels sharp: each pixel's radius is scaled by one minus it.
     #[serde(skip)]
     keep_sharp: Option<PlaneHandle>,
+    /// The refine brush's strokes: what to keep sharp and what to blur where the depth and the matte got it wrong.
+    /// Handed in by the front end beside the operation, as a removal's region is, and not serialized: strokes are
+    /// editing state, not a parameter of the blur. `None` for one that refines nothing.
+    #[serde(skip)]
+    refine: Option<Arc<Refine>>,
     /// The subject in focus, matted on the chain's input, injected by the chain after the depth.
     #[serde(skip)]
     matte: Option<MatteHandle>,
@@ -131,6 +142,7 @@ impl LensBlur {
             depth: None,
             lens: None,
             keep_sharp: None,
+            refine: None,
             matte: None,
         }
     }
@@ -166,6 +178,18 @@ impl LensBlur {
     #[must_use]
     pub(crate) fn with_keep_sharp(self, weight: Arc<Plane>, signature: u64) -> Self {
         Self { keep_sharp: Some(PlaneHandle::signed(weight, signature)), ..self }
+    }
+
+    /// This blur refined by `refine`'s strokes: focus kept sharp and blur blurred, over what the depth and the matte
+    /// say. One that refines nothing is no refinement, so the blur is the one it was.
+    #[must_use]
+    pub fn with_refine(self, refine: Arc<Refine>) -> Self {
+        Self { refine: refine::shared(refine), ..self }
+    }
+
+    /// The refinement this blur was handed, if any.
+    pub(crate) fn refine(&self) -> Option<&Arc<Refine>> {
+        self.refine.as_ref()
     }
 
     /// Which model this runs, and at which precision.
@@ -290,6 +314,7 @@ impl LensBlur {
             },
             depth,
             self.keep_sharp.as_ref().map(|handle| Arc::clone(handle.plane())),
+            self.refine.clone(),
             // Never a matte for a blur told to render from the depth alone, whoever handed it one.
             matte.map(|handle| Arc::clone(&handle.matte)),
             matte.and_then(|handle| handle.refined.clone()),
@@ -305,7 +330,8 @@ impl LensBlur {
     /// The f-number, the focus point, the depth map's signature (`d0` before one is injected) and the lens the blur
     /// used (`l0` before one is), so a photograph whose EXIF differs is never served another's blur. A matte adds its
     /// signature, `-a<signature>`, and rendering from the depth alone by request adds `-e0`; a keep-sharp weight adds
-    /// its own signature, `-k<signature>`. Hyphen-separated, so it cannot be mistaken for an underscore-separated
+    /// its own signature, `-k<signature>`, and a refinement its own, `-r<signature>`: the render reads its strokes as
+    /// well as the matte they changed. Hyphen-separated, so it cannot be mistaken for an underscore-separated
     /// artifact name.
     pub fn cache_tag(&self) -> String {
         let depth = self
@@ -334,6 +360,9 @@ impl LensBlur {
         }
         if let Some(weight) = &self.keep_sharp {
             tag.push_str(&format!("-k{:016x}", weight.signature()));
+        }
+        if let Some(refine) = &self.refine {
+            tag.push_str(&format!("-r{:016x}", refine.signature()));
         }
 
         tag
@@ -494,6 +523,10 @@ pub(crate) mod tests {
             base.clone().with_keep_sharp(Arc::new(Plane::new(4, 4, 1.0)), 7),
             base.clone().with_matte(Arc::new(Matte::new(2, 2, &[0.0, 0.5, 1.0, 1.0])), None),
             base.clone().with_edges(LensBlurEdges::Depth),
+            base.clone().with_refine(Arc::new(Refine::new(vec![RefineStroke::new(
+                false,
+                crate::mask::Stroke::new(false, 0.05, 0.0, vec![0.5, 0.5]),
+            )]))),
         ];
 
         for other in others {
@@ -520,6 +553,28 @@ pub(crate) mod tests {
         assert_ne!(other.cache_tag(), kept.cache_tag());
         assert_ne!(other, kept);
         assert_eq!(base.clone().with_keep_sharp(Arc::new(Plane::new(2, 2, 0.5)), 0x00c0_ffee), kept);
+    }
+
+    #[test]
+    fn a_refinement_is_spelled_by_its_signature_and_one_of_nothing_is_none() {
+        let base = injected(1.4);
+        let stroke = |blur| RefineStroke::new(blur, crate::mask::Stroke::new(false, 0.05, 0.0, vec![0.5, 0.5]));
+        let refine = Arc::new(Refine::new(vec![stroke(false)]));
+
+        let refined = base.clone().with_refine(Arc::clone(&refine));
+        assert_eq!(refined.cache_tag(), format!("{}-r{:016x}", base.cache_tag(), refine.signature()));
+        assert!(!refined.cache_tag().contains('_'), "{}", refined.cache_tag());
+        assert_ne!(base.clone().with_refine(Arc::new(Refine::new(vec![stroke(true)]))), refined);
+
+        // Strokes of nothing are no refinement: the same blur, the same tag.
+        let nothing = base.clone().with_refine(Arc::new(Refine::new(Vec::new())));
+        assert_eq!(nothing, base);
+        assert_eq!(nothing.cache_tag(), base.cache_tag());
+        assert!(nothing.refine().is_none());
+
+        // Not serialized: the strokes are the front end's to send beside the operation.
+        let json = serde_json::to_string(&Operation::LensBlur(refined)).expect("serializes");
+        assert!(!json.contains("refine") && !json.contains("strokes"), "{json}");
     }
 
     #[test]

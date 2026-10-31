@@ -22,6 +22,7 @@ use imaging::tensor::{Sampler, flattened};
 
 use super::gain_map::{box_reduced, largest_reduced, rewritten, rewritten_with};
 use super::lens::{Blur, Lens};
+use super::refine::Refine;
 use super::trimap::{Band, matted_focus, unknown_radius};
 use crate::error::InferenceError;
 use crate::image::{GainMap, GainMapParams};
@@ -94,6 +95,9 @@ pub(crate) struct LensBlurPipeline {
     /// The depth of the chain's input, or `None` for a blur the chain knew adds nothing and so never estimated one.
     depth: Option<Arc<DepthMap>>,
     keep_sharp: Option<Arc<Plane>>,
+    /// The refine brush's strokes, or `None`: focus held in focus as `keep_sharp` is, and blur blurred toward the
+    /// farthest of the scene. What they do to the matte was done before it was handed here.
+    refine: Option<Arc<Refine>>,
     /// The subject in focus, matted on the chain's input, or `None` to render from the depth alone.
     matte: Option<Arc<Matte>>,
     /// The depth refined to the chain's input when its trimap was built, if it was: the render's own, where the input
@@ -102,16 +106,18 @@ pub(crate) struct LensBlurPipeline {
 }
 
 impl LensBlurPipeline {
+    #[allow(clippy::too_many_arguments, reason = "one call site, which holds them all")]
     pub(crate) fn new(
         name: String,
         required: Vec<ArtifactId>,
         settings: Settings,
         depth: Option<Arc<DepthMap>>,
         keep_sharp: Option<Arc<Plane>>,
+        refine: Option<Arc<Refine>>,
         matte: Option<Arc<Matte>>,
         refined: Option<Arc<Refined>>,
     ) -> Self {
-        Self { name, required, settings, depth, keep_sharp, matte, refined }
+        Self { name, required, settings, depth, keep_sharp, refine, matte, refined }
     }
 
     /// The blur at the `input`'s size and the depth refined to it, or `None` where the blur adds nothing anywhere.
@@ -521,13 +527,17 @@ impl LensBlurPipeline {
         // A gain map smaller than the photograph is rewritten from the depth alone, matte or not: the subject is taken
         // out at the photograph's size. Its radii are settled here, while the depth refined to the photograph is held.
         let reduced_map = rewriting.is_some_and(|(map, _)| map.pixels().dimensions() != (width, height));
-        let depth_radius =
+        let mut depth_radius =
             (self.matte.is_some() && reduced_map).then(|| prepared.radius(&prepared.refined.plane, &self.name));
+        // The refine brush at the photograph's size, and how far the farthest of the scene is blurred: what a blur
+        // stroke blurs toward.
+        let refinement = self.refine.as_ref().map(|refine| refine.rasterised(width, height));
+        let background = prepared.blur.radius(0.0);
 
         // With a matte, the scene behind the subject and the subject, spread over geometric layers; without one, the
         // depth's own radii over even ones, exactly as before there was a matte. The photograph in linear light is
         // kept for a gain map's rewrite; without a matte it is the scene, which the render does not change.
-        let (scene, radius, subject, settings, kept) = match &self.matte {
+        let (scene, mut radius, subject, settings, kept) = match &self.matte {
             Some(matte) => {
                 let kept = rewriting.is_some().then(|| linear.clone());
                 let matted = self.matted(linear, &prepared, matte, width, height);
@@ -544,6 +554,17 @@ impl LensBlurPipeline {
             None => (linear, prepared.radius(&prepared.refined.plane, &self.name), None, Defocus::DEFAULT, None),
         };
         drop(prepared);
+
+        // Blur strokes blurred, and focus strokes held in focus beside whatever mask keeps its subject sharp.
+        let kept_sharp = refinement.as_ref().map(|refinement| {
+            refinement.blur_radius(&mut radius, background);
+            if let Some(depth_radius) = &mut depth_radius {
+                refinement.blur_radius(depth_radius, background);
+            }
+            refinement.kept_sharp(self.keep_sharp.as_deref())
+        });
+        drop(refinement);
+        let keep_sharp = kept_sharp.as_ref().or(self.keep_sharp.as_deref());
 
         checkpoint(&report, cancelled, REFINE_SHARE)?;
 
@@ -568,7 +589,7 @@ impl LensBlurPipeline {
             width,
             height,
             &radius,
-            self.keep_sharp.as_deref(),
+            keep_sharp,
             sharp,
             settings,
             &per_layer(REFINE_SHARE, blur_share, 1.0),
@@ -585,7 +606,9 @@ impl LensBlurPipeline {
                 let progress = per_layer(REFINE_SHARE + blur_share, rendering - blur_share, map_renders);
                 let matted = cutout.as_ref().map(|cutout| (cutout, settings));
                 let radius = depth_radius.unwrap_or(radius);
-                Some(Ok(self.rewritten_gain_map(map, &params, linear, &blurred, radius, matted, &progress)?))
+                Some(Ok(
+                    self.rewritten_gain_map(map, &params, linear, &blurred, radius, keep_sharp, matted, &progress)?
+                ))
             }
             None => {
                 drop(linear);
@@ -622,6 +645,7 @@ impl LensBlurPipeline {
         linear: Vec<f32>,
         blurred: &[f32],
         radius: Plane,
+        keep_sharp: Option<&Plane>,
         matted: Option<(&Cutout, Defocus)>,
         cancelled: &dyn Fn() -> bool,
     ) -> Result<GainMap, InferenceError> {
@@ -629,7 +653,6 @@ impl LensBlurPipeline {
         let (width, height) = (radius.width(), radius.height());
         let map = gain_map.pixels();
         let (map_width, map_height) = (map.width(), map.height());
-        let keep_sharp = self.keep_sharp.as_deref();
 
         let pixels = if (map_width, map_height) == (width, height) {
             match matted {
@@ -803,6 +826,7 @@ mod tests {
             keep_sharp,
             None,
             None,
+            None,
         )
     }
 
@@ -872,6 +896,24 @@ mod tests {
 
         let result = run(&pipeline(1.4, Some(everything)), &input);
         assert!(difference(&input, &result, BACKGROUND) < 1.0);
+    }
+
+    #[test]
+    fn a_blur_stroke_blurs_the_subject_and_a_focus_stroke_keeps_the_background_sharp() {
+        use super::super::refine::RefineStroke;
+        use crate::mask::Stroke;
+
+        let input = checkerboard(320, 240);
+        // A hard dot over the square's middle painting blur, and a stroke along the top painting focus.
+        let refine = Refine::new(vec![
+            RefineStroke::new(true, Stroke::new(false, 0.1, 0.0, vec![0.5, 0.5])),
+            RefineStroke::new(false, Stroke::new(false, 0.1, 0.0, vec![0.0, 0.08, 1.0, 0.08])),
+        ]);
+        let refined = LensBlurPipeline { refine: Some(Arc::new(refine)), ..pipeline(1.4, None) };
+        let result = run(&refined, &input);
+
+        assert!(difference(&input, &result, SQUARE) > 30.0, "{}", difference(&input, &result, SQUARE));
+        assert!(difference(&input, &result, BACKGROUND) < 1.0, "{}", difference(&input, &result, BACKGROUND));
     }
 
     #[test]

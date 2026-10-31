@@ -46,6 +46,7 @@ use crate::error::{InferenceError, InitError};
 use crate::image::{LensExif, Picture, read_frame_diagonal, read_lens};
 use crate::inference::execute::ExecuteOptions;
 use crate::models::lens_blur::lens::Blur;
+use crate::models::lens_blur::refine::Refinement;
 use crate::models::lens_blur::render::Refined;
 use crate::models::lens_blur::trimap::{
     Band, cut_at_steps, firmed, joined, matted_focus, seeded, trimap, widened, worth_matting,
@@ -366,15 +367,32 @@ where
             }
             None => (trimap, refined),
         };
+        // The refine brush over all of it: blur strokes sure background, focus strokes over sure background unknown,
+        // even in front of the band. What the matting model sees, and so what its cache is keyed by.
+        let refine = blur.refine().cloned();
+        let trimap = match &refine {
+            Some(refine) => {
+                let refine = Arc::clone(refine);
+                spawn_blocking::<_, InferenceError, _>(move || Refinement::trimap(&refine, &trimap)).await?
+            }
+            None => trimap,
+        };
         bench_dump("widened", (trimap.width(), trimap.height()), trimap.as_slice());
         let trimap = Arc::new(trimap);
         let seeded = match &saliency {
             Some(saliency) => {
                 bench_dump("saliency", saliency.dimensions(), saliency.plane().as_slice());
                 let (plain, saliency, pixels) = (Arc::clone(&trimap), Arc::clone(saliency), source.shared_pixels());
-                let seeded =
-                    spawn_blocking::<_, InferenceError, _>(move || seeded(&plain, &saliency, Some(&pixels.to_rgb8())))
-                        .await?;
+                let refine = refine.clone();
+                // No seed planted where focus is painted: the brush is laid over the seeded trimap as over the plain.
+                let seeded = spawn_blocking::<_, InferenceError, _>(move || {
+                    let seeded = seeded(&plain, &saliency, Some(&pixels.to_rgb8()));
+                    match &refine {
+                        Some(refine) => seeded.map(|seeded| Refinement::trimap(refine, &seeded)),
+                        None => seeded,
+                    }
+                })
+                .await?;
                 if let Some(seeded) = &seeded {
                     bench_dump("seeded", (seeded.width(), seeded.height()), seeded.as_slice());
                 }
@@ -415,6 +433,14 @@ where
                     Some(saliency) => {
                         spawn_blocking::<_, InferenceError, _>(move || firmed(&found, &saliency).unwrap_or(found))
                             .await?
+                    }
+                    None => found,
+                };
+                // And the brush over the matte, last, so neither the join nor the firming undoes it: at least the focus
+                // painted, and less the blur.
+                let found = match refine {
+                    Some(refine) => {
+                        spawn_blocking::<_, InferenceError, _>(move || Refinement::matte(&refine, &found)).await?
                     }
                     None => found,
                 };
@@ -710,14 +736,26 @@ mod tests {
     /// with a matting that answers Bilbao with [`salient`] and Porto with its trimap; and what each matting was asked,
     /// with the trimap's value at the hole's centre.
     fn chain_matted(edges: &[LensBlurEdges]) -> (Vec<Operation>, Vec<(MattingVariant, Option<f32>)>) {
+        chain_refined(edges, None)
+    }
+
+    /// [`chain_matted`] with every blur refined by `refine`.
+    fn chain_refined(
+        edges: &[LensBlurEdges],
+        refine: Option<&Arc<crate::models::LensBlurRefine>>,
+    ) -> (Vec<Operation>, Vec<(MattingVariant, Option<f32>)>) {
         let source = Picture::new(
             "/pictures/bonsai.jpg",
             DynamicImage::ImageRgb8(image::RgbImage::from_pixel(960, 640, image::Rgb([90, 120, 150]))),
             "feedfacefeedface",
         );
-        let blurs = edges
-            .iter()
-            .map(|&edges| Operation::LensBlur(lens_blur(&blur_at(1.4)).clone().with_edges(edges)));
+        let blurs = edges.iter().map(|&edges| {
+            let blur = lens_blur(&blur_at(1.4)).clone().with_edges(edges);
+            Operation::LensBlur(match refine {
+                Some(refine) => blur.with_refine(Arc::clone(refine)),
+                None => blur,
+            })
+        });
         let operations = fill_chain_depth(
             blurs.collect(),
             &Arc::new(two_planes(96, 64, 1.0, 10.0)),
@@ -757,6 +795,32 @@ mod tests {
         let matte = lens_blur(&matted[0]).matte().expect("a matte");
         assert_eq!(matte.alpha_at(480, 320), 0.0, "the hole is not background");
         assert_eq!(matte.alpha_at(400, 300), 1.0, "the subject around it is not the subject");
+    }
+
+    #[test]
+    fn focus_painted_over_a_hole_keeps_it_sharp_and_blur_painted_over_the_subject_takes_it_out() {
+        use crate::mask::Stroke;
+        use crate::models::{LensBlurRefine, RefineStroke};
+
+        // Focus over the hole Bilbao finds, blur over a part of the subject, both hard dots 10 px across.
+        let dot = |blur, x: f32, y: f32| RefineStroke::new(blur, Stroke::new(false, 0.005, 0.0, vec![x, y]));
+        let refine = Arc::new(LensBlurRefine::new(vec![dot(false, 0.5, 0.5), dot(true, 400.5 / 960.0, 300.5 / 640.0)]));
+        let (matted, asked) = chain_refined(&[LensBlurEdges::Matte], Some(&refine));
+
+        // Porto is asked about the hole over the seeded trimap, not told it is background: no seed under focus.
+        let porto = MattingVariant::Porto(FloatPrecision::Fp32);
+        assert_eq!(asked[1..], [(porto, Some(1.0)), (porto, Some(0.5))]);
+
+        let blur = lens_blur(&matted[0]);
+        let matte = blur.matte().expect("a matte");
+        assert_eq!(matte.alpha_at(480, 320), 1.0, "the focus painted over the hole is not the subject");
+        assert_eq!(matte.alpha_at(400, 300), 0.0, "the blur painted over the subject is not background");
+        assert_eq!(matte.alpha_at(360, 260), 1.0, "the subject beside the blur was taken out with it");
+        assert!(blur.cache_tag().ends_with(&format!("-r{:016x}", refine.signature())), "{}", blur.cache_tag());
+
+        // Without a stroke, the matte of the same chain is the plain one, the hole background.
+        let (plain, _) = chain_matted(&[LensBlurEdges::Matte]);
+        assert_eq!(lens_blur(&plain[0]).matte().expect("a matte").alpha_at(480, 320), 0.0);
     }
 
     #[test]

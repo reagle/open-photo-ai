@@ -158,7 +158,10 @@ pub use face::{Confidence, DetectionOutput, Face, Faces, Point, Rect};
 pub use face_recovery::{FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant};
 pub use fidelity::Fidelity;
 pub use fraction::Fraction;
-pub use lens_blur::{FOCUS_X, FOCUS_Y, Lens, LensBlur, LensBlurEdges, LensBlurVariant, LensOrigin, OwnLens};
+pub use lens_blur::{
+    FOCUS_X, FOCUS_Y, Lens, LensBlur, LensBlurEdges, LensBlurVariant, LensOrigin, OwnLens, Refine as LensBlurRefine,
+    RefineStroke,
+};
 pub use light_adjustment::{LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant};
 pub use matting::{Matte, Matting, MattingVariant};
 pub use operation::{Analysis, DataOperation, Operation};
