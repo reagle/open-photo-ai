@@ -182,6 +182,12 @@
             "cropped": "Recortada",
             "output": "Salida"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "Esta foto tiene un mapa de ganancia HDR. Al exportar a JPEG se conserva; por ahora los demás formatos solo se escriben en SDR.",
+            "transfer": "Esta foto es HDR ({{transfer}}). Por ahora todos los formatos solo se escriben en SDR.",
+            "other": "Esta foto es HDR. Por ahora todos los formatos solo se escriben en SDR."
+        },
         "about_dialog": {
             "iconAlt": "Icono de la aplicación",
             "version": "Versión {{version}}"

@@ -1,38 +1,11 @@
-import { useEffect, useState } from "react";
 import { MapPin } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { type PhotoInfo, photoInfo } from "@/ipc/photoInfo";
+import { usePhotoInfo } from "@/hooks/usePhotoInfo";
 import { infoLines } from "@/lib/photoInfo";
-import { report } from "@/lib/report";
 import { useImageCrop } from "@/stores/crop";
 import { useFileEnhancements } from "@/stores/enhancements";
 import { useCurrentFile } from "@/stores/files";
 import { useInfoCardStore } from "@/stores/infoCard";
-
-/**
- * What the file of the photograph with identity `identity` says about how it was taken: `undefined` while the question
- * is out, for a photograph with no identity, and once it has failed - the card is then simply not drawn.
- */
-const usePhotoInfo = (identity: string | undefined): PhotoInfo | undefined => {
-    const [answered, setAnswered] = useState<{ identity: string; info: PhotoInfo }>();
-
-    useEffect(() => {
-        if (identity === undefined) return;
-
-        let live = true;
-        photoInfo(identity).then(
-            (info) => live && setAnswered({ identity, info }),
-            (error: unknown) => report("asking for the photograph's information failed", error),
-        );
-
-        return () => {
-            live = false;
-        };
-    }, [identity]);
-
-    // Only an answer about *this* photograph: the one held while the next is asked about belongs to the last.
-    return identity !== undefined && answered?.identity === identity ? answered.info : undefined;
-};
 
 /**
  * The card of what the current photograph was taken with, at the canvas's bottom left: camera and lens, the exposure,

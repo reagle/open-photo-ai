@@ -182,6 +182,12 @@
             "cropped": "Terpotong",
             "output": "Keluaran"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "Foto ini memiliki gain map HDR. Ekspor ke JPEG mempertahankannya; format lain untuk saat ini hanya ditulis sebagai SDR.",
+            "transfer": "Foto ini HDR ({{transfer}}). Untuk saat ini semua format hanya ditulis sebagai SDR.",
+            "other": "Foto ini HDR. Untuk saat ini semua format hanya ditulis sebagai SDR."
+        },
         "about_dialog": {
             "iconAlt": "Ikon Aplikasi",
             "version": "Versi {{version}}"

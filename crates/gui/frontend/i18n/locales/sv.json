@@ -182,6 +182,12 @@
             "cropped": "Beskuren",
             "output": "Utdata"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "Det här fotot har en HDR-förstärkningskarta. Export som JPEG behåller den; de andra formaten skrivs tills vidare bara som SDR.",
+            "transfer": "Det här fotot är HDR ({{transfer}}). Alla format skrivs tills vidare bara som SDR.",
+            "other": "Det här fotot är HDR. Alla format skrivs tills vidare bara som SDR."
+        },
         "about_dialog": {
             "iconAlt": "Appikon",
             "version": "Version {{version}}"
