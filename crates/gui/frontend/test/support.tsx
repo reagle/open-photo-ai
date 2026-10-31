@@ -206,13 +206,20 @@ const FACES: VariantEntry["parameters"] = [{ name: "faces", kind: "faces" }];
 
 /**
  * What every restore model publishes: a size up to `Restore::MAX_SCALE` and a strength up to
- * `Restore::MAX_STRENGTH`, narrower than their types', starting at 1x and at the model's own output; and a
- * grain from none to all of what the restoration removed, starting off.
+ * `Restore::MAX_STRENGTH`, narrower than their types', starting at 1x and at the model's own output.
  */
 const RESTORE: VariantEntry["parameters"] = [
     { name: "scale", kind: "range", min: 1, max: 4, default: 1 },
     { name: "strength", kind: "range", min: 0, max: 1, default: 1 },
-    { name: "grain", kind: "range", min: 0, max: 1, default: 0 },
+];
+
+/**
+ * What the grain publishes: an amount, all of it to start, and a switch from adding (0) to matching the
+ * source (1), matching to start.
+ */
+const GRAIN: VariantEntry["parameters"] = [
+    { name: "amount", kind: "range", min: 0, max: 1, default: 1 },
+    { name: "match", kind: "range", min: 0, max: 1, default: 1 },
 ];
 
 /** The place `opai`'s `Family::APPLY_ORDER` gives each family in a chain; detection has none. */
@@ -225,6 +232,7 @@ const ORDER: Partial<Record<Family, number>> = {
     sharpen: 5,
     upscale: 6,
     restore: 7,
+    grain: 8,
 };
 
 const family = (name: Family, variants: VariantEntry[]): FamilyEntry => {
@@ -286,6 +294,8 @@ export const CATALOGUE: FamilyEntry[] = [
         // diffusion transformer was ever released, and it is now also published quantised to int8.
         variant("osaka", "Osaka", ["fp16", "int8"], RESTORE),
     ]),
+    // One precision, its arithmetic's: the grain runs no model.
+    family("grain", [variant("sensor", "Sensor", ["fp32"], GRAIN)]),
 ];
 
 /**
