@@ -82,6 +82,15 @@ pub struct Args {
     #[arg(help_heading = "Enhancements", long = "remove", visible_alias = "rm", value_name = "FILE")]
     pub remove: Option<PathBuf>,
 
+    // On `Args` rather than on `Selection`, as `--mask` is: a file does not fit the `Copy` value. Listed with the lens
+    // blur it refines.
+    /// Refine the lens blur with a brush image, as the app's Refine brush does: white is kept sharp (hair the depth
+    /// missed is matted, and kept sharp however faint), black is blurred as background, and mid-grey (128) is left to
+    /// the depth and the matte; grey between them is a share of either. Its luminance is read and any transparency is
+    /// ignored. It is resized to each photograph, whose aspect ratio must match it within 1%. Ignored by --gui.
+    #[arg(help_heading = "Enhancements", long = "lb-refine", value_name = "FILE", requires = "lens_blur")]
+    pub lens_blur_refine: Option<PathBuf>,
+
     /// `hd` runs every model at its higher-fidelity build, `sd` at its lighter, faster one. Without it, each family
     /// runs at the quality of its model in the GUI's saved settings, or `hd`.
     #[arg(help_heading = "Processing", long, short = 'q', value_enum, ignore_case = true)]
@@ -1306,6 +1315,19 @@ mod tests {
 
         assert!(parse("opai photo.jpg --sh --mask subject.png --mask-use enhancements -o out.png").is_ok());
         assert!(parse("opai photo.jpg --lb --mask subject.png --mask-use lens-blur -o out.png").is_ok());
+    }
+
+    #[test]
+    fn a_refine_image_goes_with_a_lens_blur_and_is_ignored_by_the_gui() {
+        let args = parse("opai photo.jpg --lb --lb-refine strokes.png -o out.png").expect("parses");
+        assert_eq!(args.lens_blur_refine, Some(PathBuf::from("strokes.png")));
+
+        let error = parse("opai photo.jpg --sh --lb-refine strokes.png -o out.png").expect_err("no lens blur");
+        assert_eq!(error.exit_code(), 2, "{error}");
+        assert!(error.to_string().contains("--lens-blur"), "{error}");
+
+        let args = parse("opai a.jpg --gui --lb --lb-refine strokes.png").expect("parses");
+        assert_eq!(args.ignored, ["--lb-refine"]);
     }
 
     #[test]
