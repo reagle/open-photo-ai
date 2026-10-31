@@ -87,8 +87,6 @@ type MaskStore = {
      * Escape is pressed or Done is.
      */
     editing: { path: string; target: Target } | undefined;
-    /** Whether Space is held, which turns a drag from a stroke into a pan. Written by the panel's key handling. */
-    panning: boolean;
     /** The stroke under the pointer, if any. Not part of any mask, so drawing it re-runs nothing. */
     live: LiveStroke | undefined;
 
@@ -104,7 +102,6 @@ type MaskStore = {
     setSoftness: (softness: number) => void;
     stepSoftness: (direction: 1 | -1) => void;
     setOverlay: (overlay: boolean) => void;
-    setPanning: (panning: boolean) => void;
 
     /** Paints `target`'s region of `path` - the limiting mask unless told otherwise - leaving any other. */
     startEditing: (path: string, target?: Target) => void;
@@ -228,7 +225,6 @@ export const useMaskStore = create<MaskStore>()((set, get) => ({
     refines: new Map<string, MaskEntry>(),
     tool: { mode: "paint", paints: "focus", size: SIZE_DEFAULT, softness: SOFTNESS_DEFAULT, overlay: true },
     editing: undefined,
-    panning: false,
     live: undefined,
 
     setMode: (mode) => set((state) => ({ tool: { ...state.tool, mode } })),
@@ -245,11 +241,10 @@ export const useMaskStore = create<MaskStore>()((set, get) => ({
     stepSoftness: (direction) =>
         set((state) => ({ tool: { ...state.tool, softness: stepSoftness(state.tool.softness, direction) } })),
     setOverlay: (overlay) => set((state) => ({ tool: { ...state.tool, overlay } })),
-    setPanning: (panning) => set((state) => (state.panning === panning ? state : { panning })),
 
     // A region left for another is left as a stroke would be by a pointer that went away: nothing half-drawn moves.
     startEditing: (path, target = "limit") => set({ editing: { path, target }, live: undefined }),
-    stopEditing: () => set({ editing: undefined, panning: false, live: undefined }),
+    stopEditing: () => set({ editing: undefined, live: undefined }),
 
     beginStroke: (path, x, y, erase) => {
         const { tool, editing } = get();
@@ -393,10 +388,7 @@ export const useMaskStore = create<MaskStore>()((set, get) => ({
 
     forgetTarget: (path, target) =>
         set((state) => {
-            const left =
-                state.editing?.path === path && state.editing.target === target
-                    ? { editing: undefined, panning: false }
-                    : {};
+            const left = state.editing?.path === path && state.editing.target === target ? { editing: undefined } : {};
             const live = state.live?.path === path && state.live.target === target ? { live: undefined } : {};
             const dropped = dropping(state, target, path);
             if (!dropped && Object.keys(left).length === 0 && Object.keys(live).length === 0) return state;
@@ -406,7 +398,7 @@ export const useMaskStore = create<MaskStore>()((set, get) => ({
 
     forget: (path) =>
         set((state) => {
-            const left = state.editing?.path === path ? { editing: undefined, panning: false } : {};
+            const left = state.editing?.path === path ? { editing: undefined } : {};
             const live = state.live?.path === path ? { live: undefined } : {};
             const masks = dropping(state, "limit", path);
             const removals = dropping(state, "removal", path);
@@ -423,7 +415,6 @@ export const useMaskStore = create<MaskStore>()((set, get) => ({
             removals: new Map<string, MaskEntry>(),
             refines: new Map<string, MaskEntry>(),
             editing: undefined,
-            panning: false,
             live: undefined,
         }),
 }));

@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Análise de uso",
                 "description": "Enviar dados de uso anônimos. Imagens ou dados pessoais nunca são coletados."
+            },
+            "wheelZooms": {
+                "title": "A roda faz zoom",
+                "description": "Amplie a pré-visualização com a roda ou com dois dedos em vez de a mover. Fazer pinça, ou deslocar com {{key}} premido, faz sempre zoom."
             }
         },
         "performance": {

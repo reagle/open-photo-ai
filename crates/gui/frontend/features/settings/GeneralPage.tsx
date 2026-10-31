@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Particles } from "@/components/ui/particles";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { isLanguage, LANGUAGE_NAMES, LANGUAGE_TAGS } from "@/i18n/languages";
+import { isMacOs } from "@/ipc/os";
 import { showLogs } from "@/lib/logs";
 import { cn } from "@/lib/utils";
 import { BACKGROUNDS, type Background } from "@/stores/settings";
@@ -78,6 +79,29 @@ const AnalyticsRow = () => {
                     checked={values.analytics}
                     onCheckedChange={(analytics) => update({ analytics })}
                     aria-label={t("settings.app.analytics.title")}
+                />
+            }
+        />
+    );
+};
+
+/**
+ * Whether a plain scroll zooms the preview, as the reference's does, rather than panning it. Off by default; a pinch,
+ * and Command or Control with the wheel, zoom either way. Like every row here it edits the draft alone.
+ */
+const WheelZoomsRow = () => {
+    const { t } = useTranslation();
+    const { values, update } = useSettingsDraft();
+
+    return (
+        <SettingsRow
+            label={t("settings.app.wheelZooms.title")}
+            description={t("settings.app.wheelZooms.description", { key: isMacOs() ? "⌘" : "Ctrl" })}
+            control={
+                <SettingsSwitch
+                    checked={values.wheelZooms}
+                    onCheckedChange={(wheelZooms) => update({ wheelZooms })}
+                    aria-label={t("settings.app.wheelZooms.title")}
                 />
             }
         />
@@ -191,7 +215,10 @@ const LogsRow = () => {
     );
 };
 
-/** Screen 16: the language and analytics, the preview background, and the logs - three cards. */
+/**
+ * Screen 16: the language and analytics, the preview background, the scroll wheel and the logs - four cards. The wheel
+ * is the preview's, so its card sits under the background's.
+ */
 export const GeneralPage = () => (
     <>
         <SettingsCard>
@@ -200,6 +227,10 @@ export const GeneralPage = () => (
         </SettingsCard>
 
         <BackgroundCard />
+
+        <SettingsCard>
+            <WheelZoomsRow />
+        </SettingsCard>
 
         <SettingsCard>
             <LogsRow />

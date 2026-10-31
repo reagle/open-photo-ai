@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Analytics",
                 "description": "Send anonymous usage data. No images or personal data are ever collected."
+            },
+            "wheelZooms": {
+                "title": "Scroll wheel zooms",
+                "description": "Zoom the preview with the scroll wheel or a two-finger scroll instead of moving it. Pinching, or scrolling with {{key}} held, always zooms."
             }
         },
         "performance": {

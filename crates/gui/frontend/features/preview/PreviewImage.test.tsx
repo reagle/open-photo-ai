@@ -7,17 +7,37 @@ import type { Family } from "@/ipc/catalogue";
 import { cropQuery } from "@/ipc/crop";
 import type { RunProgress } from "@/ipc/enhance";
 import type { Face } from "@/ipc/faces";
-import { DRAWER_HEIGHT, ZOOM_MAX, ZOOM_MIN, ZOOM_WHEEL_STEP } from "@/lib/constants";
+import {
+    DRAWER_HEIGHT,
+    WHEEL_LINE_PIXELS,
+    ZOOM_MAX,
+    ZOOM_MIN,
+    ZOOM_PINCH_MAX_DELTA,
+    ZOOM_PINCH_RATE,
+    ZOOM_WHEEL_STEP,
+} from "@/lib/constants";
 import { useDrawerStore } from "@/stores/drawer";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useFacesStore } from "@/stores/faces";
 import { useFileStore } from "@/stores/files";
 import { useFocusPickStore } from "@/stores/focusPick";
 import { useMaskStore } from "@/stores/mask";
+import { usePanKeyStore } from "@/stores/panKey";
 import { usePeekStore } from "@/stores/peek";
 import { usePreviewStore } from "@/stores/preview";
+import { useSettingsStore } from "@/stores/settings";
 import { type ImageTransform, panCurrent, useTransformStore } from "@/stores/transform";
-import { FRAMING, frame, HOLIDAY, openFiles, render, resetCropStore, resetFileStore, SUNSET } from "@/test/support";
+import {
+    FRAMING,
+    frame,
+    HOLIDAY,
+    openFiles,
+    render,
+    resetCropStore,
+    resetFileStore,
+    resetSettingsStore,
+    SUNSET,
+} from "@/test/support";
 import { PreviewImage } from "./PreviewImage";
 
 // `convertFileSrc` reads a global Tauri's init script installs, which jsdom has none of. Mocked to
@@ -511,7 +531,6 @@ describe("panning", () => {
     });
 });
 
-/** The wheel, and the trackpad pinch the webview delivers as one. */
 describe("the pan keys", () => {
     /** The canvas with the window's keys listening, as the shell mounts both. */
     const WithKeys = () => {
@@ -612,15 +631,152 @@ describe("the pan keys", () => {
     });
 });
 
-describe("the wheel", () => {
-    const wheel = (element: Element, { deltaY = -100, clientX = 500, clientY = 300 } = {}) => {
-        const event = new WheelEvent("wheel", { deltaY, clientX, clientY, cancelable: true, bubbles: true });
+/**
+ * A wheel event over `element`, as a trackpad's scroll (`deltaX`, `deltaY`), a pinch (`ctrlKey`) or a mouse's wheel
+ * sends one.
+ */
+const wheel = (element: Element, { deltaY = -100, clientX = 500, clientY = 300, ...rest }: WheelEventInit = {}) => {
+    const event = new WheelEvent("wheel", { deltaY, clientX, clientY, cancelable: true, bubbles: true, ...rest });
+    act(() => {
+        element.dispatchEvent(event);
+    });
+
+    return event;
+};
+
+/** The wheel by default: a pinch, or the modifier with the wheel, zooms; a plain scroll pans. */
+describe("the wheel and the pinch", () => {
+    let frames: FrameRequestCallback[] = [];
+
+    beforeEach(() => {
+        frames = [];
+        vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((callback) => {
+            frames.push(callback);
+
+            return frames.length;
+        });
+        vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        frames = [];
+        resetSettingsStore();
+    });
+
+    const runFrame = () =>
         act(() => {
-            element.dispatchEvent(event);
+            for (const callback of frames.splice(0)) callback(0);
         });
 
-        return event;
-    };
+    const pane = () => document.querySelector("[data-slot='preview-pane']") as HTMLElement;
+
+    it("zooms on a pinch, by an amount that follows the pinch, about the point under the pointer", () => {
+        stubPaneGeometry();
+        draw("full");
+
+        wheel(pane(), { deltaY: -10, ctrlKey: true });
+        expect(drawn().scale).toBeCloseTo(Math.exp(10 * ZOOM_PINCH_RATE), 10);
+
+        // A pinch twice as far is twice the step, in the logarithm: one pinch is one magnification however it is sliced.
+        wheel(pane(), { deltaY: -20, ctrlKey: true });
+        expect(drawn().scale).toBeCloseTo(Math.exp(30 * ZOOM_PINCH_RATE), 10);
+
+        wheel(pane(), { deltaY: 20, ctrlKey: true });
+        wheel(pane(), { deltaY: 10, ctrlKey: true });
+        expect(drawn().scale).toBeCloseTo(ZOOM_MIN, 10);
+    });
+
+    it("zooms with Command and the wheel, capping one large notch", () => {
+        stubPaneGeometry();
+        draw("full");
+
+        wheel(pane(), { deltaY: -100, metaKey: true });
+
+        expect(drawn().scale).toBeCloseTo(Math.exp(ZOOM_PINCH_MAX_DELTA * ZOOM_PINCH_RATE), 10);
+    });
+
+    it("holds a pinch at the end of the range", () => {
+        stubPaneGeometry();
+        magnify({ scale: ZOOM_MAX, x: 0, y: 0 });
+        draw("full");
+
+        wheel(pane(), { deltaY: -25, ctrlKey: true });
+
+        expect(drawn().scale).toBe(ZOOM_MAX);
+    });
+
+    it("pans a magnified photograph on a plain scroll, both ways at once, coalesced into a frame", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+
+        const event = wheel(pane(), { deltaX: 10, deltaY: 20 });
+        wheel(pane(), { deltaX: 5, deltaY: 5 });
+        expect(event.defaultPrevented).toBe(true);
+        // Nothing written yet: the two events wait for the frame, and the second adds to the first.
+        expect(drawn()).toEqual({ x: -100, y: -50, scale: 2 });
+
+        runFrame();
+
+        // The view moves the way the fingers scroll, so the photograph moves against them, and the scale stays.
+        expect(drawn()).toEqual({ x: -115, y: -75, scale: 2 });
+    });
+
+    it("counts a scroll in lines as pixels", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+
+        wheel(pane(), { deltaY: 2, deltaMode: WheelEvent.DOM_DELTA_LINE });
+        runFrame();
+
+        expect(drawn()).toEqual({ x: -100, y: -50 - 2 * WHEEL_LINE_PIXELS, scale: 2 });
+    });
+
+    it("scrolls sideways for a mouse's wheel with Shift", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+
+        wheel(pane(), { deltaY: 30, shiftKey: true });
+        runFrame();
+
+        expect(drawn()).toEqual({ x: -130, y: -50, scale: 2 });
+    });
+
+    it("leaves a photograph drawn whole where it is on a scroll", () => {
+        stubPaneGeometry();
+        draw("full");
+        const before = drawn();
+
+        wheel(pane(), { deltaY: -100 });
+        runFrame();
+
+        expect(drawn()).toEqual(before);
+    });
+
+    it("moves both panes of side by side together", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("side");
+
+        wheel(pane(), { deltaX: 20 });
+        runFrame();
+
+        expect(drawn(0)).toEqual(drawn(1));
+        expect(drawn(0).x).toBe(-120);
+    });
+});
+
+/** Under the Scroll wheel zooms setting: the reference's wheel, every event a fixed step. */
+describe("the wheel, when Scroll wheel zooms is on", () => {
+    beforeEach(() => {
+        act(() => useSettingsStore.getState().apply({ wheelZooms: true }));
+    });
+
+    afterEach(() => {
+        resetSettingsStore();
+    });
 
     const pane = () => document.querySelector("[data-slot='preview-pane']") as HTMLElement;
 
@@ -1387,6 +1543,38 @@ describe("setting the focus of a lens blur by clicking the photograph", () => {
         expect(focusOf()).toEqual({ x: 0.5, y: 0.5 });
     });
 
+    it("leaves the mode on Return too, as Done, but leaves a focused button its Return", () => {
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+        const button = document.body.appendChild(document.createElement("button"));
+
+        fireEvent.keyDown(button, { key: "Enter" });
+        expect(useFocusPickStore.getState().armed).toBe(true);
+
+        fireEvent.keyDown(window, { key: "Enter" });
+        expect(useFocusPickStore.getState().armed).toBe(false);
+        expect(focusOf()).toEqual({ x: 0.5, y: 0.5 });
+
+        button.remove();
+    });
+
+    it("pans rather than picks while Space is held, with a hand for the cursor", () => {
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        fireEvent.keyDown(document.body, { key: " ", code: "Space" });
+        expect(pane().className).toContain("cursor-grab");
+        expect(pane().className).not.toContain("cursor-crosshair");
+
+        click(pane(), 320, 360);
+        fireEvent.keyUp(document.body, { key: " ", code: "Space" });
+
+        expect(focusOf()).toEqual({ x: 0.5, y: 0.5 });
+        expect(useFocusPickStore.getState().armed).toBe(true);
+        expect(pane().className).toContain("cursor-crosshair");
+    });
+
     it("keeps the mode on an Escape that something else has taken", () => {
         draw("full");
         act(() => useFocusPickStore.getState().arm(id));
@@ -1571,7 +1759,7 @@ describe("painting the mask", () => {
         paintMode();
         magnify({ scale: 2, x: -100, y: -50 });
         draw("full");
-        act(() => store().setPanning(true));
+        act(() => usePanKeyStore.getState().setHeld(true));
 
         fireEvent.pointerDown(pane(), at(0.5, 0.5));
         fireEvent.pointerMove(pane(), at(0.6, 0.5));
@@ -1587,7 +1775,7 @@ describe("painting the mask", () => {
         draw("full");
 
         fireEvent.pointerDown(pane(), at(0.3, 0.5));
-        act(() => store().setPanning(true));
+        act(() => usePanKeyStore.getState().setHeld(true));
         fireEvent.pointerMove(pane(), at(0.4, 0.5));
         fireEvent.pointerUp(pane(), at(0.5, 0.5));
 

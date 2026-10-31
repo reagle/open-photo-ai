@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Statistiche",
                 "description": "Invia dati di utilizzo anonimi. Immagini e dati personali non vengono mai raccolti."
+            },
+            "wheelZooms": {
+                "title": "La rotella ingrandisce",
+                "description": "Ingrandisci l'anteprima con la rotella o con lo scorrimento a due dita invece di spostarla. Pizzicare, o scorrere tenendo premuto {{key}}, ingrandisce sempre."
             }
         },
         "performance": {

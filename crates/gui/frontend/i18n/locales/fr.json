@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Statistiques",
                 "description": "Envoyer des données d'utilisation anonymes. Aucune image ni donnée personnelle n'est jamais collectée."
+            },
+            "wheelZooms": {
+                "title": "La molette zoome",
+                "description": "Zoomer dans l'aperçu avec la molette ou en faisant défiler à deux doigts plutôt que de le déplacer. Pincer, ou faire défiler en maintenant {{key}}, zoome toujours."
             }
         },
         "performance": {
