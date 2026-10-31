@@ -641,13 +641,25 @@
         "sections": {
             "view": "Visualização",
             "images": "Imagens",
-            "enhancements": "Melhorias"
+            "enhancements": "Melhorias",
+            "input": "Ponteiro e diálogos"
         },
         "rows": {
             "zoom": "Aumentar zoom / Reduzir zoom",
             "pan": "Mover",
             "images": "Imagem anterior / Próxima imagem",
             "options": "Opções da melhoria 1–8"
+        },
+        "input": {
+            "accept": "Guardar ou aplicar um diálogo; concluir um painel ou pincel",
+            "escape": "Cancelar um diálogo; concluir um painel ou pincel",
+            "zoom": "Zoom com o ponteiro",
+            "pan": "Deslocar com o ponteiro",
+            "pinch": "Pinça",
+            "scroll": "Deslocar",
+            "modScroll": "{{key}} + deslocar",
+            "spaceDrag": "{{key}} + arrastar",
+            "drag": "Arrastar"
         }
     }
 }

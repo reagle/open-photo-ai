@@ -641,13 +641,25 @@
         "sections": {
             "view": "Visning",
             "images": "Bilder",
-            "enhancements": "Förbättringar"
+            "enhancements": "Förbättringar",
+            "input": "Pekare och dialogrutor"
         },
         "rows": {
             "zoom": "Zooma in / Zooma ut",
             "pan": "Panorera",
             "images": "Föregående bild / Nästa bild",
             "options": "Alternativ för förbättring 1–8"
+        },
+        "input": {
+            "accept": "Spara eller tillämpa en dialogruta; slutför en panel eller pensel",
+            "escape": "Avbryt en dialogruta; slutför en panel eller pensel",
+            "zoom": "Zooma med pekaren",
+            "pan": "Panorera med pekaren",
+            "pinch": "Nyp",
+            "scroll": "Rulla",
+            "modScroll": "{{key}} + rulla",
+            "spaceDrag": "{{key}} + dra",
+            "drag": "Dra"
         }
     }
 }

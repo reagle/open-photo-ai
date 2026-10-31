@@ -641,13 +641,25 @@
         "sections": {
             "view": "Weergave",
             "images": "Afbeeldingen",
-            "enhancements": "Verbeteringen"
+            "enhancements": "Verbeteringen",
+            "input": "Aanwijzer en dialogen"
         },
         "rows": {
             "zoom": "Inzoomen / Uitzoomen",
             "pan": "Schuiven",
             "images": "Vorige afbeelding / Volgende afbeelding",
             "options": "Opties van verbetering 1–8"
+        },
+        "input": {
+            "accept": "Dialoog bewaren of toepassen; paneel of penseel afronden",
+            "escape": "Dialoog annuleren; paneel of penseel afronden",
+            "zoom": "Zoomen met de aanwijzer",
+            "pan": "Verschuiven met de aanwijzer",
+            "pinch": "Knijpen",
+            "scroll": "Scrollen",
+            "modScroll": "{{key}} + scrollen",
+            "spaceDrag": "{{key}} + slepen",
+            "drag": "Slepen"
         }
     }
 }
