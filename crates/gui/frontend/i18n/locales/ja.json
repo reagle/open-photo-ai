@@ -182,6 +182,12 @@
             "cropped": "切り抜き後",
             "output": "出力"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "この写真には HDR ゲインマップがあります。JPEG で書き出すと保持されます。その他の形式は現在 SDR でのみ書き出されます。",
+            "transfer": "この写真は HDR（{{transfer}}）です。すべての形式は現在 SDR でのみ書き出されます。",
+            "other": "この写真は HDR です。すべての形式は現在 SDR でのみ書き出されます。"
+        },
         "about_dialog": {
             "iconAlt": "アプリアイコン",
             "version": "バージョン {{version}}"

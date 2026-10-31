@@ -182,6 +182,12 @@
             "cropped": "裁剪后",
             "output": "输出"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "这张照片带有 HDR 增益图。导出为 JPEG 时会保留；其他格式目前仅输出 SDR。",
+            "transfer": "这张照片是 HDR（{{transfer}}）。所有格式目前仅输出 SDR。",
+            "other": "这张照片是 HDR。所有格式目前仅输出 SDR。"
+        },
         "about_dialog": {
             "iconAlt": "应用图标",
             "version": "版本 {{version}}"
