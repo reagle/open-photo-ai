@@ -9,9 +9,9 @@
 //! across all eight.
 
 use super::{
-    Analysis, Bias, ColorBalance, Colorization, Denoise, Detection, FaceRecovery, Faces, Fidelity, LightAdjustment,
-    Operation, ParameterValues, Restore, Scale, Sharpen, Strength, Upscale, catalogue, color_balance, colorization,
-    denoise, detection, face, light_adjustment, restore, sharpen, upscale,
+    Analysis, Bias, ColorBalance, Colorization, Denoise, Detection, FaceRecovery, Faces, Fidelity, Grain,
+    LightAdjustment, Operation, ParameterValues, Restore, Scale, Sharpen, Strength, Upscale, catalogue, color_balance,
+    colorization, denoise, detection, face, light_adjustment, restore, sharpen, upscale,
 };
 
 /// The values a front end would hand back for the controls one published row told it to draw.
@@ -39,6 +39,7 @@ pub(crate) fn published_values(variant: &catalogue::VariantEntry) -> ParameterVa
                     Strength::NAME => values.with_strength(Strength::clamped(midpoint)),
                     Bias::NAME => values.with_bias(Bias::clamped(midpoint)),
                     Fidelity::NAME => values.with_fidelity(Fidelity::clamped(midpoint)),
+                    Grain::NAME => values.with_grain(Grain::clamped(midpoint)),
                     other => panic!("{} publishes a range no value here is supplied for: {other}", variant.codename),
                 }
             }
@@ -150,6 +151,12 @@ pub(crate) fn every_operation() -> Vec<Operation> {
                 operations.push(Operation::Restore(Restore::new(variant, scale(size), strength(value))));
             }
         }
+    }
+
+    // And a grain, which reaches the tag only when there is some.
+    for variant in restore::variant::tests::every_variant() {
+        let grain = Grain::new(0.5).expect("the test supplied a grain in range");
+        operations.push(Operation::Restore(Restore::new(variant, scale(2.0), strength(1.0)).with_grain(grain)));
     }
 
     operations

@@ -27,9 +27,9 @@
 //!
 //! **Every field is in the identity.** Two operations are equal exactly when they name the same model at the same
 //! precision and carry the same per-run parameters: Upscale's [`Scale`], the [`Strength`] denoise and sharpen carry,
-//! the [`Bias`] light adjustment and colour balance carry, the [`Fidelity`] Athens carries and the [`Faces`] face
-//! recovery carries each distinguish two operations. That is the question a consumer holding two of them has — did
-//! the user change anything — and it is not the question of which weights to load. [`Colorization`] and
+//! the [`Bias`] light adjustment and colour balance carry, the [`Fidelity`] Athens carries, the [`Grain`] Restore
+//! carries and the [`Faces`] face recovery carries each distinguish two operations. That is the question a consumer
+//! holding two of them has — did the user change anything — and it is not the question of which weights to load. [`Colorization`] and
 //! [`Detection`] carry no per-run parameter at all, rather than an unused one defaulted to something neutral.
 //!
 //! **Identity does not decide what is loaded.** A resident session is filed under the artifact it was opened from
@@ -118,6 +118,7 @@ pub(crate) mod face;
 pub(crate) mod face_recovery;
 pub(crate) mod fidelity;
 pub(crate) mod filter;
+pub(crate) mod grain;
 pub(crate) mod light_adjustment;
 pub(crate) mod operation;
 pub(crate) mod precision;
@@ -143,6 +144,7 @@ pub use detection::{Detection, DetectionVariant};
 pub use face::{Confidence, DetectionOutput, Face, Faces, Point, Rect};
 pub use face_recovery::{FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant};
 pub use fidelity::Fidelity;
+pub use grain::Grain;
 pub use light_adjustment::{LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant};
 pub use operation::{Analysis, DataOperation, Operation};
 pub use precision::{FloatPrecision, Precision};
