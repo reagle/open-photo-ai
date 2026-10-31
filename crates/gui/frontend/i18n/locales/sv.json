@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Analys",
                 "description": "Skicka anonym användningsdata. Inga bilder eller personuppgifter samlas någonsin in."
+            },
+            "wheelZooms": {
+                "title": "Rullhjulet zoomar",
+                "description": "Zooma förhandsvisningen med rullhjulet eller tvåfingersrullning i stället för att flytta den. Att nypa, eller rulla med {{key}} nedtryckt, zoomar alltid."
             }
         },
         "performance": {

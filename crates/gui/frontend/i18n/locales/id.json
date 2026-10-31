@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Analitik",
                 "description": "Kirim data penggunaan anonim. Gambar atau data pribadi tidak pernah dikumpulkan."
+            },
+            "wheelZooms": {
+                "title": "Roda gulir memperbesar",
+                "description": "Perbesar pratinjau dengan roda gulir atau gulir dua jari alih-alih menggesernya. Mencubit, atau menggulir sambil menahan {{key}}, selalu memperbesar."
             }
         },
         "performance": {

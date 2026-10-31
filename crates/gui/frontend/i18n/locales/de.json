@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Analyse",
                 "description": "Anonyme Nutzungsdaten senden. Bilder oder persönliche Daten werden nie erfasst."
+            },
+            "wheelZooms": {
+                "title": "Mausrad zoomt",
+                "description": "Die Vorschau mit dem Mausrad oder mit zwei Fingern zoomen, statt sie zu verschieben. Mit zwei Fingern aufziehen oder mit gedrückter Taste {{key}} scrollen zoomt immer."
             }
         },
         "performance": {

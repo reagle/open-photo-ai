@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "使用分析",
                 "description": "发送匿名使用数据。绝不会收集图像或个人数据。"
+            },
+            "wheelZooms": {
+                "title": "滚轮缩放",
+                "description": "用滚轮或双指滚动缩放预览，而不是移动它。捏合，或按住 {{key}} 滚动，始终会缩放。"
             }
         },
         "performance": {

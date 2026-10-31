@@ -143,41 +143,20 @@ describe("the keys of editing a mask", () => {
         expect(store().editing).toBeUndefined();
     });
 
-    it("hold Space to pan, and let go with it", () => {
-        render(<Probe />);
-
-        press(" ", { code: "Space" });
-        expect(store().panning).toBe(true);
-
-        fireEvent.keyUp(document.body, { key: " ", code: "Space" });
-        expect(store().panning).toBe(false);
-    });
-
-    it("let go of Space when the window loses the focus", () => {
-        render(<Probe />);
-        press(" ", { code: "Space" });
-
-        fireEvent.blur(window);
-
-        expect(store().panning).toBe(false);
-    });
-
-    it("leave a button its Space, and its release", () => {
+    it("finish with Return, as with Escape, but leave a focused button its Return", () => {
         const { getByRole } = render(
             <>
                 <Probe />
                 <button type="button">Press</button>
             </>,
         );
-        const button = getByRole("button", { name: "Press" });
 
-        const down = fireEvent.keyDown(button, { key: " ", code: "Space" });
-        const up = fireEvent.keyUp(button, { key: " ", code: "Space" });
+        const onButton = fireEvent.keyDown(getByRole("button", { name: "Press" }), { key: "Enter" });
+        expect(onButton).toBe(true);
+        expect(store().editing).toEqual({ path: PATH, target: "limit" });
 
-        expect(store().panning).toBe(false);
-        // Not cancelled, so the button is pressed as it always is.
-        expect(down).toBe(true);
-        expect(up).toBe(true);
+        press("Enter");
+        expect(store().editing).toBeUndefined();
     });
 
     it("do nothing while a text field has the keys", () => {
@@ -185,11 +164,10 @@ describe("the keys of editing a mask", () => {
         const field = getByLabelText("note");
 
         press("e", { code: "KeyE" }, field);
-        press(" ", { code: "Space" }, field);
         press("Escape", {}, field);
+        press("Enter", {}, field);
 
         expect(store().tool.mode).toBe("paint");
-        expect(store().panning).toBe(false);
         expect(store().editing).toEqual({ path: PATH, target: "limit" });
     });
 
@@ -219,12 +197,10 @@ describe("the keys of editing a mask", () => {
         expect(store().tool.mode).toBe("paint");
     });
 
-    it("stop listening, and stop panning, when the panel goes", () => {
+    it("stop listening when the panel goes", () => {
         const { unmount } = render(<Probe />);
-        press(" ", { code: "Space" });
 
         unmount();
-        expect(store().panning).toBe(false);
 
         press("e", { code: "KeyE" });
         expect(store().tool.mode).toBe("paint");

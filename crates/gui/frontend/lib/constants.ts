@@ -30,8 +30,24 @@ export const DRAWER_HEIGHT = 128;
 export const ZOOM_MIN = 1;
 export const ZOOM_MAX = 8;
 
-/** How far one wheel notch moves the zoom - a fixed step per event, matching the reference (design.md D5). */
+/**
+ * How far one wheel event moves the zoom under the Scroll wheel zooms setting - a fixed step per event whatever its
+ * size, matching the reference (design.md D5).
+ */
 export const ZOOM_WHEEL_STEP = 0.05;
+
+// Chromium's own pinch arithmetic, which WebKit's ctrl-wheel pinch is close to: a pinch reports small deltas many times
+// a second, and `exp(-delta * rate)` makes one pinch the same magnification however the system slices it into events.
+/** How strongly a pinch or a Command/Control wheel zooms: the magnification is multiplied by `exp(-deltaY * this)`. */
+export const ZOOM_PINCH_RATE = 0.01;
+
+// A mouse's notch arrives as one large delta (100px on Windows), where a pinch arrives as many small ones: without the
+// cap one notch would multiply the zoom by e.
+/** The largest delta, in pixels, one zooming wheel event counts for: a notch at most about 1.28x. */
+export const ZOOM_PINCH_MAX_DELTA = 25;
+
+/** How many pixels a wheel event that counts in lines moves for each line, as browsers scroll a page. */
+export const WHEEL_LINE_PIXELS = 16;
 
 /** How far the minus/plus buttons move the zoom, as the reference. */
 export const ZOOM_BUTTON_STEP = 0.5;

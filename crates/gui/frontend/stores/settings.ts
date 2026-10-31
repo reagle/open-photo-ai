@@ -123,6 +123,13 @@ export type SettingsData = {
      * which fills in the defaults and keeps any one key press from being claimed twice.
      */
     shortcuts: StoredShortcuts;
+    // Off by default, which is the reversal of the reference: Photos, Preview and Lightroom pan on a scroll and zoom
+    // on a pinch, and a two-finger scroll that magnifies surprises everyone who has used them.
+    /**
+     * Whether a plain wheel event zooms the preview by a fixed step, as the reference does, rather than panning it.
+     * A pinch, and Command or Control with the wheel, zoom either way - see `features/preview/PreviewImage.tsx`.
+     */
+    wheelZooms: boolean;
 };
 
 // Beside the preferences rather than among them: `SettingsData` is what the settings dialog drafts,
@@ -159,6 +166,7 @@ export const settingsData = ({
     autopilotExcluded,
     quality,
     shortcuts,
+    wheelZooms,
 }: SettingsData): SettingsData => ({
     language,
     background,
@@ -168,6 +176,7 @@ export const settingsData = ({
     autopilotExcluded,
     quality,
     shortcuts,
+    wheelZooms,
 });
 
 // A function rather than a constant for two reasons: the language is detected, and a record handed
@@ -190,6 +199,7 @@ export const settingsDefaults = (): SettingsData => ({
     quality: {},
     // No choice for any action: each is bound to its defaults.
     shortcuts: {},
+    wheelZooms: false,
 });
 
 /**
@@ -343,7 +353,7 @@ export const useSettingsStore = create<SettingsStore>()(
              * wrong on a user's machine and right here: a language catalogue is dropped, a graphics
              * driver is removed, a model stops being published.
              *
-             * All nine are repaired on rehydrate below, against something already present at that
+             * All ten are repaired on rehydrate below, against something already present at that
              * moment - the models in shape only. Whether a stored model is still published, and so
              * which model a family defaults to, is resolved where it is drawn, for the reason
              * `ModelChoices` gives. The processor's second repair is the same
@@ -390,6 +400,8 @@ export const useSettingsStore = create<SettingsStore>()(
                     // as every action at its defaults. Repaired without the platform, which is not
                     // known at import; what this platform refuses is dropped where it is resolved.
                     shortcuts: repairShortcuts(stored.shortcuts),
+                    // Absent for every user who saved before the choice existed, which reads as the wheel panning.
+                    wheelZooms: stored.wheelZooms === true,
                     // Answered here, or answered in the Wails application, which stored `false` once
                     // it had been - so a user upgrading is not asked a second time. Anything else,
                     // including nothing at all, is a question not yet asked.
