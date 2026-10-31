@@ -95,6 +95,20 @@ pub enum InitError {
         artifact: String,
     },
 
+    // Fork-only, not for upstream: see `deps::model::fork`. A separate variant rather than
+    // `UnpublishedModel`, because the two say different things to whoever reads them: that one is a model nobody
+    // published, this one a model this fork exports and places by hand, which a user is told to run at the precision
+    // that *was* placed.
+    /// A model this fork exports itself is not in place on this install, so there is nowhere to fetch it from.
+    ///
+    /// The fork's models are published nowhere, so the URL an install would compose for one is bound to 404. Refused
+    /// before a directory is created or a byte requested.
+    #[error("the model {artifact} isn't available on this install: this fork exports it and its files are not here")]
+    UnavailableModel {
+        /// The artifact that could not be placed, so a caller can say which model it was.
+        artifact: String,
+    },
+
     // Refused because a name that was never published is a bug in whatever produced it, and accepting it would let a
     // typo in a settings file reach a session build as a silent no-op.
     /// Text naming no published execution provider was parsed as one.
@@ -639,6 +653,7 @@ impl InitError {
             Self::UnsupportedPlatform { .. } => "unsupported_platform",
             Self::UnpublishedModel { .. } => "unpublished_model",
             Self::UnlistedModel { .. } => "unlisted_model",
+            Self::UnavailableModel { .. } => "unavailable_model",
             Self::UnknownProvider { .. } => "unknown_provider",
             Self::HashMismatch { .. } => "checksum",
             Self::Download { .. } => "download",
@@ -940,6 +955,7 @@ mod tests {
             ),
             (InitError::UnpublishedModel { artifact: "a".to_string() }, "unpublished_model"),
             (InitError::UnlistedModel { artifact: "a".to_string() }, "unlisted_model"),
+            (InitError::UnavailableModel { artifact: "a".to_string() }, "unavailable_model"),
             (InitError::UnknownProvider { name: "gpu".to_string() }, "unknown_provider"),
             (
                 InitError::HashMismatch { url: "u".to_string(), expected: "a".to_string(), actual: "b".to_string() },

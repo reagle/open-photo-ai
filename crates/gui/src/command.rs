@@ -178,7 +178,7 @@ finished!(
     Option<crate::TelemetryIds>,
     Option<crate::opened::Request>,
     &'static str,
-    &'static [opai::FamilyEntry],
+    Vec<opai::FamilyEntry>,
     Vec<&'static str>,
     Vec<String>
 );
