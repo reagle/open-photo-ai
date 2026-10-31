@@ -59,6 +59,28 @@ describe("the keyboard shortcuts list", () => {
         expect(keysFor(list, "Pan")).toBe("Ctrl+←Ctrl+→Ctrl+↑Ctrl+↓");
     });
 
+    it("ends with the rules of the pointer and the dialogs, as the Scroll wheel zooms setting has them", () => {
+        const list = openList();
+        const input = list.querySelector("[data-slot='shortcuts-input']") as HTMLElement;
+
+        expect(within(input).getByText("Pointer and dialogs")).toBeInTheDocument();
+        expect(keysFor(input, "Save or apply a dialog; finish a panel or brush")).toBe("Enter");
+        expect(keysFor(input, "Cancel a dialog; finish a panel or brush")).toBe("Esc");
+        expect(keysFor(input, "Zoom with the pointer")).toBe("PinchCtrl + scroll");
+        expect(keysFor(input, "Pan with the pointer")).toBe("ScrollDragSpace + drag");
+    });
+
+    it("says a scroll zooms under the Scroll wheel zooms setting, in macOS's keys on macOS", () => {
+        vi.mocked(isMacOs).mockReturnValue(true);
+        act(() => useSettingsStore.getState().apply({ wheelZooms: true }));
+        const list = openList();
+        const input = list.querySelector("[data-slot='shortcuts-input']") as HTMLElement;
+
+        expect(keysFor(input, "Save or apply a dialog; finish a panel or brush")).toBe("↩");
+        expect(keysFor(input, "Zoom with the pointer")).toBe("Pinch⌘ + scrollScroll");
+        expect(keysFor(input, "Pan with the pointer")).toBe("DragSpace + drag");
+    });
+
     it("writes the editor's keys as macOS does on macOS", () => {
         vi.mocked(isMacOs).mockReturnValue(true);
         const list = openList();

@@ -641,13 +641,25 @@
         "sections": {
             "view": "View",
             "images": "Images",
-            "enhancements": "Enhancements"
+            "enhancements": "Enhancements",
+            "input": "Pointer and dialogs"
         },
         "rows": {
             "zoom": "Zoom in / Zoom out",
             "pan": "Pan",
             "images": "Previous image / Next image",
             "options": "Options of enhancement 1–8"
+        },
+        "input": {
+            "accept": "Save or apply a dialog; finish a panel or brush",
+            "escape": "Cancel a dialog; finish a panel or brush",
+            "zoom": "Zoom with the pointer",
+            "pan": "Pan with the pointer",
+            "pinch": "Pinch",
+            "scroll": "Scroll",
+            "modScroll": "{{key}} + scroll",
+            "spaceDrag": "{{key}} + drag",
+            "drag": "Drag"
         }
     }
 }

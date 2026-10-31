@@ -630,13 +630,25 @@
         "sections": {
             "view": "表示",
             "images": "画像",
-            "enhancements": "補正"
+            "enhancements": "補正",
+            "input": "ポインタとダイアログ"
         },
         "rows": {
             "zoom": "拡大 / 縮小",
             "pan": "移動",
             "images": "前の画像 / 次の画像",
             "options": "補正 1–8 のオプション"
+        },
+        "input": {
+            "accept": "ダイアログを保存・適用、パネルやブラシを完了",
+            "escape": "ダイアログをキャンセル、パネルやブラシを完了",
+            "zoom": "ポインタでズーム",
+            "pan": "ポインタで移動",
+            "pinch": "ピンチ",
+            "scroll": "スクロール",
+            "modScroll": "{{key}} + スクロール",
+            "spaceDrag": "{{key}} + ドラッグ",
+            "drag": "ドラッグ"
         }
     }
 }

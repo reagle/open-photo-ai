@@ -641,13 +641,25 @@
         "sections": {
             "view": "Ansicht",
             "images": "Bilder",
-            "enhancements": "Verbesserungen"
+            "enhancements": "Verbesserungen",
+            "input": "Zeiger und Dialoge"
         },
         "rows": {
             "zoom": "Vergrößern / Verkleinern",
             "pan": "Schwenken",
             "images": "Vorheriges Bild / Nächstes Bild",
             "options": "Optionen von Verbesserung 1–8"
+        },
+        "input": {
+            "accept": "Dialog sichern oder anwenden; Bereich oder Pinsel abschließen",
+            "escape": "Dialog abbrechen; Bereich oder Pinsel abschließen",
+            "zoom": "Mit dem Zeiger zoomen",
+            "pan": "Mit dem Zeiger schwenken",
+            "pinch": "Aufziehen",
+            "scroll": "Scrollen",
+            "modScroll": "{{key}} + scrollen",
+            "spaceDrag": "{{key}} + ziehen",
+            "drag": "Ziehen"
         }
     }
 }

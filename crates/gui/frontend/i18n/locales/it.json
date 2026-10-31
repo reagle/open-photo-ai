@@ -652,13 +652,25 @@
         "sections": {
             "view": "Vista",
             "images": "Immagini",
-            "enhancements": "Miglioramenti"
+            "enhancements": "Miglioramenti",
+            "input": "Puntatore e finestre di dialogo"
         },
         "rows": {
             "zoom": "Ingrandisci / Riduci",
             "pan": "Sposta",
             "images": "Immagine precedente / Immagine successiva",
             "options": "Opzioni del miglioramento 1–8"
+        },
+        "input": {
+            "accept": "Salva o applica una finestra di dialogo; termina un pannello o un pennello",
+            "escape": "Annulla una finestra di dialogo; termina un pannello o un pennello",
+            "zoom": "Zoom con il puntatore",
+            "pan": "Sposta con il puntatore",
+            "pinch": "Pizzica",
+            "scroll": "Scorri",
+            "modScroll": "{{key}} + scorri",
+            "spaceDrag": "{{key}} + trascina",
+            "drag": "Trascina"
         }
     }
 }

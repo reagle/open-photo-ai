@@ -630,13 +630,25 @@
         "sections": {
             "view": "Tampilan",
             "images": "Gambar",
-            "enhancements": "Peningkatan"
+            "enhancements": "Peningkatan",
+            "input": "Penunjuk dan dialog"
         },
         "rows": {
             "zoom": "Perbesar / Perkecil",
             "pan": "Geser",
             "images": "Gambar sebelumnya / Gambar berikutnya",
             "options": "Opsi peningkatan 1–8"
+        },
+        "input": {
+            "accept": "Simpan atau terapkan dialog; selesaikan panel atau kuas",
+            "escape": "Batalkan dialog; selesaikan panel atau kuas",
+            "zoom": "Perbesar dengan penunjuk",
+            "pan": "Geser dengan penunjuk",
+            "pinch": "Cubit",
+            "scroll": "Gulir",
+            "modScroll": "{{key}} + gulir",
+            "spaceDrag": "{{key}} + seret",
+            "drag": "Seret"
         }
     }
 }
