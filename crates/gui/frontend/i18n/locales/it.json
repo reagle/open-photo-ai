@@ -501,7 +501,8 @@
             "setFocus": "Imposta fuoco",
             "refine": "Rifinisci",
             "editRefine": "Modifica rifinitura",
-            "focusHint": "Fai clic sulla fotografia nel punto che deve risultare nitido. Esc per annullare."
+            "focusHint": "Fai clic sulla fotografia nel punto che deve risultare nitido. Esc per annullare.",
+            "littleBlur": "Poca sfocatura con questa lunghezza focale e distanza di messa a fuoco. Metti a fuoco qualcosa di più vicino o aumenta l'intensità della sfocatura."
         },
         "add": "Aggiungi miglioramento",
         "remove": "Rimuovi miglioramento",

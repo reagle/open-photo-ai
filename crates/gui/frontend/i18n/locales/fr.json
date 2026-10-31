@@ -501,7 +501,8 @@
             "setFocus": "Définir la mise au point",
             "refine": "Affiner",
             "editRefine": "Modifier l'affinage",
-            "focusHint": "Cliquez sur la zone de la photo qui doit être nette. Esc pour annuler."
+            "focusHint": "Cliquez sur la zone de la photo qui doit être nette. Esc pour annuler.",
+            "littleBlur": "Peu de flou à cette focale et à cette distance de mise au point. Faites la mise au point sur un élément plus proche ou augmentez l'intensité du flou."
         },
         "add": "Ajouter",
         "remove": "Supprimer l'amélioration",

@@ -10,6 +10,7 @@ import { ASSUMED_LENS, canBlurMore, fNumberForAmount, formatFNumber, shownAmount
 import { type Enhancement, F_NUMBER, parameterOf, withParameter } from "@/lib/enhancements";
 import { useImageCrop } from "@/stores/crop";
 import { useFocusPickStore } from "@/stores/focusPick";
+import { useLittleBlur } from "@/stores/littleBlur";
 import { useHasMask, useMaskStore } from "@/stores/mask";
 import { BlurAmountSlider } from "./BlurAmountSlider";
 import { OperationModelTray } from "./ModelTray";
@@ -56,6 +57,7 @@ type LensBlurOptionsProps = {
 export const LensBlurOptions = ({ enhancement, operation, entry, identity, path, onChange }: LensBlurOptionsProps) => {
     const { t } = useTranslation();
     const refined = useHasMask(path, "refine");
+    const little = useLittleBlur(identity);
 
     // As the photograph is framed: a crop is a smaller sensor, and its own f-number is the frame's times the framing.
     const crop = useImageCrop(identity);
@@ -87,6 +89,17 @@ export const LensBlurOptions = ({ enhancement, operation, entry, identity, path,
             {lens !== undefined && !blurrable && (
                 <p className="text-[12px] text-muted-foreground leading-normal" data-slot="lens-cannot-blur-more">
                     {t("enhancements.lensBlur.cannotBlurMore", { f: formatFNumber(own) })}
+                </p>
+            )}
+
+            {/*
+             * After a render that changed nothing anyone can see: a wide-angle lens focused far away adds almost no blur
+             * at any f-number, and without this the result reads as a lens blur that did not happen. Taken down by the
+             * next render that blurs visibly - see `stores/littleBlur.ts`.
+             */}
+            {little && blurrable && (
+                <p className="text-[12px] text-muted-foreground leading-normal" data-slot="lens-little-blur">
+                    {t("enhancements.lensBlur.littleBlur")}
                 </p>
             )}
 

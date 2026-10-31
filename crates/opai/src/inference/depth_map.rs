@@ -49,7 +49,7 @@ use crate::models::lens_blur::lens::Blur;
 use crate::models::lens_blur::refine::Refinement;
 use crate::models::lens_blur::render::Refined;
 use crate::models::lens_blur::trimap::{
-    Band, cut_at_steps, firmed, joined, matted_focus, seeded, trimap, widened, worth_matting,
+    Band, cut_at_steps, firmed, imperceptible, joined, matted_focus, seeded, trimap, widened, worth_matting,
 };
 use crate::models::{Depth, DepthMap, Lens, LensBlur, Matte, Matting, Operation, OwnLens};
 use crate::task::spawn_blocking;
@@ -232,6 +232,11 @@ pub enum ChainMatte {
     /// No lens blur's subject was worth matting — a blur under 3 px everywhere, or nothing in focus to speak of — so
     /// each renders from its depth alone, as it would have anyway.
     Skipped,
+    /// A lens blur adds too little blur to see: less than 5% of the photograph blurs to a disc of its diagonal / 1500,
+    /// the depth-of-field tables' acceptable circle of confusion (`trimap::imperceptible`). It rendered, and is not
+    /// matted; a front end tells the user to focus on something nearer or to open the lens further, since a render
+    /// that changed nothing visible reads as one that did not happen — a wide-angle lens focused far away, typically.
+    LittleBlur,
     /// The matting model is not installed here: its graph is not published with the others yet. Every lens blur renders
     /// from its depth alone. Expected wherever it was never installed, and nothing to warn a user of.
     Unavailable(InferenceError),
@@ -245,9 +250,10 @@ impl ChainMatte {
         match self {
             Self::NotAsked => 0,
             Self::Skipped => 1,
-            Self::Matted => 2,
-            Self::Unavailable(_) => 3,
-            Self::Failed(_) => 4,
+            Self::LittleBlur => 2,
+            Self::Matted => 3,
+            Self::Unavailable(_) => 4,
+            Self::Failed(_) => 5,
         }
     }
 
@@ -335,13 +341,15 @@ where
         // The trimap off the runtime, as every pass over a photograph's pixels is: the depth guided to its size, then
         // the band, at a quarter of it.
         let (asked, pixels) = (blur.clone(), source.shared_pixels());
-        let Some((trimap, refined, band)) =
-            spawn_blocking::<_, InferenceError, _>(move || trimap_of(&asked, &pixels)).await?
-        else {
-            outcome = outcome.and(ChainMatte::Skipped);
-            matted.push(Operation::LensBlur(blur));
-            continue;
-        };
+        let (trimap, refined, band) =
+            match spawn_blocking::<_, InferenceError, _>(move || trimap_of(&asked, &pixels)).await? {
+                Ok(found) => found,
+                Err(not_matted) => {
+                    outcome = outcome.and(not_matted);
+                    matted.push(Operation::LensBlur(blur));
+                    continue;
+                }
+            };
 
         // Bilbao once a chain, for the first blur that looks for holes; the store serves it to every later focus.
         if holes && salient.is_none() {
@@ -471,21 +479,36 @@ fn not_installed(error: &InferenceError) -> bool {
     matches!(error, InferenceError::Install(init) if matches!(**init, InitError::UnpublishedModel { .. }))
 }
 
-/// The trimap of `blur`'s subject on `source` and the depth refined to `source` it was drawn on, or `None` where it is
-/// not worth matting: no depth, a blur that adds nothing or under 3 px anywhere, or no subject in focus.
-fn trimap_of(blur: &LensBlur, source: &image::DynamicImage) -> Option<(Plane, Refined, Band)> {
-    let (depth, lens) = (blur.depth()?, blur.lens()?);
+/// The trimap of `blur`'s subject on `source` and the depth refined to `source` it was drawn on, or why it is not
+/// matted: [`ChainMatte::LittleBlur`] where the blur is too small to see, and [`ChainMatte::Skipped`] where it is not
+/// worth matting otherwise — no depth, a blur that adds nothing or under 3 px anywhere, or no subject in focus.
+fn trimap_of(blur: &LensBlur, source: &image::DynamicImage) -> Result<(Plane, Refined, Band), ChainMatte> {
+    let (Some(depth), Some(lens)) = (blur.depth(), blur.lens()) else {
+        return Err(ChainMatte::Skipped);
+    };
     let diagonal = (source.width() as f32).hypot(source.height() as f32);
     let (x, y) = blur.focus();
     let focus_m = matted_focus(depth.focus_metres(x.get(), y.get()));
-    let found = Blur::new(&lens, blur.f_number().as_f32(), focus_m, diagonal)?;
+    let found = Blur::new(&lens, blur.f_number().as_f32(), focus_m, diagonal).ok_or(ChainMatte::Skipped)?;
     let band = Band::around(focus_m);
     let radii: Vec<f32> = depth.disparity().iter().map(|&disparity| found.radius(disparity)).collect();
     bench_dump("radius", depth.dimensions(), &radii);
 
+    // Before the matting's own test, which a blur too small to see always fails too: this is the one of the two a user
+    // is told about. `info`, since it is the answer to "why did nothing happen".
+    if imperceptible(&radii, diagonal) {
+        tracing::info!(
+            focus_m,
+            f_number = blur.f_number().as_f32(),
+            focal_35mm = lens.focal_35mm,
+            "the lens blur adds too little blur to see at this focal length and focus distance"
+        );
+        return Err(ChainMatte::LittleBlur);
+    }
+
     if !worth_matting(depth, &found, band) {
         tracing::debug!(focus_m, "the lens blur's subject is not matted: the blur is too small or nothing is in focus");
-        return None;
+        return Err(ChainMatte::Skipped);
     }
 
     // What lies behind the subject across a jump in the depth is dropped from the band, at the depth's resolution.
@@ -496,7 +519,7 @@ fn trimap_of(blur: &LensBlur, source: &image::DynamicImage) -> Option<(Plane, Re
     let trimap = trimap(&refined, band, Some(&cut));
     bench_dump("trimap", (trimap.width(), trimap.height()), trimap.as_slice());
 
-    Some((trimap, refined, band))
+    Ok((trimap, refined, band))
 }
 
 /// `operations` with every lens blur handed `lens` and no depth: the blurs a chain knows add nothing.

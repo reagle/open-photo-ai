@@ -493,7 +493,8 @@
             "setFocus": "Set focus",
             "refine": "Refine",
             "editRefine": "Edit refinement",
-            "focusHint": "Click the photograph where it should be sharp. Esc to cancel."
+            "focusHint": "Click the photograph where it should be sharp. Esc to cancel.",
+            "littleBlur": "Little blur at this focal length and focus distance. Focus on something nearer, or raise the blur amount."
         },
         "add": "Add enhancement",
         "remove": "Remove enhancement",

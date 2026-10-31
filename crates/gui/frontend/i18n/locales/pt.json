@@ -493,7 +493,8 @@
             "setFocus": "Definir foco",
             "refine": "Refinar",
             "editRefine": "Editar refinamento",
-            "focusHint": "Clique na foto onde deve ficar nítido. Esc para cancelar."
+            "focusHint": "Clique na foto onde deve ficar nítido. Esc para cancelar.",
+            "littleBlur": "Pouco desfoque com esta distância focal e distância de foco. Foque em algo mais próximo ou aumente a intensidade do desfoque."
         },
         "add": "Adicionar melhoria",
         "remove": "Remover melhoria",

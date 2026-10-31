@@ -2,14 +2,7 @@ import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import { familyEntry, useCatalogue } from "@/hooks/useCatalogue";
 import type { FamilyEntry } from "@/ipc/catalogue";
-import {
-    type Enhancement,
-    familiesWhere,
-    isSuggestible,
-    modelChoice,
-    modelLabel,
-    SETTABLE,
-} from "@/lib/enhancements";
+import { type Enhancement, familiesWhere, isSuggestible, modelChoice, modelLabel, SETTABLE } from "@/lib/enhancements";
 import { cn } from "@/lib/utils";
 import { useSettingsDraft } from "./draft";
 import { SettingsCard, SettingsSelect, SettingsSelectItem, SettingsSelectSeparator, SettingsSwitch } from "./rows.tsx";

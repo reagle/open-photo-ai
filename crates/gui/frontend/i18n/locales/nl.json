@@ -493,7 +493,8 @@
             "setFocus": "Scherpstelling instellen",
             "refine": "Verfijnen",
             "editRefine": "Verfijning bewerken",
-            "focusHint": "Klik op de foto waar het scherp moet zijn. Esc om te annuleren."
+            "focusHint": "Klik op de foto waar het scherp moet zijn. Esc om te annuleren.",
+            "littleBlur": "Weinig vervaging bij deze brandpuntsafstand en scherpstelafstand. Stel scherp op iets dichterbij of verhoog de vervaging."
         },
         "add": "Toevoegen",
         "remove": "Verbetering verwijderen",

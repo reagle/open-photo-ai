@@ -1491,11 +1491,16 @@ fn a_matting_can_be_named_and_its_outcome_read_through_the_public_surface_alone(
         ChainMatte::NotAsked,
         ChainMatte::Matted,
         ChainMatte::Skipped,
+        ChainMatte::LittleBlur,
         ChainMatte::Unavailable(unavailable.clone()),
         ChainMatte::Failed(unavailable),
     ] {
         let said = match &outcome {
-            ChainMatte::NotAsked | ChainMatte::Matted | ChainMatte::Skipped | ChainMatte::Unavailable(_) => None,
+            ChainMatte::NotAsked
+            | ChainMatte::Matted
+            | ChainMatte::Skipped
+            | ChainMatte::LittleBlur
+            | ChainMatte::Unavailable(_) => None,
             ChainMatte::Failed(error) => Some(error.to_string()),
         };
         assert_eq!(said.is_some(), matches!(outcome, ChainMatte::Failed(_)));

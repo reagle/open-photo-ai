@@ -485,7 +485,8 @@
             "setFocus": "设置对焦",
             "refine": "细化",
             "editRefine": "编辑细化",
-            "focusHint": "点击照片中应当清晰的位置。按 Esc 取消。"
+            "focusHint": "点击照片中应当清晰的位置。按 Esc 取消。",
+            "littleBlur": "在此焦距和对焦距离下几乎没有模糊。请对焦到更近的物体，或增大模糊程度。"
         },
         "add": "添加增强",
         "remove": "移除增强",

@@ -485,7 +485,8 @@
             "setFocus": "Atur fokus",
             "refine": "Perhalus",
             "editRefine": "Edit perhalusan",
-            "focusHint": "Klik bagian foto yang harus tajam. Esc untuk membatalkan."
+            "focusHint": "Klik bagian foto yang harus tajam. Esc untuk membatalkan.",
+            "littleBlur": "Blur sangat sedikit pada panjang fokus dan jarak fokus ini. Fokuskan pada sesuatu yang lebih dekat, atau naikkan jumlah blur."
         },
         "add": "Tambah peningkatan",
         "remove": "Hapus peningkatan",

@@ -493,7 +493,8 @@
             "setFocus": "Fokus setzen",
             "refine": "Verfeinern",
             "editRefine": "Verfeinerung bearbeiten",
-            "focusHint": "Klicken Sie auf die Stelle des Fotos, die scharf sein soll. Esc zum Abbrechen."
+            "focusHint": "Klicken Sie auf die Stelle des Fotos, die scharf sein soll. Esc zum Abbrechen.",
+            "littleBlur": "Kaum Unschärfe bei dieser Brennweite und Fokusentfernung. Fokussiere auf etwas Näheres oder erhöhe die Unschärfestärke."
         },
         "add": "Hinzufügen",
         "remove": "Verbesserung entfernen",

@@ -493,7 +493,8 @@
             "setFocus": "Ställ in fokus",
             "refine": "Förfina",
             "editRefine": "Redigera förfining",
-            "focusHint": "Klicka på fotografiet där det ska vara skarpt. Esc för att avbryta."
+            "focusHint": "Klicka på fotografiet där det ska vara skarpt. Esc för att avbryta.",
+            "littleBlur": "Knappt någon oskärpa vid den här brännvidden och fokusavståndet. Fokusera på något närmare eller öka oskärpans styrka."
         },
         "add": "Lägg till förbättring",
         "remove": "Ta bort förbättring",

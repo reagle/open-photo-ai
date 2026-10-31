@@ -118,6 +118,11 @@ export type Enhancement =
           facesError?: string;
           /** Matting failure message (untranslated); that lens blur then rendered from its depth alone. */
           matteError?: string;
+          /**
+           * Present where the chain's lens blur added too little blur to see - less than 5% of the photograph
+           * blurred past the diagonal / 1500 - which the Lens Blur panel says, with what to change.
+           */
+          littleBlur?: true;
       }
     /** Stopped via {@link cancelEnhance} or superseded by a later run — including one that finished but was discarded. */
     | { outcome: "stopped" };

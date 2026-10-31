@@ -11,6 +11,7 @@ import { detectFaces, type Face } from "@/ipc/faces";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useFacesStore } from "@/stores/faces";
 import { useFileStore } from "@/stores/files";
+import { useLittleBlurStore } from "@/stores/littleBlur";
 import { useMaskStore } from "@/stores/mask";
 import { useSettingsStore } from "@/stores/settings";
 import { FRAMING, HOLIDAY, openFiles, render, resetFileStore, SUNSET } from "@/test/support";
@@ -153,6 +154,27 @@ describe("running the current image's enhancements", () => {
         await waitFor(() =>
             expect(answer.enhanced).toEqual({ identity: "abcdef0123456789", width: 6000, height: 4000 }),
         );
+    });
+
+    it("records a lens blur too small to see for the photograph, and the next visible one takes it down", async () => {
+        const little = () => useLittleBlurStore.getState().little.has(HOLIDAY.identity as string);
+        stack(HOLIDAY.path, upscale(2));
+        mount();
+
+        pending[0]?.settle({
+            outcome: "enhanced",
+            identity: "abcdef0123456789",
+            width: 6000,
+            height: 4000,
+            littleBlur: true,
+        });
+        await waitFor(() => expect(little()).toBe(true));
+
+        stack(HOLIDAY.path, upscale(3));
+        await waitFor(() => expect(pending).toHaveLength(2));
+        pending[1]?.settle({ outcome: "enhanced", identity: "0123abcdef456789", width: 9000, height: 6000 });
+
+        await waitFor(() => expect(little()).toBe(false));
     });
 
     it("runs again when the stack changes, and stops the run it replaces", async () => {
