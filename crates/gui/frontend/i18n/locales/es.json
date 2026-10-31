@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Estadísticas",
                 "description": "Enviar datos de uso anónimos. Nunca se recopilan imágenes ni datos personales."
+            },
+            "wheelZooms": {
+                "title": "La rueda hace zoom",
+                "description": "Amplía la vista previa con la rueda o con dos dedos en lugar de desplazarla. Pellizcar, o desplazar con {{key}} pulsado, siempre hace zoom."
             }
         },
         "performance": {

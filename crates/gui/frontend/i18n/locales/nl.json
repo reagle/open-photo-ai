@@ -60,6 +60,10 @@
             "analytics": {
                 "title": "Analyse",
                 "description": "Anonieme gebruiksgegevens verzenden. Er worden nooit afbeeldingen of persoonsgegevens verzameld."
+            },
+            "wheelZooms": {
+                "title": "Scrollwiel zoomt",
+                "description": "Zoom de voorvertoning met het scrollwiel of met twee vingers in plaats van hem te verschuiven. Knijpen, of scrollen met {{key}} ingedrukt, zoomt altijd."
             }
         },
         "performance": {
