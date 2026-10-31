@@ -168,7 +168,7 @@ async fn lima_removes_the_tag_under_core_ml() {
 const BENCH_JOBS: &str = "OPAI_REMOVE_BENCH";
 
 /// The environment variable naming what the bench runs: `small` (the small square alone, as before 2026-10-31),
-/// `large` (the large square for large crops), and either with `+grain`.
+/// `large` (the large square for large crops), and either with `+grain` and `+refine`.
 const BENCH_FINISH: &str = "OPAI_REMOVE_FINISH";
 
 /// The finish `name` names, as [`BENCH_FINISH`] spells it.
@@ -179,11 +179,12 @@ fn finish_named(name: &str) -> super::process::Finish {
         Some("large") => true,
         other => panic!("{BENCH_FINISH}={name}: {other:?} is neither small nor large"),
     };
-    let mut finish = super::process::Finish { large, grain: false };
+    let mut finish = super::process::Finish { large, grain: false, refine: false };
 
     for part in parts {
         match part {
             "grain" => finish.grain = true,
+            "refine" => finish.refine = true,
             other => panic!("{BENCH_FINISH}={name}: {other} is not a finish"),
         }
     }
