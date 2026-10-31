@@ -8,6 +8,7 @@ import { forgetLensInfo } from "@/ipc/lens";
 import { track } from "@/lib/faro";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useMaskStore } from "@/stores/mask";
+import { useOptionsPanelStore } from "@/stores/optionsPanel";
 import { useSettingsStore } from "@/stores/settings";
 import {
     APPLY_ORDER,
@@ -66,6 +67,9 @@ const upscale = () => screen.findByRole("menuitem", { name: "Upscale" });
  */
 const open = () => fireEvent.keyDown(button(), { key: "Enter" });
 
+/** The panel of options a new enhancement's row opens by itself. */
+const optionsPanel = () => waitFor(() => document.querySelector("[data-slot='enhancement-options']") as HTMLElement);
+
 /** What the current image is set to have done to it. */
 const stack = () => useEnhancementStore.getState().enhancements.get(HOLIDAY.path);
 
@@ -79,6 +83,7 @@ describe("adding an enhancement", () => {
         vi.mocked(invoke).mockClear();
         useEnhancementStore.setState({ autopilot: true, enhancements: new Map() });
         useSettingsStore.setState({ models: {}, autopilotExcluded: [] });
+        useOptionsPanelStore.setState(useOptionsPanelStore.getInitialState(), true);
         vi.mocked(track).mockClear();
     });
 
@@ -200,7 +205,7 @@ describe("adding an enhancement", () => {
         );
         expect(invoke).toHaveBeenCalledWith("lens_info", { source: HOLIDAY.identity, crop: undefined });
         expect(await screen.findByText("Lisbon, blur 50")).toBeInTheDocument();
-        expect(document.querySelector("[data-slot='enhancement-options']")).toBeNull();
+        expect(await optionsPanel()).toBeInTheDocument();
         expect(track).toHaveBeenCalledExactlyOnceWith("enhancement_added", { family: "lens_blur", source: "manual" });
     });
 
@@ -228,7 +233,7 @@ describe("adding an enhancement", () => {
         expect(invoke).toHaveBeenCalledWith("suggested_scale", { width: FRAMING.width, height: FRAMING.height });
     });
 
-    it("adds a light adjustment at the user's default model and a bias of 50%, with its options closed", async () => {
+    it("adds a light adjustment at the user's default model and a bias of 50%, with its options open", async () => {
         openFiles(HOLIDAY);
         render(
             <>
@@ -245,12 +250,11 @@ describe("adding an enhancement", () => {
                 { family: "light_adjustment", codename: "paris", precision: "fp32", parameters: { bias: 0.5 } },
             ]),
         );
-        // The user opens the options from the row; adding an enhancement does not open them for any family.
         expect(await screen.findByText("Paris, 50%, HD")).toBeInTheDocument();
-        expect(document.querySelector("[data-slot='enhancement-options']")).toBeNull();
+        expect(await optionsPanel()).toBeInTheDocument();
     });
 
-    it("adds a colour balance at the user's default model and a bias of 50%, with its options closed", async () => {
+    it("adds a colour balance at the user's default model and a bias of 50%, with its options open", async () => {
         openFiles(HOLIDAY);
         render(
             <>
@@ -268,10 +272,10 @@ describe("adding an enhancement", () => {
             ]),
         );
         expect(await screen.findByText("Rio, 50%, HD")).toBeInTheDocument();
-        expect(document.querySelector("[data-slot='enhancement-options']")).toBeNull();
+        expect(await optionsPanel()).toBeInTheDocument();
     });
 
-    it("adds a denoise at the user's default model and a strength of 100%, with its options closed", async () => {
+    it("adds a denoise at the user's default model and a strength of 100%, with its options open", async () => {
         openFiles(HOLIDAY);
         render(
             <>
@@ -290,10 +294,10 @@ describe("adding an enhancement", () => {
             ]),
         );
         expect(await screen.findByText("Stockholm, 100%, HD")).toBeInTheDocument();
-        expect(document.querySelector("[data-slot='enhancement-options']")).toBeNull();
+        expect(await optionsPanel()).toBeInTheDocument();
     });
 
-    it("adds a sharpen at the user's default model and a strength of 100%, with its options closed", async () => {
+    it("adds a sharpen at the user's default model and a strength of 100%, with its options open", async () => {
         openFiles(HOLIDAY);
         render(
             <>
@@ -312,10 +316,10 @@ describe("adding an enhancement", () => {
             ]),
         );
         expect(await screen.findByText("Moscow, 100%, HD")).toBeInTheDocument();
-        expect(document.querySelector("[data-slot='enhancement-options']")).toBeNull();
+        expect(await optionsPanel()).toBeInTheDocument();
     });
 
-    it("adds a colorization at the user's default model and nothing else, with its options closed", async () => {
+    it("adds a colorization at the user's default model and nothing else, with its options open", async () => {
         openFiles(HOLIDAY);
         render(
             <>
@@ -332,7 +336,7 @@ describe("adding an enhancement", () => {
             expect(stack()).toEqual([{ family: "colorization", codename: "delhi", precision: "fp32", parameters: {} }]),
         );
         expect(await screen.findByText("Delhi, HD")).toBeInTheDocument();
-        expect(document.querySelector("[data-slot='enhancement-options']")).toBeNull();
+        expect(await optionsPanel()).toBeInTheDocument();
     });
 
     it("still offers, and adds, an enhancement Autopilot may not suggest", async () => {
@@ -451,5 +455,61 @@ describe("the Add enhancement key", () => {
         render(<WithKeys />);
 
         expect(button()).toHaveAttribute("aria-keyshortcuts", "e");
+    });
+
+    it("opens the new enhancement's panel with the focus inside it, and one panel at a time", async () => {
+        openFiles(HOLIDAY);
+        render(
+            <>
+                <AddEnhancement />
+                <EnhancementList />
+            </>,
+        );
+
+        open();
+        fireEvent.click(await screen.findByRole("menuitem", { name: "Denoise" }));
+        const first = await optionsPanel();
+        await waitFor(() => expect(first).toContainElement(document.activeElement as HTMLElement));
+
+        open();
+        fireEvent.click(await screen.findByRole("menuitem", { name: "Sharpen" }));
+
+        await waitFor(() => expect(useOptionsPanelStore.getState().family).toBe("sharpen"));
+        await waitFor(() => expect(document.querySelectorAll("[data-slot='enhancement-options']")).toHaveLength(1));
+    });
+
+    it("opens no panel for Remove, whose row is the brush", async () => {
+        openFiles(HOLIDAY);
+        render(
+            <>
+                <AddEnhancement />
+                <EnhancementList />
+            </>,
+        );
+
+        open();
+        fireEvent.click(await screen.findByRole("menuitem", { name: "Remove" }));
+
+        await waitFor(() => expect(stack()).toHaveLength(1));
+        expect(useOptionsPanelStore.getState().family).toBeUndefined();
+        expect(document.querySelector("[data-slot='enhancement-options']")).toBeNull();
+    });
+
+    it("leaves a panel closed for an enhancement added by anything but the menu", () => {
+        openFiles(HOLIDAY);
+        render(<EnhancementList />);
+
+        act(() =>
+            useEnhancementStore
+                .getState()
+                .addEnhancement(
+                    HOLIDAY.path,
+                    { family: "denoise", codename: "stockholm", precision: "fp32", parameters: { strength: 1 } },
+                    APPLY_ORDER,
+                ),
+        );
+
+        expect(useOptionsPanelStore.getState().family).toBeUndefined();
+        expect(document.querySelector("[data-slot='enhancement-options']")).toBeNull();
     });
 });
