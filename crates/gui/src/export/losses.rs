@@ -1,26 +1,35 @@
 //! What each queued file will lose, written as its chosen format, before anything is written.
 //!
-//! The rule is `opai::export`'s ([`predict_blocking`]); the format each file is written as is the one
-//! [`ExportNaming::destination_for`] gives it, which is what [`export_with`](super::run::export_with) writes.
+//! The rule is `opai::export`'s ([`predict_export_blocking`]); the format each file is written as, and whether it keeps
+//! a gain map, are what [`ExportNaming::destination_for`] gives it, which is what
+//! [`export_with`](super::run::export_with) writes.
 
 use std::path::Path;
 
-use opai::export::{Loss, Named, predict_blocking};
+use opai::export::{Loss, Named, Prediction, predict_export_blocking};
 use serde::Serialize;
 
 use super::names::ExportNaming;
 
 /// What one queued file will lose, as a row shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ExportLosses {
     /// The source's path, as it was asked for.
     pub(crate) path: String,
     /// What writing it as its format will lose against it; empty when nothing will be lost.
     pub(crate) losses: Vec<Loss>,
+    /// Whether the source declares an HDR gain map, so a row names it an Ultra HDR JPEG; `false` for a file not read.
+    pub(crate) gain_map: bool,
+    /// Whether the source could not be read where it was opened from — moved, renamed or deleted since, most often — so
+    /// a row says so before the export fails on it, rather than naming the file by what an unread file declares.
+    /// `false` for a file this application never opened, which is not read at all.
+    pub(crate) unreadable: bool,
 }
 
-/// What each of `paths` will lose under `naming`, in the order asked. A file that cannot be read answers no loss: its
-/// export will report its own failure, and a warning about it here would only say the same thing first.
+/// What each of `paths` will lose under `naming`, in the order asked. A file that cannot be read answers no loss and
+/// is marked [`unreadable`](ExportLosses::unreadable): it has nothing to predict, and its export will fail, so the row
+/// says why before Save is pressed.
 ///
 /// Only a path `admitted` says this application opened is read; any other answers no loss without being touched, so
 /// the window cannot use this to read headers of files the user never chose.
@@ -30,15 +39,16 @@ pub(crate) fn losses(paths: Vec<String>, naming: &ExportNaming, admitted: impl F
         .map(|path| {
             if !admitted(Path::new(&path)) {
                 tracing::debug!("the losses of a file this application never opened were asked for");
-                return ExportLosses { path, losses: Vec::new() };
+                return ExportLosses { path, losses: Vec::new(), gain_map: false, unreadable: false };
             }
-            let (_, Named { format, .. }) = naming.destination_for(Path::new(&path));
-            let losses = predict_blocking(&path, format.into()).unwrap_or_else(|error| {
-                tracing::debug!(%error, "the losses of a queued file could not be predicted");
-                Vec::new()
-            });
-
-            ExportLosses { path, losses }
+            let (_, Named { format, gain_map, .. }) = naming.destination_for(Path::new(&path));
+            match predict_export_blocking(&path, format.into(), gain_map) {
+                Ok(Prediction { losses, gain_map }) => ExportLosses { path, losses, gain_map, unreadable: false },
+                Err(error) => {
+                    tracing::debug!(%error, "the losses of a queued file could not be predicted");
+                    ExportLosses { path, losses: Vec::new(), gain_map: false, unreadable: true }
+                }
+            }
         })
         .collect()
 }
@@ -89,11 +99,100 @@ mod tests {
         assert!(answered.iter().all(|row| row.losses.is_empty()), "{answered:?}");
     }
 
+    /// A gain-map JPEG in `dir`, as `photo_info`'s test writes one: an ISO 21496-1 payload on the map and the primary.
+    fn ultra_hdr(dir: &Path) -> String {
+        let encoded = |size: (u32, u32), metadata: &rust_sak::image::Metadata| {
+            let pixels =
+                image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(size.0, size.1, image::Rgb([90; 3])));
+            let mut bytes = Vec::new();
+            let quality = Some(rust_sak::image::EncodeOptions::Jpeg { quality: 90 });
+            rust_sak::image::encode_writer_with(
+                &pixels,
+                &mut bytes,
+                rust_sak::image::ImageFormat::Jpeg,
+                quality,
+                metadata,
+            )
+            .expect("encodable");
+            bytes
+        };
+        let mut own = rust_sak::image::Metadata::default();
+        own.iso_gain_map = Some(vec![0; 4]);
+        let mut primary = rust_sak::image::Metadata::default();
+        primary.iso_gain_map = Some(vec![0; 4]);
+        primary.gain_map = Some(encoded((4, 3), &own));
+
+        let path = dir.join("hdr.jpg");
+        std::fs::write(&path, encoded((16, 12), &primary)).expect("written");
+        path.display().to_string()
+    }
+
     #[test]
-    fn an_unreadable_file_answers_no_loss() {
+    fn a_gain_map_jpeg_is_named_by_its_gain_map_and_loses_it_only_as_plain_jpeg_by_choice() {
+        use opai::export::{ExportFormat, HdrCause};
+        use opai::image::Hdr;
+
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let path = ultra_hdr(dir.path());
+        let ask = |format| {
+            let [answer] = <[ExportLosses; 1]>::try_from(losses(vec![path.clone()], &naming(format), |_| true))
+                .expect("one asked, one answered");
+            answer
+        };
+
+        for keeping in [FormatChoice::UltraHdr, FormatChoice::Preserve] {
+            let answer = ask(keeping);
+            assert_eq!((answer.losses, answer.gain_map), (Vec::new(), true), "{keeping}");
+        }
+        let plain = ask(FormatChoice::Format(ExportFormat::Jpeg));
+        assert!(plain.gain_map);
+        assert_eq!(
+            plain.losses,
+            [Loss::Hdr { hdr: Hdr::GainMap, format: opai::ImageFormat::Jpeg, cause: HdrCause::Chosen }]
+        );
+        assert_eq!(
+            serde_json::to_value(&plain).expect("serializes")["gainMap"],
+            serde_json::json!(true),
+            "the window reads it as gainMap"
+        );
+
+        // An SDR JPEG is not named by one, whatever the choice.
+        let queue = queue(dir.path());
+        let sdr = losses(vec![queue[1].clone()], &naming(FormatChoice::UltraHdr), |_| true);
+        assert_eq!((sdr[0].losses.as_slice(), sdr[0].gain_map), (&[][..], false));
+    }
+
+    #[test]
+    fn an_unreadable_file_answers_no_loss_and_says_it_could_not_be_read() {
         let answered = losses(vec!["/nowhere/missing.png".into()], &naming(FormatChoice::Preserve), |_| true);
 
-        assert_eq!(answered, [ExportLosses { path: "/nowhere/missing.png".into(), losses: Vec::new() }]);
+        assert_eq!(
+            answered,
+            [ExportLosses {
+                path: "/nowhere/missing.png".into(),
+                losses: Vec::new(),
+                gain_map: false,
+                unreadable: true
+            }]
+        );
+        assert_eq!(
+            serde_json::to_value(&answered[0]).expect("serializes")["unreadable"],
+            serde_json::json!(true),
+            "the window reads it as unreadable"
+        );
+    }
+
+    #[test]
+    fn a_file_moved_after_it_was_opened_is_unreadable_and_not_named_by_a_gain_map() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let path = ultra_hdr(dir.path());
+        let renamed = dir.path().join("renamed.jpg");
+        std::fs::rename(&path, &renamed).expect("renamed");
+
+        let [answer] = <[ExportLosses; 1]>::try_from(losses(vec![path], &naming(FormatChoice::UltraHdr), |_| true))
+            .expect("one asked, one answered");
+
+        assert_eq!((answer.unreadable, answer.gain_map, answer.losses), (true, false, Vec::new()));
     }
 
     #[test]
@@ -102,9 +201,9 @@ mod tests {
         let paths = queue(dir.path());
         let jpeg = naming(FormatChoice::Format(opai::export::ExportFormat::Jpeg));
 
-        // The 16-bit PNG would lose depth as JPEG, but nothing admitted it.
+        // The 16-bit PNG would lose depth as JPEG, but nothing admitted it; not read, it is not called unreadable either.
         let answered = losses(paths.clone(), &jpeg, |path| path != Path::new(&paths[0]));
 
-        assert_eq!(answered[0].losses, []);
+        assert_eq!((answered[0].losses.as_slice(), answered[0].unreadable), (&[][..], false));
     }
 }

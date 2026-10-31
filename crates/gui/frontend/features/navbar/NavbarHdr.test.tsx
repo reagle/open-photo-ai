@@ -73,7 +73,7 @@ describe("the navbar's HDR badge", () => {
         expect(badge()?.textContent).toBe("HDR");
         // What `opai::export::loss::assess` decides: kept by a JPEG written with it, SDR in every other format.
         expect(await tip()).toBe(
-            "This photograph has an HDR gain map. Exporting as JPEG keeps it; the other formats are written as SDR for now.",
+            "This photograph has an HDR gain map. Exporting as JPG (Ultra HDR) keeps it; plain JPG leaves it out, and the other formats are written as SDR for now.",
         );
     });
 
