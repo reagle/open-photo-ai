@@ -29,6 +29,7 @@ import {
     startingScale,
     suggestedOperation,
     suspendedBecause,
+    unlimitedBy,
     withModel,
     withParameter,
 } from "./enhancements.ts";
@@ -795,5 +796,12 @@ describe("what a limiting mask has to limit", () => {
     it("is any other enhancement between them", () => {
         expect(maskLimits(of("remove", "sharpen", "lens_blur", "grain"))).toBe(true);
         expect(maskLimits(of("denoise", "grain"))).toBe(true);
+    });
+
+    it("names what it does not limit once each, in the order a chain runs", () => {
+        const names = (operations: Operation[]) => unlimitedBy(operations).map((enhancement) => enhancement.family);
+
+        expect(names(of("grain", "sharpen", "lens_blur", "remove"))).toEqual(["remove", "lens_blur", "grain"]);
+        expect(names(of("sharpen"))).toEqual([]);
     });
 });

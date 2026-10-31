@@ -764,6 +764,24 @@ describe("a mask painted over the photograph", () => {
         expect(asked).toHaveBeenCalledTimes(3);
     });
 
+    it("is not sent for a stack it limits nothing in, where it is not shown, and comes back with an enhancement", () => {
+        const blur: Operation = {
+            family: "lens_blur",
+            codename: "lisbon",
+            precision: "fp16",
+            parameters: { f_number: 1.4, focus_x: 0.5, focus_y: 0.5 },
+        };
+        paint(HOLIDAY.path);
+        stack(HOLIDAY.path, blur);
+        mount();
+        expect((asked.mock.calls[0] as unknown[])[4]).toBeUndefined();
+
+        // The strokes were kept, and are sent as soon as there is an enhancement for them to limit.
+        stack(HOLIDAY.path, upscale(2), blur);
+        expect(asked).toHaveBeenCalledTimes(2);
+        expect((asked.mock.calls[1] as unknown[])[4]).toMatchObject({ strokes: [{}] });
+    });
+
     it("is another photograph's own: a stroke on one does not re-run the other", () => {
         stack(HOLIDAY.path, upscale(2));
         mount();

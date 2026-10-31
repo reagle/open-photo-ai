@@ -688,6 +688,16 @@ export const maskLimits = (operations: readonly Operation[]): boolean =>
     runnable(operations).some((operation) => !UNLIMITED.includes(operation.family));
 
 /**
+ * The enhancements in `operations` a limiting mask does not limit (see {@link UNLIMITED}), each once and in the order
+ * a chain runs them.
+ */
+export const unlimitedBy = (operations: readonly Operation[]): readonly Enhancement[] =>
+    ENHANCEMENTS.filter(
+        (entry) =>
+            UNLIMITED.includes(entry.family) && operations.some((operation) => operation.family === entry.family),
+    );
+
+/**
  * What the library calls a lens blur's aperture: its own `FNumber::NAME`, the name the catalogue publishes the range
  * under and the operation carries the value under.
  */
