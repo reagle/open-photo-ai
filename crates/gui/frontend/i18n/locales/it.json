@@ -62,6 +62,14 @@
             "analytics": {
                 "title": "Statistiche",
                 "description": "Invia dati di utilizzo anonimi. Immagini e dati personali non vengono mai raccolti."
+            },
+            "askBeforePause": {
+                "title": "Chiedi prima di mettere in pausa un gruppo",
+                "description": "Quando scegli un'altra foto mentre un gruppo è in elaborazione, chiedi prima. Disattivato, mette in pausa il gruppo e mostra la foto."
+            },
+            "wheelZooms": {
+                "title": "La rotella ingrandisce",
+                "description": "Ingrandisci l'anteprima con la rotella o con lo scorrimento a due dita invece di spostarla. Pizzicare, o scorrere tenendo premuto {{key}}, ingrandisce sempre."
             }
         },
         "performance": {
@@ -129,6 +137,7 @@
                 "panDown": "Sposta in basso",
                 "showOriginal": "Mostra l’originale finché premuto",
                 "cyclePreview": "Cambia vista di confronto",
+                "toggleInfo": "Mostra o nascondi le info foto",
                 "toggleDrawer": "Mostra o nascondi immagini",
                 "previousImage": "Immagine precedente",
                 "nextImage": "Immagine successiva",
@@ -183,6 +192,12 @@
             "cropped": "Ritagliata",
             "output": "Risultato"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "Questa foto ha una mappa di guadagno HDR. L'esportazione in JPG (Ultra HDR) la conserva; il JPG semplice la omette e, per ora, gli altri formati vengono scritti solo in SDR.",
+            "transfer": "Questa foto è HDR ({{transfer}}). Per ora tutti i formati vengono scritti solo in SDR.",
+            "other": "Questa foto è HDR. Per ora tutti i formati vengono scritti solo in SDR."
+        },
         "about_dialog": {
             "iconAlt": "Icona dell'app",
             "version": "Versione {{version}}"
@@ -213,6 +228,12 @@
             "full": "Intera",
             "sideBySide": "Affiancate",
             "split": "Divisa"
+        },
+        "badge": {
+            "queued": "In attesa di miglioramento",
+            "processing": "Miglioramento in corso",
+            "done": "Migliorata",
+            "failed": "Miglioramento non riuscito"
         }
     },
     "faces": {
@@ -315,7 +336,8 @@
             },
             "format": {
                 "title": "Formato",
-                "preserve": "Mantieni"
+                "preserve": "Mantieni",
+                "ultraHdr": "{{format}} (Ultra HDR)"
             },
             "quality": {
                 "title": "Qualità"
@@ -361,8 +383,10 @@
         "loss": {
             "notice": "{{count}} immagini su {{total}} perderanno qualità in questo formato. Passa il puntatore sull'avviso di una riga per vedere cosa.",
             "warning": "Perdita di qualità in questo formato",
+            "chosen": "Omesso dal formato scelto",
             "hdrGainMap": "Mappa di guadagno HDR rimossa: per ora {{format}} viene scritto solo in SDR",
             "hdrGainMapNotCarried": "Mappa di guadagno HDR rimossa: non è stato possibile conservarla",
+            "hdrGainMapLeftOut": "Scritto in SDR (mappa di guadagno omessa)",
             "hdrTransfer": "HDR ({{transfer}}) rimosso: per ora {{format}} viene scritto solo in SDR",
             "depth": "{{from}} → {{to}} in {{format}}",
             "bits": "{{bits}} bit",
@@ -512,7 +536,8 @@
             "setFocus": "Imposta fuoco",
             "refine": "Rifinisci",
             "editRefine": "Modifica rifinitura",
-            "focusHint": "Fai clic sulla fotografia nel punto che deve risultare nitido. Esc per annullare."
+            "focusHint": "Fai clic sulla fotografia nel punto che deve risultare nitido. Esc per annullare.",
+            "littleBlur": "Poca sfocatura con questa lunghezza focale e distanza di messa a fuoco. Metti a fuoco qualcosa di più vicino o aumenta l'intensità della sfocatura."
         },
         "grain": {
             "name": "Grana",
@@ -592,7 +617,25 @@
             "firstUse": "Solo al primo utilizzo, può richiedere qualche minuto",
             "firstUseAbout_one": "Solo al primo utilizzo, può richiedere circa {{count}} minuto",
             "firstUseAbout_many": "Solo al primo utilizzo, può richiedere circa {{count}} minuti",
-            "firstUseAbout_other": "Solo al primo utilizzo, può richiedere circa {{count}} minuti"
+            "firstUseAbout_other": "Solo al primo utilizzo, può richiedere circa {{count}} minuti",
+            "waiting": "In attesa…"
+        },
+        "info": {
+            "title": "Info foto",
+            "equivalent": "{{value}} mm equiv.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm equiv. (ritaglio)",
+            "simulated": "{{value}} simulato",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "Mappa di guadagno HDR",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Posizione registrata",
+            "edits": "Modifiche",
+            "blurredEarlier": "Sfocatura obiettivo già applicata ({{value}} simulato)",
+            "enhancedEarlier": "Già migliorata con Open Photo AI"
         }
     },
     "menu": {
@@ -661,13 +704,55 @@
         "sections": {
             "view": "Vista",
             "images": "Immagini",
-            "enhancements": "Miglioramenti"
+            "enhancements": "Miglioramenti",
+            "input": "Puntatore e finestre di dialogo"
         },
         "rows": {
             "zoom": "Ingrandisci / Riduci",
             "pan": "Sposta",
             "images": "Immagine precedente / Immagine successiva",
             "options": "Opzioni del miglioramento 1–8"
+        },
+        "input": {
+            "accept": "Salva o applica una finestra di dialogo; termina un pannello o un pennello",
+            "escape": "Annulla una finestra di dialogo; termina un pannello o un pennello",
+            "zoom": "Zoom con il puntatore",
+            "pan": "Sposta con il puntatore",
+            "pinch": "Pizzica",
+            "scroll": "Scorri",
+            "modScroll": "{{key}} + scorri",
+            "spaceDrag": "{{key}} + trascina",
+            "drag": "Trascina"
+        }
+    },
+    "batch": {
+        "processing": "Elaborazione {{current}} di {{total}}",
+        "pause": "Pausa",
+        "paused": "In pausa — {{left}} rimanenti",
+        "resume": "Riprendi",
+        "processAll": "Elabora tutte ({{count}})",
+        "exportHeld": "L’esportazione è disponibile quando l’elaborazione è in pausa o terminata",
+        "finished_one": "{{count}} foto elaborata",
+        "finished_other": "{{count}} foto elaborate",
+        "finishedWithFailures_one": "{{count}} foto elaborata, {{failed}} non riuscite",
+        "finishedWithFailures_other": "{{count}} foto elaborate, {{failed}} non riuscite",
+        "done": "Fatto — {{processed}} elaborate",
+        "doneWithFailures": "Fatto — {{processed}} elaborate ({{failed}} non riuscite)",
+        "list": {
+            "title": "Foto in questo gruppo"
+        },
+        "state": {
+            "done": "Fatta",
+            "processing": "In elaborazione",
+            "pending": "In attesa",
+            "failed": "Non riuscita"
+        },
+        "ask": {
+            "title": "Mettere in pausa l’elaborazione e vedere questa foto?",
+            "body": "L’elaborazione si ferma dove si trova. Riprendila più tardi per continuare con le foto rimanenti.",
+            "pause": "Pausa e visualizza",
+            "keep": "Continua l’elaborazione",
+            "dontAsk": "Non chiedere più"
         }
     }
 }

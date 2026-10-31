@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use opai::export::{ExportFormat, Named, Naming, destination_for};
+use opai::export::{ExportFormat, GainMapChoice, Named, Naming, destination_for};
 use serde::{Deserialize, Serialize};
 
 /// What decides the name and folder of each file written, as the window's export settings store it.
@@ -29,6 +29,7 @@ impl ExportNaming {
 
 /// What one queued file is exported as, as a row shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ExportName {
     /// The source's path, as it was asked for.
     pub(crate) path: String,
@@ -40,6 +41,9 @@ pub(crate) struct ExportName {
     pub(crate) format: ExportFormat,
     /// The extension written, without its dot.
     pub(crate) extension: String,
+    /// What is done with a gain map the source carries, `keep` or `drop`: dropped only by plain JPEG, so a row can
+    /// tell an Ultra HDR JPEG from an SDR one.
+    pub(crate) gain_map: GainMapChoice,
 }
 
 /// What each of `paths` is exported as under `naming`, in the order asked.
@@ -47,7 +51,7 @@ pub(crate) fn names(paths: Vec<String>, naming: &ExportNaming) -> Vec<ExportName
     paths
         .into_iter()
         .map(|path| {
-            let (destination, Named { name, format, extension }) = naming.destination_for(Path::new(&path));
+            let (destination, Named { name, format, extension, gain_map }) = naming.destination_for(Path::new(&path));
 
             ExportName {
                 name: name.to_string_lossy().into_owned(),
@@ -55,6 +59,7 @@ pub(crate) fn names(paths: Vec<String>, naming: &ExportNaming) -> Vec<ExportName
                 path,
                 format,
                 extension,
+                gain_map,
             }
         })
         .collect()
@@ -128,7 +133,27 @@ mod tests {
                 "destination": destination.to_string_lossy(),
                 "format": "jpeg",
                 "extension": "jpg",
+                "gainMap": "drop",
             }])
+        );
+    }
+
+    #[test]
+    fn ultra_hdr_is_named_as_jpeg_keeping_the_gain_map_which_plain_jpeg_drops() {
+        let paths = vec!["/photos/hawk.jpg".to_owned()];
+        let read: ExportNaming =
+            serde_json::from_value(serde_json::json!({ "prefix": "", "suffix": "", "format": "uhdr" })).expect("read");
+
+        let [ultra_hdr] = <[ExportName; 1]>::try_from(names(paths.clone(), &read)).expect("one");
+        let [plain] =
+            <[ExportName; 1]>::try_from(names(paths.clone(), &naming(FormatChoice::Format(ExportFormat::Jpeg))))
+                .expect("one");
+        let [preserved] = <[ExportName; 1]>::try_from(names(paths, &naming(FormatChoice::Preserve))).expect("one");
+
+        assert_eq!((ultra_hdr.format, ultra_hdr.extension.as_str()), (ExportFormat::Jpeg, "jpg"));
+        assert_eq!(
+            [ultra_hdr.gain_map, plain.gain_map, preserved.gain_map],
+            [GainMapChoice::Keep, GainMapChoice::Drop, GainMapChoice::Keep]
         );
     }
 }

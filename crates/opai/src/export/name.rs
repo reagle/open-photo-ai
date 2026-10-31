@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use super::format::{ExportFormat, FormatChoice};
+use super::format::{ExportFormat, FormatChoice, GainMapChoice};
 
 /// What decides the name of each file written: the affixes around the source's name, and the format choice.
 ///
@@ -41,6 +41,9 @@ pub struct Named {
     /// lower case where its format is written back — aliases included, so `.JPEG` stays `jpeg` — and `tiff` for the
     /// rest.
     pub extension: String,
+    /// What is done with a gain map the source carries: the choice's own [`gain_map`](FormatChoice::gain_map), so
+    /// left out only by plain JPEG.
+    pub gain_map: GainMapChoice,
 }
 
 /// What `source` is exported as under `naming`.
@@ -59,6 +62,7 @@ pub struct Named {
 pub fn name_for(source: &Path, naming: &Naming) -> Named {
     let (format, extension) = match naming.format {
         FormatChoice::Format(format) => (format, format.extension().to_owned()),
+        FormatChoice::UltraHdr => (ExportFormat::Jpeg, ExportFormat::Jpeg.extension().to_owned()),
         FormatChoice::Preserve => {
             let own = source.extension().and_then(|extension| extension.to_str()).map(str::to_lowercase);
 
@@ -76,7 +80,7 @@ pub fn name_for(source: &Path, naming: &Naming) -> Named {
     name.push(".");
     name.push(&extension);
 
-    Named { name, format, extension }
+    Named { name, format, extension, gain_map: naming.format.gain_map() }
 }
 
 /// The path the export of `source` asks to write, and what it is exported as: [`name_for`] inside `folder`, or inside
@@ -164,6 +168,24 @@ mod tests {
 
             assert_eq!((named.format, named.extension.as_str()), (format, extension), "{format:?}");
         }
+    }
+
+    #[test]
+    fn ultra_hdr_is_named_as_jpeg_and_keeps_the_gain_map_which_plain_jpeg_leaves_out() {
+        for path in ["/photos/beach.jpg", "/photos/beach.JPEG", "/photos/beach.png", "/photos/shot.nef"] {
+            let ultra_hdr = name_for(Path::new(path), &unaffixed(FormatChoice::UltraHdr));
+            let plain = name_for(Path::new(path), &unaffixed(chosen(ExportFormat::Jpeg)));
+
+            assert_eq!((ultra_hdr.format, ultra_hdr.extension.as_str()), (ExportFormat::Jpeg, "jpg"), "{path}");
+            assert_eq!((ultra_hdr.name, ultra_hdr.gain_map), (plain.name, GainMapChoice::Keep), "{path}");
+            assert_eq!(plain.gain_map, GainMapChoice::Drop, "{path}");
+        }
+
+        // A gain-map JPEG written back as itself stays an Ultra HDR JPEG.
+        assert_eq!(
+            name_for(Path::new("/photos/beach.jpg"), &unaffixed(FormatChoice::Preserve)).gain_map,
+            GainMapChoice::Keep
+        );
     }
 
     #[test]

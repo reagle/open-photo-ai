@@ -10,15 +10,17 @@ import {
     revealCurrent,
     toggleAutopilot,
     toggleDrawer,
+    toggleInfo,
 } from "@/lib/editorActions";
 import {
     actionFor,
     ariaKeyShortcuts,
     formatBinding,
-    isWindowShortcut,
     resolveShortcuts,
     type ShortcutAction,
     type ShortcutTable,
+    VIEW_ACTIONS,
+    windowShortcutScope,
 } from "@/lib/shortcuts";
 import { stepImage } from "@/stores/files";
 import { usePeekStore } from "@/stores/peek";
@@ -43,6 +45,7 @@ const PRESS: Record<Exclude<ShortcutAction, "showOriginal">, () => unknown> = {
     panUp: () => panCurrent("up"),
     panDown: () => panCurrent("down"),
     cyclePreview,
+    toggleInfo,
     toggleDrawer,
     previousImage: () => stepImage(-1),
     nextImage: () => stepImage(1),
@@ -69,6 +72,7 @@ const PRESS: Record<Exclude<ShortcutAction, "showOriginal">, () => unknown> = {
 const ONCE_PER_PRESS: ReadonlySet<ShortcutAction> = new Set([
     "toggleZoom",
     "cyclePreview",
+    "toggleInfo",
     "toggleDrawer",
     "revealImage",
     "toggleAutopilot",
@@ -88,8 +92,10 @@ const ONCE_PER_PRESS: ReadonlySet<ShortcutAction> = new Set([
 /**
  * The window's keyboard shortcuts: one `keydown`/`keyup` pair on `window`, mounted once by the shell.
  *
- * A key press is offered to the bindings only when `isWindowShortcut` says it is the window's, and a
- * press that acts has its default prevented, so a bound `Space` does not scroll and `Mod+=` does nothing
+ * A key press is offered to the bindings only when `windowShortcutScope` says it is the window's - and
+ * while an enhancement's options panel is open, only to the view's actions (zoom, fit, pan, show
+ * original), so the photograph can be looked at while its options are set. A press that acts has its
+ * default prevented, so a bound `Space` does not scroll and `Mod+=` does nothing
  * else. Every other press is left alone.
  *
  * Show-original lasts while its key is held. Key repeat does nothing further, and it ends on that
@@ -115,12 +121,13 @@ export const useShortcuts = () => {
         };
 
         const onKeyDown = (event: KeyboardEvent) => {
-            if (!isWindowShortcut(event)) return;
+            const scope = windowShortcutScope(event);
+            if (!scope) return;
 
             // Read at each press rather than once, so a Save takes effect at the next key without the
             // listener being mounted again.
             const action = actionFor(event, resolveShortcuts(useSettingsStore.getState().shortcuts, mac), mac);
-            if (!action) return;
+            if (!action || (scope === "view" && !VIEW_ACTIONS.has(action))) return;
 
             if (action !== "showOriginal") {
                 if (event.repeat && ONCE_PER_PRESS.has(action)) {
@@ -141,7 +148,7 @@ export const useShortcuts = () => {
             setShowingOriginal(true);
         };
 
-        // Not subject to `isWindowShortcut`: a release has to land even if a dialog opened, or the
+        // Not subject to `windowShortcutScope`: a release has to land even if a dialog opened, or the
         // focus moved into a field, while the key was held.
         //
         // Command's own release ends it too: macOS delivers no `keyup` for a key let go while Command

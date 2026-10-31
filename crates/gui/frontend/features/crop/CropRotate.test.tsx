@@ -148,6 +148,47 @@ describe("CropRotate", () => {
             expect(onClose).toHaveBeenCalled();
         });
 
+        // The cropper has no geometry in jsdom, so what Apply writes is `useCropController.test.ts`'s subject; here only
+        // that Return is the Apply button, pressed.
+        const applyPresses = () => {
+            const pressed = vi.fn();
+            screen.getByRole("button", { name: "Apply" }).addEventListener("click", pressed);
+
+            return pressed;
+        };
+
+        it("presses Apply on Return", () => {
+            render(<CropRotate open onClose={vi.fn()} />);
+            const pressed = applyPresses();
+
+            const event = fireEvent.keyDown(screen.getByRole("dialog"), { key: "Enter" });
+
+            expect(pressed).toHaveBeenCalledOnce();
+            expect(event).toBe(false);
+        });
+
+        it("commits a typed size and then presses Apply, on Return in the size field", () => {
+            render(<CropRotate open onClose={vi.fn()} />);
+            const pressed = applyPresses();
+            const field = document.querySelector("[data-slot='crop-width']") as HTMLInputElement;
+
+            act(() => field.focus());
+            fireEvent.keyDown(field, { key: "Enter" });
+
+            expect(field).not.toHaveFocus();
+            expect(pressed).toHaveBeenCalledOnce();
+        });
+
+        it("leaves Return on a focused button to the button, and a modified Return alone", () => {
+            render(<CropRotate open onClose={vi.fn()} />);
+            const pressed = applyPresses();
+
+            fireEvent.keyDown(screen.getByRole("button", { name: "Cancel" }), { key: "Enter" });
+            fireEvent.keyDown(screen.getByRole("dialog"), { key: "Enter", shiftKey: true });
+
+            expect(pressed).not.toHaveBeenCalled();
+        });
+
         it("writes nothing to either store on any of them", () => {
             render(<CropRotate open onClose={vi.fn()} />);
 

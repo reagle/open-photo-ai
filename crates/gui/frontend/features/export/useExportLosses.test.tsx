@@ -28,13 +28,17 @@ describe("useExportLosses", () => {
 
         await act(async () =>
             pending[0]?.([
-                { path: "/photos/hawk.jpg", losses: [HDR] },
-                { path: "/photos/beach.jpg", losses: [] },
+                { path: "/photos/hawk.jpg", losses: [HDR], gainMap: true },
+                { path: "/photos/beach.jpg", losses: [], gainMap: false },
             ]),
         );
 
-        expect(result.current?.get("/photos/hawk.jpg")).toEqual([HDR]);
-        expect(result.current?.get("/photos/beach.jpg")).toEqual([]);
+        expect(result.current?.get("/photos/hawk.jpg")).toEqual({
+            path: "/photos/hawk.jpg",
+            losses: [HDR],
+            gainMap: true,
+        });
+        expect(result.current?.get("/photos/beach.jpg")?.losses).toEqual([]);
     });
 
     it("asks again when the format changes, one question at a time, keeping only the latest answer", async () => {
@@ -48,13 +52,13 @@ describe("useExportLosses", () => {
         expect(asked).toHaveBeenCalledOnce();
 
         // The first answer is superseded, and only then is the latest question asked; the one in between never is.
-        await act(async () => pending[0]?.([{ path: "/photos/beach.jpg", losses: [HDR] }]));
+        await act(async () => pending[0]?.([{ path: "/photos/beach.jpg", losses: [HDR], gainMap: false }]));
         expect(result.current).toBeUndefined();
         expect(asked).toHaveBeenCalledTimes(2);
         expect(asked).toHaveBeenLastCalledWith(QUEUE, { prefix: "", suffix: "", format: "heic" });
 
-        await act(async () => pending[1]?.([{ path: "/photos/beach.jpg", losses: [] }]));
-        expect(result.current?.get("/photos/beach.jpg")).toEqual([]);
+        await act(async () => pending[1]?.([{ path: "/photos/beach.jpg", losses: [], gainMap: false }]));
+        expect(result.current?.get("/photos/beach.jpg")?.losses).toEqual([]);
     });
 
     it("asks the waiting question after a failed one, and none after the dialog closes", async () => {

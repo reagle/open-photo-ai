@@ -62,6 +62,14 @@
             "analytics": {
                 "title": "Analys",
                 "description": "Skicka anonym användningsdata. Inga bilder eller personuppgifter samlas någonsin in."
+            },
+            "askBeforePause": {
+                "title": "Fråga innan en omgång pausas",
+                "description": "När du väljer ett annat foto medan en omgång bearbetas, fråga först. Av pausar omgången och visar fotot."
+            },
+            "wheelZooms": {
+                "title": "Rullhjulet zoomar",
+                "description": "Zooma förhandsvisningen med rullhjulet eller tvåfingersrullning i stället för att flytta den. Att nypa, eller rulla med {{key}} nedtryckt, zoomar alltid."
             }
         },
         "performance": {
@@ -129,6 +137,7 @@
                 "panDown": "Panorera nedåt",
                 "showOriginal": "Visa original medan tangenten hålls ned",
                 "cyclePreview": "Växla jämförelsevy",
+                "toggleInfo": "Visa eller dölj fotoinfo",
                 "toggleDrawer": "Visa eller dölj bilder",
                 "previousImage": "Föregående bild",
                 "nextImage": "Nästa bild",
@@ -183,6 +192,12 @@
             "cropped": "Beskuren",
             "output": "Utdata"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "Det här fotot har en HDR-förstärkningskarta. Export som JPG (Ultra HDR) behåller den; vanlig JPG utelämnar den, och de andra formaten skrivs tills vidare bara som SDR.",
+            "transfer": "Det här fotot är HDR ({{transfer}}). Alla format skrivs tills vidare bara som SDR.",
+            "other": "Det här fotot är HDR. Alla format skrivs tills vidare bara som SDR."
+        },
         "about_dialog": {
             "iconAlt": "Appikon",
             "version": "Version {{version}}"
@@ -212,6 +227,12 @@
             "full": "Hel",
             "sideBySide": "Sida vid sida",
             "split": "Delad"
+        },
+        "badge": {
+            "queued": "Väntar på förbättring",
+            "processing": "Förbättras",
+            "done": "Förbättrad",
+            "failed": "Förbättringen misslyckades"
         }
     },
     "faces": {
@@ -313,7 +334,8 @@
             },
             "format": {
                 "title": "Format",
-                "preserve": "Behåll"
+                "preserve": "Behåll",
+                "ultraHdr": "{{format}} (Ultra HDR)"
             },
             "quality": {
                 "title": "Kvalitet"
@@ -355,8 +377,10 @@
         "loss": {
             "notice": "{{count}} av {{total}} bilder förlorar kvalitet i det här formatet. Håll pekaren över varningen på en rad för att se vad.",
             "warning": "Kvalitetsförlust i det här formatet",
+            "chosen": "Utelämnas av det valda formatet",
             "hdrGainMap": "HDR-förstärkningskarta borttagen: {{format}} skrivs tills vidare bara som SDR",
             "hdrGainMapNotCarried": "HDR-förstärkningskarta borttagen: den kunde inte föras över",
+            "hdrGainMapLeftOut": "Skrivs som SDR (förstärkningskartan utelämnas)",
             "hdrTransfer": "HDR ({{transfer}}) borttaget: {{format}} skrivs tills vidare bara som SDR",
             "depth": "{{from}} → {{to}} i {{format}}",
             "bits": "{{bits}} bitar",
@@ -504,7 +528,8 @@
             "setFocus": "Ställ in fokus",
             "refine": "Förfina",
             "editRefine": "Redigera förfining",
-            "focusHint": "Klicka på fotografiet där det ska vara skarpt. Esc för att avbryta."
+            "focusHint": "Klicka på fotografiet där det ska vara skarpt. Esc för att avbryta.",
+            "littleBlur": "Knappt någon oskärpa vid den här brännvidden och fokusavståndet. Fokusera på något närmare eller öka oskärpans styrka."
         },
         "grain": {
             "name": "Brus",
@@ -581,7 +606,25 @@
             "loading": "Läser in modellen {{model}}",
             "firstUse": "Bara första gången, kan ta några minuter",
             "firstUseAbout_one": "Bara första gången, kan ta ungefär {{count}} minut",
-            "firstUseAbout_other": "Bara första gången, kan ta ungefär {{count}} minuter"
+            "firstUseAbout_other": "Bara första gången, kan ta ungefär {{count}} minuter",
+            "waiting": "Väntar…"
+        },
+        "info": {
+            "title": "Fotoinfo",
+            "equivalent": "{{value}} mm ekv.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm ekv. (beskärning)",
+            "simulated": "{{value}} simulerad",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR-förstärkningskarta",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Plats registrerad",
+            "edits": "Redigeringar",
+            "blurredEarlier": "Objektivoskärpa redan tillämpad ({{value}} simulerad)",
+            "enhancedEarlier": "Redan förbättrad med Open Photo AI"
         }
     },
     "menu": {
@@ -650,13 +693,55 @@
         "sections": {
             "view": "Visning",
             "images": "Bilder",
-            "enhancements": "Förbättringar"
+            "enhancements": "Förbättringar",
+            "input": "Pekare och dialogrutor"
         },
         "rows": {
             "zoom": "Zooma in / Zooma ut",
             "pan": "Panorera",
             "images": "Föregående bild / Nästa bild",
             "options": "Alternativ för förbättring 1–8"
+        },
+        "input": {
+            "accept": "Spara eller tillämpa en dialogruta; slutför en panel eller pensel",
+            "escape": "Avbryt en dialogruta; slutför en panel eller pensel",
+            "zoom": "Zooma med pekaren",
+            "pan": "Panorera med pekaren",
+            "pinch": "Nyp",
+            "scroll": "Rulla",
+            "modScroll": "{{key}} + rulla",
+            "spaceDrag": "{{key}} + dra",
+            "drag": "Dra"
+        }
+    },
+    "batch": {
+        "processing": "Bearbetar {{current}} av {{total}}",
+        "pause": "Pausa",
+        "paused": "Pausad — {{left}} kvar",
+        "resume": "Återuppta",
+        "processAll": "Bearbeta alla ({{count}})",
+        "exportHeld": "Export blir tillgänglig när bearbetningen är pausad eller klar",
+        "finished_one": "{{count}} foto bearbetat",
+        "finished_other": "{{count}} foton bearbetade",
+        "finishedWithFailures_one": "{{count}} foto bearbetat, {{failed}} misslyckades",
+        "finishedWithFailures_other": "{{count}} foton bearbetade, {{failed}} misslyckades",
+        "done": "Klart — {{processed}} bearbetade",
+        "doneWithFailures": "Klart — {{processed}} bearbetade ({{failed}} misslyckades)",
+        "list": {
+            "title": "Foton i den här omgången"
+        },
+        "state": {
+            "done": "Klar",
+            "processing": "Bearbetas",
+            "pending": "Väntar",
+            "failed": "Misslyckades"
+        },
+        "ask": {
+            "title": "Pausa bearbetningen och visa det här fotot?",
+            "body": "Bearbetningen stannar där den är. Fortsätt senare med de foton som är kvar.",
+            "pause": "Pausa och visa",
+            "keep": "Fortsätt bearbeta",
+            "dontAsk": "Fråga inte igen"
         }
     }
 }

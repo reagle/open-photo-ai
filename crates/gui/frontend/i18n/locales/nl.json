@@ -62,6 +62,14 @@
             "analytics": {
                 "title": "Analyse",
                 "description": "Anonieme gebruiksgegevens verzenden. Er worden nooit afbeeldingen of persoonsgegevens verzameld."
+            },
+            "askBeforePause": {
+                "title": "Vragen voordat een reeks pauzeert",
+                "description": "Als je een andere foto kiest terwijl een reeks wordt verwerkt, eerst vragen. Uit pauzeert de reeks en toont de foto."
+            },
+            "wheelZooms": {
+                "title": "Scrollwiel zoomt",
+                "description": "Zoom de voorvertoning met het scrollwiel of met twee vingers in plaats van hem te verschuiven. Knijpen, of scrollen met {{key}} ingedrukt, zoomt altijd."
             }
         },
         "performance": {
@@ -129,6 +137,7 @@
                 "panDown": "Omlaag schuiven",
                 "showOriginal": "Origineel tonen zolang ingedrukt",
                 "cyclePreview": "Vergelijkingsweergave wisselen",
+                "toggleInfo": "Foto-info tonen of verbergen",
                 "toggleDrawer": "Afbeeldingen tonen of verbergen",
                 "previousImage": "Vorige afbeelding",
                 "nextImage": "Volgende afbeelding",
@@ -183,6 +192,12 @@
             "cropped": "Bijgesneden",
             "output": "Uitvoer"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "Deze foto heeft een HDR-gainmap. Exporteren als JPG (Ultra HDR) behoudt die; gewone JPG laat die weg, en de andere formaten worden voorlopig alleen als SDR geschreven.",
+            "transfer": "Deze foto is HDR ({{transfer}}). Alle formaten worden voorlopig alleen als SDR geschreven.",
+            "other": "Deze foto is HDR. Alle formaten worden voorlopig alleen als SDR geschreven."
+        },
         "about_dialog": {
             "iconAlt": "App-pictogram",
             "version": "Versie {{version}}"
@@ -212,6 +227,12 @@
             "full": "Volledig",
             "sideBySide": "Naast elkaar",
             "split": "Gesplitst"
+        },
+        "badge": {
+            "queued": "Wacht op verbetering",
+            "processing": "Wordt verbeterd",
+            "done": "Verbeterd",
+            "failed": "Verbetering mislukt"
         }
     },
     "faces": {
@@ -313,7 +334,8 @@
             },
             "format": {
                 "title": "Formaat",
-                "preserve": "Behouden"
+                "preserve": "Behouden",
+                "ultraHdr": "{{format}} (Ultra HDR)"
             },
             "quality": {
                 "title": "Kwaliteit"
@@ -355,8 +377,10 @@
         "loss": {
             "notice": "{{count}} van {{total}} afbeeldingen verliezen kwaliteit in dit formaat. Wijs de waarschuwing in een rij aan om te zien wat.",
             "warning": "Kwaliteitsverlies in dit formaat",
+            "chosen": "Weggelaten door het gekozen formaat",
             "hdrGainMap": "HDR-gainmap verwijderd: {{format}} wordt voorlopig alleen als SDR geschreven",
             "hdrGainMapNotCarried": "HDR-gainmap verwijderd: deze kon niet worden meegenomen",
+            "hdrGainMapLeftOut": "Als SDR geschreven (gainmap weggelaten)",
             "hdrTransfer": "HDR ({{transfer}}) verwijderd: {{format}} wordt voorlopig alleen als SDR geschreven",
             "depth": "{{from}} → {{to}} in {{format}}",
             "bits": "{{bits}}-bits",
@@ -504,7 +528,8 @@
             "setFocus": "Scherpstelling instellen",
             "refine": "Verfijnen",
             "editRefine": "Verfijning bewerken",
-            "focusHint": "Klik op de foto waar het scherp moet zijn. Esc om te annuleren."
+            "focusHint": "Klik op de foto waar het scherp moet zijn. Esc om te annuleren.",
+            "littleBlur": "Weinig vervaging bij deze brandpuntsafstand en scherpstelafstand. Stel scherp op iets dichterbij of verhoog de vervaging."
         },
         "grain": {
             "name": "Korrel",
@@ -581,7 +606,25 @@
             "loading": "Model {{model}} laden",
             "firstUse": "Alleen de eerste keer, kan enkele minuten duren",
             "firstUseAbout_one": "Alleen de eerste keer, kan ongeveer {{count}} minuut duren",
-            "firstUseAbout_other": "Alleen de eerste keer, kan ongeveer {{count}} minuten duren"
+            "firstUseAbout_other": "Alleen de eerste keer, kan ongeveer {{count}} minuten duren",
+            "waiting": "Wachten…"
+        },
+        "info": {
+            "title": "Foto-info",
+            "equivalent": "{{value}} mm equiv.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm equiv. (bijsnijding)",
+            "simulated": "{{value}} gesimuleerd",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR-gainmap",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Locatie vastgelegd",
+            "edits": "Bewerkingen",
+            "blurredEarlier": "Lensvervaging al toegepast ({{value}} gesimuleerd)",
+            "enhancedEarlier": "Al verbeterd met Open Photo AI"
         }
     },
     "menu": {
@@ -650,13 +693,55 @@
         "sections": {
             "view": "Weergave",
             "images": "Afbeeldingen",
-            "enhancements": "Verbeteringen"
+            "enhancements": "Verbeteringen",
+            "input": "Aanwijzer en dialogen"
         },
         "rows": {
             "zoom": "Inzoomen / Uitzoomen",
             "pan": "Schuiven",
             "images": "Vorige afbeelding / Volgende afbeelding",
             "options": "Opties van verbetering 1–8"
+        },
+        "input": {
+            "accept": "Dialoog bewaren of toepassen; paneel of penseel afronden",
+            "escape": "Dialoog annuleren; paneel of penseel afronden",
+            "zoom": "Zoomen met de aanwijzer",
+            "pan": "Verschuiven met de aanwijzer",
+            "pinch": "Knijpen",
+            "scroll": "Scrollen",
+            "modScroll": "{{key}} + scrollen",
+            "spaceDrag": "{{key}} + slepen",
+            "drag": "Slepen"
+        }
+    },
+    "batch": {
+        "processing": "Verwerken {{current}} van {{total}}",
+        "pause": "Pauzeren",
+        "paused": "Gepauzeerd — nog {{left}}",
+        "resume": "Hervatten",
+        "processAll": "Alles verwerken ({{count}})",
+        "exportHeld": "Exporteren kan zodra de verwerking is gepauzeerd of klaar is",
+        "finished_one": "{{count}} foto verwerkt",
+        "finished_other": "{{count}} foto’s verwerkt",
+        "finishedWithFailures_one": "{{count}} foto verwerkt, {{failed}} mislukt",
+        "finishedWithFailures_other": "{{count}} foto’s verwerkt, {{failed}} mislukt",
+        "done": "Klaar — {{processed}} verwerkt",
+        "doneWithFailures": "Klaar — {{processed}} verwerkt ({{failed}} mislukt)",
+        "list": {
+            "title": "Foto's in deze reeks"
+        },
+        "state": {
+            "done": "Klaar",
+            "processing": "Bezig",
+            "pending": "Wachtend",
+            "failed": "Mislukt"
+        },
+        "ask": {
+            "title": "Verwerking pauzeren en deze foto bekijken?",
+            "body": "De verwerking stopt waar ze is. Hervat haar later om verder te gaan met de resterende foto’s.",
+            "pause": "Pauzeren & bekijken",
+            "keep": "Doorgaan met verwerken",
+            "dontAsk": "Niet meer vragen"
         }
     }
 }

@@ -6,6 +6,8 @@
  * anything. `hooks/useShortcuts.ts` is the one listener that applies them.
  */
 
+import { LIVE_SURFACE } from "@/lib/layers";
+
 /** Every action the keyboard can perform on the window. */
 // The order the Keyboard settings page and the shortcuts list draw them in, and the order in which two
 // stored actions claiming one key press are resolved - see `resolveShortcuts`.
@@ -21,6 +23,7 @@ export const SHORTCUT_ACTIONS = [
     "panDown",
     "showOriginal",
     "cyclePreview",
+    "toggleInfo",
     "toggleDrawer",
     "previousImage",
     "nextImage",
@@ -71,6 +74,8 @@ export const DEFAULT_SHORTCUTS: Record<ShortcutAction, readonly string[]> = {
     panDown: ["Mod+ArrowDown"],
     // Full, side by side, split and round again: one key for the drawer's three comparison toggles.
     cyclePreview: ["v"],
+    // Lightroom's Info overlay key: what the photograph was taken with, and what the stack makes of it.
+    toggleInfo: ["i"],
     // `Mod \` shows or hides the strip of open images, as an editor's sidebar key does. Not the bare
     // backslash, which shows the original.
     toggleDrawer: ["Mod+\\"],
@@ -234,6 +239,29 @@ const EDITABLE = [
 /** What is open over the window: while one is, every key is that surface's. */
 const OVERLAY = "[role='dialog'], [role='alertdialog'], [role='menu'], dialog[open]";
 
+/** What is open over the window and is not a live surface: while one is, no key is the window's. */
+const BLOCKING_OVERLAY = OVERLAY.split(", ")
+    .map((overlay) => `${overlay}:not([${LIVE_SURFACE}])`)
+    .join(", ");
+
+/**
+ * The actions that look at the photograph without changing anything: still the window's while a live surface is
+ * open, so a user can zoom and pan to see what the panel is doing. Anything else - the image keys, the editor's keys,
+ * the comparison toggles - waits until the panel is closed.
+ */
+export const VIEW_ACTIONS: ReadonlySet<ShortcutAction> = new Set([
+    "zoomIn",
+    "zoomOut",
+    "fit",
+    "actualPixels",
+    "toggleZoom",
+    "panLeft",
+    "panRight",
+    "panUp",
+    "panDown",
+    "showOriginal",
+]);
+
 // `Space` presses, ticks, drags and selects these, and taking it from them would break operating the
 // whole window from the keyboard. `radio` because the drawer's comparison toggles are Radix radios,
 // and `switch` because Autopilot is one.
@@ -281,26 +309,35 @@ const ARROWS_OPERATE = [
 const ARROW_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
 
 /**
- * Whether a key press belongs to the window rather than to whatever has the focus.
+ * Which of the window's keys a key press may be: `"all"` of them, only the {@link VIEW_ACTIONS} (`"view"`), or none
+ * (`undefined`) - in which case it belongs to whatever has the focus.
  *
- * Not when it lands in a field the user types into or an editable region; not while a dialog or a
- * menu is open; not when the key is `Space` and the focus is on a control `Space` operates, nor an
- * arrow key on a control arrows operate; not while
- * an input method is composing; and not once a control has already handled it.
+ * None when it lands in a field the user types into or an editable region; while a dialog, an alert or a menu is
+ * open; when the key is `Space` and the focus is on a control `Space` operates, or an arrow key on a control arrows
+ * operate; while an input method is composing; and once a control has already handled it. Only the view's while
+ * every surface open is a live surface ({@link LIVE_SURFACE}) - an enhancement's options panel - so the photograph can
+ * be zoomed and panned while its options are being set.
  */
-export const isWindowShortcut = (event: KeyboardEvent): boolean => {
-    if (event.defaultPrevented || event.isComposing) return false;
+export const windowShortcutScope = (event: KeyboardEvent): "all" | "view" | undefined => {
+    if (event.defaultPrevented || event.isComposing) return undefined;
 
     const target = event.target instanceof Element ? event.target : undefined;
-    if (target?.closest(EDITABLE) || (target instanceof HTMLElement && target.isContentEditable)) return false;
+    if (target?.closest(EDITABLE) || (target instanceof HTMLElement && target.isContentEditable)) return undefined;
+
+    if (ARROW_KEYS.has(event.key) && target?.closest(ARROWS_OPERATE)) return undefined;
+    if (event.key === " " && target?.closest(SPACE_OPERATES)) return undefined;
 
     const document = target?.ownerDocument ?? globalThis.document;
-    if (document.querySelector(OVERLAY)) return false;
+    if (document.querySelector(BLOCKING_OVERLAY)) return undefined;
 
-    if (ARROW_KEYS.has(event.key) && target?.closest(ARROWS_OPERATE)) return false;
-
-    return !(event.key === " " && target?.closest(SPACE_OPERATES));
+    return document.querySelector(OVERLAY) ? "view" : "all";
 };
+
+/**
+ * Whether a key press belongs to the window, for every one of its keys - {@link windowShortcutScope} answering
+ * `"all"`. What the application's own actions ask: Open or Export is not a key for while a panel is open.
+ */
+export const isWindowShortcut = (event: KeyboardEvent): boolean => windowShortcutScope(event) === "all";
 
 /** How `aria-keyshortcuts` spells each modifier, on this platform. */
 const ARIA_MODIFIERS: Record<Modifier, (mac: boolean) => string> = {

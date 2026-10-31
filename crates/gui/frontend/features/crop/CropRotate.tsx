@@ -8,6 +8,7 @@ import { ImageCropper } from "@/features/crop/ImageCropper";
 import { RotateControls } from "@/features/crop/RotateControls";
 import { useCropController } from "@/features/crop/useCropController";
 import { DOTTED_SURFACE } from "@/lib/canvas";
+import { DIALOG_PRIMARY } from "@/lib/layers";
 import { cn } from "@/lib/utils";
 import { useCurrentFile } from "@/stores/files";
 import { useHasMask } from "@/stores/mask";
@@ -151,7 +152,11 @@ export const CropRotate = ({ open, onClose }: { open: boolean; onClose: () => vo
                             <Button variant="secondary" className="h-9 flex-1 font-normal" onClick={onClose}>
                                 {t("common.cancel")}
                             </Button>
-                            <Button className="h-9 flex-1 font-normal" onClick={controller.onApply}>
+                            <Button
+                                className="h-9 flex-1 font-normal"
+                                onClick={controller.onApply}
+                                {...{ [DIALOG_PRIMARY]: "" }}
+                            >
                                 {t("common.apply")}
                             </Button>
                         </div>

@@ -97,7 +97,7 @@ mod live;
 mod resident;
 
 pub(crate) use flight::{Install, Interest, OnPreparing};
-use resident::spawn_sweeper;
+use resident::{Residency, spawn_sweeper};
 pub(crate) use resident::{SessionCache, SessionHandle};
 use rust_sak::ai::ort;
 
@@ -395,8 +395,14 @@ impl<S: Send + 'static> Sessions<S> {
         // key would make an explicit switch to the CPU build a second identical copy of it.
         let resolved = provider_of(rung);
 
+        let residency = if crate::models::release_after_use(artifact) {
+            Residency::UntilUnused
+        } else {
+            Residency::Resident
+        };
+
         self.cache
-            .get_or_build(artifact, requested, resolved, interest, |installing| -> BuildFuture<'_, S> {
+            .get_or_build_as(artifact, requested, resolved, residency, interest, |installing| -> BuildFuture<'_, S> {
                 Box::pin(async move {
                     // The flight's install rather than this request's: it is performed inside the single flight, so what
                     // it reports goes to every request waiting on that flight, and what stops it is all of them leaving

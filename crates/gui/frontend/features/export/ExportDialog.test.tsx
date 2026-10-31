@@ -40,7 +40,9 @@ vi.mock("@/ipc/export", async () => {
         cancelExport: vi.fn(() => Promise.resolve()),
         onExportProgress: vi.fn(() => Promise.resolve(() => {})),
         exportNames: vi.fn(answerExportNames),
-        exportLosses: vi.fn((paths: string[]) => Promise.resolve(paths.map((path) => ({ path, losses: [] })))),
+        exportLosses: vi.fn((paths: string[]) =>
+            Promise.resolve(paths.map((path) => ({ path, losses: [], gainMap: false }))),
+        ),
     };
 });
 vi.mock("@/ipc/os", () => ({ isMacOs: () => false, isWindows: () => false }));
@@ -246,6 +248,23 @@ describe("the buttons", () => {
         expect(button("Save")).toBeEnabled();
     });
 
+    it("Return is Save while idle, and nothing while the batch runs or once it has ended", async () => {
+        pick(HOLIDAY);
+        await mountNamed();
+        const dialog = screen.getByRole("dialog");
+
+        act(() => batch().start());
+        fireEvent.keyDown(dialog, { key: "Enter" });
+        act(() => batch().finish());
+        fireEvent.keyDown(dialog, { key: "Enter" });
+        expect(ran).not.toHaveBeenCalled();
+        expect(onClose).not.toHaveBeenCalled();
+
+        fireEvent.click(button("Export again"));
+        fireEvent.keyDown(dialog, { key: "Enter" });
+        expect(ran).toHaveBeenCalledOnce();
+    });
+
     it("Cancel closes", () => {
         pick(HOLIDAY);
         mount();
@@ -414,6 +433,7 @@ describe("the loss notice", () => {
                     path,
                     losses:
                         path === SUNSET.path ? [HDR] : path === HOLIDAY.path && naming.format === "avif" ? [P3] : [],
+                    gainMap: false,
                 })),
             ),
         );
@@ -476,5 +496,87 @@ describe("the loss notice", () => {
         act(() => batch().start());
 
         expect(notice()).toBeNull();
+    });
+});
+
+describe("JPG (Ultra HDR)", () => {
+    // PORTRAIT is an Ultra HDR JPEG; HOLIDAY a PNG. As Rust answers: plain JPEG leaves the gain map out by choice, and
+    // every format but JPEG loses it to the format.
+    const CHOSEN: Loss = { kind: "hdr", hdr: "gainMap", format: "JPEG", cause: "chosen" };
+    const LOST: Loss = { kind: "hdr", hdr: "gainMap", format: "PNG", cause: "format" };
+    const types = () => [...document.querySelectorAll("[data-slot='export-types']")].map((types) => types.textContent);
+    const notice = () => document.querySelector("[data-slot='export-loss-notice']");
+
+    beforeEach(() => {
+        predicted.mockImplementation((paths: string[], naming: { format: string }) =>
+            Promise.resolve(
+                paths.map((path) => {
+                    const gainMap = path === PORTRAIT.path;
+                    const keeps = naming.format === "uhdr" || naming.format === "preserve";
+                    const losses = !gainMap || keeps ? [] : naming.format === "jpeg" ? [CHOSEN] : [LOST];
+
+                    return { path, losses, gainMap };
+                }),
+            ),
+        );
+    });
+
+    it("is offered beside plain JPG", async () => {
+        pick(PORTRAIT);
+        await mountNamed();
+
+        fireEvent.keyDown(screen.getByRole("combobox", { name: "Format" }), { key: "Enter" });
+        const options = (await screen.findAllByRole("option")).map((option) => option.textContent);
+
+        expect(options.slice(options.indexOf("JPG"), options.indexOf("JPG") + 2)).toEqual(["JPG", "JPG (Ultra HDR)"]);
+    });
+
+    it("is what Preserve writes an Ultra HDR JPEG as, and a plain photograph is written as itself", async () => {
+        useExportSettingsStore.getState().setFormat("preserve");
+        pick(HOLIDAY, PORTRAIT);
+        await mountNamed();
+
+        await waitFor(() => expect(types()).toEqual(["PNG → PNG", "JPG (Ultra HDR) → JPG (Ultra HDR)"]));
+        expect(notice()).toBeNull();
+    });
+
+    it("chosen for a batch, writes every row as JPEG and names only the one with a gain map Ultra HDR", async () => {
+        useExportSettingsStore.getState().setFormat("png");
+        pick(HOLIDAY, PORTRAIT);
+        await mountNamed();
+
+        await choose("Format", "JPG (Ultra HDR)");
+
+        expect(useExportSettingsStore.getState().format).toBe("uhdr");
+        await waitFor(() => expect(types()).toEqual(["PNG → JPG", "JPG (Ultra HDR) → JPG (Ultra HDR)"]));
+        expect(screen.getByRole("combobox", { name: "Format" })).toHaveTextContent("JPG (Ultra HDR)");
+        // Written as JPEG, so the one slider is JPEG's.
+        expect(quality()).toHaveAttribute("aria-valuenow", String(PUBLISHED_QUALITY.jpeg));
+        expect(document.querySelector("[data-slot='export-loss']")).toBeNull();
+    });
+
+    it("left for plain JPG, notes the gain map left out without warning of it", async () => {
+        useExportSettingsStore.getState().setFormat("jpeg");
+        pick(HOLIDAY, PORTRAIT);
+        await mountNamed();
+
+        await waitFor(() => expect(types()).toEqual(["PNG → JPG", "JPG (Ultra HDR) → JPG"]));
+        const mark = await screen.findByRole("button", { name: "Left out by the chosen format" });
+        expect(mark).toHaveAttribute("data-chosen");
+        expect(screen.queryByRole("button", { name: "Quality lost in this format" })).not.toBeInTheDocument();
+        expect(notice()).toBeNull();
+
+        fireEvent.focus(mark);
+        expect(await screen.findAllByText("Written as SDR (gain map left out)")).not.toHaveLength(0);
+    });
+
+    it("leaves the warning where another format loses the gain map", async () => {
+        useExportSettingsStore.getState().setFormat("png");
+        pick(PORTRAIT);
+        await mountNamed();
+
+        await waitFor(() => expect(types()).toEqual(["JPG (Ultra HDR) → PNG"]));
+        expect(await screen.findByRole("button", { name: "Quality lost in this format" })).toBeInTheDocument();
+        expect(notice()).not.toBeNull();
     });
 });
