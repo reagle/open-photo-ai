@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { revealImage } from "@/ipc/images";
 import { isMacOs } from "@/ipc/os";
 import { ZOOM_BUTTON_STEP, ZOOM_MIN } from "@/lib/constants";
+import { LIVE_SURFACE } from "@/lib/layers";
 import { useAddEnhancementMenuStore } from "@/stores/addEnhancementMenu";
 import { useCropDialogStore } from "@/stores/cropDialog";
 import { useDrawerStore } from "@/stores/drawer";
@@ -214,6 +215,52 @@ describe("useShortcuts", () => {
 
         fire("keyup", BACKSLASH);
         expect(showing()).toBe(false);
+    });
+
+    it("lets the view's keys through while an options panel is open, and no others", () => {
+        renderHook(() => useShortcuts());
+        const panel = document.createElement("div");
+        panel.setAttribute("role", "dialog");
+        panel.setAttribute(LIVE_SURFACE, "");
+        const slider = document.createElement("span");
+        slider.setAttribute("role", "slider");
+        slider.tabIndex = 0;
+        const field = document.createElement("input");
+        panel.append(slider, field);
+        document.body.append(panel);
+
+        const zoomIn = fire("keydown", { key: "=", code: "Equal", ctrlKey: true });
+        expect(zoomIn.defaultPrevented).toBe(true);
+        expect(scale()).toBe(ZOOM_MIN + ZOOM_BUTTON_STEP);
+
+        // From inside the panel too, as long as the control does not use the key itself.
+        fire("keydown", { key: "0", code: "Digit0", ctrlKey: true }, slider);
+        expect(scale()).toBe(ZOOM_MIN);
+
+        fire("keydown", BACKSLASH, slider);
+        expect(showing()).toBe(true);
+        fire("keyup", BACKSLASH, slider);
+
+        // Typing in a field is the field's, and an editor's key waits for the panel to close.
+        fire("keydown", { key: "z", code: "KeyZ" }, field);
+        expect(scale()).toBe(ZOOM_MIN);
+        const crop = fire("keydown", { key: "c", code: "KeyC" });
+        expect(crop.defaultPrevented).toBe(false);
+        expect(useCropDialogStore.getState().open).toBe(false);
+    });
+
+    it("lets no key through while a dialog is open over an options panel", () => {
+        renderHook(() => useShortcuts());
+        const panel = document.createElement("div");
+        panel.setAttribute("role", "dialog");
+        panel.setAttribute(LIVE_SURFACE, "");
+        const modal = document.createElement("div");
+        modal.setAttribute("role", "dialog");
+        document.body.append(panel, modal);
+
+        fire("keydown", { key: "=", code: "Equal", ctrlKey: true });
+
+        expect(scale()).toBeUndefined();
     });
 
     it("leaves an unbound key alone, Space among them", () => {

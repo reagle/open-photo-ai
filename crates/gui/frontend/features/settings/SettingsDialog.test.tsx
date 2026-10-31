@@ -498,6 +498,37 @@ describe("the Keyboard page", () => {
         expect(close).toHaveBeenCalledWith(false);
     });
 
+    it("saves on Return, but not on a Return a focused button or the recorder takes", async () => {
+        const close = vi.fn();
+        await open(close);
+        await goToKeyboard();
+
+        // The recorder takes every key while recording, Return among them.
+        await record("Fit to window", { key: "Enter" });
+        expect(close).not.toHaveBeenCalled();
+
+        await act(async () => {
+            fireEvent.keyDown(screen.getByRole("button", { name: "Cancel" }), { key: "Enter" });
+        });
+        expect(close).not.toHaveBeenCalled();
+
+        await act(async () => {
+            fireEvent.keyDown(screen.getByRole("dialog"), { key: "Enter" });
+        });
+        expect(close).toHaveBeenCalledExactlyOnceWith(true);
+    });
+
+    it("leaves a Return an input method is composing alone", async () => {
+        const close = vi.fn();
+        await open(close);
+
+        await act(async () => {
+            fireEvent.keyDown(screen.getByRole("dialog"), { key: "Enter", isComposing: true });
+        });
+
+        expect(close).not.toHaveBeenCalled();
+    });
+
     it("applies a rebinding on Save, and it survives a restart", async () => {
         await openSurface();
         await goToKeyboard();

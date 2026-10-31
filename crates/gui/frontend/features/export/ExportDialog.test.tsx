@@ -246,6 +246,23 @@ describe("the buttons", () => {
         expect(button("Save")).toBeEnabled();
     });
 
+    it("Return is Save while idle, and nothing while the batch runs or once it has ended", async () => {
+        pick(HOLIDAY);
+        await mountNamed();
+        const dialog = screen.getByRole("dialog");
+
+        act(() => batch().start());
+        fireEvent.keyDown(dialog, { key: "Enter" });
+        act(() => batch().finish());
+        fireEvent.keyDown(dialog, { key: "Enter" });
+        expect(ran).not.toHaveBeenCalled();
+        expect(onClose).not.toHaveBeenCalled();
+
+        fireEvent.click(button("Export again"));
+        fireEvent.keyDown(dialog, { key: "Enter" });
+        expect(ran).toHaveBeenCalledOnce();
+    });
+
     it("Cancel closes", () => {
         pick(HOLIDAY);
         mount();
