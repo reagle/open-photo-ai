@@ -41,6 +41,10 @@ const GUIDE_RADIUS: f32 = 24.0;
 /// The guided filter's regularisation: an edge in the photograph fainter than this variance is treated as flat.
 const GUIDE_EPS: f32 = 1e-3;
 
+/// The second guided pass's regularisation, for the trimap's depth ([`Refined::snapped`]): a tenth of the first's, so
+/// the band's edge follows the fainter outlines of hair and fur against a busy background.
+const SNAP_EPS: f32 = 1e-4;
+
 /// The edge grow's radius at [`REFERENCE_DIAGONAL`]: how far the nearer side of a depth edge is pulled out, so a pixel
 /// that mixes a subject and the background behind it stays with the sharp subject.
 const EDGE_GROW: f32 = 3.0;
@@ -320,6 +324,24 @@ impl Refined {
         let radius = (GUIDE_RADIUS * scale).round().max(1.0) as u32;
 
         Self { plane: upsampled(&low, &guide, width, height, radius, GUIDE_EPS), nearest }
+    }
+
+    /// This depth guided once more along `input`'s edges, by the same window and [`SNAP_EPS`]: the soft edge the first
+    /// pass leaves at a subject's outline snapped closer to the photograph's, for the trimap to be drawn on.
+    pub(crate) fn snapped(&self, input: &DynamicImage) -> Self {
+        let (width, height) = (input.width(), input.height());
+        let diagonal = (width as f32).hypot(height as f32);
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a radius of a few dozen pixels"
+        )]
+        let radius = (GUIDE_RADIUS * diagonal / REFERENCE_DIAGONAL).round().max(1.0) as u32;
+
+        Self {
+            plane: upsampled(&self.plane, &srgb(input), width, height, radius, SNAP_EPS),
+            nearest: self.nearest,
+        }
     }
 }
 
