@@ -1,6 +1,6 @@
 import type { Operation } from "@/ipc/enhance";
 import type { Mask, Refine, Stroke } from "@/ipc/mask";
-import { isPainted } from "@/lib/enhancements";
+import { isPainted, maskLimits } from "@/lib/enhancements";
 import { clampTo } from "@/lib/utils";
 
 /**
@@ -22,6 +22,15 @@ export type Use = keyof Uses;
 
 /** Whether `snapshot` is used for `use`: on unless switched off. */
 export const isUsedFor = (snapshot: Uses | undefined, use: Use): boolean => snapshot?.[use] !== false;
+
+/**
+ * Whether a mask with `snapshot`'s uses limits the enhancements of `operations`, as the library decides it: there is
+ * something for it to limit ({@link maskLimits}), and it has not been switched off - which it can be only under a lens
+ * blur, where the mask is then the subject kept in focus.
+ */
+export const limitsIn = (operations: readonly Operation[], snapshot: Uses | undefined): boolean =>
+    maskLimits(operations) &&
+    (isUsedFor(snapshot, "limitsEnhancements") || !operations.some((operation) => operation.family === "lens_blur"));
 
 /** The uses `snapshot` has been switched to, and no others, for a copy of it to carry. */
 export const usesOf = (snapshot: Uses | undefined): Uses => ({

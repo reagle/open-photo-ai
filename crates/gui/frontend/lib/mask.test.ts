@@ -4,6 +4,7 @@ import {
     isEmpty,
     isUsedFor,
     keepsPoint,
+    limitsIn,
     PREVIEW_EDGE_MAX,
     pngDataUrl,
     previewSize,
@@ -257,5 +258,23 @@ describe("pngDataUrl", () => {
 
         expect(url.startsWith("data:image/png;base64,")).toBe(true);
         expect(atob(url.slice("data:image/png;base64,".length))).toHaveLength(100_000);
+    });
+});
+
+describe("whether a mask limits the enhancements", () => {
+    const of = (...families: Operation["family"][]): Operation[] =>
+        families.map((family) => ({ family, codename: "x", precision: "fp32", parameters: {} }));
+
+    it("does where there is something to limit, unless switched off under a lens blur", () => {
+        expect(limitsIn(of("sharpen"), undefined)).toBe(true);
+        expect(limitsIn(of("sharpen", "lens_blur"), undefined)).toBe(true);
+        expect(limitsIn(of("sharpen", "lens_blur"), { limitsEnhancements: false })).toBe(false);
+        // Switched off is no switch without a lens blur: the library limits all the same.
+        expect(limitsIn(of("sharpen", "grain"), { limitsEnhancements: false })).toBe(true);
+    });
+
+    it("does not with nothing between the removals and the finishing Lens Blur and Grain", () => {
+        expect(limitsIn(of("remove", "lens_blur", "grain"), undefined)).toBe(false);
+        expect(limitsIn(of("grain"), undefined)).toBe(false);
     });
 });

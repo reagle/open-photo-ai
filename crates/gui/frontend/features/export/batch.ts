@@ -8,7 +8,7 @@ import {
     exportImage,
     exportNames,
 } from "@/ipc/export";
-import { runnable } from "@/lib/enhancements";
+import { maskLimits, runnable } from "@/lib/enhancements";
 import { describeExportError, type ExportFailure, qualityFor } from "@/lib/export";
 import { withChoice } from "@/lib/faces";
 import { track } from "@/lib/faro";
@@ -108,7 +108,8 @@ const exportOne = async (
 
     // What the user painted over this photograph, read now like the stack and the crop, and sent as the preview sends
     // it: the file shows the enhancements where the canvas does. Nothing for a photograph that was never painted.
-    const mask = toWire(useMaskStore.getState().masks.get(path));
+    // None where the stack gives it nothing to limit: its section is not shown there, so it must not act unseen.
+    const mask = maskLimits(operations) ? toWire(useMaskStore.getState().masks.get(path)) : undefined;
     // And what Remove takes out of it, as the preview sends it: the removal's region, carried by the Remove itself.
     const region = regionOf(useMaskStore.getState().removals.get(path));
     // And the Lens Blur's Refine brush, carried by the Lens Blur itself.

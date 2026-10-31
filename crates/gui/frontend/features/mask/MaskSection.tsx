@@ -2,17 +2,21 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { isPainted, maskLimits } from "@/lib/enhancements";
+import { limitsIn } from "@/lib/mask";
 import { useFileEnhancements } from "@/stores/enhancements";
 import { useCurrentFile } from "@/stores/files";
-import { useEditingTarget, useHasMask, useMaskStore } from "@/stores/mask";
+import { useEditingTarget, useFileMask, useHasMask, useMaskStore } from "@/stores/mask";
 import { MaskPanel } from "./MaskPanel";
 
 /**
  * The mask of the current photograph, under its enhancements: whether there is one, and the way to paint it.
  *
- * Reads "No mask" with **Paint mask**, or "Mask" with **Edit**, **Invert** and **Clear**; and while the preview is
- * painting, the panel of tools in their place. Not shown for a photograph whose stack gives a mask nothing to do -
- * though what is painted is kept, and is there again when an enhancement is.
+ * Reads "No mask" with **Paint where to enhance**, or "Mask" with **Edit**, **Invert** and **Clear**; and while the
+ * preview is painting, the panel of tools in their place. Under a lens blur with the mask's limit switched off, the mask
+ * is only the subject kept in focus, and the button says that instead. For a photograph whose stack gives a mask
+ * nothing to limit, none of this is shown - what is painted is kept, and is there again when an enhancement is, but is
+ * not used meanwhile. Where the stack holds a lens blur, a line points to its Refine brush, which is how its subject is
+ * kept sharp.
  *
  * **The removal's brush is drawn here too**, in the same place: while the area Remove takes out is being painted, the
  * panel for it - titled "Paint area to remove", with no Invert - stands in for the whole section. One region is edited
@@ -25,8 +29,7 @@ import { MaskPanel } from "./MaskPanel";
  * **A mask limits the enhancements between the removals and the finishing Lens Blur and Grain** ({@link maskLimits}):
  * the limiting mask is blended in after the removals, so it never brings back what was removed, and before the lens
  * blur and the grain, which cover the whole picture. A stack holding only those has nothing for one to limit, so the
- * section is not offered for it - unless the stack has a lens blur, under which the mask is also the subject kept in
- * focus.
+ * section is not offered for it.
  *
  * **It also owns when painting stops**, being the one thing mounted for as long as a file is open: when the photograph
  * changes, and when the stack no longer holds what the region being painted is for. Escape and Done stop it from the
@@ -45,8 +48,9 @@ export const MaskSection = () => {
     const clear = useMaskStore((state) => state.clear);
     const removing = stack.some((operation) => isPainted(operation.family));
     const blurring = stack.some((operation) => operation.family === "lens_blur");
-    // Something for the mask to do: enhancements to limit, or a lens blur to keep it in focus under.
-    const stacked = maskLimits(stack) || blurring;
+    // Something for the mask to limit; a lens blur alone has Refine, in its own panel.
+    const stacked = maskLimits(stack);
+    const limiting = limitsIn(stack, useFileMask(path));
 
     useEffect(() => {
         const { editing: painting, stopEditing } = useMaskStore.getState();
@@ -74,7 +78,14 @@ export const MaskSection = () => {
             </div>
         );
 
-    if (!stacked) return;
+    if (!stacked)
+        return blurring ? (
+            <div className="flex flex-col gap-3 border-t border-border px-6 py-4" data-slot="mask-section">
+                <p className="text-xs leading-relaxed text-muted-foreground text-pretty">
+                    {t("mask.section.refinePointer")}
+                </p>
+            </div>
+        ) : undefined;
 
     return (
         <div className="flex flex-col gap-3 border-t border-border px-6 py-4" data-slot="mask-section">
@@ -120,7 +131,7 @@ export const MaskSection = () => {
                             className="font-normal"
                             onClick={() => startEditing(path)}
                         >
-                            {t("mask.section.paint")}
+                            {limiting ? t("mask.section.paint") : t("mask.section.paintFocus")}
                         </Button>
                     )}
                 </>

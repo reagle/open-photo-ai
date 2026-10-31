@@ -1,12 +1,16 @@
 import { act, fireEvent, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import type { Operation } from "@/ipc/enhance";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useFileStore } from "@/stores/files";
 import { useMaskStore } from "@/stores/mask";
+import { useSettingsStore } from "@/stores/settings";
 import { HOLIDAY, openFiles, render, resetFileStore, SUNSET } from "@/test/support";
 import { MaskSection } from "./MaskSection";
+
+// The comparison hint names the key as this platform writes it.
+vi.mock("@/ipc/os", () => ({ isMacOs: vi.fn(() => false), isWindows: vi.fn(() => false) }));
 
 const sharpen: Operation = { family: "sharpen", codename: "moscow", precision: "fp32", parameters: { strength: 1 } };
 
@@ -48,7 +52,7 @@ describe("the mask section", () => {
         render(<MaskSection />);
 
         expect(screen.getByText("No mask")).toBeInTheDocument();
-        expect(screen.getByRole("button", { name: "Paint mask" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Paint where to enhance" })).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
     });
 
@@ -61,24 +65,24 @@ describe("the mask section", () => {
         expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Invert" })).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Clear" })).toBeInTheDocument();
-        expect(screen.queryByRole("button", { name: "Paint mask" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "Paint where to enhance" })).toBeNull();
     });
 
     it("opens the panel in its place, and Done goes back", () => {
         stack(HOLIDAY.path);
         render(<MaskSection />);
 
-        fireEvent.click(screen.getByRole("button", { name: "Paint mask" }));
+        fireEvent.click(screen.getByRole("button", { name: "Paint where to enhance" }));
 
         expect(store().editing).toEqual({ path: HOLIDAY.path, target: "limit" });
         expect(document.querySelector("[data-slot='mask-panel']")).not.toBeNull();
-        expect(screen.queryByRole("button", { name: "Paint mask" })).toBeNull();
+        expect(screen.queryByRole("button", { name: "Paint where to enhance" })).toBeNull();
 
         fireEvent.click(screen.getByRole("button", { name: "Done" }));
 
         expect(store().editing).toBeUndefined();
         expect(document.querySelector("[data-slot='mask-panel']")).toBeNull();
-        expect(screen.getByRole("button", { name: "Paint mask" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Paint where to enhance" })).toBeInTheDocument();
     });
 
     it("turns the weight over and clears it from the section, each a step Edit can undo", () => {
@@ -93,7 +97,7 @@ describe("the mask section", () => {
         expect(store().masks.get(HOLIDAY.path)?.strokes).toEqual([]);
         expect(screen.getByText("No mask")).toBeInTheDocument();
 
-        fireEvent.click(screen.getByRole("button", { name: "Paint mask" }));
+        fireEvent.click(screen.getByRole("button", { name: "Paint where to enhance" }));
         fireEvent.click(screen.getByRole("button", { name: "Undo" }));
 
         expect(store().masks.get(HOLIDAY.path)?.strokes).toHaveLength(1);
@@ -122,7 +126,7 @@ describe("the mask section", () => {
         act(() => useFileStore.getState().setCurrentIndex(1));
 
         expect(store().editing).toBeUndefined();
-        expect(screen.getByRole("button", { name: "Paint mask" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Paint where to enhance" })).toBeInTheDocument();
     });
 });
 
@@ -202,10 +206,23 @@ describe("the panel", () => {
         expect(store().masks.get(HOLIDAY.path)?.strokes).toEqual([]);
     });
 
-    it("says how to paint and how to move the photograph", () => {
+    it("says which way round the mask is, how to paint and how to move the photograph", () => {
         render(<MaskSection />);
 
-        expect(screen.getByText("Drag to paint. Hold Space to move the photograph.")).toBeInTheDocument();
+        expect(screen.getByText("Enhance only where painted")).toBeInTheDocument();
+        expect(screen.getByRole("group", { name: "Enhance only where painted" })).toBeInTheDocument();
+        expect(
+            screen.getByText(
+                "Painted areas get the enhancements; the rest stays as the original. Drag to paint, hold Space to move the photograph.",
+            ),
+        ).toBeInTheDocument();
+    });
+
+    it("says beside the tint's switch what the tint stands for, without renaming the switch", () => {
+        render(<MaskSection />);
+
+        expect(document.querySelector("[data-slot='mask-legend']")?.textContent).toBe("= enhanced");
+        expect(screen.getByRole("switch", { name: "Show overlay" })).toBeInTheDocument();
     });
 
     it("lets go of the focus a mouse click gave a button, so Space pans instead of pressing it again", () => {
@@ -269,7 +286,7 @@ describe("the brush for Remove", () => {
         fireEvent.click(screen.getByRole("button", { name: "Done" }));
 
         expect(store().editing).toBeUndefined();
-        expect(screen.getByRole("button", { name: "Paint mask" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Paint where to enhance" })).toBeInTheDocument();
     });
 
     it("offers no limiting mask for a stack that holds only Remove, which it would have nothing to limit", () => {
@@ -297,7 +314,6 @@ describe("the uses of a mask under a lens blur", () => {
         precision: "fp16",
         parameters: { f_number: 1.4, focus_x: 0.5, focus_y: 0.5 },
     };
-    const remove: Operation = { family: "remove", codename: "lima", precision: "fp32", parameters: {} };
 
     const holding = (...operations: Operation[]) =>
         act(() => useEnhancementStore.setState({ enhancements: new Map([[HOLIDAY.path, operations]]) }));
@@ -323,17 +339,6 @@ describe("the uses of a mask under a lens blur", () => {
         expect(keepsSharp()).toHaveAttribute("aria-checked", "true");
     });
 
-    it("leave out the limit where the lens blur has nothing before it to limit", () => {
-        for (const stack of [[blur], [remove, blur]]) {
-            holding(...stack);
-            const { unmount } = render(<MaskSection />);
-
-            expect(limits()).toBeNull();
-            expect(keepsSharp()).toHaveAttribute("aria-checked", "true");
-            unmount();
-        }
-    });
-
     it("switch the mask's use as a step Undo takes back, and Clear keeps it", () => {
         holding(sharpen, blur);
         paint();
@@ -351,6 +356,89 @@ describe("the uses of a mask under a lens blur", () => {
         expect(store().masks.get(HOLIDAY.path)?.limitsEnhancements).toBeUndefined();
         expect(limits()).toHaveAttribute("aria-checked", "true");
         expect(store().masks.get(HOLIDAY.path)?.strokes).toHaveLength(1);
+    });
+});
+
+describe("what the panel says the mask does not do", () => {
+    const remove: Operation = { family: "remove", codename: "lima", precision: "fp32", parameters: {} };
+    const blur: Operation = {
+        family: "lens_blur",
+        codename: "lisbon",
+        precision: "fp16",
+        parameters: { f_number: 1.4, focus_x: 0.5, focus_y: 0.5 },
+    };
+    const grain: Operation = { family: "grain", codename: "sensor", precision: "fp32", parameters: { amount: 1 } };
+    const upscale = (scale: number): Operation => ({
+        family: "upscale",
+        codename: "tokyo",
+        precision: "fp32",
+        parameters: { scale },
+    });
+    const restore = (scale: number): Operation => ({
+        family: "restore",
+        codename: "kyoto",
+        precision: "fp16",
+        parameters: { scale },
+    });
+
+    const holding = (...operations: Operation[]) =>
+        act(() => useEnhancementStore.setState({ enhancements: new Map([[HOLIDAY.path, operations]]) }));
+    const line = (slot: string) => document.querySelector(`[data-slot='${slot}']`)?.textContent;
+
+    beforeEach(() => store().startEditing(HOLIDAY.path));
+    afterEach(() => useSettingsStore.getState().apply({ shortcuts: {} }));
+
+    it("says outside the mask an enlarged photograph has no AI detail, only where the stack enlarges", () => {
+        const enlarged =
+            "Outside the mask the photograph is enlarged without AI detail; use Softness to blend the edge.";
+        for (const [stack, said] of [
+            [[sharpen, upscale(2)], true],
+            [[sharpen, restore(2)], true],
+            [[sharpen, upscale(1)], false],
+            [[sharpen, restore(1)], false],
+            [[sharpen], false],
+        ] as const) {
+            holding(...stack);
+            const { unmount } = render(<MaskSection />);
+
+            expect(line("mask-enlarged")).toBe(said ? enlarged : undefined);
+            unmount();
+        }
+    });
+
+    it("names the enhancements in the stack the mask does not limit, and only those", () => {
+        for (const [stack, said] of [
+            [[remove, sharpen, blur, grain], "Not limited by the mask: Remove, Lens Blur, Grain."],
+            [[sharpen, grain], "Not limited by the mask: Grain."],
+            [[remove, sharpen], "Not limited by the mask: Remove."],
+            [[sharpen], undefined],
+        ] as const) {
+            holding(...stack);
+            const { unmount } = render(<MaskSection />);
+
+            expect(line("mask-unlimited")).toBe(said);
+            unmount();
+        }
+    });
+
+    it("names the key that compares with the original, as the user has it bound", () => {
+        holding(sharpen);
+        const { unmount } = render(<MaskSection />);
+
+        expect(line("mask-compare")).toBe("Hold \\ to compare with the original; only the painted area changes.");
+        unmount();
+
+        act(() => useSettingsStore.getState().apply({ shortcuts: { showOriginal: ["Shift+o"] } }));
+        const rebound = render(<MaskSection />);
+        expect(line("mask-compare")).toMatch(
+            /^Hold .*O to compare with the original; only the painted area changes\.$/,
+        );
+        expect(line("mask-compare")).not.toContain("\\");
+        rebound.unmount();
+
+        act(() => useSettingsStore.getState().apply({ shortcuts: { showOriginal: [] } }));
+        render(<MaskSection />);
+        expect(line("mask-compare")).toBeUndefined();
     });
 });
 
@@ -387,12 +475,47 @@ describe("a stack with nothing for the mask to limit", () => {
         expect(store().editing).toBeUndefined();
     });
 
-    it("offers the mask under a lens blur and Grain to keep in focus, with no limit switch", () => {
-        holding(blur, grain);
+    it("offers no mask under a lens blur with nothing to limit, only a line pointing to Refine", () => {
+        for (const stack of [[blur], [blur, grain], [remove, blur, grain]]) {
+            holding(...stack);
+            const { unmount } = render(<MaskSection />);
+
+            expect(screen.getByText("To keep areas sharp, use Refine in the Lens Blur panel.")).toBeInTheDocument();
+            expect(screen.queryByRole("button", { name: /^Paint/ })).toBeNull();
+            expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+            expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
+            unmount();
+        }
+    });
+
+    it("says nothing of Refine where there is no lens blur, and keeps the strokes painted meanwhile", () => {
+        paint();
+        holding(grain);
+        render(<MaskSection />);
+
+        expect(screen.queryByText(/use Refine/)).toBeNull();
+        expect(store().masks.get(HOLIDAY.path)?.strokes).toHaveLength(1);
+    });
+
+    it("stops painting the limiting mask when only a lens blur is left", () => {
+        holding(sharpen, blur);
         act(() => store().startEditing(HOLIDAY.path));
         render(<MaskSection />);
 
-        expect(screen.queryByRole("switch", { name: "Limit the enhancements" })).toBeNull();
-        expect(screen.getByRole("switch", { name: "Keep the mask in focus" })).toBeInTheDocument();
+        holding(blur);
+
+        expect(store().editing).toBeUndefined();
+    });
+
+    it("says the same once the limit is switched off under a lens blur", () => {
+        holding(sharpen, blur);
+        act(() => store().startEditing(HOLIDAY.path));
+        render(<MaskSection />);
+
+        expect(screen.getByText("Enhance only where painted")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("switch", { name: "Limit the enhancements" }));
+
+        expect(screen.getByText("Keep the painted area in focus")).toBeInTheDocument();
+        expect(document.querySelector("[data-slot='mask-legend']")?.textContent).toBe("= in focus");
     });
 });

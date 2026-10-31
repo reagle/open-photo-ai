@@ -6,8 +6,18 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { maskLimits } from "@/lib/enhancements";
-import { isEmpty, isUsedFor, SLIDER_MAX, sizeToSlider, sliderToSize, type Use, withModifier } from "@/lib/mask";
+import { useShortcutKeys } from "@/hooks/useShortcuts";
+import { enlargement, maskLimits, unlimitedBy } from "@/lib/enhancements";
+import {
+    isEmpty,
+    isUsedFor,
+    limitsIn,
+    SLIDER_MAX,
+    sizeToSlider,
+    sliderToSize,
+    type Use,
+    withModifier,
+} from "@/lib/mask";
 import { toPercent } from "@/lib/utils";
 import { useFileEnhancements } from "@/stores/enhancements";
 import { type Target, useFileMask, useMaskStore } from "@/stores/mask";
@@ -127,6 +137,14 @@ const UseSwitch = ({
  * preview, and a popover would close on the first click in it. It is mounted exactly while the preview is painting on
  * `path`, which is also what keeps its keys - see {@link useMaskKeys} - alive only that long.
  *
+ * **The limiting mask's says which way round it is**, since nothing else does: titled "Enhance only where painted",
+ * with a dot in the tint's colour reading "= enhanced" beside the tint's switch and a hint saying the rest stays the
+ * original. Under it, muted, what a glance at the result would not tell: that outside the mask an enlarged photograph
+ * is only resampled, where the stack enlarges; which of the stack's enhancements the mask does not limit (Remove, Lens
+ * Blur, Grain); and the key that compares with the original, as the user has it bound. Where the mask limits nothing -
+ * its limit switched off under a lens blur - it is the subject kept in focus, and the title, the legend and the hint
+ * say that instead, with none of the three lines.
+ *
  * **And for the Lens Blur's Refine brush** (`target` `refine`), titled "Refine lens blur": its tools are Focus, Blur and
  * Erase rather than Paint and Erase - each stroke paints one of the two, or takes either away - and it has no Invert
  * and no uses either.
@@ -134,20 +152,32 @@ const UseSwitch = ({
  * **Under a lens blur the mask is also the subject**, kept in focus, and two switches say which of its uses it is for:
  * limiting the enhancements and keeping it in focus, both on until switched off, each an undoable step. Shown only
  * with a lens blur in the stack, and the first only with an enhancement for it to limit ({@link maskLimits}): Grain,
- * finishing the picture after the blur, is not one.
+ * finishing the picture after the blur, is not one. A lens blur with nothing to limit is not given this panel at all;
+ * its subject is kept in focus with Refine.
  *
  * **A control the mouse has pressed lets go of the focus.** A focused button is pressed again by Space, and Space is
  * how the photograph is panned while painting. Keyboard activation (a click with no pointer behind it) keeps its focus.
  */
 export const MaskPanel = ({ path, target = "limit" }: { path: string; target?: Target }) => {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     useMaskKeys(path, target);
 
     const tool = useMaskStore((state) => state.tool);
     const entry = useFileMask(path, target);
     const removal = target === "removal";
     const refine = target === "refine";
-    const title = removal ? t("mask.removal.title") : refine ? t("mask.refine.title") : t("mask.panel.title");
+    const stack = useFileEnhancements(path);
+    // Whether this mask limits the enhancements, or - under a lens blur with its limit off - is only the subject kept in
+    // focus.
+    const limiting = target === "limit" && limitsIn(stack, entry);
+    const title = removal
+        ? t("mask.removal.title")
+        : refine
+          ? t("mask.refine.title")
+          : limiting
+            ? t("mask.panel.title")
+            : t("mask.panel.titleFocus");
+    const compareKey = useShortcutKeys("showOriginal").key;
     const { setMode, setPaints, setSize, setSoftness, setOverlay, undo, redo, invert, clear, stopEditing } =
         useMaskStore.getState();
     // The refinement's three tools are the brush's two modes, painting focus or blur.
@@ -156,9 +186,10 @@ export const MaskPanel = ({ path, target = "limit" }: { path: string; target?: T
     const painted = !isEmpty(entry);
 
     // What the stack gives the uses to do: a lens blur to keep the mask in focus, and something before it to limit.
-    const stack = useFileEnhancements(path);
     const blurred = target === "limit" && stack.some((operation) => operation.family === "lens_blur");
     const limited = maskLimits(stack);
+    const unlimited = unlimitedBy(stack);
+    const list = new Intl.ListFormat(i18n.language, { style: "short", type: "unit" });
     const use = (which: Use) => ({
         checked: isUsedFor(entry, which),
         onChange: (on: boolean) => useMaskStore.getState().setUse(path, which, on),
@@ -187,6 +218,9 @@ export const MaskPanel = ({ path, target = "limit" }: { path: string; target?: T
                     {title}
                 </span>
             )}
+
+            {/* And for the limiting mask, whose title is the one place that says which way round it is. */}
+            {target === "limit" && <span className="text-[13px] font-semibold text-foreground">{title}</span>}
 
             {/* And for the refinement, opened from the Lens Blur's panel, with the two colours its tint is drawn in. */}
             {refine && (
@@ -308,16 +342,26 @@ export const MaskPanel = ({ path, target = "limit" }: { path: string; target?: T
                 </Tool>
             </div>
 
-            <label htmlFor="mask-overlay" className="flex items-center justify-between">
-                <span className="text-[13px] text-foreground">{t("mask.panel.overlay")}</span>
+            {/* The legend between the switch's name and the switch, outside the label so the switch is named by it alone. */}
+            <div className="flex items-center gap-3">
+                <label htmlFor="mask-overlay" className="text-[13px] text-foreground">
+                    {t("mask.panel.overlay")}
+                </label>
+                {/* What the tint stands for, in its colour, as the removal's and the refinement's titles have theirs. */}
+                {target === "limit" && (
+                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground" data-slot="mask-legend">
+                        <span aria-hidden className="size-2.5 flex-none rounded-full bg-primary" />
+                        {limiting ? t("mask.panel.legend") : t("mask.panel.legendFocus")}
+                    </span>
+                )}
                 <Switch
                     id="mask-overlay"
                     checked={tool.overlay}
                     onCheckedChange={setOverlay}
                     title={t("mask.panel.shortcut", { action: t("mask.panel.overlay"), key: "O" })}
-                    className="data-[state=unchecked]:bg-input"
+                    className="ml-auto data-[state=unchecked]:bg-input"
                 />
-            </label>
+            </div>
 
             {blurred && (
                 <div className="flex flex-col gap-3" data-slot="mask-uses">
@@ -339,8 +383,30 @@ export const MaskPanel = ({ path, target = "limit" }: { path: string; target?: T
             )}
 
             <p className="text-xs leading-relaxed text-muted-foreground text-pretty">
-                {removal ? t("mask.removal.hint") : refine ? t("mask.refine.hint") : t("mask.panel.hint")}
+                {removal
+                    ? t("mask.removal.hint")
+                    : refine
+                      ? t("mask.refine.hint")
+                      : limiting
+                        ? t("mask.panel.hint")
+                        : t("mask.panel.hintFocus")}
             </p>
+
+            {limiting && (
+                <div className="flex flex-col gap-1.5 text-xs leading-relaxed text-muted-foreground text-pretty">
+                    {enlargement(stack) > 1 && <p data-slot="mask-enlarged">{t("mask.panel.enlarged")}</p>}
+                    {unlimited.length > 0 && (
+                        <p data-slot="mask-unlimited">
+                            {t("mask.panel.unlimited", {
+                                names: list.format(unlimited.map((enhancement) => t(enhancement.nameKey))),
+                            })}
+                        </p>
+                    )}
+                    {compareKey !== undefined && (
+                        <p data-slot="mask-compare">{t("mask.panel.compare", { key: compareKey })}</p>
+                    )}
+                </div>
+            )}
 
             <Button
                 onClick={stopEditing}
