@@ -174,6 +174,44 @@ mod tests {
     }
 
     #[test]
+    fn an_ultra_hdr_jpeg_answers_its_gain_map_which_the_navbar_badges() {
+        // A gain-map JPEG as `images::crop`'s tests write one: an ISO 21496-1 payload on the map and on the primary.
+        let encoded = |size: (u32, u32), metadata: &rust_sak::image::Metadata| {
+            let pixels =
+                image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(size.0, size.1, image::Rgb([90; 3])));
+            let mut bytes = Vec::new();
+            let quality = Some(rust_sak::image::EncodeOptions::Jpeg { quality: 90 });
+            rust_sak::image::encode_writer_with(
+                &pixels,
+                &mut bytes,
+                rust_sak::image::ImageFormat::Jpeg,
+                quality,
+                metadata,
+            )
+            .expect("encodable");
+            bytes
+        };
+        let mut own = rust_sak::image::Metadata::default();
+        own.iso_gain_map = Some(vec![0; 4]);
+        let mut primary = rust_sak::image::Metadata::default();
+        primary.iso_gain_map = Some(vec![0; 4]);
+        primary.gain_map = Some(encoded((4, 3), &own));
+
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let path = dir.path().join("hdr.jpg");
+        std::fs::write(&path, encoded((16, 12), &primary)).expect("written");
+        let opened = Opened::default();
+        tauri::async_runtime::block_on(crate::images::files::describe_and_admit(vec![path.clone()], &opened))
+            .expect("the runtime is alive");
+        let identity = opai::image::identity_blocking(&path).expect("a written file has an identity");
+
+        let info = tauri::async_runtime::block_on(info_of(&opened, identity)).expect("an admitted photograph");
+
+        assert_eq!(info.hdr, Some("gainMap"));
+        assert_eq!((info.width, info.height), (Some(16), Some(12)));
+    }
+
+    #[test]
     fn an_identity_never_opened_is_refused_by_name() {
         let opened = Opened::default();
         let refused = tauri::async_runtime::block_on(info_of(&opened, "feedface".into())).expect_err("unknown");

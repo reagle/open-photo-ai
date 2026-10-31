@@ -6,6 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { FileMenuTrigger, FileOptionsMenu, NAVBAR_ANCHOR } from "@/features/files/FileOptionsMenu";
 import { AboutDialog } from "@/features/navbar/AboutDialog";
 import { NavbarDimensions } from "@/features/navbar/NavbarDimensions";
+import { NavbarHdr } from "@/features/navbar/NavbarHdr";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import { useSettingsDialog } from "@/features/settings/useSettingsDialog";
 import { useAppShortcutHint } from "@/hooks/useAppShortcuts";
@@ -124,6 +125,12 @@ export const Navbar = () => {
              * which of three numbers describes what the user is working on, and compares all three on
              * hover. See `NavbarDimensions`, including why it can be absent.
              */}
+            {/*
+             * Beside the size rather than in it: a fact about the file, which the dimensions block's
+             * hover comparison is not about, and absent for most photographs. See `NavbarHdr`.
+             */}
+            {file && <NavbarHdr file={file} />}
+
             {file && <NavbarDimensions file={file} />}
 
             <HintTooltip tip={settingsHint.tooltip}>

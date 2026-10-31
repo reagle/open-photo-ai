@@ -182,6 +182,12 @@
             "cropped": "Bijgesneden",
             "output": "Uitvoer"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "Deze foto heeft een HDR-gainmap. Exporteren als JPEG behoudt die; de andere formaten worden voorlopig alleen als SDR geschreven.",
+            "transfer": "Deze foto is HDR ({{transfer}}). Alle formaten worden voorlopig alleen als SDR geschreven.",
+            "other": "Deze foto is HDR. Alle formaten worden voorlopig alleen als SDR geschreven."
+        },
         "about_dialog": {
             "iconAlt": "App-pictogram",
             "version": "Versie {{version}}"
