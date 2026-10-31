@@ -21,6 +21,7 @@ use image::{DynamicImage, ImageBuffer, Rgb};
 use super::gain_map::{self, Filled};
 use super::grain::{self, Composite};
 use super::lima::{LARGE_SIDE, PLANES_IN, PLANES_OUT, SIDE};
+use super::refine;
 use super::region::{Bicubic, Marks, Rect, crops, distances, fill_weight, hole_plane, in_hole, regions};
 
 use crate::error::InferenceError;
@@ -54,10 +55,12 @@ pub(crate) struct Finish {
     pub(crate) large: bool,
     /// Whether the fill is given the photograph's grain.
     pub(crate) grain: bool,
+    /// Whether a fill the model made from a reduced crop is refined at the photograph's resolution from its patches.
+    pub(crate) refine: bool,
 }
 
-/// What every removal does: both.
-pub(crate) const FINISH: Finish = Finish { large: true, grain: true };
+/// What every removal does: all three.
+pub(crate) const FINISH: Finish = Finish { large: true, grain: true, refine: true };
 
 /// What the bench (`live::bench`) runs in place of [`FINISH`], to compare one with another in a build: never set
 /// outside it.
@@ -233,7 +236,13 @@ impl Removal {
 
             let read = Bicubic::new(&filled, side, scaled, (crop.width, crop.height));
             let mut pixels = composite(&output, crop, squared, &read);
-            let mut composite = Composite { pixels: &mut pixels, width: crop.width as usize, height: crop.height as usize };
+            let (width, height) = (crop.width as usize, crop.height as usize);
+            if self.finish.refine {
+                let reduction = crop.width.max(crop.height) as f32 / scaled.0.max(scaled.1) as f32;
+                refine::refined(&mut pixels, width, height, squared, reduction);
+            }
+
+            let mut composite = Composite { pixels: &mut pixels, width, height };
             if self.finish.grain
                 && let Some((photograph, fill)) = grain::grains(&composite, squared)
             {
