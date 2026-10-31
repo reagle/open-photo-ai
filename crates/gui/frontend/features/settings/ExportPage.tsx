@@ -28,7 +28,8 @@ export const parseQuality = (text: string): number | undefined => {
  *
  * **It holds its own text while focused**, so typing "4" on the way to "42" does not move the slider
  * to 4, and clearing the box to retype it does not clamp to the minimum mid-keystroke. Leaving it or
- * pressing Enter commits; unfocused, it shows the draft's value, so a drag and the box never disagree.
+ * pressing Enter commits - and Enter goes on to Save the dialog, with the committed value, as Return does in
+ * every draft dialog (`lib/layers.ts`); unfocused, it shows the draft's value, so a drag and the box never disagree.
  */
 const QualityBox = ({
     label,

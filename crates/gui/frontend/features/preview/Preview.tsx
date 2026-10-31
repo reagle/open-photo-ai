@@ -5,6 +5,7 @@ import { PreviewImage } from "@/features/preview/PreviewImage";
 import { useDroppedImages } from "@/hooks/useDroppedImages";
 import { useCanvasSurface } from "@/lib/canvas";
 import { DRAWER_HEIGHT } from "@/lib/constants";
+import { KEEPS_LIVE_SURFACE } from "@/lib/layers";
 import { cn } from "@/lib/utils";
 import { useDrawerStore } from "@/stores/drawer";
 import { useCurrentFile } from "@/stores/files";
@@ -65,6 +66,8 @@ export const Preview = () => {
     return (
         <div
             data-slot="preview-canvas"
+            // A press here is looking at the photograph, which an open options panel stays open for - see `lib/layers.ts`.
+            {...{ [KEEPS_LIVE_SURFACE]: "" }}
             className={cn("absolute inset-x-0 top-0 bottom-12 flex items-center justify-center", className)}
         >
             {/*

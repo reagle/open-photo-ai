@@ -5,6 +5,7 @@ import "@/i18n";
 import { type FamilyEntry, forgetCatalogue } from "@/ipc/catalogue";
 import type { Operation } from "@/ipc/enhance";
 import { track } from "@/lib/faro";
+import { KEEPS_LIVE_SURFACE } from "@/lib/layers";
 import { useAutopilotStore } from "@/stores/autopilot";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useFileStore } from "@/stores/files";
@@ -482,6 +483,41 @@ describe("the enhancements' keys", () => {
 
         await waitFor(() => expect(panel()).toBeNull());
         expect(triggers()[1]).toHaveFocus();
+    });
+
+    it("closes the options on Return as on Escape, keeping what was set", async () => {
+        press("2");
+        await waitFor(() => expect(panel()).toBeInTheDocument());
+
+        const event = press("Enter");
+
+        expect(event.defaultPrevented).toBe(true);
+        await waitFor(() => expect(panel()).toBeNull());
+        expect(infoLines()).toHaveLength(3);
+    });
+
+    it("stays open for a press on the photograph or the zoom, and closes for one anywhere else", async () => {
+        const canvas = document.body.appendChild(document.createElement("div"));
+        canvas.setAttribute(KEEPS_LIVE_SURFACE, "");
+        const inside = canvas.appendChild(document.createElement("img"));
+        const elsewhere = document.body.appendChild(document.createElement("div"));
+
+        press("2");
+        await waitFor(() => expect(panel()).toBeInTheDocument());
+        // Radix starts listening for an outside press a moment after the panel opens.
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
+        fireEvent.pointerDown(inside);
+        fireEvent.click(inside);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        expect(panel()).toBeInTheDocument();
+
+        fireEvent.pointerDown(elsewhere);
+        fireEvent.click(elsewhere);
+        await waitFor(() => expect(panel()).toBeNull());
+
+        canvas.remove();
+        elsewhere.remove();
     });
 
     it("does nothing for a digit past the end of the list, and leaves the key alone", () => {

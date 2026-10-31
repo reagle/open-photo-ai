@@ -10,6 +10,7 @@ import type { ExportNames } from "@/features/export/useExportNames";
 import { useExportFormats } from "@/hooks/useExportFormats";
 import { pickDirectory } from "@/ipc/export";
 import { FORMAT_CHOICES, type FormatChoice, queueQualityFor } from "@/lib/export";
+import { DIALOG_PRIMARY } from "@/lib/layers";
 import { cn } from "@/lib/utils";
 import { useExportBatchStore } from "@/stores/exportBatch";
 import { exportSettingsData, useExportSettingsStore } from "@/stores/exportSettings";
@@ -235,7 +236,7 @@ export const ExportSettingsPanel = ({ names, onClose }: { names: ExportNames | u
                         <Button variant="secondary" className="h-9 flex-1" onClick={onClose}>
                             {t("common.cancel")}
                         </Button>
-                        <Button className="h-9 flex-1" onClick={save}>
+                        <Button className="h-9 flex-1" onClick={save} {...{ [DIALOG_PRIMARY]: "" }}>
                             {t("common.save")}
                         </Button>
                     </>
