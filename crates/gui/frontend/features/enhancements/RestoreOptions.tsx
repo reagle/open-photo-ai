@@ -32,20 +32,23 @@ type RestoreOptionsProps = {
 };
 
 /**
- * What a restore can be set to: which model redraws the photograph, the size it does it at, and how much of the
- * redraw is kept - with the one sentence a generative enhancement owes its user about what it does.
+ * What a restore can be set to: which model redraws the photograph, the size it does it at, how much of the
+ * redraw is kept and how much of the photograph's own grain is put back - with the one sentence a generative
+ * enhancement owes its user about what it does.
  *
  * **Nothing is written on open**, for `UpscaleOptions`' reason: writing the stack asks for a new run.
  *
- * **Both amounts are the selected model's own published ranges**: the size's for which sizes are offered, and the
- * strength's for the slider, which stops at 100% - a redraw is blended back towards the photograph it was given,
- * never pushed past what the model drew.
+ * **Every amount is the selected model's own published range**: the size's for which sizes are offered, the
+ * strength's for its slider, which stops at 100% - a redraw is blended back towards the photograph it was given,
+ * never pushed past what the model drew - and the grain's for its own, from none to all of the noise the restoration
+ * took away. The library measures and draws the grain; this panel only says how much.
  */
 export const RestoreOptions = ({ enhancement, operation, entry, onChange }: RestoreOptionsProps) => {
     const { t } = useTranslation();
 
     const scales = publishedRange(entry, operation.codename, "scale");
     const strengths = publishedRange(entry, operation.codename, "strength");
+    const grains = publishedRange(entry, operation.codename, "grain");
     // 1x where neither the operation nor the catalogue knows a size: the photograph as it is.
     const size = parameterOf(operation, entry, "scale") ?? 1;
     const offered = SIZES.filter((candidate) => !scales || (candidate >= scales.min && candidate <= scales.max));
@@ -91,6 +94,22 @@ export const RestoreOptions = ({ enhancement, operation, entry, onChange }: Rest
                 mark={100}
                 onChange={(percent) => onChange(withParameter(operation, "strength", percent / PERCENT))}
             />
+
+            {/* Shown only where the selected model publishes a grain, which both restore models do. */}
+            {grains && (
+                <div className="flex flex-col gap-1" data-slot="restore-grain">
+                    <IntensityControl
+                        label={t("enhancements.restore.grain")}
+                        // Off where nothing knows an amount, which is what a new restore starts at.
+                        value={toPercent(parameterOf(operation, entry, "grain") ?? grains.default)}
+                        min={grains.min * PERCENT}
+                        max={grains.max * PERCENT}
+                        mark={0}
+                        onChange={(percent) => onChange(withParameter(operation, "grain", percent / PERCENT))}
+                    />
+                    <p className="text-muted-foreground text-xs">{t("enhancements.restore.grainHint")}</p>
+                </div>
+            )}
 
             {/*
              * Always shown rather than behind the (i) marker: what this enhancement does differently from every other
