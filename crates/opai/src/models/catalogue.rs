@@ -11,14 +11,16 @@ use serde::Serialize;
 use super::artifact::Family;
 use super::bias::Bias;
 use super::fidelity::Fidelity;
-use super::grain::Grain;
+use super::grain::{GrainAmount, GrainMode};
 use super::precision::{FloatPrecision, Precision};
 use super::restore::Restore;
 use super::scale::Scale;
 use super::simple::SimpleVariant;
 use super::strength::Strength;
 use super::upscale;
-use super::{color_balance, colorization, denoise, detection, face_recovery, light_adjustment, restore, sharpen};
+use super::{
+    color_balance, colorization, denoise, detection, face_recovery, grain, light_adjustment, restore, sharpen,
+};
 
 /// One model a user can choose, and what building it takes.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -163,13 +165,11 @@ pub(crate) const SCALE_PARAMETER: [ParameterEntry; 1] = [ParameterEntry {
 
 // Restore's bounds are its own `MAX_SCALE` and `MAX_STRENGTH`, narrower than the types' — see `Restore` for why — and
 // are what `Restore::new` clamps to, so a control built from these cannot offer a value the family would change.
-/// What a restore run takes: the size it restores at, how much of the model's output it applies, and how much of the
-/// grain it removed it puts back.
+/// What a restore run takes: the size it restores at, and how much of the model's output it applies.
 ///
 /// The size starts at 1x, restoring the photograph as it is: enlarging is a choice with a cost that grows with the
-/// square of the size, and a front end makes it. The strength starts at the model's own output. The grain starts off,
-/// a restoration as it was before grain existed.
-pub(crate) const RESTORE_PARAMETERS: [ParameterEntry; 3] = [
+/// square of the size, and a front end makes it. The strength starts at the model's own output.
+pub(crate) const RESTORE_PARAMETERS: [ParameterEntry; 2] = [
     ParameterEntry {
         name: Scale::NAME,
         kind: ParameterKind::Range { min: Scale::MIN, max: Restore::MAX_SCALE, default: Scale::MIN },
@@ -178,9 +178,22 @@ pub(crate) const RESTORE_PARAMETERS: [ParameterEntry; 3] = [
         name: Strength::NAME,
         kind: ParameterKind::Range { min: Strength::MIN, max: Restore::MAX_STRENGTH, default: Restore::MAX_STRENGTH },
     },
+];
+
+/// What a grain run takes: how much, and whether that is a share of what the result lacks of the photograph's own grain
+/// or of a sensor's, added on purpose.
+///
+/// The amount starts at all of it and the mode at matching the source: a grain is never added by default, so a user who
+/// adds one asks for the photograph's own noise back, and a clean photograph is given nothing. The mode is a switch,
+/// published as a range from 0 (add) to 1 (match), which a front end draws as one; any value from a half up matches.
+pub(crate) const GRAIN_PARAMETERS: [ParameterEntry; 2] = [
     ParameterEntry {
-        name: Grain::NAME,
-        kind: ParameterKind::Range { min: Grain::MIN, max: Grain::MAX, default: Grain::MIN },
+        name: GrainAmount::NAME,
+        kind: ParameterKind::Range { min: GrainAmount::MIN, max: GrainAmount::MAX, default: GrainAmount::MAX },
+    },
+    ParameterEntry {
+        name: GrainMode::NAME,
+        kind: ParameterKind::Range { min: 0.0, max: 1.0, default: GrainMode::Match.as_switch() },
     },
 ];
 
@@ -228,6 +241,22 @@ static CATALOGUE: LazyLock<Vec<FamilyEntry>> = LazyLock::new(|| {
         // Appended rather than placed beside upscale, as detection and face recovery were: this order is pinned and is
         // not a presentation order, so inserting would churn it for nothing.
         restore_family(),
+        // Appended, as restore was: this order is pinned and is not a presentation order. One precision, the
+        // arithmetic's, since it runs no model.
+        FamilyEntry {
+            family: Family::Grain,
+            order: Family::Grain.applied_at(),
+            variants: grain::ALL
+                .iter()
+                .map(|row| VariantEntry {
+                    family: Family::Grain,
+                    codename: row.codename,
+                    label: row.label,
+                    precisions: &grain::variant::PRECISIONS,
+                    parameters: row.parameters,
+                })
+                .collect(),
+        },
     ]
 });
 
@@ -316,9 +345,12 @@ mod tests {
 
     /// The families published as one graph per variant per precision, all sharing one shape. Derived from
     /// [`Family::ALL`] rather than transcribed, so a family added later is covered here without being remembered:
-    /// restore is the one left out, because Osaka's precisions are its own.
+    /// restore and grain are left out, because Osaka's precisions are its own and the grain's are its arithmetic's.
     fn single_graph_families() -> Vec<Family> {
-        Family::ALL.into_iter().filter(|family| *family != Family::Restore).collect()
+        Family::ALL
+            .into_iter()
+            .filter(|family| !matches!(family, Family::Restore | Family::Grain))
+            .collect()
     }
 
     fn family_entry(family: Family) -> &'static FamilyEntry {
@@ -452,16 +484,17 @@ mod tests {
         let restore_max = |name: &str| match name {
             Scale::NAME => Restore::MAX_SCALE,
             Strength::NAME => Restore::MAX_STRENGTH,
-            Grain::NAME => Grain::MAX,
             other => panic!("restore publishes a parameter its bounds do not name: {other}"),
         };
 
-        let accepts: [Enforced; 5] = [
+        let accepts: [Enforced; 6] = [
             (Scale::NAME, Scale::MIN, Scale::MAX, |value| Scale::new(value).is_ok()),
             (Strength::NAME, Strength::MIN, Strength::MAX, |value| Strength::new(value).is_ok()),
             (Bias::NAME, Bias::MIN, Bias::MAX, |value| Bias::new(value).is_ok()),
             (Fidelity::NAME, Fidelity::MIN, Fidelity::MAX, |value| Fidelity::new(value).is_ok()),
-            (Grain::NAME, Grain::MIN, Grain::MAX, |value| Grain::new(value).is_ok()),
+            (GrainAmount::NAME, GrainAmount::MIN, GrainAmount::MAX, |value| GrainAmount::new(value).is_ok()),
+            // A switch: every value in its range names a mode, and `ParameterValues::set` clamps the rest.
+            (GrainMode::NAME, 0.0, 1.0, |value| (0.0..=1.0).contains(&value)),
         ];
 
         for (family, codename, parameter) in every_published_parameter() {
@@ -542,7 +575,9 @@ mod tests {
             Strength::NAME => values.with_strength(Strength::clamped(Strength::MAX)),
             Bias::NAME => values.with_bias(Bias::clamped(Bias::MAX)),
             Fidelity::NAME => values.with_fidelity(Fidelity::clamped(Fidelity::MIN)),
-            Grain::NAME => values.with_grain(Grain::clamped(Grain::MAX)),
+            GrainAmount::NAME => values.with_amount(GrainAmount::clamped(GrainAmount::MAX)),
+            // The neutral mode is matching, so the one to move to is adding.
+            GrainMode::NAME => values.with_grain_mode(GrainMode::Add),
             other => panic!("nothing here moves a {other}"),
         }
     }
@@ -567,7 +602,9 @@ mod tests {
                     .build(precision, &neutral)
                     .unwrap_or_else(|error| panic!("{} at {precision}: {error}", variant.codename));
 
-                for name in [Scale::NAME, Strength::NAME, Bias::NAME, Fidelity::NAME, Grain::NAME] {
+                for name in
+                    [Scale::NAME, Strength::NAME, Bias::NAME, Fidelity::NAME, GrainAmount::NAME, GrainMode::NAME]
+                {
                     let published = variant.parameters.iter().any(|parameter| parameter.name == name);
                     let built = variant
                         .build(precision, &moved(name, neutral.clone()))
@@ -610,10 +647,8 @@ mod tests {
         assert_eq!(parameters(Family::LightAdjustment), vec![("bias", -1.0, 1.0)]);
         assert_eq!(parameters(Family::ColorBalance), vec![("bias", -1.0, 1.0)]);
         assert_eq!(parameters(Family::Upscale), vec![("scale", 1.0, 8.0)]);
-        assert_eq!(
-            parameters(Family::Restore),
-            vec![("scale", 1.0, 4.0), ("strength", 0.0, 1.0), ("grain", 0.0, 1.0)]
-        );
+        assert_eq!(parameters(Family::Restore), vec![("scale", 1.0, 4.0), ("strength", 0.0, 1.0)]);
+        assert_eq!(parameters(Family::Grain), vec![("amount", 0.0, 1.0), ("match", 0.0, 1.0)]);
     }
 
     #[test]
@@ -636,6 +671,7 @@ mod tests {
                 Family::Detection,
                 Family::FaceRecovery,
                 Family::Restore,
+                Family::Grain,
             ]
         );
 
@@ -671,6 +707,7 @@ mod tests {
             vec![("delhi", "Delhi"), ("mumbai", "Mumbai"), ("jaipur", "Jaipur")]
         );
         assert_eq!(variants(Family::Restore), vec![("kazan", "Kazan"), ("osaka", "Osaka")]);
+        assert_eq!(variants(Family::Grain), vec![("sensor", "Sensor")]);
     }
 
     #[test]
@@ -784,9 +821,7 @@ mod tests {
                 ("scale", 1.0),
                 ("fidelity", 1.0),
                 ("scale", 1.0),
-                ("strength", 1.0),
-                // The grain, which has no reference to start at: off, a restore as it was before grain existed.
-                ("grain", 0.0)
+                ("strength", 1.0)
             ]
         );
     }
@@ -859,9 +894,10 @@ mod tests {
                         variant.codename
                     );
 
+                    // A grain runs no model, and is the one family that resolves to nothing.
                     let artifacts = operation.required_artifacts();
                     assert!(
-                        !artifacts.is_empty(),
+                        !artifacts.is_empty() || entry.family == Family::Grain,
                         "{:?}'s {} at {precision} is listed but resolves to nothing",
                         entry.family,
                         variant.codename

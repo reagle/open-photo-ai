@@ -32,6 +32,8 @@ pub enum Family {
     Upscale,
     /// Generative restoration: a model that redraws detail rather than estimating it, optionally at a larger size.
     Restore,
+    /// A sensor's grain, put back where the chain smoothed the photograph's own away, or added on purpose.
+    Grain,
 }
 
 impl Family {
@@ -40,7 +42,7 @@ impl Family {
     /// The one list, so a family added later is covered by everything that iterates families rather than by whichever
     /// of them its author remembered to extend. Not the order the catalogue publishes — that one is a presentation
     /// decision and is pinned where it is made.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Detection,
         Self::Denoise,
         Self::FaceRecovery,
@@ -50,9 +52,10 @@ impl Family {
         Self::Sharpen,
         Self::Upscale,
         Self::Restore,
+        Self::Grain,
     ];
 
-    /// The eight families whose result is an image, in the order a chain applies them.
+    /// The nine families whose result is an image, in the order a chain applies them.
     ///
     /// **The one order of a chain**, which [`Opai::process`](crate::Opai::process) puts every chain into before it
     /// runs and the catalogue publishes, so a front end draws a stack in the order it will actually run rather than
@@ -69,16 +72,19 @@ impl Family {
     ///   then correct the photograph as a whole, colour cast last so it is fitted to the exposure it will be seen at.
     /// - **Sharpen late**, over the corrected picture, and **upscale after it**, so every model before it runs at the
     ///   photograph's own resolution rather than at up to sixty-four times its pixels.
-    /// - **Restore last of all.** A generative restorer redraws detail, so everything faithful runs first and hands it
-    ///   the best photograph there is to be conditioned on: denoised, with its faces, colour and light already
-    ///   corrected, and sharpened. What it draws is then the last word, and no faithful model is asked to correct an
-    ///   invented texture. When it also enlarges, it resamples first and restores at the new size, so it replaces an
-    ///   upscale rather than following one; a front end offers one or the other. At 1x it may follow an upscale, and
-    ///   then restores the photograph at its final size.
+    /// - **Restore after everything faithful.** A generative restorer redraws detail, so everything faithful runs first
+    ///   and hands it the best photograph there is to be conditioned on: denoised, with its faces, colour and light
+    ///   already corrected, and sharpened. What it draws is then the last word on detail, and no faithful model is asked
+    ///   to correct an invented texture. When it also enlarges, it resamples first and restores at the new size, so it
+    ///   replaces an upscale rather than following one; a front end offers one or the other. At 1x it may follow an
+    ///   upscale, and then restores the photograph at its final size.
+    /// - **Grain last of all**, a finishing step over the finished picture: it puts back the sensor noise every step
+    ///   before it may have smoothed away, measured against the photograph, so it must see what they made. Nothing after
+    ///   it would smooth the grain again, and it is drawn at the result's own pixels.
     ///
     /// The same order the application has always presented its enhancements in; it is [`Family::ALL`] without
     /// detection, and derived from it so the two cannot drift apart.
-    pub const APPLY_ORDER: [Self; 8] = {
+    pub const APPLY_ORDER: [Self; 9] = {
         assert!(
             matches!(Self::ALL[0], Self::Detection),
             "`ALL` must begin with the family that is never applied"
@@ -114,6 +120,7 @@ impl Family {
             Self::Sharpen => "sh",
             Self::Upscale => "up",
             Self::Restore => "rs",
+            Self::Grain => "gr",
         }
     }
 
@@ -136,6 +143,7 @@ impl Family {
             Self::Sharpen => "Sharpen",
             Self::Upscale => "Upscale",
             Self::Restore => "Restore",
+            Self::Grain => "Grain",
         }
     }
 }
@@ -207,6 +215,7 @@ mod tests {
         assert_eq!(Family::Sharpen.prefix(), "sh");
         assert_eq!(Family::Upscale.prefix(), "up");
         assert_eq!(Family::Restore.prefix(), "rs");
+        assert_eq!(Family::Grain.prefix(), "gr");
     }
 
     #[test]
@@ -221,8 +230,14 @@ mod tests {
     fn the_apply_order_restores_generatively_after_everything_faithful() {
         // A generative restorer is conditioned on what it is handed, so every faithful correction comes first, and
         // nothing after it is asked to correct a texture it invented.
-        assert_eq!(Family::Restore.applied_at(), Some(Family::APPLY_ORDER.len() - 1));
-        assert_eq!(Family::Upscale.applied_at(), Some(Family::APPLY_ORDER.len() - 2));
+        assert_eq!(Family::Restore.applied_at(), Some(Family::APPLY_ORDER.len() - 2));
+        assert_eq!(Family::Upscale.applied_at(), Some(Family::APPLY_ORDER.len() - 3));
+    }
+
+    #[test]
+    fn the_apply_order_adds_grain_over_the_finished_picture() {
+        // Grain is measured against what every step before it made, and nothing after it would smooth it again.
+        assert_eq!(Family::APPLY_ORDER.last(), Some(&Family::Grain));
     }
 
     #[test]

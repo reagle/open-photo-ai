@@ -321,6 +321,7 @@ pub(crate) const fn family_label(family: Family) -> &'static str {
         Family::Sharpen => "Sharpen",
         Family::Upscale => "Upscale",
         Family::Restore => "Restore",
+        Family::Grain => "Grain",
     }
 }
 

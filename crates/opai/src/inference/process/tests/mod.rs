@@ -3,6 +3,7 @@
 mod cache;
 mod entry;
 mod faces;
+mod grain;
 mod identity;
 mod log;
 mod plan;
@@ -110,6 +111,8 @@ struct FakeSession {
     reports: Option<Arc<Mutex<Vec<InferenceProgress>>>>,
     /// What this session would free, shared with every other handle on the same artifact.
     native: Arc<FakeNative>,
+    /// Whether its tiles come back flat, the mean of what went in: a model that smooths away all the grain.
+    smooths: bool,
 }
 
 /// A backend that opens whatever it is asked for and enlarges each pixel into a block, recording both.
@@ -160,6 +163,8 @@ struct Fake {
     fails_on: Option<(String, ExecutionProvider)>,
     /// What the driver declined, by artifact and provider.
     declined: Mutex<HashSet<(String, ExecutionProvider)>>,
+    /// Where set, every tile comes back flat — the grain tests' stand-in for a denoise or a sharpen that smooths.
+    smooths: bool,
 }
 
 impl Fake {
@@ -182,6 +187,7 @@ impl Fake {
             ladder: Vec::new(),
             fails_on: None,
             declined: Mutex::new(HashSet::new()),
+            smooths: false,
         }
     }
 
@@ -297,6 +303,7 @@ impl Backend for Fake {
                 cancels,
                 reports: self.reports.clone(),
                 native,
+                smooths: self.smooths,
             },
             built_on,
         ))
@@ -332,7 +339,11 @@ impl Backend for Fake {
             return Err(std::io::Error::other("the model failed"));
         }
 
-        nearest_neighbour(input, output);
+        if session.smooths {
+            output.fill(input.iter().sum::<f32>() / input.len() as f32);
+        } else {
+            nearest_neighbour(input, output);
+        }
 
         Ok(())
     }
