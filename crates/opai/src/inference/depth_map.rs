@@ -466,8 +466,11 @@ fn trimap_of(blur: &LensBlur, source: &image::DynamicImage) -> Option<(Plane, Re
     let cut = cut_at_steps(depth, &found, band, diagonal);
     bench_dump("cut", (cut.width(), cut.height()), cut.as_slice());
     let refined = Refined::of(depth, source);
+    // The band is drawn on the depth snapped closer to the photograph's outlines; the render keeps the depth as it was
+    // refined, so only where the matting model is asked changes.
+    let snapped = refined.snapped(source);
 
-    let trimap = trimap(&refined, band, Some(&cut));
+    let trimap = trimap(&snapped, band, Some(&cut));
     bench_dump("trimap", (trimap.width(), trimap.height()), trimap.as_slice());
 
     Some((trimap, refined, band))
