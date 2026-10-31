@@ -23,7 +23,7 @@ export const SETTINGS_PAGES = [
         icon: SlidersHorizontal,
         titleKey: "settings.pages.general.title",
         descriptionKey: "settings.pages.general.description",
-        keys: ["language", "background", "analytics"],
+        keys: ["language", "background", "analytics", "pauseBatchWithoutAsking"],
     },
     {
         id: "performance",

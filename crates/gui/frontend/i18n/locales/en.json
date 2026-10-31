@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "Not available on this install",
+        "unavailableLabel": "{{model}} (not available)"
     },
     "settings": {
         "title": "Settings",
@@ -60,6 +62,10 @@
             "analytics": {
                 "title": "Analytics",
                 "description": "Send anonymous usage data. No images or personal data are ever collected."
+            },
+            "askBeforePause": {
+                "title": "Ask before pausing a batch",
+                "description": "When you pick another photo while a batch is processing, ask first. Off pauses the batch and shows the photo."
             }
         },
         "performance": {
@@ -143,7 +149,8 @@
                 "openOptions7": "Options of enhancement 7",
                 "openOptions8": "Options of enhancement 8",
                 "cropRotate": "Crop/Rotate",
-                "showShortcuts": "Show keyboard shortcuts"
+                "showShortcuts": "Show keyboard shortcuts",
+                "toggleInfo": "Show or hide photo info"
             },
             "add": "Add shortcut",
             "addLabel": "Add shortcut for {{action}}",
@@ -181,6 +188,12 @@
             "cropped": "Cropped",
             "output": "Output"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "This photograph has an HDR gain map. Exporting as JPG (Ultra HDR) keeps it; plain JPG leaves it out, and the other formats are written as SDR for now.",
+            "transfer": "This photograph is HDR ({{transfer}}). Every format is written as SDR for now.",
+            "other": "This photograph is HDR. Every format is written as SDR for now."
+        },
         "about_dialog": {
             "iconAlt": "App Icon",
             "version": "Version {{version}}"
@@ -210,6 +223,12 @@
             "full": "Full",
             "sideBySide": "Side by Side",
             "split": "Split"
+        },
+        "badge": {
+            "queued": "Waiting to be enhanced",
+            "processing": "Being enhanced",
+            "done": "Enhanced",
+            "failed": "Enhancement failed"
         }
     },
     "faces": {
@@ -302,7 +321,8 @@
             },
             "format": {
                 "title": "Format",
-                "preserve": "Preserve"
+                "preserve": "Preserve",
+                "ultraHdr": "{{format}} (Ultra HDR)"
             },
             "quality": {
                 "title": "Quality"
@@ -344,8 +364,10 @@
         "loss": {
             "notice": "{{count}} of {{total}} images will lose quality in this format. Hover the warning on a row to see what.",
             "warning": "Quality lost in this format",
+            "chosen": "Left out by the chosen format",
             "hdrGainMap": "HDR gain map dropped: {{format}} output is SDR only for now",
             "hdrGainMapNotCarried": "HDR gain map dropped: it could not be carried",
+            "hdrGainMapLeftOut": "Written as SDR (gain map left out)",
             "hdrTransfer": "HDR ({{transfer}}) dropped: {{format}} output is SDR only for now",
             "depth": "{{from}} → {{to}} in {{format}}",
             "bits": "{{bits}}-bit",
@@ -493,7 +515,20 @@
             "setFocus": "Set focus",
             "refine": "Refine",
             "editRefine": "Edit refinement",
-            "focusHint": "Click the photograph where it should be sharp. Esc to cancel."
+            "focusHint": "Click the photograph where it should be sharp. Esc to cancel.",
+            "littleBlur": "Little blur at this focal length and focus distance. Focus on something nearer, or raise the blur amount."
+        },
+        "grain": {
+            "name": "Grain",
+            "amount": "Amount",
+            "match": "Match source",
+            "matchHint": "Puts back the photograph's own noise where the enhancements smoothed it away; after a denoise, the noise the denoise left.",
+            "addHint": "Adds a camera sensor's grain everywhere, whatever noise the photograph already has.",
+            "matched": "matched",
+            "added": "added",
+            "models": {
+                "sensor": "Use this to give an enhanced photo the look of a real capture again: a digital sensor's noise, mostly in brightness with a little colour, slightly coarser than a pixel. It runs no AI model and needs no download."
+            }
         },
         "add": "Add enhancement",
         "remove": "Remove enhancement",
@@ -521,6 +556,7 @@
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
         "infoLensBlur": "{{name}}, blur {{amount}}",
+        "infoGrain": "{{name}}, {{intensity}}%, {{mode}}",
         "groups": {
             "cleanUp": "Clean up",
             "lightColor": "Light & color",
@@ -551,12 +587,31 @@
             "sharpen": "Sharpening",
             "restore": "Restoring",
             "lensBlur": "Blurring",
+            "grain": "Grain",
             "enhancing": "Enhancing",
             "compiling": "Compiling {{model}} model",
             "loading": "Loading {{model}} model",
             "firstUse": "First use only, may take a few minutes",
             "firstUseAbout_one": "First use only, may take about {{count}} minute",
-            "firstUseAbout_other": "First use only, may take about {{count}} minutes"
+            "firstUseAbout_other": "First use only, may take about {{count}} minutes",
+            "waiting": "Waiting…"
+        },
+        "info": {
+            "title": "Photo info",
+            "equivalent": "{{value}} mm eq.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm eq. (crop)",
+            "simulated": "{{value}} simulated",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR gain map",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Location recorded",
+            "edits": "Edits",
+            "blurredEarlier": "Lens Blur already applied ({{value}} simulated)",
+            "enhancedEarlier": "Already enhanced by Open Photo AI"
         }
     },
     "menu": {
@@ -611,7 +666,9 @@
             "title": "Something went wrong",
             "message": "Open Photo AI hit an unexpected error and can't continue. Reloading usually fixes it; your settings are kept, but any unsaved work in the current session is lost.",
             "reload": "Reload"
-        }
+        },
+        "modelUnavailable": "{{model}} ({{precision}}) isn't available on this install; use {{alternative}}.",
+        "modelUnavailableAlone": "{{model}} ({{precision}}) isn't available on this install."
     },
     "shortcuts": {
         "title": "Keyboard shortcuts",
@@ -630,6 +687,36 @@
             "pan": "Pan",
             "images": "Previous image / Next image",
             "options": "Options of enhancement 1–8"
+        }
+    },
+    "batch": {
+        "processing": "Processing {{current}} of {{total}}",
+        "pause": "Pause",
+        "paused": "Paused — {{left}} left",
+        "resume": "Resume",
+        "processAll": "Process all ({{count}})",
+        "exportHeld": "Export is available once processing is paused or finished",
+        "finished_one": "{{count}} photo processed",
+        "finished_other": "{{count}} photos processed",
+        "finishedWithFailures_one": "{{count}} photo processed, {{failed}} failed",
+        "finishedWithFailures_other": "{{count}} photos processed, {{failed}} failed",
+        "done": "Done — {{processed}} processed",
+        "doneWithFailures": "Done — {{processed}} processed ({{failed}} failed)",
+        "list": {
+            "title": "Photos in this batch"
+        },
+        "state": {
+            "done": "Done",
+            "processing": "Processing",
+            "pending": "Pending",
+            "failed": "Failed"
+        },
+        "ask": {
+            "title": "Pause processing and view this photo?",
+            "body": "Processing stops where it is. Resume it later to carry on with the photos that are left.",
+            "pause": "Pause & view",
+            "keep": "Keep processing",
+            "dontAsk": "Don't ask again"
         }
     }
 }

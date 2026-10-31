@@ -114,6 +114,7 @@ fn family_name(family: Family) -> &'static str {
         Family::Upscale => "upscale",
         Family::Restore => "restore",
         Family::LensBlur => "lens_blur",
+        Family::Grain => "grain",
     }
 }
 
@@ -205,6 +206,7 @@ mod tests {
             Family::Restore,
             Family::LensBlur,
             Family::Remove,
+            Family::Grain,
         ]
         .map(family_name)
         .into();
@@ -223,7 +225,8 @@ mod tests {
                 "upscale",
                 "restore",
                 "lens_blur",
-                "remove"
+                "remove",
+                "grain"
             ]
         );
     }

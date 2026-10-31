@@ -26,7 +26,8 @@ export type Family =
     | "sharpen"
     | "upscale"
     | "restore"
-    | "lens_blur";
+    | "lens_blur"
+    | "grain";
 
 /** The numeric precision one model artifact is published at, as Rust's `Precision` spells it. */
 export type Precision = "fp32" | "fp16" | "int8";
@@ -62,6 +63,14 @@ export type VariantEntry = {
     label: string;
     /** Every precision this model is published in, in the order a chooser should offer them. */
     precisions: Precision[];
+    /**
+     * The precisions in `precisions` this install cannot run the model at, and absent where it can run every one.
+     *
+     * Fork-only: a model this fork exports itself and has not placed at that precision has nowhere to be fetched
+     * from. Beside `precisions` rather than taken out of it, because the quality tiers are read positionally off that
+     * list - Kazan's SD stays SD when its HD is missing. Read through `ModelOption.available` in `lib/enhancements.ts`.
+     */
+    unavailable?: Precision[];
     /**
      * The parameters **this model** takes.
      *

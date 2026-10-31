@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "このインストールでは利用できません",
+        "unavailableLabel": "{{model}}（利用不可）"
     },
     "settings": {
         "title": "設定",
@@ -60,6 +62,10 @@
             "analytics": {
                 "title": "利用状況の分析",
                 "description": "匿名の使用状況データを送信します。画像や個人データが収集されることはありません。"
+            },
+            "askBeforePause": {
+                "title": "一括処理を一時停止する前に確認",
+                "description": "一括処理中に別の写真を選んだとき、先に確認します。オフにすると、一括処理を一時停止して写真を表示します。"
             }
         },
         "performance": {
@@ -143,7 +149,8 @@
                 "openOptions7": "補正 7 のオプション",
                 "openOptions8": "補正 8 のオプション",
                 "cropRotate": "切り抜き/回転",
-                "showShortcuts": "キーボードショートカットを表示"
+                "showShortcuts": "キーボードショートカットを表示",
+                "toggleInfo": "写真情報の表示/非表示"
             },
             "add": "ショートカットを追加",
             "addLabel": "{{action}}にショートカットを追加",
@@ -181,6 +188,12 @@
             "cropped": "切り抜き後",
             "output": "出力"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "この写真には HDR ゲインマップがあります。JPG（Ultra HDR）で書き出すと保持されます。通常の JPG では含まれず、その他の形式は現在 SDR でのみ書き出されます。",
+            "transfer": "この写真は HDR（{{transfer}}）です。すべての形式は現在 SDR でのみ書き出されます。",
+            "other": "この写真は HDR です。すべての形式は現在 SDR でのみ書き出されます。"
+        },
         "about_dialog": {
             "iconAlt": "アプリアイコン",
             "version": "バージョン {{version}}"
@@ -209,6 +222,12 @@
             "full": "全体",
             "sideBySide": "左右比較",
             "split": "分割"
+        },
+        "badge": {
+            "queued": "補正待ち",
+            "processing": "補正中",
+            "done": "補正済み",
+            "failed": "補正に失敗しました"
         }
     },
     "faces": {
@@ -300,7 +319,8 @@
             },
             "format": {
                 "title": "形式",
-                "preserve": "元のまま"
+                "preserve": "元のまま",
+                "ultraHdr": "{{format}}（Ultra HDR）"
             },
             "quality": {
                 "title": "画質"
@@ -338,8 +358,10 @@
         "loss": {
             "notice": "{{total}} 枚中 {{count}} 枚の画像は、この形式で品質が失われます。内容は各行の警告にポインターを合わせると表示されます。",
             "warning": "この形式では品質が失われます",
+            "chosen": "選択した形式では含まれません",
             "hdrGainMap": "HDR ゲインマップを破棄: {{format}} は現在 SDR でのみ書き出されます",
             "hdrGainMapNotCarried": "HDR ゲインマップを破棄: 引き継げませんでした",
+            "hdrGainMapLeftOut": "SDR で書き出し（ゲインマップは含めません）",
             "hdrTransfer": "HDR ({{transfer}}) を破棄: {{format}} は現在 SDR でのみ書き出されます",
             "depth": "{{format}} で {{from}} → {{to}}",
             "bits": "{{bits}} ビット",
@@ -485,7 +507,20 @@
             "setFocus": "ピントを合わせる",
             "refine": "調整",
             "editRefine": "調整を編集",
-            "focusHint": "シャープに写したい部分をクリックしてください。Esc でキャンセルします。"
+            "focusHint": "シャープに写したい部分をクリックしてください。Esc でキャンセルします。",
+            "littleBlur": "この焦点距離とピント位置ではぼけがほとんど出ません。もっと近くにピントを合わせるか、ぼかし量を上げてください。"
+        },
+        "grain": {
+            "name": "粒子",
+            "amount": "量",
+            "match": "元の写真に合わせる",
+            "matchHint": "補正で滑らかになった部分に写真本来のノイズを戻します。ノイズ除去の後は、ノイズ除去が残したノイズに合わせます。",
+            "addHint": "写真にすでにあるノイズに関係なく、カメラセンサーの粒子を全体に加えます。",
+            "matched": "一致",
+            "added": "追加",
+            "models": {
+                "sensor": "補正した写真に本物の撮影らしさを取り戻すために使います。デジタルセンサーのノイズで、主に明るさに現れ、色はわずか、1ピクセルより少し粗い粒です。AIモデルは実行せず、ダウンロードも不要です。"
+            }
         },
         "add": "補正を追加",
         "remove": "補正を削除",
@@ -511,6 +546,7 @@
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
         "infoLensBlur": "{{name}}、ぼかし {{amount}}",
+        "infoGrain": "{{name}}, {{intensity}}%, {{mode}}",
         "groups": {
             "cleanUp": "クリーンアップ",
             "lightColor": "光と色",
@@ -541,11 +577,30 @@
             "sharpen": "シャープ化中",
             "restore": "修復中",
             "lensBlur": "ぼかし中",
+            "grain": "粒子",
             "enhancing": "補正中",
             "compiling": "{{model}} モデルをコンパイル中",
             "loading": "{{model}} モデルを読み込み中",
             "firstUse": "初回のみ。数分かかることがあります",
-            "firstUseAbout_other": "初回のみ。約 {{count}} 分かかることがあります"
+            "firstUseAbout_other": "初回のみ。約 {{count}} 分かかることがあります",
+            "waiting": "待機中…"
+        },
+        "info": {
+            "title": "写真情報",
+            "equivalent": "35mm換算 {{value}} mm",
+            "croppedEquivalent": "35mm換算 {{shot}} → {{rendered}} mm（切り抜き）",
+            "simulated": "{{value}}（シミュレーション）",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDRゲインマップ",
+                "pq": "HDR（PQ）",
+                "hlg": "HDR（HLG）",
+                "other": "HDR"
+            },
+            "located": "位置情報あり",
+            "edits": "編集",
+            "blurredEarlier": "レンズぼかし適用済み（{{value}} シミュレーション）",
+            "enhancedEarlier": "Open Photo AIで補正済み"
         }
     },
     "menu": {
@@ -600,7 +655,9 @@
             "title": "問題が発生しました",
             "message": "Open Photo AI で予期しないエラーが発生したため、処理を続行できません。再読み込みすればたいてい解決します。設定は保持されますが、現在のセッションで保存していない作業は失われます。",
             "reload": "再読み込み"
-        }
+        },
+        "modelUnavailable": "{{model}}（{{precision}}）はこのインストールでは利用できません。{{alternative}} を使用してください。",
+        "modelUnavailableAlone": "{{model}}（{{precision}}）はこのインストールでは利用できません。"
     },
     "shortcuts": {
         "title": "キーボードショートカット",
@@ -619,6 +676,34 @@
             "pan": "移動",
             "images": "前の画像 / 次の画像",
             "options": "補正 1–8 のオプション"
+        }
+    },
+    "batch": {
+        "processing": "{{total}} 枚中 {{current}} 枚目を処理中",
+        "pause": "一時停止",
+        "paused": "一時停止中 — 残り {{left}} 枚",
+        "resume": "再開",
+        "processAll": "すべて処理（{{count}}）",
+        "exportHeld": "処理を一時停止するか完了すると書き出せます",
+        "finished_other": "{{count}} 枚の写真を処理しました",
+        "finishedWithFailures_other": "{{count}} 枚の写真を処理しました（{{failed}} 枚は失敗）",
+        "done": "完了 — {{processed}} 枚を処理",
+        "doneWithFailures": "完了 — {{processed}} 枚を処理（{{failed}} 枚は失敗）",
+        "list": {
+            "title": "この一括処理の写真"
+        },
+        "state": {
+            "done": "完了",
+            "processing": "処理中",
+            "pending": "待機中",
+            "failed": "失敗"
+        },
+        "ask": {
+            "title": "処理を一時停止してこの写真を表示しますか？",
+            "body": "処理はその場で止まります。残りの写真は後で再開して処理できます。",
+            "pause": "一時停止して表示",
+            "keep": "処理を続ける",
+            "dontAsk": "今後は確認しない"
         }
     }
 }

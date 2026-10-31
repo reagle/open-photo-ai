@@ -31,6 +31,7 @@ impl Through {
                 cancels: None,
                 reports: None,
                 native: Arc::new(FakeNative { open: 1, freed: Arc::clone(&freed) }),
+                smooths: false,
             })
         });
         let supported = machine_supporting(false, false, false);

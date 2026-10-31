@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "In dieser Installation nicht verfügbar",
+        "unavailableLabel": "{{model}} (nicht verfügbar)"
     },
     "settings": {
         "title": "Einstellungen",
@@ -60,6 +62,10 @@
             "analytics": {
                 "title": "Analyse",
                 "description": "Anonyme Nutzungsdaten senden. Bilder oder persönliche Daten werden nie erfasst."
+            },
+            "askBeforePause": {
+                "title": "Vor dem Pausieren fragen",
+                "description": "Wenn Sie während der Stapelverarbeitung ein anderes Foto wählen, zuerst fragen. Aus pausiert die Verarbeitung und zeigt das Foto."
             }
         },
         "performance": {
@@ -143,7 +149,8 @@
                 "openOptions7": "Optionen von Verbesserung 7",
                 "openOptions8": "Optionen von Verbesserung 8",
                 "cropRotate": "Zuschneiden/Drehen",
-                "showShortcuts": "Tastaturkürzel anzeigen"
+                "showShortcuts": "Tastaturkürzel anzeigen",
+                "toggleInfo": "Fotoinfo ein- oder ausblenden"
             },
             "add": "Kürzel hinzufügen",
             "addLabel": "Kürzel hinzufügen für {{action}}",
@@ -181,6 +188,12 @@
             "cropped": "Zugeschnitten",
             "output": "Ausgabe"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "Dieses Foto hat eine HDR-Gain-Map. Ein Export als JPG (Ultra HDR) behält sie; einfaches JPG lässt sie weg, und die anderen Formate werden vorerst nur als SDR geschrieben.",
+            "transfer": "Dieses Foto ist HDR ({{transfer}}). Alle Formate werden vorerst nur als SDR geschrieben.",
+            "other": "Dieses Foto ist HDR. Alle Formate werden vorerst nur als SDR geschrieben."
+        },
         "about_dialog": {
             "iconAlt": "App-Symbol",
             "version": "Version {{version}}"
@@ -210,6 +223,12 @@
             "full": "Voll",
             "sideBySide": "Nebeneinander",
             "split": "Geteilt"
+        },
+        "badge": {
+            "queued": "Wartet auf Verbesserung",
+            "processing": "Wird verbessert",
+            "done": "Verbessert",
+            "failed": "Verbesserung fehlgeschlagen"
         }
     },
     "faces": {
@@ -302,7 +321,8 @@
             },
             "format": {
                 "title": "Format",
-                "preserve": "Beibehalten"
+                "preserve": "Beibehalten",
+                "ultraHdr": "{{format}} (Ultra HDR)"
             },
             "quality": {
                 "title": "Qualität"
@@ -344,8 +364,10 @@
         "loss": {
             "notice": "{{count}} von {{total}} Bildern verlieren in diesem Format an Qualität. Bewege den Zeiger über die Warnung in einer Zeile, um zu sehen, was.",
             "warning": "Qualitätsverlust in diesem Format",
+            "chosen": "Durch das gewählte Format weggelassen",
             "hdrGainMap": "HDR-Gain-Map entfernt: {{format}} wird vorerst nur als SDR geschrieben",
             "hdrGainMapNotCarried": "HDR-Gain-Map entfernt: sie konnte nicht übernommen werden",
+            "hdrGainMapLeftOut": "Als SDR geschrieben (Gain-Map weggelassen)",
             "hdrTransfer": "HDR ({{transfer}}) entfernt: {{format}} wird vorerst nur als SDR geschrieben",
             "depth": "{{from}} → {{to}} in {{format}}",
             "bits": "{{bits}} Bit",
@@ -493,7 +515,20 @@
             "setFocus": "Fokus setzen",
             "refine": "Verfeinern",
             "editRefine": "Verfeinerung bearbeiten",
-            "focusHint": "Klicken Sie auf die Stelle des Fotos, die scharf sein soll. Esc zum Abbrechen."
+            "focusHint": "Klicken Sie auf die Stelle des Fotos, die scharf sein soll. Esc zum Abbrechen.",
+            "littleBlur": "Kaum Unschärfe bei dieser Brennweite und Fokusentfernung. Fokussiere auf etwas Näheres oder erhöhe die Unschärfestärke."
+        },
+        "grain": {
+            "name": "Körnung",
+            "amount": "Stärke",
+            "match": "An Original anpassen",
+            "matchHint": "Gibt dem Foto sein eigenes Rauschen dort zurück, wo die Verbesserungen es geglättet haben; nach einer Rauschentfernung das Rauschen, das sie übrig ließ.",
+            "addHint": "Fügt überall die Körnung eines Kamerasensors hinzu, unabhängig vom Rauschen, das das Foto schon hat.",
+            "matched": "angepasst",
+            "added": "hinzugefügt",
+            "models": {
+                "sensor": "Verwende dies, damit ein verbessertes Foto wieder wie eine echte Aufnahme aussieht: das Rauschen eines Digitalsensors, vor allem in der Helligkeit, mit etwas Farbe, etwas gröber als ein Pixel. Es läuft kein KI-Modell und es ist kein Download nötig."
+            }
         },
         "add": "Hinzufügen",
         "remove": "Verbesserung entfernen",
@@ -521,6 +556,7 @@
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
         "infoLensBlur": "{{name}}, Unschärfe {{amount}}",
+        "infoGrain": "{{name}}, {{intensity}}%, {{mode}}",
         "groups": {
             "cleanUp": "Bereinigen",
             "lightColor": "Licht & Farbe",
@@ -551,12 +587,31 @@
             "sharpen": "Wird geschärft",
             "restore": "Wird restauriert",
             "lensBlur": "Wird weichgezeichnet",
+            "grain": "Körnung",
             "enhancing": "Wird verbessert",
             "compiling": "Modell {{model}} wird kompiliert",
             "loading": "Modell {{model}} wird geladen",
             "firstUse": "Nur beim ersten Mal, kann einige Minuten dauern",
             "firstUseAbout_one": "Nur beim ersten Mal, kann etwa {{count}} Minute dauern",
-            "firstUseAbout_other": "Nur beim ersten Mal, kann etwa {{count}} Minuten dauern"
+            "firstUseAbout_other": "Nur beim ersten Mal, kann etwa {{count}} Minuten dauern",
+            "waiting": "Warten…"
+        },
+        "info": {
+            "title": "Fotoinfo",
+            "equivalent": "{{value}} mm KB",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm KB (Zuschnitt)",
+            "simulated": "{{value}} simuliert",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR-Gain-Map",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Aufnahmeort gespeichert",
+            "edits": "Bearbeitungen",
+            "blurredEarlier": "Objektivunschärfe bereits angewendet ({{value}} simuliert)",
+            "enhancedEarlier": "Bereits mit Open Photo AI verbessert"
         }
     },
     "menu": {
@@ -611,7 +666,9 @@
             "title": "Etwas ist schiefgelaufen",
             "message": "Open Photo AI ist auf einen unerwarteten Fehler gestoßen und kann nicht fortfahren. Ein Neuladen behebt das meist; Ihre Einstellungen bleiben erhalten, nicht gespeicherte Arbeit aus der aktuellen Sitzung geht jedoch verloren.",
             "reload": "Neu laden"
-        }
+        },
+        "modelUnavailable": "{{model}} ({{precision}}) ist in dieser Installation nicht verfügbar; verwende {{alternative}}.",
+        "modelUnavailableAlone": "{{model}} ({{precision}}) ist in dieser Installation nicht verfügbar."
     },
     "shortcuts": {
         "title": "Tastaturkürzel",
@@ -630,6 +687,36 @@
             "pan": "Schwenken",
             "images": "Vorheriges Bild / Nächstes Bild",
             "options": "Optionen von Verbesserung 1–8"
+        }
+    },
+    "batch": {
+        "processing": "Verarbeite {{current}} von {{total}}",
+        "pause": "Pausieren",
+        "paused": "Pausiert — noch {{left}}",
+        "resume": "Fortsetzen",
+        "processAll": "Alle verarbeiten ({{count}})",
+        "exportHeld": "Der Export ist verfügbar, sobald die Verarbeitung pausiert oder beendet ist",
+        "finished_one": "{{count}} Foto verarbeitet",
+        "finished_other": "{{count}} Fotos verarbeitet",
+        "finishedWithFailures_one": "{{count}} Foto verarbeitet, {{failed}} fehlgeschlagen",
+        "finishedWithFailures_other": "{{count}} Fotos verarbeitet, {{failed}} fehlgeschlagen",
+        "done": "Fertig — {{processed}} verarbeitet",
+        "doneWithFailures": "Fertig — {{processed}} verarbeitet ({{failed}} fehlgeschlagen)",
+        "list": {
+            "title": "Fotos in dieser Stapelverarbeitung"
+        },
+        "state": {
+            "done": "Fertig",
+            "processing": "In Arbeit",
+            "pending": "Ausstehend",
+            "failed": "Fehlgeschlagen"
+        },
+        "ask": {
+            "title": "Verarbeitung pausieren und dieses Foto ansehen?",
+            "body": "Die Verarbeitung hält an, wo sie ist. Setzen Sie sie später fort, um die übrigen Fotos zu verarbeiten.",
+            "pause": "Pausieren & ansehen",
+            "keep": "Weiter verarbeiten",
+            "dontAsk": "Nicht mehr fragen"
         }
     }
 }

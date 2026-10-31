@@ -16,6 +16,7 @@ const named = (path: string, name: string): ExportName => ({
     destination: `/photos/${name}`,
     format: "png",
     extension: "png",
+    gainMap: "keep",
 });
 
 const QUEUE = ["/photos/beach.jpg"];

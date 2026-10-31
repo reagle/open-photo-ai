@@ -107,13 +107,13 @@ impl Sharpen {
 
     /// The pipeline this operation runs — the **family's contract seam**, where a variant becomes a run.
     pub(crate) fn pipeline<B: Backend>(self) -> Shared<B> {
-        // One arm, because the three variants differ in nothing that reaches `filter` but their weights, their guard
-        // and their profile — not the tiling, not the normalisation, not what the strength means. No `Result`: there
-        // is no state here to refuse.
+        // One arm, because the three variants differ in nothing that reaches `filter` but their weights, their guard,
+        // their anchor and their profile — not the tiling, not the normalisation, not what the strength means. No
+        // `Result`: there is no state here to refuse.
         //
         // Built from what `params` publishes rather than from this type's own fields, so a pipeline cannot be
-        // constructed from something the library did not say a run needs. The guard comes from the variant; see
-        // `SharpenVariant::guard`.
+        // constructed from something the library did not say a run needs. The guard and the anchor come from the
+        // variant; see `SharpenVariant::guard` and `SharpenVariant::anchor`.
         filter::pipeline::<B>(
             self.display_name(),
             self.artifact(),
@@ -121,6 +121,7 @@ impl Sharpen {
             RANGE,
             self.params().strength,
             self.variant.guard(),
+            self.variant.anchor(),
             TileGeometry::DEFAULT,
         )
     }
@@ -144,16 +145,18 @@ impl Sharpen {
     /// Carries the strength, which the tag has to spell itself because it is written out by hand rather than derived
     /// from the identity: two strengths are one model and two images, so a tag that left it out would serve the
     /// second run the first one's picture. Hyphen-separated, so it cannot be mistaken for an underscore-separated
-    /// artifact name.
+    /// artifact name. Ends in the filter's [`FILTER_VERSION`](filter::FILTER_VERSION), so an image an older build drew
+    /// is not served to a newer one.
     pub fn cache_tag(self) -> String {
         // Written deliberately rather than derived from the serialized form, so that renaming a field cannot silently
         // invalidate every cached image.
         format!(
-            "{}-{}-{}-t{}",
+            "{}-{}-{}-t{}-v{}",
             Family::Sharpen.prefix(),
             self.variant.codename(),
             self.variant.precision(),
-            self.strength
+            self.strength,
+            filter::FILTER_VERSION
         )
     }
 }
@@ -218,12 +221,23 @@ mod tests {
         // image on every user's disk.
         assert_eq!(
             Sharpen::new(SharpenVariant::Moscow(FloatPrecision::Fp32), strength(0.5)).cache_tag(),
-            "sh-moscow-fp32-t0.5"
+            "sh-moscow-fp32-t0.5-v4"
         );
         assert_eq!(
             Sharpen::new(SharpenVariant::Novgorod(FloatPrecision::Fp16), strength(1.0)).cache_tag(),
-            "sh-novgorod-fp16-t1"
+            "sh-novgorod-fp16-t1-v4"
         );
+    }
+
+    #[test]
+    fn the_cache_tag_carries_the_filter_version_so_an_older_builds_image_is_not_served() {
+        for operation in every_variant().into_iter().map(|variant| Sharpen::new(variant, strength(1.0))) {
+            assert!(
+                operation.cache_tag().ends_with(&format!("-v{}", filter::FILTER_VERSION)),
+                "{} carries no filter version",
+                operation.cache_tag()
+            );
+        }
     }
 
     #[test]
@@ -305,14 +319,13 @@ mod tests {
 
     #[test]
     fn moscow_and_novgorod_pass_an_exploding_tile_through() {
-        // The same backend that trips Petersburg's guard, and nothing is kept: every region is the model's.
-        use crate::pipeline::test_support::{PAIR, darkened, session};
+        // The same backend that trips Petersburg's guard, and nothing is kept: the exploded value is the model's, and
+        // reaches the photograph as white. The fake writes it into the middle of the green plane: row 128, column 0.
+        use crate::pipeline::test_support::{PAIR, session};
         use imaging::ChannelDepth;
-        use imaging::tensor::Sampler;
         use imaging::test_support::photograph;
 
         let source = photograph(PAIR.0, PAIR.1);
-        let sampler = Sampler::new(&source);
 
         for variant in [SharpenVariant::Moscow(FloatPrecision::Fp32), SharpenVariant::Novgorod(FloatPrecision::Fp16)] {
             let handle = session(Some((0, 4.0)));
@@ -321,11 +334,84 @@ mod tests {
                 .expect("a sharpen over a photograph");
             let produced = produced.as_rgb8().expect("eight-bit");
 
-            for (x, y) in [(0, 0), (10, 150), (200, 30), (400, 100)] {
-                assert_eq!(
-                    produced.get_pixel(x, y).0,
-                    darkened::<u8>(&sampler, x, y),
-                    "{variant:?} kept ({x}, {y}) rather than using the model's output"
+            assert_eq!(
+                produced.get_pixel(0, 128).0[1],
+                u8::MAX,
+                "{variant:?} kept the tile rather than using the model's"
+            );
+        }
+    }
+
+    #[test]
+    fn every_variant_runs_exactly_the_filter_its_own_guard_and_anchor_describe() {
+        // Bit for bit against the shared pipeline built by hand. Moscow and Novgorod against the radius-16 anchor the
+        // family gave every variant before each model declared its own, so moving the declaration changed neither of
+        // them; Petersburg against its own radius, and its result differs from what 16 made, so the comparison can
+        // tell the two apart.
+        use crate::models::filter::Anchor;
+        use crate::pipeline::test_support::{Fake, PAIR, session};
+        use imaging::ChannelDepth;
+        use imaging::test_support::photograph;
+
+        let source = photograph(PAIR.0, PAIR.1);
+        let through = |pipeline: Shared<Fake>| {
+            pipeline
+                .run(&source, std::slice::from_ref(&session(None)), ChannelDepth::Eight, None, &|| false)
+                .expect("a sharpen over a photograph")
+                .into_rgb8()
+        };
+        let by_hand = |variant: SharpenVariant, anchor: Anchor| {
+            let operation = Sharpen::new(variant, strength(1.0));
+
+            through(filter::pipeline::<Fake>(
+                operation.display_name(),
+                operation.artifact(),
+                operation.profile(),
+                RANGE,
+                strength(1.0),
+                variant.guard(),
+                Some(anchor),
+                TileGeometry::DEFAULT,
+            ))
+        };
+
+        for variant in every_variant() {
+            let produced = through(sharpening(variant));
+            let before = by_hand(variant, Anchor { radius: 16 });
+
+            if let SharpenVariant::Petersburg(_) = variant {
+                assert!(produced == by_hand(variant, petersburg::ANCHOR), "{variant:?} is not its own anchor's run");
+                assert!(produced != before, "{variant:?} came out as the radius of 16 makes it");
+            } else {
+                assert!(produced == before, "{variant:?} moved from the run it made before");
+            }
+        }
+    }
+
+    #[test]
+    fn every_variant_is_held_to_the_photographs_local_brightness() {
+        // Fails if the seam stops handing the anchor to the pipeline. The fake halves every value, which over a flat
+        // photograph is a change with nothing in it finer than the whole tile: held to its input's local brightness,
+        // it is no change at all. Without the anchor every pixel would come out at half its level.
+        use crate::pipeline::test_support::{PAIR, session};
+        use image::{DynamicImage, ImageBuffer, Rgb};
+        use imaging::ChannelDepth;
+
+        let colour = [200, 120, 40];
+        let source = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(PAIR.0, PAIR.1, Rgb(colour)));
+
+        for variant in every_variant() {
+            let handle = session(None);
+            let produced = sharpening(variant)
+                .run(&source, std::slice::from_ref(&handle), ChannelDepth::Eight, None, &|| false)
+                .expect("a sharpen over a photograph");
+            let produced = produced.as_rgb8().expect("eight-bit");
+
+            for (x, y, pixel) in produced.enumerate_pixels() {
+                assert!(
+                    pixel.0.iter().zip(colour).all(|(got, want)| got.abs_diff(want) <= 1),
+                    "{variant:?} ({x}, {y}) came out at {:?} rather than the photograph's {colour:?}",
+                    pixel.0
                 );
             }
         }

@@ -2,6 +2,7 @@ import type { ParseKeys, TFunction } from "i18next";
 import {
     Aperture,
     Bandage,
+    Grip,
     type LucideIcon,
     Maximize2,
     Paintbrush,
@@ -73,8 +74,8 @@ export type Enhancement = {
  *
  * **Runs of the chain's own order, not categories of their own.** Each heading covers consecutive entries of
  * {@link ENHANCEMENTS}, so the menu still reads top to bottom in the order a chain runs - clean up the photograph,
- * then its light and colour, then its detail and size, then a generative redraw, and the optical effect last - and a
- * heading says why an entry sits where it does. A test holds every group to one run.
+ * then its light and colour, then its detail and size, then a generative redraw, and the optical effect and the grain
+ * last - and a heading says why an entry sits where it does. A test holds every group to one run.
  */
 export const ENHANCEMENT_GROUPS = [
     { group: "cleanUp", labelKey: "enhancements.groups.cleanUp" },
@@ -88,7 +89,7 @@ export const ENHANCEMENT_GROUPS = [
 export type EnhancementGroup = (typeof ENHANCEMENT_GROUPS)[number]["group"];
 
 /**
- * The ten enhancements, in the order the add menu offers them.
+ * The eleven enhancements, in the order the add menu offers them.
  *
  * **This is the frontend's only list of domain names, and it is not model vocabulary.** It is which
  * enhancements this application presents and in what order - a presentation decision, which is why
@@ -178,6 +179,14 @@ export const ENHANCEMENTS = [
         nameKey: "enhancements.lensBlur.name",
         activityKey: "preview.progress.lensBlur",
         icon: Aperture,
+        manual: true,
+    },
+    {
+        family: "grain",
+        group: "effects",
+        nameKey: "enhancements.grain.name",
+        activityKey: "preview.progress.grain",
+        icon: Grip,
         manual: true,
     },
 ] as const satisfies readonly Enhancement[];
@@ -299,6 +308,14 @@ export type ModelOption = {
     label: string;
     /** Absent where this model publishes one precision and a tier would say nothing. */
     quality?: ModelQuality;
+    /**
+     * Whether this install can run the model at this precision - false for one the catalogue lists as
+     * `unavailable`, a model this fork exports and has not placed at it.
+     *
+     * Drawn unavailable rather than left out, as the add menu draws an enhancement it cannot add: the
+     * options are read as a grid, a row per model, and one taken out would move every option after it.
+     */
+    available: boolean;
 };
 
 /**
@@ -395,13 +412,29 @@ export const modelChoice = (entry: FamilyEntry | undefined, stored: string | und
                 first: index === 0,
                 label: variant.label,
                 ...(quality && { quality }),
+                available: !variant.unavailable?.includes(precision),
             } satisfies ModelOption;
         }),
     );
 
-    const selected = options.some((option) => option.value === stored) ? stored : options[0]?.value;
+    const selected = repaired(options, stored) ?? options[0]?.value;
 
     return { options, selected: selected ?? "" };
+};
+
+/**
+ * The option a stored selection is repaired to: itself where this install can run it; else the same
+ * model at the first precision it can be run at - a saved Kazan HD runs Kazan SD where only that was
+ * placed, rather than failing - and else the first option that can be run at all. `undefined` where
+ * nothing can be, which leaves {@link modelChoice}'s own fallback, the first option, as it always was.
+ */
+const repaired = (options: ModelOption[], stored: string | undefined): string | undefined => {
+    const asked = options.find((option) => option.value === stored);
+    const runnable = options.filter((option) => option.available);
+
+    if (asked?.available) return asked.value;
+
+    return (runnable.find((option) => option.codename === asked?.codename) ?? runnable[0])?.value;
 };
 
 /**
@@ -493,7 +526,9 @@ export const withModel = (
     value: string,
 ): Operation | undefined => {
     const option = optionFor(entry, value);
-    if (!option) return undefined;
+    // One this install cannot run is drawn unavailable and cannot be chosen; refused here as well, so a choice
+    // that arrives some other way does not start a run bound to fail.
+    if (!option?.available) return undefined;
 
     const variant = variantOf(entry, option.codename);
 

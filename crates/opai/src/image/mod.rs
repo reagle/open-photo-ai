@@ -119,7 +119,9 @@
 // carries them as opaque bytes, and the EXIF patcher (`patch_exif`) changes fields without moving the rest; which fields
 // survive an export and how the rest are rewritten is this crate's policy, in `export/metadata/`.
 
+mod capture;
 mod descriptive;
+mod edits;
 mod encode;
 mod error;
 mod extensions;
@@ -127,7 +129,7 @@ mod fidelity;
 mod gain_map;
 mod gain_map_params;
 mod identity;
-mod lens;
+pub(crate) mod lens;
 mod load;
 mod picture;
 mod probe;
@@ -140,7 +142,9 @@ mod test_log;
 #[cfg(test)]
 pub(crate) mod test_support;
 
+pub use capture::{Capture, read_capture};
 pub use descriptive::without_descriptive;
+pub use edits::{Affine, Edits, Frame};
 pub use encode::{encode, encode_blocking};
 pub use error::ImageIoError;
 pub use extensions::{extensions_of, input_extensions};

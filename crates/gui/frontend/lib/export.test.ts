@@ -2,9 +2,20 @@ import type { TFunction } from "i18next";
 import { describe, expect, it } from "vitest";
 import i18n from "@/i18n";
 import type { Operation } from "@/ipc/enhance";
-import type { Loss } from "@/ipc/export";
+import type { ExportName, Loss } from "@/ipc/export";
 import { EXPORT_FORMATS } from "@/test/support";
-import { describeExportError, FORMAT_CHOICES, formatLoss, groupByChain, qualityFor, queueQualityFor } from "./export";
+import {
+    describeExportError,
+    FORMAT_CHOICES,
+    formatLoss,
+    groupByChain,
+    isExportFormat,
+    qualityFor,
+    queueQualityFor,
+    typeLabel,
+    warnsOf,
+    writesUltraHdr,
+} from "./export";
 import { directoryOf } from "./paths";
 
 /** A `t` that shows which key it was asked for and with what, so a test reads the composition rather than English. */
@@ -12,8 +23,66 @@ const t = ((key: string, values?: Record<string, unknown>) =>
     values ? `${key}(${JSON.stringify(values)})` : key) as unknown as TFunction;
 
 describe("FORMAT_CHOICES", () => {
-    it("offers Preserve and the eight formats", () => {
-        expect(FORMAT_CHOICES).toEqual(["preserve", "avif", "bmp", "gif", "heic", "jpeg", "png", "tiff", "webp"]);
+    it("offers Preserve, the eight formats, and Ultra HDR right after plain JPEG", () => {
+        expect(FORMAT_CHOICES).toEqual([
+            "preserve",
+            "avif",
+            "bmp",
+            "gif",
+            "heic",
+            "jpeg",
+            "uhdr",
+            "png",
+            "tiff",
+            "webp",
+        ]);
+    });
+
+    it("counts neither Preserve nor Ultra HDR as a format a quality is kept for", () => {
+        expect(FORMAT_CHOICES.filter(isExportFormat)).toEqual(EXPORT_FORMATS.formats.map(({ format }) => format));
+    });
+});
+
+describe("Ultra HDR on a row", () => {
+    const english = i18n.getFixedT("en");
+    const CHOSEN: Loss = { kind: "hdr", hdr: "gainMap", format: "JPEG", cause: "chosen" };
+    const NOT_CARRIED: Loss = { kind: "hdr", hdr: "gainMap", format: "JPEG", cause: "notCarried" };
+    const DEPTH: Loss = {
+        kind: "depth",
+        from: { bits: 16, float: false },
+        to: { bits: 8, float: false },
+        format: "JPEG",
+    };
+    const named = (format: ExportName["format"], gainMap: ExportName["gainMap"]): ExportName => ({
+        path: "/p/hawk.jpg",
+        name: "hawk.jpg",
+        destination: "/p/hawk.jpg",
+        format,
+        extension: format === "jpeg" ? "jpg" : format,
+        gainMap,
+    });
+
+    it("labels a type JPG, or JPG (Ultra HDR) in the locale's words", () => {
+        expect(typeLabel(english, "jpg", false)).toBe("JPG");
+        expect(typeLabel(english, "jpeg", true)).toBe("JPEG (Ultra HDR)");
+        expect(typeLabel(i18n.getFixedT("ja"), "jpg", true)).toBe("JPG（Ultra HDR）");
+    });
+
+    it("is written only from a gain-map source, as JPEG keeping it, where no HDR is lost", () => {
+        expect(writesUltraHdr(named("jpeg", "keep"), true, [])).toBe(true);
+        // A depth loss is no HDR loss.
+        expect(writesUltraHdr(named("jpeg", "keep"), true, [DEPTH])).toBe(true);
+        expect(writesUltraHdr(named("jpeg", "keep"), false, [])).toBe(false);
+        expect(writesUltraHdr(named("jpeg", "drop"), true, [CHOSEN])).toBe(false);
+        expect(writesUltraHdr(named("jpeg", "keep"), true, [NOT_CARRIED])).toBe(false);
+        expect(writesUltraHdr(named("png", "keep"), true, [])).toBe(false);
+    });
+
+    it("warns of a gain map that could not be carried, and not of one left out by choice", () => {
+        expect(warnsOf([CHOSEN])).toBe(false);
+        expect(warnsOf([CHOSEN, DEPTH])).toBe(true);
+        expect(warnsOf([NOT_CARRIED])).toBe(true);
+        expect(warnsOf([])).toBe(false);
     });
 });
 
@@ -150,6 +219,12 @@ describe("formatLoss", () => {
     it("words a gain map a JPEG could not carry", () => {
         expect(words({ kind: "hdr", hdr: "gainMap", format: "JPEG", cause: "notCarried" })).toBe(
             "HDR gain map dropped: it could not be carried",
+        );
+    });
+
+    it("words a gain map plain JPEG left out as what was done, not as a failure", () => {
+        expect(words({ kind: "hdr", hdr: "gainMap", format: "JPEG", cause: "chosen" })).toBe(
+            "Written as SDR (gain map left out)",
         );
     });
 

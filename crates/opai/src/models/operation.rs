@@ -27,6 +27,7 @@ use super::depth::{Depth, DepthMap, DepthVariant};
 use super::detection::{Detection, DetectionVariant};
 use super::face::Faces;
 use super::face_recovery::FaceRecovery;
+use super::grain::Grain;
 use super::lens_blur::LensBlur;
 use super::light_adjustment::LightAdjustment;
 use super::matting::{Matte, Matting, MattingVariant};
@@ -94,10 +95,12 @@ pub enum Operation {
     Sharpen(Sharpen),
     /// An upscale run.
     Upscale(Upscale),
-    /// A generative restoration, which a chain runs after every other image family except a lens blur.
+    /// A generative restoration, which a chain runs after every other image family except a lens blur and a grain.
     Restore(Restore),
-    /// A lens blur, driven by the depth of the chain's input, which a chain runs last.
+    /// A lens blur, driven by the depth of the chain's input, which a chain runs after everything but a grain.
     LensBlur(LensBlur),
+    /// A sensor's grain, which a chain adds last of all.
+    Grain(Grain),
 }
 
 // The five methods below differ in nothing but the name of the method they call, and writing the seven arms out five
@@ -120,6 +123,7 @@ macro_rules! forward {
             Self::Upscale(operation) => operation.$question(),
             Self::Restore(operation) => operation.$question(),
             Self::LensBlur(operation) => operation.$question(),
+            Self::Grain(operation) => operation.$question(),
         }
     };
 }
@@ -140,6 +144,7 @@ impl Operation {
             Self::Upscale(_) => Family::Upscale,
             Self::Restore(_) => Family::Restore,
             Self::LensBlur(_) => Family::LensBlur,
+            Self::Grain(_) => Family::Grain,
         }
     }
 
@@ -180,7 +185,12 @@ impl Operation {
             return blur.model_tag();
         }
 
-        // Every operation needs at least one artifact, so the empty fallback is never reached.
+        // A grain runs no model and names itself as one would be named; every other operation needs at least one
+        // artifact, so the empty fallback is never reached.
+        if let Self::Grain(grain) = self {
+            return grain.model_tag();
+        }
+
         self.required_artifacts()
             .into_iter()
             .next()
@@ -256,6 +266,8 @@ impl Operation {
             // One variant and one contract, and a mask that marks nothing is answered with the photograph rather than
             // refused, so there is nothing for this seam to refuse.
             Self::Remove(removal) => Ok(removal.pipeline::<B>()),
+            // Kept as a `Result` for the carrier's sake alone: the grain runs no graph and has nothing to refuse.
+            Self::Grain(grain) => grain.pipeline::<B>(),
         }
     }
 }
@@ -591,6 +603,7 @@ pub(crate) mod tests {
     use crate::models::denoise::DenoiseVariant;
     use crate::models::face_recovery::{FaceRecovery, FaceRecoveryVariant};
     use crate::models::fidelity::Fidelity;
+    use crate::models::grain::{GrainAmount, GrainMode, GrainVariant};
     use crate::models::light_adjustment::LightAdjustmentVariant;
     use crate::models::precision::FloatPrecision;
     use crate::models::restore::RestoreVariant;
@@ -804,6 +817,7 @@ pub(crate) mod tests {
             ),
             (Operation::LensBlur(crate::models::lens_blur::tests::injected(1.4)), Family::LensBlur),
             (super::super::remove::Remove::lima(super::super::remove::tests::dot(0.5, 0.5)), Family::Remove),
+            (Grain::sensor(GrainAmount::new(0.5).expect("in range"), GrainMode::Match), Family::Grain),
         ]
     }
 
@@ -847,6 +861,11 @@ pub(crate) mod tests {
         let upscale = Upscale::new(UpscaleVariant::Kyoto(FloatPrecision::Fp16), scale);
         let restore = Restore::new(RestoreVariant::Osaka(OsakaPrecision::Int8), scale, strength);
         let blur = crate::models::lens_blur::tests::injected(1.4);
+        let grain = Grain::new(
+            GrainVariant::Sensor(FloatPrecision::Fp32),
+            GrainAmount::new(0.5).expect("in range"),
+            GrainMode::Add,
+        );
 
         macro_rules! forwards {
             ($operation:expr, $arm:expr) => {{
@@ -873,6 +892,7 @@ pub(crate) mod tests {
         forwards!(upscale, Operation::Upscale(upscale));
         forwards!(restore, Operation::Restore(restore));
         forwards!(blur, Operation::LensBlur(blur.clone()));
+        forwards!(grain, Operation::Grain(grain));
     }
 
     /// The prefix `operation`'s artifacts are named with: its family's, except Osaka's, which keep the `up_` they were
@@ -1083,7 +1103,7 @@ pub(crate) mod tests {
             }
         }
 
-        // The other carrier, so the spread is over all nine families rather than the eight one of them holds.
+        // The other carrier, so the spread is over all ten families rather than the nine one of them holds.
         for analysis in every_analysis() {
             let _ = analysis.profile();
 
@@ -1092,7 +1112,7 @@ pub(crate) mod tests {
             }
         }
 
-        assert_eq!(families.len(), 13, "the spread did not reach all thirteen families: {families:?}");
+        assert_eq!(families.len(), 14, "the spread did not reach all fourteen families: {families:?}");
     }
 
     #[test]
@@ -1232,6 +1252,8 @@ pub(crate) mod tests {
                 Operation::Colorization(colorization) => colorization.precision() == Precision::Fp16,
                 // The depth model's, whose graphs are what it requires: the blur itself opens no session.
                 Operation::LensBlur(_) => true,
+                // No model, so nothing measured.
+                Operation::Grain(_) => false,
             };
 
             if measured_arm {

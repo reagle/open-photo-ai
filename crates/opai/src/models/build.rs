@@ -13,7 +13,7 @@
 //!
 //! Two things decided by data the entry holds: a codename the family does not publish, and a precision this variant is
 //! not published at. Everything else is a value the caller already holds — a [`Scale`], a [`Strength`], a [`Bias`], a
-//! [`Fidelity`] or a set of [`Faces`] — and each of those is bounded on construction.
+//! [`Fidelity`], a [`GrainAmount`] or a set of [`Faces`] — and each of those is bounded on construction.
 //!
 //! The third arm on [`BuildError`] belongs to the one path that takes a value by **name** rather than by type,
 //! [`ParameterValues::set`]: a name no parameter is published under. It exists so a front end that speaks only the
@@ -35,6 +35,7 @@ use super::face::Faces;
 use super::face_recovery::{FaceRecovery, FaceRecoveryVariant};
 use super::fidelity::Fidelity;
 use super::fraction::Fraction;
+use super::grain::{Grain, GrainAmount, GrainMode, GrainVariant};
 use super::lens_blur::{FOCUS_X, FOCUS_Y, LensBlur, LensBlurVariant};
 use super::light_adjustment::{LightAdjustment, LightAdjustmentVariant};
 use super::matting::{Matting, MattingVariant};
@@ -46,7 +47,7 @@ use super::sharpen::{Sharpen, SharpenVariant};
 use super::strength::Strength;
 use super::upscale::{Upscale, UpscaleVariant};
 
-use super::operation::Analysis;
+use super::operation::{Analysis, Operation};
 use super::subject::Subject;
 
 use crate::mask::Mask;
@@ -106,6 +107,10 @@ pub struct ParameterValues {
     bias: Bias,
     /// How closely Athens keeps to the face it was given.
     fidelity: Fidelity,
+    /// How much grain a grain run puts back or adds.
+    amount: GrainAmount,
+    /// Whether a grain run's amount is a share of what the result lacks of the photograph's grain, or of a sensor's.
+    grain_mode: GrainMode,
     /// The faces a face-recovery run restores, as a detection run found them.
     faces: Faces,
     /// The equivalent f-number a lens blur opens the lens to.
@@ -120,8 +125,8 @@ pub struct ParameterValues {
 
 impl ParameterValues {
     /// Every parameter at its neutral value: no enlargement, no strength, no lean, Athens' own default fidelity, no
-    /// faces, nothing to remove, and a lens blur at its narrowest aperture, which adds the least, focused on the middle
-    /// of the frame.
+    /// grain (matching the source), no faces, nothing to remove, and a lens blur at its narrowest aperture, which adds
+    /// the least, focused on the middle of the frame.
     ///
     /// Neutral rather than arbitrary, so that a caller which forgot to set the parameter its variant takes gets the
     /// run that does the least rather than one it did not ask for. [`Fidelity`] is the exception and is
@@ -134,6 +139,8 @@ impl ParameterValues {
             strength: Strength::clamped(Strength::MIN),
             bias: Bias::clamped(0.0),
             fidelity: Fidelity::MAXIMUM,
+            amount: GrainAmount::OFF,
+            grain_mode: GrainMode::Match,
             faces: Faces::empty(),
             f_number: FNumber::clamped(FNumber::MAX),
             focus_x: Fraction::CENTRE,
@@ -167,6 +174,20 @@ impl ParameterValues {
     #[must_use]
     pub fn with_fidelity(mut self, fidelity: Fidelity) -> Self {
         self.fidelity = fidelity;
+        self
+    }
+
+    /// How much grain a grain run puts back or adds.
+    #[must_use]
+    pub fn with_amount(mut self, amount: GrainAmount) -> Self {
+        self.amount = amount;
+        self
+    }
+
+    /// What a grain run's amount is a share of.
+    #[must_use]
+    pub fn with_grain_mode(mut self, mode: GrainMode) -> Self {
+        self.grain_mode = mode;
         self
     }
 
@@ -240,6 +261,14 @@ impl ParameterValues {
             // Two parameters of one type, so named here rather than by the type: the focus point's two coordinates.
             FOCUS_X => self.focus_x = clamped_logged(FOCUS_X, value, Fraction::MIN, Fraction::MAX, Fraction::clamped),
             FOCUS_Y => self.focus_y = clamped_logged(FOCUS_Y, value, Fraction::MIN, Fraction::MAX, Fraction::clamped),
+            GrainAmount::NAME => {
+                self.amount =
+                    clamped_logged(GrainAmount::NAME, value, GrainAmount::MIN, GrainAmount::MAX, GrainAmount::clamped);
+            }
+            // A switch, published as a range from 0 to 1 and read from a half up as matching the source.
+            GrainMode::NAME => {
+                self.grain_mode = clamped_logged(GrainMode::NAME, value, 0.0, 1.0, GrainMode::from_switch);
+            }
             name => return Err(BuildError::UnknownParameter { name: name.to_string() }),
         }
 
@@ -411,6 +440,11 @@ impl VariantEntry {
             Family::LensBlur => match LensBlurVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
                 LensBlurVariant::Lisbon(_) => LensBlur::lisbon(values.f_number, values.focus_x, values.focus_y),
             },
+            Family::Grain => match GrainVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
+                variant @ GrainVariant::Sensor(_) => {
+                    Operation::Grain(Grain::new(variant, values.amount, values.grain_mode))
+                }
+            },
         };
 
         Ok(Subject::Enhancement(enhancement))
@@ -510,6 +544,7 @@ mod tests {
             ("strength", 0.25),
             ("bias", -0.35),
             ("fidelity", 0.05),
+            ("amount", 0.4),
             ("f_number", 1.4),
             ("focus_x", 0.55),
             ("focus_y", 0.3),
@@ -522,6 +557,7 @@ mod tests {
             .with_strength(Strength::clamped(0.25))
             .with_bias(Bias::clamped(-0.35))
             .with_fidelity(Fidelity::clamped(0.05))
+            .with_amount(GrainAmount::clamped(0.4))
             .with_f_number(FNumber::clamped(1.4))
             .with_focus(Fraction::clamped(0.55), Fraction::clamped(0.3));
 

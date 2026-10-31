@@ -609,11 +609,13 @@ async fn enhance(
 /// Whether this process has said that the matting model is not installed, which it says once however many images ask.
 static MATTING_NOT_INSTALLED_NOTED: AtomicBool = AtomicBool::new(false);
 
-/// Logs what matting the lens blurs' subjects came to: a failure as a warning, a model that is not installed once, as
-/// `noted` records, and quietly, since it is expected until the graph is published.
+/// Logs what matting the lens blurs' subjects came to: a failure as a warning, a blur too small to see for every image
+/// it is said of, and a model that is not installed once, as `noted` records, and quietly, since it is expected until
+/// the graph is published.
 fn note_matte(matte: &ChainMatte, noted: &AtomicBool) {
     match matte_report(matte) {
         Some(report) if matches!(matte, ChainMatte::Failed(_)) => tracing::warn!("{report}"),
+        Some(report) if matches!(matte, ChainMatte::LittleBlur) => tracing::info!("{report}"),
         Some(report) if !noted.swap(true, Ordering::Relaxed) => tracing::info!("{report}"),
         _ => {}
     }
@@ -624,6 +626,12 @@ fn note_matte(matte: &ChainMatte, noted: &AtomicBool) {
 fn matte_report(matte: &ChainMatte) -> Option<String> {
     match matte {
         ChainMatte::NotAsked | ChainMatte::Matted | ChainMatte::Skipped => None,
+        // The answer to "why does the output look like the input", which is the one thing a user would ask.
+        ChainMatte::LittleBlur => Some(
+            "the lens blur adds little blur at this focal length and focus distance; focus on something nearer \
+             (--lb-focus), or choose a lower f-number (--lb-f)"
+                .to_string(),
+        ),
         ChainMatte::Unavailable(_) => Some(
             "the matting model is not installed, so a lens blur's edges are rendered from the depth alone".to_string(),
         ),
@@ -846,6 +854,25 @@ mod tests {
         });
         let levels: Vec<_> = records.events.iter().map(|record| record.level).collect();
         assert_eq!(levels, [tracing::Level::INFO, tracing::Level::WARN]);
+    }
+
+    #[test]
+    fn a_blur_too_small_to_see_is_said_at_info_for_every_image_it_is_true_of() {
+        // Not once a process, as the model that is not installed is: each photograph's focus and lens are its own.
+        let report = matte_report(&ChainMatte::LittleBlur).expect("a blur too small to see is reported");
+        assert!(report.contains("focus on something nearer"), "{report}");
+
+        let noted = AtomicBool::new(false);
+        let (records, ()) = crate::test_support::recorded(|| {
+            note_matte(&ChainMatte::LittleBlur, &noted);
+            note_matte(&ChainMatte::LittleBlur, &noted);
+        });
+        let levels: Vec<_> = records.events.iter().map(|record| record.level).collect();
+        assert_eq!(levels, [tracing::Level::INFO, tracing::Level::INFO]);
+        assert!(
+            !noted.load(std::sync::atomic::Ordering::Relaxed),
+            "it used up the one note of a model not installed"
+        );
     }
 
     #[test]

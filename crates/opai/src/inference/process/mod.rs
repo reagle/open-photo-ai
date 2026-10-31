@@ -48,9 +48,10 @@ use crate::cache::RunCache;
 use crate::error::InferenceError;
 use crate::image::{GainMap, Picture};
 use crate::mask::Mask;
+use crate::models::grain::is_grain_reference;
 use crate::models::remove::RemovedAt;
 use crate::models::{Depth, DepthMap, Detection, Faces, Family, Matte, Matting, Operation, Remove};
-use crate::pipeline::{Backend, Shared};
+use crate::pipeline::{Backend, Shared, session};
 use crate::providers::ExecutionProvider;
 use crate::sessions::SessionHandle;
 use crate::task::spawn_blocking;
@@ -259,20 +260,31 @@ where
     // always had.
     let operations = in_apply_order(&operations);
 
-    // Which of the mask's uses this chain gives it something to do. The removals lead the chain and the lens blurs end
-    // it (`Family::APPLY_ORDER`). A limiting mask is blended with the photograph *after* the removals, so it never
-    // brings back what was removed, and *before* the lens blurs, so they blur the blended picture rather than being
-    // limited like an enhancement, which would show the photograph unblurred where the mask is black; it limits what is
-    // between them, and a chain with nothing there has nothing for it to limit. A mask keeps its subject in focus only
-    // under a lens blur. A mask left with neither use is no mask: the result is named and made as with none.
+    // Which of the mask's uses this chain gives it something to do. The removals lead the chain and the lens blurs and
+    // the grain end it (`Family::APPLY_ORDER`). A limiting mask is blended with the photograph *after* the removals, so
+    // it never brings back what was removed, and *before* the lens blurs, so they blur the blended picture rather than
+    // being limited like an enhancement, which would show the photograph unblurred where the mask is black; it limits
+    // what is between them, and a chain with nothing there has nothing for it to limit. **Before the grain too**: the
+    // grain is measured against the photograph tile by tile, so over the blend it adds nothing where the mask brought
+    // the photograph back with its own noise, and puts it back only where an enhancement or a blur smoothed it away; a
+    // grain limited by the mask would leave a lens blur's background outside it without the noise its subject keeps. A
+    // mask keeps its subject in focus only under a lens blur. A mask left with neither use is no mask: the result is
+    // named and made as with none.
     let removals = operations.iter().take_while(|operation| operation.family() == Family::Remove).count();
-    let blurs = operations.iter().rev().take_while(|operation| operation.family() == Family::LensBlur).count();
+    let finishing = |operation: &&Operation| matches!(operation.family(), Family::LensBlur | Family::Grain);
+    let ending = operations.iter().rev().take_while(finishing).count();
+    let blurs = operations
+        .iter()
+        .rev()
+        .take_while(finishing)
+        .filter(|operation| operation.family() == Family::LensBlur)
+        .count();
     let mask = options.mask.take().filter(|mask| !mask.is_empty());
     // The limit is switched off only under a lens blur: elsewhere it is all the mask does, and a front end that shows
     // the switch only with a lens blur would otherwise leave a mask that silently does nothing once the blur is gone.
     let limiting = mask
         .clone()
-        .filter(|mask| (mask.limits_enhancements || blurs == 0) && operations.len() > removals + blurs);
+        .filter(|mask| (mask.limits_enhancements || blurs == 0) && operations.len() > removals + ending);
     let focusing = mask.filter(|mask| mask.keeps_sharp && blurs > 0);
 
     // Handed to the lens blurs before the plan, beside their depth and matte, so the weight is in their cache keys:
@@ -338,14 +350,16 @@ where
 
     let started = std::time::Instant::now();
 
-    // A limiting mask before lens blurs splits the chain there: the head, the blend, and then the lens blurs over the
-    // blended picture, keyed from its identity, which is the masked identity of the head. Its steps keep the keys an
-    // unmasked run stores them under. Otherwise the chain is run whole, and a limiting mask is blended after it.
+    // A limiting mask before lens blurs or a grain splits the chain there: the head, the blend, and then the lens blurs
+    // and the grain over the blended picture, keyed from its identity, which is the masked identity of the head. Its
+    // steps keep the keys an unmasked run stores them under. Otherwise the chain is run whole, and a limiting mask is
+    // blended after it. The head hands the tail the photograph a grain matches: its input, or what its denoise made.
     let split = match &limiting {
-        Some(_) if blurs > 0 => operations.len() - blurs,
+        Some(_) if ending > 0 => operations.len() - ending,
         _ => operations.len(),
     };
     let (head, tail) = planned.split_at(split);
+    let measured_after = tail.iter().any(|step| step.pipeline.measures_against_photograph());
     let part = (!tail.is_empty()).then_some((0, operations.len()));
     let blended = limiting
         .as_ref()
@@ -363,7 +377,8 @@ where
         pixels,
         gain_map,
         head,
-        Steps { provider: options.provider, depth, keep, from, part },
+        Steps { provider: options.provider, depth, keep, from, part, measured_after },
+        None,
         options.on_progress.clone(),
         &options.cancel,
         cache.as_ref(),
@@ -382,32 +397,43 @@ where
         // The mask limits only what follows the removals: a removal is inside what it blends with, so the photograph it
         // brings back, and that photograph's gain map, are as the removals left them — the fill and the gain a
         // removal wrote under it included. A gain map only a removal rewrote is the chain's whatever the mask.
-        (Ok(Ran { pixels, gain_map, providers, kept }), Some(mask)) => {
+        (Ok(Ran { pixels, gain_map, providers, kept, photograph: measured }), Some(mask)) => {
             let (photograph, original) = kept.unwrap_or_else(|| (source.shared_pixels(), source.shared_gain_map()));
 
             masked(photograph, original, pixels, gain_map, mask, depth, &options.cancel)
                 .instrument(span.clone())
                 .await
-                .map(|(pixels, gain_map)| (pixels, gain_map, providers))
+                .map(|(pixels, gain_map)| (pixels, gain_map, providers, measured))
                 .map_err(RunFailure::from)
         }
-        (outcome, _) => outcome.map(|ran| (ran.pixels, ran.gain_map, ran.providers)),
+        (outcome, _) => outcome.map(|ran| (ran.pixels, ran.gain_map, ran.providers, ran.photograph)),
     };
 
-    // The lens blurs after the blend, on the same bar as the head and through a store keyed from the blended picture.
+    // The lens blurs and the grain after the blend, on the same bar as the head and through a store keyed from the
+    // blended picture, the grain matching the photograph the head handed on.
     let outcome = match (outcome, &blended) {
-        (Ok((pixels, gain_map, providers)), Some(blended)) if !tail.is_empty() => {
+        (Ok((pixels, gain_map, providers, measured)), Some(blended)) if !tail.is_empty() => {
             let input = source.derive(Arc::clone(&pixels), blended.as_str());
             let blending = RunCache::for_run(store, options.cache, &input);
-            let steps =
-                Steps { provider: options.provider, depth, keep: 0, from: 0, part: Some((split, operations.len())) };
+            let part = Some((split, operations.len()));
+            let steps = Steps { provider: options.provider, depth, keep: 0, from: 0, part, measured_after: false };
 
-            run(backend, pixels, gain_map, tail, steps, options.on_progress, &options.cancel, blending.as_ref())
-                .instrument(span.clone())
-                .await
-                .map(|ran| (ran.pixels, ran.gain_map, providers.and(ran.providers)))
+            run(
+                backend,
+                pixels,
+                gain_map,
+                tail,
+                steps,
+                Some(measured),
+                options.on_progress,
+                &options.cancel,
+                blending.as_ref(),
+            )
+            .instrument(span.clone())
+            .await
+            .map(|ran| (ran.pixels, ran.gain_map, providers.and(ran.providers)))
         }
-        (outcome, _) => outcome,
+        (outcome, _) => outcome.map(|(pixels, gain_map, providers, _)| (pixels, gain_map, providers)),
     };
 
     // Recorded before the `?`, so that a run which failed says so rather than leaving a reader to infer it from a
@@ -469,7 +495,13 @@ where
         (Some(mask), _) => identity_masked(&identity_after(source.identity(), operations, depth), mask.signature()),
         (None, _) => identity_after(source.identity(), operations, depth),
     };
-    let picture = source.derive(pixels, named).with_shared_gain_map(gain_map);
+    // The record of what was done goes on beside the pixels: the chain, whether a mask limited it, and the growth of an
+    // upscale as a scale of the frame — what an export rewrites the subject's position and the focal plane by.
+    let edits =
+        source
+            .edits()
+            .after(operations, limiting.is_some(), source.dimensions(), (pixels.width(), pixels.height()));
+    let picture = source.derive(pixels, named).with_shared_gain_map(gain_map).with_edits(edits);
 
     Ok(Enhanced { picture, providers, faces, matte })
 }
@@ -510,7 +542,8 @@ async fn removed_first<B: Backend>(
         source.shared_pixels(),
         source.shared_gain_map(),
         &planned,
-        Steps { provider, depth, keep: 0, from: 0, part: None },
+        Steps { provider, depth, keep: 0, from: 0, part: None, measured_after: false },
+        None,
         on_progress,
         &cancel,
         store.as_ref(),
@@ -780,6 +813,9 @@ pub(crate) struct Steps {
     /// Where these steps sit in a longer chain that is reported as one, run in parts: how many of its steps come
     /// before them, and how many it has. `None` where they are the whole chain.
     pub(crate) part: Option<(usize, usize)>,
+    /// Whether a step after these, in a later part of the chain, measures against the photograph — a grain after a
+    /// limiting mask's blend — so [`Ran::photograph`] must be what the last denoise among these made.
+    pub(crate) measured_after: bool,
 }
 
 /// What a chain run produced: the result, what it ran on, and the intermediate [`Steps::keep`] asked for.
@@ -794,6 +830,9 @@ pub(crate) struct Ran {
     /// The picture after the first [`Steps::keep`] steps, with its gain map as they left it, or `None` where none was
     /// asked for.
     pub(crate) kept: Option<(Arc<DynamicImage>, Option<Arc<GainMap>>)>,
+    /// The photograph a grain after these steps matches: the one handed in, or the source, or what the last denoise
+    /// among them made where a later step asked for one. What the tail of a chain run in parts is handed.
+    pub(crate) photograph: Arc<DynamicImage>,
 }
 
 /// Runs `source` through the `planned` chain in order, each operation over the result of the one before it, at
@@ -841,16 +880,24 @@ pub(crate) async fn run<B: Backend>(
     gain_map: Option<Arc<GainMap>>,
     planned: &[Planned<B>],
     steps: Steps,
+    photograph: Option<Arc<DynamicImage>>,
     on_progress: Option<OnInference>,
     cancel: &CancellationToken,
     cache: Option<&RunCache>,
 ) -> Result<Ran, RunFailure> {
-    let Steps { provider, depth, keep, from, part } = steps;
+    let Steps { provider, depth, keep, from, part, measured_after } = steps;
 
     if planned.is_empty() {
         // No session, so nothing to report having run on — which is a different answer from "it ran on what was
         // asked for", and is exactly the distinction `ProviderReport::actual` exists to keep.
-        return Ok(Ran { pixels: source, gain_map, providers: ProviderReport::new(provider, []), kept: None });
+        let photograph = photograph.unwrap_or_else(|| Arc::clone(&source));
+        return Ok(Ran {
+            pixels: source,
+            gain_map,
+            providers: ProviderReport::new(provider, []),
+            kept: None,
+            photograph,
+        });
     }
 
     let progress = match part {
@@ -867,12 +914,24 @@ pub(crate) async fn run<B: Backend>(
     // the guarantee: the session cache's "in use" test is the handle's own reference count. A chain naming one model
     // twice takes two handles on one entry, which is correct — the count goes up twice and down twice.
     let mut held: Vec<SessionHandle<B::Session>> = Vec::new();
-    let mut current = source;
+    let mut current = Arc::clone(&source);
     let mut kept = None;
     // The gain map as the steps so far left it, and as it stood where the run of hits being walked past began, which a
     // rewind returns to.
     let mut current_map = gain_map;
     let mut map_before_skip = current_map.clone();
+
+    // The photograph a grain matching its source measures against: the one handed in (the head's, for a chain run in
+    // parts) or the chain's input, until a denoise makes another (see `models::grain`), since a denoise is a request for
+    // less grain and matching its input would undo it. Kept only while a step after it asks for one. A denoise served
+    // from the store leaves its bytes here, decoded only when the grain is computed; a grain served from the store
+    // needs neither.
+    let wants_photograph = |after: usize| {
+        measured_after || planned[after..].iter().any(|step| step.pipeline.measures_against_photograph())
+    };
+    let initial = (photograph.unwrap_or_else(|| Arc::clone(&source)), current_map.clone());
+    let mut photograph = Arc::clone(&initial.0);
+    let mut photograph_stored: Option<(usize, Vec<u8>)> = None;
 
     // The bytes of the newest cached prefix walked past, not yet decoded, and the index the run of hits carrying them
     // began at. A hit supersedes the one before it — each stored entry is the whole picture at that point in the
@@ -953,6 +1012,10 @@ pub(crate) async fn run<B: Backend>(
                 // Its full share of the bar, through the same path every other report goes through — so a chain whose
                 // every operation was stored still ends on exactly 1 rather than never reporting at all.
                 progress.operation(index, operation.operation().clone()).cached();
+
+                if is_grain_reference(operation.operation().family()) && wants_photograph(index + 1) {
+                    photograph_stored = Some((index, bytes.clone()));
+                }
 
                 if pending.is_none() {
                     skipped_from = index;
@@ -1041,6 +1104,36 @@ pub(crate) async fn run<B: Backend>(
             }
         }
 
+        // A step measured against the photograph is handed it, and a chain run in parts hands its tail the photograph
+        // at its end: decoded now where a denoise before it was served from the store. Bytes that will not decode are
+        // that denoise's stored result gone bad: the chain is walked again from its start with the store trusted only
+        // after the denoise, so the denoise and everything before it run again, as a prefix that would not decode is.
+        let measures = operation.map_or(measured_after, |operation| operation.pipeline.measures_against_photograph());
+        if measures && let Some((at, bytes)) = photograph_stored.take() {
+            // The denoise right before this step is what was just decoded into its input.
+            if at + 1 == index {
+                photograph = Arc::clone(&current);
+            } else {
+                match materialize(bytes).await? {
+                    Some(image) => photograph = Arc::new(image),
+                    None => {
+                        tracing::warn!(at, "a stored denoise would not decode; rerunning it for the grain after it");
+
+                        distrust_before = at + 1;
+                        index = from;
+                        skipped_from = from;
+                        current = Arc::clone(&source);
+                        (photograph, current_map) = initial.clone();
+                        map_before_skip.clone_from(&current_map);
+                        if keep > from {
+                            kept = None;
+                        }
+                        continue;
+                    }
+                }
+            }
+        }
+
         // The tail: every operation is behind us and the prefix above has been decoded into `current`.
         let Some(operation) = operation else {
             break;
@@ -1053,6 +1146,7 @@ pub(crate) async fn run<B: Backend>(
 
         // Everything from here to the end of the step fails *in* it, so the failure carries which one it was, and the
         // step's span says so beside the run's. A stop inside a step is a stop there too.
+        let against = measures.then(|| Arc::clone(&photograph));
         let in_step = |error: InferenceError| {
             let ending = match error.stop_reason() {
                 Some(_) => Outcome::Stopped,
@@ -1077,6 +1171,7 @@ pub(crate) async fn run<B: Backend>(
 
                 let input = Arc::clone(&current);
                 let map = current_map.clone();
+                let against = against.clone();
                 let cancelled = cancel.clone();
                 let reported = Arc::clone(&reporter);
                 let wanted = progress.wanted();
@@ -1104,11 +1199,25 @@ pub(crate) async fn run<B: Backend>(
                     // so the store's writer and the rest of the chain hold one buffer rather than two. A stop is the
                     // step's wherever it came from; any other failure of the gain map is the gain map's alone, settled
                     // below.
-                    let produced = match &map {
-                        Some(map) => pipeline.run_with_gain_map(&input, map, &sessions, depth, report, &stopped),
-                        None => pipeline.run(&input, &sessions, depth, report, &stopped).map(|image| (image, None)),
-                    };
-                    let produced = match produced {
+                    //
+                    // Terminable: a stop lands inside the graph rather than after it (`session::terminable`). A
+                    // terminated run fails as a model would, so its failure — the gain map's included, which would
+                    // otherwise be stored as that map's reason — is made the stop it was before anything reads it.
+                    //
+                    // A step measured against the photograph is handed it, and leaves the gain map as it was.
+                    let (produced, terminated) = session::terminable(&cancelled, || match (&against, &map) {
+                        (Some(photograph), _) => pipeline
+                            .run_against(&input, photograph, &sessions, depth, report, &stopped)
+                            .map(|image| (image, None)),
+                        (None, Some(map)) => {
+                            pipeline.run_with_gain_map(&input, map, &sessions, depth, report, &stopped)
+                        }
+                        (None, None) => {
+                            pipeline.run(&input, &sessions, depth, report, &stopped).map(|image| (image, None))
+                        }
+                    });
+                    let produced = match session::settled(produced, terminated) {
+                        Ok((_, Some(Err(_)))) if terminated => Err(InferenceError::Cancelled),
                         Ok((_, Some(Err(error)))) if error.stop_reason().is_some() => Err(error),
                         produced => produced.map(|(image, rewritten)| (Arc::new(image), rewritten)),
                     };
@@ -1185,6 +1294,10 @@ pub(crate) async fn run<B: Backend>(
                 current_map = None;
             }
         }
+        if is_grain_reference(operation.operation().family()) && wants_photograph(index + 1) {
+            photograph = Arc::clone(&current);
+            photograph_stored = None;
+        }
         index += 1;
 
         if index == keep {
@@ -1200,7 +1313,7 @@ pub(crate) async fn run<B: Backend>(
     // not only the first one whose provider differed from what was asked for.
     let report = ProviderReport::new(provider, held.iter().map(SessionHandle::provider));
 
-    Ok(Ran { pixels: current, gain_map: current_map, providers: report, kept })
+    Ok(Ran { pixels: current, gain_map: current_map, providers: report, kept, photograph })
 }
 
 /// What a step that changes the gain map made of it, as stored beside the step's pixels.

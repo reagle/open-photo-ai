@@ -69,6 +69,10 @@ pub(crate) enum Outcome {
 /// write outside `dir` — and [`InitError::Io`], naming the file it was against, for the bookkeeping around them.
 /// [`InitError::Cancelled`] if the asynchronous runtime shut down before the blocking half of any of that could run,
 /// and [`InitError::Stopped`] if `cancel` was cancelled while bytes were moving.
+// Every caller outside the suite now has a check in hand — the model install makes one first, to refuse a fork model
+// whose files are not in place — and hands it to `install_checked`. Kept as the entry the suite and the documentation
+// describe the pipeline through.
+#[cfg_attr(not(test), expect(dead_code, reason = "every caller outside the suite calls `install_checked`"))]
 pub(crate) async fn install(
     dir: &Path,
     dependency: &Dependency,
@@ -177,34 +181,48 @@ pub(crate) async fn check(dir: &Path, dependency: &Dependency) -> Result<Checked
     // only the first — so on the launch where there is nothing to do, this is the whole of the work. Left inline it
     // would be thousands of blocking syscalls on the async runtime, which in the GUI is the event loop, at exactly the
     // moment the window is coming up. The trust test and the stamp are stat calls too, so they come along.
-    spawn_blocking::<_, InitError, _>(move || {
-        // Whether this install is the trusted one: the process declared it, and **every** file backing the dependency
-        // is already on disk. Both halves, because the declaration says "what is here is what I want measured" and
-        // not "fetch me whatever is missing and ask no questions" — a partially present model is not something anyone
-        // placed by hand, and completing it from the published sources is both what the operator wants and the only
-        // safe reading.
-        let trusted = dependency.trust == ModelTrust::LocalFiles && sources_present(&dir, &dependency);
+    spawn_blocking::<_, InitError, _>(move || check_blocking(&dir, &dependency)).await
+}
 
-        // The dependency's identity, which is the one value everything below hangs off. On the ordinary path it is the
-        // published fingerprint; on the trusted one there is no published hash to compare against, so it is stamped
-        // from the files as they sit on disk instead. The rest of the install does not branch again: the same
-        // comparison, the same emptying, the same discard of what a provider compiled, the same record.
-        let want = if trusted { stamp(&dir, &dependency) } else { manifest::fingerprint(&dependency) };
+/// [`check`], on the calling thread.
+///
+/// For a caller already off the runtime, or one asking about a single model whose record is a handful of files: a
+/// model's directory holds its graph, its weights and its record, so this is a few stat calls rather than the
+/// thousands a CUDA tree costs.
+pub(crate) fn check_blocking(dir: &Path, dependency: &Dependency) -> Checked {
+    // Whether this install is the trusted one: the process declared it, and **every** file backing the dependency is
+    // already on disk. Both halves, because the declaration says "what is here is what I want measured" and not
+    // "fetch me whatever is missing and ask no questions" — a partially present model is not something anyone placed
+    // by hand, and completing it from the published sources is both what the operator wants and the only safe
+    // reading.
+    let trusted = dependency.trust == ModelTrust::LocalFiles && sources_present(dir, dependency);
 
-        // The steady-state path: the recorded identity is the pinned one and every recorded file is still there at
-        // its recorded size.
-        //
-        // **`intact` is skipped on the trusted path**, and that is required rather than an optimisation. A trusted
-        // install records no files, and `Manifest::intact` reads an empty list as "not installed" — so leaving it in
-        // would report "not current" on every single launch, and the derived-cache discard the stamp exists to gate
-        // would fire every time: a multi-minute engine rebuild on every launch. The trusted comparison is therefore
-        // the fingerprint alone; the ordinary one keeps both halves.
-        let previous = manifest::read(&dir);
-        let current = previous.as_ref().is_some_and(|old| old.fingerprint == want && (trusted || old.intact(&dir)));
+    // The dependency's identity, which is the one value everything below hangs off. On the ordinary path it is the
+    // published fingerprint; on the trusted one there is no published hash to compare against, so it is stamped from
+    // the files as they sit on disk instead. The rest of the install does not branch again: the same comparison, the
+    // same emptying, the same discard of what a provider compiled, the same record.
+    let want = if trusted { stamp(dir, dependency) } else { manifest::fingerprint(dependency) };
 
-        Checked { trusted, want, previous, current }
-    })
-    .await
+    // The steady-state path: the recorded identity is the pinned one and every recorded file is still there at its
+    // recorded size.
+    //
+    // **`intact` is skipped on the trusted path**, and that is required rather than an optimisation. A trusted install
+    // records no files, and `Manifest::intact` reads an empty list as "not installed" — so leaving it in would report
+    // "not current" on every single launch, and the derived-cache discard the stamp exists to gate would fire every
+    // time: a multi-minute engine rebuild on every launch. The trusted comparison is therefore the fingerprint alone;
+    // the ordinary one keeps both halves.
+    let previous = manifest::read(dir);
+    let current = previous.as_ref().is_some_and(|old| old.fingerprint == want && (trusted || old.intact(dir)));
+
+    Checked { trusted, want, previous, current }
+}
+
+impl Checked {
+    /// Whether an install would transfer nothing: the dependency is already current, or this process trusts the files
+    /// already in place.
+    pub(crate) fn needs_no_transfer(&self) -> bool {
+        self.current || self.trusted
+    }
 }
 
 /// [`install`]'s body, with the failure record left to its caller.

@@ -80,9 +80,9 @@ beforeEach(() => {
     sonner.dismiss();
 });
 
-describe("a batch opai --gui asked a lens blur for", () => {
-    it("is prepared for before it opens and given the lens blur on what was admitted", async () => {
-        const request = { paths: [HOLIDAY.path], lensBlur: { fNumber: 1.4 } };
+describe("a batch opai --gui asked a sharpen or a lens blur for", () => {
+    it("is prepared for before it opens and given what it asked for on what was admitted", async () => {
+        const request = { paths: [HOLIDAY.path], sharpen: { model: "moscow" }, lensBlur: { fNumber: 1.4 } };
         inbox = [HOLIDAY.path];
         requested.mockResolvedValueOnce(request);
         described.mockImplementationOnce(() => {

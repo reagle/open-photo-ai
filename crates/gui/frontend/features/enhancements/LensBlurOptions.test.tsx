@@ -8,6 +8,7 @@ import { forgetLensInfo, type LensInfo } from "@/ipc/lens";
 import { fNumberForAmount } from "@/lib/blurAmount";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useFocusPickStore } from "@/stores/focusPick";
+import { useLittleBlurStore } from "@/stores/littleBlur";
 import { CATALOGUE, FRAMING, frame, HOLIDAY, openFiles, render, resetCropStore, resetFileStore } from "@/test/support";
 import { EnhancementList } from "./EnhancementList";
 
@@ -75,6 +76,7 @@ beforeEach(() => {
     vi.mocked(invoke).mockClear();
     useEnhancementStore.setState({ autopilot: true, enhancements: new Map() });
     useFocusPickStore.setState(useFocusPickStore.getInitialState(), true);
+    useLittleBlurStore.setState({ little: new Set() });
     lens = BONSAI;
     openFiles(HOLIDAY);
 });
@@ -302,3 +304,32 @@ const useFileStoreWithoutIdentity = () => {
     resetFileStore();
     openFiles({ path: HOLIDAY.path, extension: "png" });
 };
+
+describe("a lens blur that renders too little blur to see", () => {
+    const notice = () => document.querySelector("[data-slot='lens-little-blur']");
+
+    it("says so in the panel, with what to change", async () => {
+        // A wide-angle lens focused far away: the render added nothing anyone can see.
+        useLittleBlurStore.getState().ran(HOLIDAY.identity as string, true);
+        await open();
+
+        expect(notice()).toHaveTextContent(
+            "Little blur at this focal length and focus distance. Focus on something nearer, or raise the blur amount.",
+        );
+    });
+
+    it("says nothing after a render whose blur shows", async () => {
+        useLittleBlurStore.getState().ran(HOLIDAY.identity as string, true);
+        useLittleBlurStore.getState().ran(HOLIDAY.identity as string, false);
+        await open();
+
+        expect(notice()).toBeNull();
+    });
+
+    it("says nothing about another photograph's render", async () => {
+        useLittleBlurStore.getState().ran("someone-else", true);
+        await open();
+
+        expect(notice()).toBeNull();
+    });
+});

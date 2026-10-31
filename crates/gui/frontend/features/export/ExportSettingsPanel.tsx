@@ -1,4 +1,5 @@
 import { type ReactNode, useMemo, useState } from "react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,14 +10,17 @@ import { runBatch } from "@/features/export/batch";
 import type { ExportNames } from "@/features/export/useExportNames";
 import { useExportFormats } from "@/hooks/useExportFormats";
 import { pickDirectory } from "@/ipc/export";
-import { FORMAT_CHOICES, type FormatChoice, queueQualityFor } from "@/lib/export";
+import { FORMAT_CHOICES, type FormatChoice, queueQualityFor, typeLabel } from "@/lib/export";
 import { cn } from "@/lib/utils";
 import { useExportBatchStore } from "@/stores/exportBatch";
 import { exportSettingsData, useExportSettingsStore } from "@/stores/exportSettings";
 import { useSettingsStore } from "@/stores/settings";
 
-/** What each format reads as in the chooser. JPEG is `JPG`, as the reference and the design spell it. */
-const FORMAT_LABELS: Record<Exclude<FormatChoice, "preserve">, string> = {
+/**
+ * What each format reads as in the chooser. JPEG is `JPG`, as the reference and the design spell it, and JPEG keeping
+ * a gain map `JPG (Ultra HDR)`, worded by the locale - see `choiceLabel`.
+ */
+const FORMAT_LABELS: Record<Exclude<FormatChoice, "preserve" | "uhdr">, string> = {
     avif: "AVIF",
     bmp: "BMP",
     gif: "GIF",
@@ -25,6 +29,14 @@ const FORMAT_LABELS: Record<Exclude<FormatChoice, "preserve">, string> = {
     png: "PNG",
     tiff: "TIFF",
     webp: "WEBP",
+};
+
+/** What `choice` reads as in the chooser. */
+const choiceLabel = (t: TFunction, choice: FormatChoice) => {
+    if (choice === "preserve") return t("export.settings.format.preserve");
+    if (choice === "uhdr") return typeLabel(t, FORMAT_LABELS.jpeg, true);
+
+    return FORMAT_LABELS[choice];
 };
 
 // The Save-to chooser's three values. `chosen` is the reference's hidden item: never offered, it is what the chooser
@@ -194,9 +206,7 @@ export const ExportSettingsPanel = ({ names, onClose }: { names: ExportNames | u
                             <SelectContent position="popper">
                                 {FORMAT_CHOICES.map((choice) => (
                                     <SelectItem key={choice} value={choice}>
-                                        {choice === "preserve"
-                                            ? t("export.settings.format.preserve")
-                                            : FORMAT_LABELS[choice]}
+                                        {choiceLabel(t, choice)}
                                     </SelectItem>
                                 ))}
                             </SelectContent>

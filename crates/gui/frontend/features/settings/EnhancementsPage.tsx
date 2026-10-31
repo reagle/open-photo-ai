@@ -2,14 +2,7 @@ import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import { familyEntry, useCatalogue } from "@/hooks/useCatalogue";
 import type { FamilyEntry } from "@/ipc/catalogue";
-import {
-    type Enhancement,
-    familiesWhere,
-    isSuggestible,
-    modelChoice,
-    modelLabel,
-    SETTABLE,
-} from "@/lib/enhancements";
+import { type Enhancement, familiesWhere, isSuggestible, modelChoice, modelLabel, SETTABLE } from "@/lib/enhancements";
 import { cn } from "@/lib/utils";
 import { useSettingsDraft } from "./draft";
 import { SettingsCard, SettingsSelect, SettingsSelectItem, SettingsSelectSeparator, SettingsSwitch } from "./rows.tsx";
@@ -56,7 +49,15 @@ const EnhancementRow = ({ entry, enhancement }: { entry: FamilyEntry | undefined
                          */}
                         {index > 0 && option.first && <SettingsSelectSeparator />}
 
-                        <SettingsSelectItem value={option.value}>{modelLabel(t, option)}</SettingsSelectItem>
+                        {/*
+                         * Fork-only: a precision this install cannot run the model at stays in the list,
+                         * unavailable and saying why, so the pairs still read as pairs.
+                         */}
+                        <SettingsSelectItem value={option.value} disabled={!option.available}>
+                            {option.available
+                                ? modelLabel(t, option)
+                                : t("models.unavailableLabel", { model: modelLabel(t, option) })}
+                        </SettingsSelectItem>
                     </Fragment>
                 ))}
             </SettingsSelect>

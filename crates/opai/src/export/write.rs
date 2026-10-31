@@ -9,6 +9,7 @@ use std::sync::Arc;
 use rust_sak::image::EncodeOptions;
 
 use super::claim::claim;
+use super::format::GainMapChoice;
 use rust_sak::image::Embedded;
 
 use super::gain_map::prepare;
@@ -27,6 +28,9 @@ pub struct WriteOptions {
     pub overwrite: bool,
     /// Create the destination's directory first where it is missing, rather than failing.
     pub create_parent: bool,
+    /// What is done with a gain map the picture carries, written as JPEG: kept by default, as an Ultra HDR JPEG, or
+    /// left out for an SDR JPEG — the [`gain_map`](super::FormatChoice::gain_map) of the format chosen.
+    pub gain_map: GainMapChoice,
 }
 
 /// What [`write()`] wrote.
@@ -87,7 +91,9 @@ impl From<Cancelled> for WriteError {
 /// (a Pixel's `GCamera:HdrPlusMakernote`) go into extended XMP. Every other format leaves the gain map out. **Nothing
 /// about the gain map fails the export**: one that cannot be prepared, or that the encoder does not append (its
 /// declaration could not stay in the standard segment and there is no ISO marker), is left out, and the HDR it could not
-/// carry is reported.
+/// carry is reported. **With [`GainMapChoice::Drop`] the gain map is left out on purpose**: no MPF index, no `hdrgm`
+/// XMP, no ISO 21496-1 marker — exactly what a gain map that could not be carried leaves — and the loss is reported as
+/// [`HdrCause::Chosen`](super::HdrCause::Chosen), without a warning in the log about a gain map dropped.
 ///
 /// **What the file loses against the picture's source is assessed as it is written** ([`losses`](super::losses)):
 /// HDR written as SDR, fewer bits per channel, a colour profile not embedded — **reconciled with what the encoder
@@ -113,7 +119,10 @@ pub async fn write(
 ) -> Result<Written, WriteError> {
     let pixels = picture.shared_pixels();
     let encode = recommended_encode_options(format, options.quality);
-    let gain_map = gain_map_for(picture, format, encode).await?;
+    let gain_map = match options.gain_map {
+        GainMapChoice::Keep => gain_map_for(picture, format, encode).await?,
+        GainMapChoice::Drop => None,
+    };
     // The source photograph's metadata, carried through every crop and enhancement by `Picture::derive`, as the export
     // policy rewrites it for these pixels and this moment; `image::save` warns about whatever the format cannot hold.
     let now = chrono::Local::now().fixed_offset();
@@ -141,10 +150,15 @@ pub async fn write(
     if carrying && !embedded.gain_map {
         dropped(picture, &"the encoder did not append it");
     }
-    let predicted = losses_carrying(picture, format, carrying && embedded.gain_map);
+    let predicted = losses_carrying(picture, format, options.gain_map, carrying && embedded.gain_map);
     let losses = reconcile(predicted, picture, format, embedded);
     for loss in &losses {
-        tracing::warn!(op = "export", path = %written.path.display(), kind = loss.kind(), %loss, "an export lost something against its source");
+        // A gain map left out by choice was asked for, so it is noted rather than warned of.
+        if matches!(loss, Loss::Hdr { cause: super::HdrCause::Chosen, .. }) {
+            tracing::info!(op = "export", path = %written.path.display(), kind = loss.kind(), %loss, "an export left out its source's gain map, as chosen");
+        } else {
+            tracing::warn!(op = "export", path = %written.path.display(), kind = loss.kind(), %loss, "an export lost something against its source");
+        }
     }
     written.losses = losses;
     Ok(written)
@@ -438,6 +452,61 @@ mod tests {
         let (written, file) = write_to(&loaded, dir.path(), "plain-out.jpg", ImageFormat::Jpeg).await;
         assert_eq!(written.losses, []);
         assert_eq!(rust_sak::image::metadata_bytes(&file).gain_map, None);
+    }
+
+    #[test]
+    fn an_ultra_hdr_jpeg_written_as_plain_jpeg_is_sdr_with_no_trace_of_its_gain_map() {
+        use crate::image::Hdr;
+        use crate::image::test_support::written_ultra_hdr;
+
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let hawk = dir.path().join("hawk.jpg");
+        std::fs::write(&hawk, written_ultra_hdr()).expect("written");
+        let loaded = image::load_blocking(&hawk).expect("decodable");
+        assert!(loaded.gain_map().is_some(), "the fixture carries a gain map");
+        let iso = b"urn:iso:std:iso:ts:21496:-1";
+        assert!(
+            std::fs::read(&hawk).expect("on disk").windows(iso.len()).any(|window| window == iso),
+            "the source has one"
+        );
+        let out = dir.path().join("sdr.jpg");
+        let options = WriteOptions { gain_map: GainMapChoice::Drop, ..Default::default() };
+
+        let (log, written) = crate::logging::records_of_blocking("info", || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("a runtime")
+                .block_on(write(&loaded, &out, ImageFormat::Jpeg, options))
+                .expect("written")
+        });
+        let file = std::fs::read(&written.path).expect("on disk");
+
+        assert_eq!(
+            written.losses,
+            [Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Jpeg, cause: super::super::HdrCause::Chosen }]
+        );
+        assert_eq!(written.losses[0].to_string(), "written as SDR (gain map left out)");
+        assert_eq!(rust_sak::image::hdr_bytes(&file), None, "an SDR JPEG, claiming nothing");
+        let read = rust_sak::image::metadata_bytes(&file);
+        assert_eq!((read.gain_map, read.iso_gain_map), (None, None));
+        assert!(!file.windows(4).any(|window| window == b"MPF\0"), "no MPF index");
+        assert!(!file.windows(iso.len()).any(|window| window == iso), "no ISO 21496-1 marker");
+        let xmp = String::from_utf8(read.xmp.expect("the rest of the XMP is kept")).expect("UTF-8");
+        assert!(!xmp.contains("hdrgm") && !xmp.contains("hdr-gain-map"), "{xmp}");
+        assert!(!xmp.contains("Container:Directory"), "{xmp}");
+        assert!(rust_sak::image::decode_bytes(&file).is_ok());
+        // Asked for, so nothing in the log calls it dropped.
+        assert_eq!(crate::logging::records(&log, "HDR gain map dropped: it could not be carried").len(), 0, "{log}");
+
+        // Kept, the same picture is an Ultra HDR JPEG again: the choice alone decides.
+        let kept = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("a runtime")
+            .block_on(write_to(&loaded, dir.path(), "kept.jpg", ImageFormat::Jpeg));
+        assert_eq!(kept.0.losses, []);
+        assert!(rust_sak::image::metadata_bytes(&kept.1).gain_map.is_some());
     }
 
     #[tokio::test]

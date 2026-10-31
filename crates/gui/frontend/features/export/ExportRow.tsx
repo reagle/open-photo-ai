@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, CircleAlert, Folder, TriangleAlert } from "lucide-react";
+import { ArrowRight, CircleAlert, Folder, Info, TriangleAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
@@ -9,7 +9,7 @@ import { framedDimensions } from "@/ipc/crop";
 import { type ExportName, type Loss, revealExport } from "@/ipc/export";
 import { renditionFor } from "@/ipc/images";
 import { enlargement, progressLabelKey } from "@/lib/enhancements";
-import { formatLoss } from "@/lib/export";
+import { formatLoss, typeLabel, warnsOf, writesUltraHdr } from "@/lib/export";
 import { report } from "@/lib/report";
 import { cn, formatBytes, formatDimensions } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
@@ -110,19 +110,28 @@ const StagePill = ({ row }: { row: Row }) => {
 /**
  * The warning that this file loses something against its source in its format - HDR, bit depth, its color profile -
  * with each loss in words in its tooltip. Focusable, so the tooltip is reachable from the keyboard too.
+ *
+ * **A gain map left out by plain JPEG is a note, not a warning**: the user chose an SDR JPEG, so where that is all
+ * the file loses, the mark is a muted information sign rather than the warning's triangle.
  */
 const LossWarning = ({ losses }: { losses: readonly Loss[] }) => {
     const { t } = useTranslation();
+    const warns = warnsOf(losses);
+    const Mark = warns ? TriangleAlert : Info;
 
     return (
         <Tooltip>
             <TooltipTrigger
                 type="button"
                 data-slot="export-loss"
-                aria-label={t("export.loss.warning")}
-                className="flex size-4 flex-none items-center justify-center rounded-sm text-warning focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+                data-chosen={warns ? undefined : ""}
+                aria-label={warns ? t("export.loss.warning") : t("export.loss.chosen")}
+                className={cn(
+                    "flex size-4 flex-none items-center justify-center rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden",
+                    warns ? "text-warning" : "text-foreground-dim",
+                )}
             >
-                <TriangleAlert className="size-3.5" strokeWidth={2} aria-hidden="true" />
+                <Mark className="size-3.5" strokeWidth={2} aria-hidden="true" />
             </TooltipTrigger>
             <TooltipContent side="top" sideOffset={6} className="max-w-75 text-left">
                 <ul data-slot="export-loss-list" className="flex flex-col gap-0.5">
@@ -165,6 +174,10 @@ const RevealButton = ({ path }: { path: string }) => {
  * types and its stage, and a warning where it loses HDR, bit depth or its color profile: `predicted` before it is
  * written, as Rust foresees from the file (see `useExportLosses`), and what Rust answered for the write once it is.
  *
+ * **The types name an Ultra HDR JPEG as one**: `JPG (Ultra HDR)` on the source's side where `gainMap` says it declares
+ * a gain map, and on the written side where the file keeps it (see `writesUltraHdr`), so a gain-map JPEG written as
+ * Ultra HDR reads `JPG (Ultra HDR) → JPG (Ultra HDR)` and one written as plain JPEG `JPG (Ultra HDR) → JPG`.
+ *
  * **What it shows is read live** - the dimensions from the stack and the framing, and `name` from what Rust answers
  * for the export settings (see `useExportNames`) - so a change while idle is seen at once, and the column being
  * disabled while running keeps the names the ones being written.
@@ -176,13 +189,16 @@ export const ExportRow = ({
     path,
     name,
     predicted,
+    gainMap = false,
     follow = false,
 }: {
     path: string;
     name?: ExportName | undefined;
     predicted?: readonly Loss[] | undefined;
+    gainMap?: boolean;
     follow?: boolean;
 }) => {
+    const { t } = useTranslation();
     const file = useFileByPath(path);
     const row = useExportBatchStore((state) => state.rows.get(path)) ?? QUEUED;
     const current = useExportBatchStore((state) => state.current?.path === path);
@@ -202,10 +218,10 @@ export const ExportRow = ({
 
     const { width, height } = framedDimensions(file, crop);
     const scale = enlargement(stack);
-    const types = `${file.extension.toUpperCase()} → ${name.extension.toUpperCase()}`;
     const fraction = row.stage === "enhancing" ? row.fraction : row.stage === "writing" ? 1 : 0;
     // What was written, once it was; until then, what will be. A failed row wrote nothing to warn about.
     const losses = row.stage === "done" ? row.losses : row.stage === "failed" ? [] : (predicted ?? []);
+    const types = `${typeLabel(t, file.extension, gainMap)} → ${typeLabel(t, name.extension, writesUltraHdr(name, gainMap, losses))}`;
 
     return (
         <div
@@ -243,7 +259,7 @@ export const ExportRow = ({
                                 <span className="text-input">·</span>
                             </>
                         )}
-                        {types}
+                        <span data-slot="export-types">{types}</span>
                     </span>
                 </div>
 

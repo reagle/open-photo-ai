@@ -5,11 +5,11 @@
 //! later takes as a parameter — so they describe *what* to run and own no native resource, which is what lets one
 //! outlive and stay independent of any session built from it.
 //!
-//! All thirteen families are named here: [`Remove`], [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`],
-//! [`ColorBalance`], [`Colorization`], [`Detection`], [`Depth`], [`Matting`], [`FaceRecovery`], [`Restore`] and
-//! [`LensBlur`]. Each is its own type, so no codename can be paired with the family it does not belong to.
+//! All fourteen families are named here: [`Remove`], [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`],
+//! [`ColorBalance`], [`Colorization`], [`Detection`], [`Depth`], [`Matting`], [`FaceRecovery`], [`Restore`],
+//! [`LensBlur`] and [`Grain`]. Each is its own type, so no codename can be paired with the family it does not belong to.
 //!
-//! [`Operation`] is where that match lives. It carries an operation of any of the ten image families, one arm per
+//! [`Operation`] is where that match lives. It carries an operation of any of the eleven image families, one arm per
 //! family holding that family's own type, and forwards the five questions they all answer; a detection, depth or
 //! matting run is carried by [`Analysis`] instead.
 //!
@@ -126,6 +126,7 @@ pub(crate) mod face_recovery;
 pub(crate) mod fidelity;
 pub(crate) mod filter;
 pub(crate) mod fraction;
+pub(crate) mod grain;
 pub(crate) mod handle;
 pub(crate) mod lens_blur;
 pub(crate) mod light_adjustment;
@@ -158,6 +159,7 @@ pub use face::{Confidence, DetectionOutput, Face, Faces, Point, Rect};
 pub use face_recovery::{FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant};
 pub use fidelity::Fidelity;
 pub use fraction::Fraction;
+pub use grain::{Grain, GrainAmount, GrainMode, GrainParams, GrainVariant};
 pub use lens_blur::{
     FOCUS_X, FOCUS_Y, Lens, LensBlur, LensBlurEdges, LensBlurVariant, LensOrigin, OwnLens, Refine as LensBlurRefine,
     RefineStroke,
@@ -306,8 +308,8 @@ mod tests {
             tags,
             [
                 "up-tokyo-fp32-s2.5",
-                "dn-stockholm-fp16-t0.25",
-                "sh-moscow-fp32-t0.25",
+                "dn-stockholm-fp16-t0.25-v4",
+                "sh-moscow-fp32-t0.25-v4",
                 "la-paris-fp32-b-0.35",
                 "cb-rio-fp16-b-0.35",
                 "fr-athens-fp32-w0.050-f0",

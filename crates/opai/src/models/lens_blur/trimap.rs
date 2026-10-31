@@ -71,6 +71,36 @@ const MIN_RADIUS: f32 = 3.0;
 /// in focus to speak of.
 const MIN_BAND: f64 = 0.005;
 
+// The depth-of-field tables' own criterion, rather than a number of pixels: the circle of confusion a lens's depth of
+// field is computed for is the one a viewer cannot tell from a point, and it is set as a share of the frame's diagonal
+// — 0.029 mm on full frame's 43.3 mm, 1/1500 — for a whole photograph looked at whole, which is how the preview fits
+// one to its window and how an export is first looked at. A share rather than pixels, so a 6,000-pixel photograph and
+// its 1,500-pixel preview are judged alike: 4.8 px across at 24 megapixels, 1.2 px at the size the window draws it.
+/// The diameter, as a share of the photograph's diagonal, below which the blur a lens blur adds cannot be seen: the
+/// acceptable circle of confusion, diagonal / 1500.
+pub(crate) const SEEN_DIAMETER: f32 = 1.0 / 1500.0;
+
+// "Most of the frame" rather than "anywhere": a sliver of foreground at the bottom edge blurred past the criterion is
+// not a blur anyone notices when the street that fills the rest is as sharp as it was.
+/// The share of the photograph that must be blurred past [`SEEN_DIAMETER`] for the blur to be seen at all.
+pub(crate) const SEEN_SHARE: f64 = 0.05;
+
+/// Whether the blur a lens blur adds, `radii` at each depth pixel (signed, in pixels on a photograph `diagonal_px`
+/// across), is too small to see: less than [`SEEN_SHARE`] of the photograph is blurred to a disc of
+/// [`SEEN_DIAMETER`] or more.
+///
+/// What a user is told: a wide-angle lens focused on something distant adds almost nothing at any f-number, and a
+/// render that changed nothing visible reads as one that did not happen.
+pub(crate) fn imperceptible(radii: &[f32], diagonal_px: f32) -> bool {
+    let seen = SEEN_DIAMETER * diagonal_px;
+    let blurred = radii.iter().filter(|&&radius| 2.0 * radius.abs() >= seen).count();
+
+    #[allow(clippy::cast_precision_loss, reason = "a share of a pixel count")]
+    let share = blurred as f64 / radii.len().max(1) as f64;
+
+    share < SEEN_SHARE
+}
+
 /// The least difference in blur across which the depth is a jump rather than a surface, as a share of the photograph's
 /// diagonal: 2 px on a 1,620 x 1,080 photograph, 7 px at 24 megapixels, so one scene is cut alike at any size.
 const STEP: f32 = 0.001;
@@ -744,6 +774,41 @@ pub(crate) fn unknown_radius(width: u32, height: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_blur_too_small_to_see_over_most_of_the_frame_is_imperceptible() {
+        // A 24-megapixel photograph, 7,211 px across: the criterion is a disc of 4.8 px, a radius of 2.4.
+        let diagonal = 6000.0_f32.hypot(4000.0);
+        let seen = SEEN_DIAMETER * diagonal / 2.0;
+
+        // Everything just under it.
+        assert!(imperceptible(&vec![seen * 0.95; 1000], diagonal));
+        // A sliver past it, 4% of the frame, behind as well as in front.
+        let mut sliver = vec![0.5; 1000];
+        sliver[..20].fill(seen * 3.0);
+        sliver[20..40].fill(-seen * 3.0);
+        assert!(imperceptible(&sliver, diagonal));
+        // 5% past it is a blur that shows.
+        let mut seen_enough = vec![0.5; 1000];
+        seen_enough[..50].fill(-seen * 1.01);
+        assert!(!imperceptible(&seen_enough, diagonal));
+    }
+
+    #[test]
+    fn the_criterion_is_the_same_share_of_the_frame_at_any_size() {
+        // The photograph and its preview a quarter of the size: the same blur, scaled with it, is judged alike.
+        let (full, preview) = (6000.0_f32.hypot(4000.0), 1500.0_f32.hypot(1000.0));
+        let radius = SEEN_DIAMETER * full / 2.0 * 1.1;
+
+        assert!(!imperceptible(&[radius; 100], full));
+        assert!(!imperceptible(&[radius / 4.0; 100], preview));
+        assert!(imperceptible(&[radius / 4.0; 100], full));
+    }
+
+    #[test]
+    fn nothing_to_judge_is_imperceptible() {
+        assert!(imperceptible(&[], 1000.0));
+    }
     use crate::models::lens_blur::lens::{Lens, LensOrigin};
 
     /// A `width` x `height` depth, already at the photograph's size: `metres(x, y)` at each pixel.

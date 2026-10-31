@@ -11,9 +11,9 @@
 
 use super::{
     Analysis, Bias, ColorBalance, Colorization, Denoise, Depth, Detection, FNumber, FOCUS_X, FOCUS_Y, FaceRecovery,
-    Faces, Fidelity, Fraction, LightAdjustment, Matting, Operation, ParameterValues, Restore, Scale, Sharpen, Strength,
-    Upscale, catalogue, color_balance, colorization, denoise, depth, detection, face, lens_blur, light_adjustment,
-    matting, remove, restore, sharpen, upscale,
+    Faces, Fidelity, Fraction, Grain, GrainAmount, GrainMode, LightAdjustment, Matting, Operation, ParameterValues,
+    Restore, Scale, Sharpen, Strength, Upscale, catalogue, color_balance, colorization, denoise, depth, detection,
+    face, grain, lens_blur, light_adjustment, matting, remove, restore, sharpen, upscale,
 };
 
 /// The values a front end would hand back for the controls one published row told it to draw.
@@ -47,6 +47,8 @@ pub(crate) fn published_values(variant: &catalogue::VariantEntry) -> ParameterVa
                         values.set(parameter.name, midpoint).expect("a lens blur parameter");
                         values
                     }
+                    GrainAmount::NAME => values.with_amount(GrainAmount::clamped(midpoint)),
+                    GrainMode::NAME => values.with_grain_mode(GrainMode::from_switch(midpoint)),
                     other => panic!("{} publishes a range no value here is supplied for: {other}", variant.codename),
                 }
             }
@@ -188,6 +190,16 @@ pub(crate) fn every_operation() -> Vec<Operation> {
     ] {
         for variant in remove::variant::tests::every_variant() {
             operations.push(Operation::Remove(remove::Remove::new(variant, std::sync::Arc::clone(&mask))));
+        }
+    }
+
+    // Both modes over a spread of amounts: the mode and the amount both reach the tag.
+    for mode in [GrainMode::Match, GrainMode::Add] {
+        for value in [0.0, 0.5, 1.0] {
+            for variant in grain::variant::tests::every_variant() {
+                let amount = GrainAmount::new(value).expect("the test supplied an amount in range");
+                operations.push(Operation::Grain(Grain::new(variant, amount, mode)));
+            }
         }
     }
 

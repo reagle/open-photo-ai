@@ -6,8 +6,8 @@
 //! none restated.
 
 use opai::{
-    Bias, FNumber, FOCUS_X, FOCUS_Y, Family, Operation, ParameterKind, ParameterValues, Scale, Strength, Subject,
-    Suggestion, VariantEntry,
+    Bias, FNumber, FOCUS_X, FOCUS_Y, Family, GrainAmount, GrainMode, Operation, ParameterKind, ParameterValues, Scale,
+    Strength, Subject, Suggestion, VariantEntry,
 };
 
 use crate::args::{Quality, Selection};
@@ -98,6 +98,9 @@ enum Parameter {
     /// A lens blur: the f-number and the focus point where they were given, else the published defaults. Both are
     /// already in the library's range, so they are set as they are.
     LensBlur { f_number: Option<f64>, focus: Option<(f64, f64)> },
+    /// A grain: its amount as a percentage where one was given, else the published default, and whether it is added
+    /// rather than matched to the photograph.
+    Grain { amount: Option<u16>, add: bool },
 }
 
 /// The chain `selection` asks for, each family at its quality in `qualities`, over a `width` x `height` photograph.
@@ -110,33 +113,33 @@ pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u3
     let mut notes = Vec::new();
 
     if let Some(model) = selection.denoise {
-        built.push(build(model, qualities, Parameter::Strength(selection.denoise_strength)));
+        built.push(build(model, qualities, &mut notes, Parameter::Strength(selection.denoise_strength)));
     }
 
     if let Some(model) = selection.face_recovery {
         // Maximum fidelity: as close to the original face as the model goes, which is what the catalogue publishes.
-        built.push(build(model, qualities, Parameter::None));
+        built.push(build(model, qualities, &mut notes, Parameter::None));
     }
 
     if let Some(model) = selection.colorization {
-        built.push(build(model, qualities, Parameter::None));
+        built.push(build(model, qualities, &mut notes, Parameter::None));
     }
 
     if let Some(model) = selection.light_adjustment {
-        built.push(build(model, qualities, Parameter::Bias(selection.light_bias)));
+        built.push(build(model, qualities, &mut notes, Parameter::Bias(selection.light_bias)));
     }
 
     if let Some(model) = selection.color_balance {
-        built.push(build(model, qualities, Parameter::Bias(selection.balance_bias)));
+        built.push(build(model, qualities, &mut notes, Parameter::Bias(selection.balance_bias)));
     }
 
     if let Some(model) = selection.sharpen {
-        built.push(build(model, qualities, Parameter::Strength(selection.sharpen_strength)));
+        built.push(build(model, qualities, &mut notes, Parameter::Strength(selection.sharpen_strength)));
     }
 
     if let Some(model) = selection.upscale {
         match selection.scale.or_else(|| opai::suggested_scale(width, height)) {
-            Some(scale) => built.push(build(model, qualities, Parameter::Scale(scale))),
+            Some(scale) => built.push(build(model, qualities, &mut notes, Parameter::Scale(scale))),
             None => notes.push(format!(
                 "the upscale was skipped: the photograph is already large enough ({width}x{height}); \
                  pass --scale to upscale it anyway"
@@ -150,6 +153,7 @@ pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u3
         built.push(build(
             model,
             qualities,
+            &mut notes,
             Parameter::Restore { scale: selection.restore_scale, strength: selection.restore_strength },
         ));
     }
@@ -160,6 +164,7 @@ pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u3
         let (blur, mut applied) = build(
             model,
             qualities,
+            &mut notes,
             Parameter::LensBlur { f_number: selection.lens_blur_f, focus: selection.lens_blur_focus },
         );
 
@@ -174,6 +179,17 @@ pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u3
         built.push((blur, applied));
     }
 
+    // After everything, the lens blur included, as the library runs it: the photograph's own grain at the catalogue's
+    // default amount, all of it, unless an amount or adding was asked for.
+    if let Some(model) = selection.grain {
+        built.push(build(
+            model,
+            qualities,
+            &mut notes,
+            Parameter::Grain { amount: selection.grain_amount, add: selection.grain_add },
+        ));
+    }
+
     let (operations, applied) = built.into_iter().unzip();
     Plan { operations, applied, notes }
 }
@@ -183,12 +199,28 @@ pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u3
 ///
 /// `quality` picks a build by its position in the row's precisions, so a model published at other precisions than
 /// FP32 and FP16 — Osaka, at FP16 and INT8 — needs no case of its own.
-fn build<M: CatalogueModel>(model: M, qualities: &Qualities, parameter: Parameter) -> (Operation, Applied) {
+///
+/// A build this install cannot run — a model this fork exports and has not placed at that precision — is swapped for
+/// the one it can, with a line in `notes` saying so; see [`served_precision`].
+fn build<M: CatalogueModel>(
+    model: M,
+    qualities: &Qualities,
+    notes: &mut Vec<String>,
+    parameter: Parameter,
+) -> (Operation, Applied) {
     let quality: Quality = qualities.of(M::FAMILY);
     let name = model.to_possible_value().expect("no model is skipped");
     let variant =
         VariantEntry::published(M::FAMILY, name.get_name()).expect("every model the command line names is published");
-    let precision = variant.precisions.get(quality.position()).unwrap_or(&variant.precisions[0]);
+    let served = served()
+        .iter()
+        .filter(|entry| entry.family == M::FAMILY)
+        .flat_map(|entry| entry.variants.iter())
+        .find(|served| served.codename == variant.codename)
+        .unwrap_or(variant);
+    let (precision, note) = served_precision(served, quality);
+    notes.extend(note);
+    let precision = &precision;
 
     let mut values = ParameterValues::new();
     for parameter in variant.parameters {
@@ -236,6 +268,15 @@ fn build<M: CatalogueModel>(model: M, qualities: &Qualities, parameter: Paramete
             // `f64` renders without a trailing `.0`: `f/2`, `f/2.8`.
             Some(format!("f/{f_number}, focus {x},{y}"))
         }
+        Parameter::Grain { amount, add } => {
+            let percent = set(&mut values, variant, GrainAmount::NAME, amount.map(f64::from));
+            if add {
+                values
+                    .set(GrainMode::NAME, GrainMode::Add.as_switch())
+                    .expect("the mode is published by its name");
+            }
+            Some(format!("amount {percent}, {}", if add { "added" } else { "matching the photograph" }))
+        }
     };
 
     let operation = match variant.build(*precision, &values) {
@@ -243,6 +284,64 @@ fn build<M: CatalogueModel>(model: M, qualities: &Qualities, parameter: Paramete
         other => panic!("{:?} {} did not build an enhancement: {other:?}", M::FAMILY, variant.codename),
     };
     (operation, Applied { family: M::FAMILY, model: variant.label, detail })
+}
+
+// Fork-only, not for upstream: every model upstream names is served at every precision it is published at.
+/// The catalogue as this install can serve it, read once per process: see [`opai::installable_catalogue`].
+///
+/// The library's own catalogue under test, so what the suite plans does not depend on the models placed on the machine
+/// running it.
+fn served() -> &'static [opai::FamilyEntry] {
+    #[cfg(test)]
+    {
+        opai::catalogue()
+    }
+
+    #[cfg(not(test))]
+    {
+        static SERVED: std::sync::OnceLock<Vec<opai::FamilyEntry>> = std::sync::OnceLock::new();
+
+        SERVED.get_or_init(|| opai::installable_catalogue(opai::APP_NAME, opai::ModelTrust::Published))
+    }
+}
+
+/// The precision `variant` runs at for `quality` — the build at that position in its precisions, or its first — and,
+/// where this install cannot serve that build, the nearest one it can, with the note saying so.
+///
+/// A fallback rather than a refusal, as the GUI's saved default falls back: `-q hd` is every family's quality at once,
+/// and Kazan having only its SD build here is no reason to fail a chain that also denoises. Where no build at all can be
+/// served the asked-for one is kept, and the run reports the install's refusal, naming the model.
+fn served_precision(variant: &VariantEntry, quality: Quality) -> (opai::Precision, Option<String>) {
+    let asked = *variant.precisions.get(quality.position()).unwrap_or(&variant.precisions[0]);
+
+    match variant.nearest_available(asked) {
+        Some(served) if served != asked => {
+            let (label, tier, asked) = (variant.label, tier(variant, served), spelled(asked));
+            (
+                served,
+                Some(format!(
+                    "{label} runs at {tier}: its {} build ({asked}) isn't available on this install",
+                    quality.label()
+                )),
+            )
+        }
+        _ => (asked, None),
+    }
+}
+
+/// How the notes name `precision`'s place among `variant`'s builds: `HD`, `SD`, or the precision itself past the two
+/// the command line names.
+fn tier(variant: &VariantEntry, precision: opai::Precision) -> String {
+    match variant.precisions.iter().position(|candidate| *candidate == precision) {
+        Some(0) => Quality::Hd.label().to_string(),
+        Some(1) => Quality::Sd.label().to_string(),
+        _ => spelled(precision),
+    }
+}
+
+/// `precision` as the notes write it: `FP32`.
+fn spelled(precision: opai::Precision) -> String {
+    format!("{precision:?}").to_uppercase()
 }
 
 /// The default `variant` publishes for the range parameter `name`.
@@ -307,6 +406,41 @@ mod tests {
     fn plan(line: &str, width: u32, height: u32) -> Plan {
         let args = args(line);
         super::plan(&args.selection, args.qualities(), width, height)
+    }
+
+    /// Stockholm as an install serves it with `unavailable` missing from it.
+    fn stockholm_without(unavailable: &[opai::Precision]) -> VariantEntry {
+        let mut variant = VariantEntry::published(Family::Denoise, "stockholm").unwrap().clone();
+        variant.unavailable = unavailable.to_vec();
+        variant
+    }
+
+    #[test]
+    fn a_build_this_install_cannot_serve_falls_back_to_the_one_it_can_and_says_so() {
+        // Kazan HD where only Kazan SD was placed, here as Stockholm: `-q hd`, or the default, runs SD rather than
+        // failing the chain on a model nothing hosts.
+        let (precision, note) = served_precision(&stockholm_without(&[opai::Precision::Fp32]), Quality::Hd);
+
+        assert_eq!(precision, opai::Precision::Fp16);
+        assert_eq!(
+            note.as_deref(),
+            Some("Stockholm runs at SD: its HD build (FP32) isn't available on this install")
+        );
+    }
+
+    #[test]
+    fn a_build_this_install_serves_runs_as_asked_with_nothing_said() {
+        let served = stockholm_without(&[opai::Precision::Fp32]);
+
+        assert_eq!(served_precision(&served, Quality::Sd), (opai::Precision::Fp16, None));
+        assert_eq!(served_precision(&stockholm_without(&[]), Quality::Hd), (opai::Precision::Fp32, None));
+    }
+
+    #[test]
+    fn a_model_with_no_build_this_install_serves_keeps_the_one_asked_for_so_the_run_can_say_why() {
+        let served = stockholm_without(&[opai::Precision::Fp32, opai::Precision::Fp16]);
+
+        assert_eq!(served_precision(&served, Quality::Hd), (opai::Precision::Fp32, None));
     }
 
     fn scale(factor: f64) -> Scale {
@@ -551,8 +685,28 @@ mod tests {
     }
 
     #[test]
+    fn a_grain_matches_the_photograph_at_the_full_amount_unless_asked_otherwise() {
+        use opai::{Grain, GrainAmount, GrainMode};
+
+        let amount = |value| GrainAmount::new(value).expect("in range");
+        let cases = [
+            ("--gr", Grain::sensor(amount(1.0), GrainMode::Match)),
+            ("--gr --gr-amount 40", Grain::sensor(amount(0.4), GrainMode::Match)),
+            ("--gr --gr-add --gr-amount 25", Grain::sensor(amount(0.25), GrainMode::Add)),
+            ("--gr --gr-add", Grain::sensor(amount(1.0), GrainMode::Add)),
+        ];
+
+        for (flags, expected) in cases {
+            for quality in ["hd", "sd"] {
+                let planned = plan(&format!("opai photo.jpg {flags} -q {quality} -o out.png"), 1000, 800);
+                assert_eq!(planned.operations, vec![expected.clone()], "{flags} -q {quality}");
+            }
+        }
+    }
+
+    #[test]
     fn the_chain_is_pushed_in_the_librarys_apply_order() {
-        let plan = plan("opai photo.jpg --lb --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
+        let plan = plan("opai photo.jpg --gr --lb --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
         let families: Vec<_> = plan.operations.iter().map(Operation::family).collect();
 
         // Every family the enhancement flags name; a removal is added from `--remove`'s mask, by the run.
@@ -677,6 +831,8 @@ mod tests {
             ("--cb", "Color Balance Rio bias 50"),
             ("--sh", "Sharpen Moscow strength 100"),
             ("--up --scale 2", "Upscale Tokyo 2x"),
+            ("--gr", "Grain Sensor amount 100, matching the photograph"),
+            ("--gr --gr-add --gr-amount 30", "Grain Sensor amount 30, added"),
         ];
 
         for (flags, expected) in cases {
@@ -686,7 +842,7 @@ mod tests {
 
     #[test]
     fn the_description_follows_the_chain_one_for_one_in_its_order() {
-        let plan = plan("opai photo.jpg --lb --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
+        let plan = plan("opai photo.jpg --gr --lb --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
         let families: Vec<_> = plan.applied.iter().map(|applied| applied.family).collect();
 
         // Every family but the removal, which is `--rm`'s own and never planned from the flags.
@@ -695,7 +851,7 @@ mod tests {
             describe(&plan.applied),
             "Denoise Stockholm strength 100, Face Recovery Athens, Colorize Delhi, Light Adjust Paris bias 50, \
              Color Balance Rio bias 50, Sharpen Moscow strength 100, Upscale Tokyo 4x, Restore Kazan strength 100, \
-             Lens Blur Lisbon f/2.8, focus 0.5,0.5"
+             Lens Blur Lisbon f/2.8, focus 0.5,0.5, Grain Sensor amount 100, matching the photograph"
         );
     }
 

@@ -13,6 +13,10 @@
 //!    built;
 //! 4. otherwise [`InitError::UnpublishedModel`], naming the artifact, with **nothing transferred**.
 //!
+//! Fork-only: an artifact none of the three names may be in the fork's local listing (`manifest::FORK_NAME`). That
+//! listing has no hosting behind it, so such a model installs only where its files are already in place, and is refused
+//! as [`InitError::UnavailableModel`] otherwise; [`obtainable`] answers the same question for a chooser in advance.
+//!
 //! There is no path here that places a model file on disk without checking it.
 //!
 //! The listing is read **lazily** — the first install that needs it, never during [`crate::Opai::initialize`] — and
@@ -39,7 +43,8 @@ use crate::deps::model::descriptor::{MODEL_BASE_URL, MODELS_DIR, descriptor_at};
 use crate::deps::model::manifest::{Listing, TREE_URL};
 use crate::deps::{Installing, ModelTrust};
 use crate::error::InitError;
-use crate::models::ArtifactId;
+use crate::models::build::ParameterValues;
+use crate::models::{ArtifactId, FamilyEntry};
 use crate::progress::Reporter;
 
 /// Installs every published file backing `id` and returns the directory they landed in.
@@ -49,8 +54,9 @@ use crate::progress::Reporter;
 ///
 /// # Errors
 ///
-/// Returns [`InitError::UnpublishedModel`] when no source has a hash for `id`, with nothing transferred. Otherwise as
-/// [`crate::deps::install::install`]: [`InitError::Download`] if a transfer fails, [`InitError::HashMismatch`] if a
+/// Returns [`InitError::UnpublishedModel`] when no source has a hash for `id`, and [`InitError::UnavailableModel`] when
+/// only the fork's local listing names it and its files are not in place, each with nothing transferred and no
+/// directory created. Otherwise as [`crate::deps::install::install`]: [`InitError::Download`] if a transfer fails, [`InitError::HashMismatch`] if a
 /// file's bytes are not the published ones, and [`InitError::Io`] or [`InitError::Fs`] for the bookkeeping and the
 /// directories around them.
 pub(crate) async fn install(
@@ -101,6 +107,32 @@ pub(crate) async fn install_from(
         return Err(InitError::UnpublishedModel { artifact: id.as_str().to_string() });
     };
 
+    // Fork-only: a model only the fork's listing names is published nowhere, so it installs only where its files are
+    // already in place, as the script that placed them recorded them. Anything else would compose an upstream URL for
+    // a file upstream never had and fail on its 404 — after creating the directory it was going to land in. Asked
+    // here, before that directory exists, of the same check the install itself would make, and handed on so the
+    // install does not make it twice.
+    let checked = if listing.files_for(id.as_str()).is_empty() {
+        let checked = crate::deps::install::check(&app_dir.join(&dependency.dir), &dependency).await?;
+
+        if !checked.needs_no_transfer() {
+            tracing::warn!(
+                artifact = %id,
+                "only the fork's local listing names this model and its files are not in place; refusing to install it"
+            );
+
+            return Err(InitError::UnavailableModel { artifact: id.as_str().to_string() });
+        }
+
+        Some(checked)
+    } else {
+        None
+    };
+
+    // Whether the model's directory is this install's to remove again if the install fails: one that was not there
+    // before it. A failed first install is otherwise a directory with nothing in it, which reads in the models
+    // directory as a model half installed.
+    let created = !app_dir.join(&dependency.dir).exists();
     let dir = config::sub_dir(app_dir, name, &dependency.dir)?;
 
     // One reporter per model, as one per dependency for the archives: two installs sharing a reporter interleave into
@@ -119,9 +151,92 @@ pub(crate) async fn install_from(
     // otherwise tell a finished row from one not yet reached. A model has no such list: it is installed the first time
     // an operation needs it, `model-install` fixes that an install already current reports nothing, and no consumer
     // wants otherwise.
-    let _ = crate::deps::install::install(&dir, &dependency, reporter, &installing.cancel).await?;
+    let installed =
+        crate::deps::install::install_checked(&dir, &dependency, checked, reporter, &installing.cancel).await;
+
+    if let Err(error) = installed {
+        // Only an empty one, which `remove_dir` checks for itself: a partial transfer stays where it is, since it is
+        // what the next attempt resumes onto, and so does the directory holding it.
+        if created && std::fs::remove_dir(&dir).is_ok() {
+            tracing::debug!(path = %dir.display(), "removed the empty directory a failed first install left");
+        }
+
+        return Err(error);
+    }
 
     Ok(dir)
+}
+
+/// Whether `id` can be had on this install without a transfer that is bound to fail: `listing` names it, or only the
+/// fork's local listing does and its files are already in place.
+///
+/// The question [`install_from`] answers by refusing, asked in advance and without touching anything, so a chooser can
+/// leave out what an install would refuse. Synchronous, because for one model it is a few stat calls: its graph, its
+/// weights and its record.
+///
+/// `base_url` is what an install composes each URL from, and so what its record's fingerprint is taken over; production
+/// passes [`MODEL_BASE_URL`].
+pub(crate) fn obtainable(
+    base_url: &str,
+    listing: &Listing,
+    app_dir: &Path,
+    id: &ArtifactId,
+    trust: ModelTrust,
+) -> bool {
+    // Published: whatever happens on the way, an install of it has somewhere to fetch from, which is upstream's
+    // behaviour and left as it is.
+    if !listing.files_for(id.as_str()).is_empty() {
+        return true;
+    }
+
+    descriptor_at(base_url, listing, id, app_dir, trust).is_some_and(|dependency| {
+        crate::deps::install::check_blocking(&app_dir.join(&dependency.dir), &dependency).needs_no_transfer()
+    })
+}
+
+/// [`catalogue`](crate::catalogue) as this install can serve it: each variant's
+/// [`unavailable`](crate::VariantEntry::unavailable) lists the precisions at which a model it requires is not
+/// [`obtainable`].
+///
+/// Asked of the listing kept from the last read of the published one, or the one compiled into this build where none
+/// was kept, rather than of the live listing: a chooser is drawn long before any install needs the network, and every
+/// model this build can name that was published when it was built is in the compiled-in one.
+pub(crate) fn installable_catalogue(app_dir: &Path, trust: ModelTrust) -> Vec<FamilyEntry> {
+    installable_catalogue_at(MODEL_BASE_URL, app_dir, trust)
+}
+
+/// The testable half of [`installable_catalogue`], against an explicit base URL; see [`obtainable`].
+fn installable_catalogue_at(base_url: &str, app_dir: &Path, trust: ModelTrust) -> Vec<FamilyEntry> {
+    let cached = Listing::read_cached(&app_dir.join(MODELS_DIR));
+    let listing = cached.as_ref().unwrap_or_else(|| Listing::compiled_in());
+
+    let mut families = crate::catalogue().to_vec();
+
+    for variant in families.iter_mut().flat_map(|family| family.variants.iter_mut()) {
+        variant.unavailable = variant
+            .precisions
+            .iter()
+            .copied()
+            .filter(|&precision| {
+                // At the parameters a newly added enhancement starts at, which is what a chooser offers. A row that
+                // cannot be built that way says nothing about availability and is left as offered; building is the
+                // run's to refuse.
+                variant.build(precision, &ParameterValues::new()).is_ok_and(|subject| {
+                    !subject.required_artifacts().iter().all(|id| obtainable(base_url, listing, app_dir, id, trust))
+                })
+            })
+            .collect();
+
+        if !variant.unavailable.is_empty() {
+            tracing::debug!(
+                codename = variant.codename,
+                unavailable = ?variant.unavailable,
+                "a model is not available at every precision on this install"
+            );
+        }
+    }
+
+    families
 }
 
 #[cfg(test)]
@@ -787,5 +902,218 @@ mod tests {
             !log.contains(r#"msg="installing a dependency""#),
             "an unchanged trusted model reinstalled:\n{log}"
         );
+    }
+
+    // Fork-only, as the refusal and the availability they test: see `manifest::FORK_NAME`.
+
+    /// Writes `listing` as the fork's local listing in `app_dir`'s models directory, as the script that places a fork
+    /// model does.
+    fn write_fork_listing(app_dir: &Path, listing: &Listing) {
+        let models = app_dir.join("models");
+        std::fs::create_dir_all(&models).unwrap();
+        std::fs::write(models.join(crate::deps::model::manifest::FORK_NAME), serde_json::to_vec(listing).unwrap())
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_model_only_the_fork_names_whose_files_are_not_in_place_is_refused_before_a_request_or_a_directory() {
+        // Kazan at FP32 on a machine where only its FP16 was placed: the fork's listing names it, nothing hosts it, and
+        // the URL an install would compose is upstream's, which 404s. The refusal says so instead, and leaves no
+        // empty `models/rs_kazan_fp32/` behind.
+        let server = TestServer::start(vec![Reply::NotFound; 4]).await;
+        let (_root, app_dir) = app();
+        write_fork_listing(&app_dir, &kyoto_listing());
+
+        let error = install_from(&server, &Listing::default(), &app_dir, &kyoto(), ModelTrust::Published)
+            .await
+            .unwrap_err();
+
+        match &error {
+            InitError::UnavailableModel { artifact } => assert_eq!(artifact, KYOTO),
+            other => panic!("expected UnavailableModel, got {other:?}"),
+        }
+        assert!(error.to_string().contains("isn't available on this install"), "{error}");
+        assert_eq!(server.requests(), 0, "a transfer was attempted for a model nothing hosts");
+        assert!(!app_dir.join("models").join(KYOTO).exists(), "a refused install created a directory");
+    }
+
+    #[tokio::test]
+    async fn a_model_only_the_fork_names_whose_files_are_in_place_is_used_with_nothing_transferred() {
+        // Placed as the fork's scripts place one: the file and the record an install of it writes. A published
+        // listing naming it stands in for the script here, and is then taken away.
+        let server = TestServer::start(vec![]).await;
+        let (_root, app_dir) = app();
+        acquire(&server, &app_dir, ModelTrust::Published).await.unwrap();
+        let placed = server.requests();
+        write_fork_listing(&app_dir, &kyoto_listing());
+
+        let dir = install_from(&server, &Listing::default(), &app_dir, &kyoto(), ModelTrust::Published)
+            .await
+            .unwrap();
+
+        assert_eq!(dir, app_dir.join("models").join(KYOTO));
+        assert_eq!(server.requests(), placed, "a model already in place was transferred again");
+        assert!(dir.join(format!("{KYOTO}.onnx")).is_file());
+    }
+
+    #[tokio::test]
+    async fn a_published_model_the_fork_also_names_is_installed_from_its_published_source_as_before() {
+        // The fork's listing can add a model and never take one over: upstream's install of a published model is
+        // unchanged by one naming it too.
+        let server = TestServer::start(vec![]).await;
+        let (_root, app_dir) = app();
+        write_fork_listing(&app_dir, &kyoto_listing());
+
+        let dir = acquire(&server, &app_dir, ModelTrust::Published).await.unwrap();
+
+        assert!(dir.join(format!("{KYOTO}.onnx")).is_file());
+        assert_eq!(server.requests(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_first_install_that_fails_leaves_no_empty_directory_behind() {
+        // A file the listing names and the host does not have: the transfer fails, and the directory it was to land in
+        // goes with it rather than reading as a model half installed.
+        let server = TestServer::start(vec![Reply::NotFound; 8]).await;
+        let (_root, app_dir) = app();
+
+        let error = acquire(&server, &app_dir, ModelTrust::Published).await.unwrap_err();
+
+        assert!(matches!(error, InitError::Download { .. }), "{error:?}");
+        assert!(!app_dir.join("models").join(KYOTO).exists(), "a failed first install left its directory");
+        assert!(app_dir.join("models").is_dir(), "the models directory itself is the listing's and stays");
+    }
+
+    #[tokio::test]
+    async fn a_failed_install_keeps_the_partial_it_would_resume_onto_and_its_directory() {
+        // The other half of the same rule: only an *empty* directory goes, so an interrupted transfer still resumes.
+        let server = TestServer::start(vec![Reply::Truncated(FIXTURE.len() / 2); 8]).await;
+        let (_root, app_dir) = app();
+
+        acquire(&server, &app_dir, ModelTrust::Published).await.unwrap_err();
+
+        let dir = app_dir.join("models").join(KYOTO);
+        assert!(dir.is_dir(), "the directory holding a resumable partial was removed");
+        assert!(std::fs::read_dir(&dir).unwrap().next().is_some(), "the partial was not kept");
+    }
+
+    #[tokio::test]
+    async fn a_model_is_obtainable_where_it_is_published_or_placed_and_not_where_only_the_fork_names_it() {
+        let server = TestServer::start(vec![]).await;
+        let (_root, app_dir) = app();
+        let obtainable =
+            |listing: &Listing| super::obtainable(&server.base_url, listing, &app_dir, &kyoto(), ModelTrust::Published);
+
+        // Published, whatever is on disk: upstream's behaviour.
+        assert!(obtainable(&kyoto_listing()));
+        // Named nowhere.
+        assert!(!obtainable(&Listing::default()));
+
+        // Named by the fork alone, not yet placed.
+        write_fork_listing(&app_dir, &kyoto_listing());
+        assert!(!obtainable(&Listing::default()));
+
+        // And once placed.
+        acquire(&server, &app_dir, ModelTrust::Published).await.unwrap();
+        assert!(obtainable(&Listing::default()));
+    }
+
+    #[test]
+    fn a_trusting_process_can_obtain_a_fork_model_placed_without_a_record() {
+        // What `ModelTrust::LocalFiles` is for: a re-export under test, with no record yet. The install would use it as
+        // it is, so a chooser offers it.
+        let (_root, app_dir) = app();
+        write_fork_listing(&app_dir, &kyoto_listing());
+        place(&app_dir, b"a re-export under test");
+
+        let at = |trust| super::obtainable(MODEL_BASE_URL, &Listing::default(), &app_dir, &kyoto(), trust);
+
+        assert!(at(ModelTrust::LocalFiles));
+        assert!(!at(ModelTrust::Published), "a file with no record was offered to a process that verifies");
+    }
+
+    /// Whether every model `variant` requires at `precision` is in the listing compiled into this build.
+    fn published_in_full(variant: &crate::VariantEntry, precision: crate::Precision) -> bool {
+        variant.build(precision, &ParameterValues::new()).is_ok_and(|subject| {
+            subject
+                .required_artifacts()
+                .iter()
+                .all(|id| !Listing::compiled_in().files_for(id.as_str()).is_empty())
+        })
+    }
+
+    #[test]
+    fn with_no_fork_listing_every_published_model_is_offered_at_every_precision_it_is_published_at() {
+        // Upstream's install, and every install without the fork's models: a published model is served as the
+        // library's catalogue has it, and only the fork's own — published nowhere and placed nowhere — are not.
+        let (_root, app_dir) = app();
+
+        let served = super::installable_catalogue(&app_dir, ModelTrust::Published);
+
+        for variant in served.iter().flat_map(|family| &family.variants) {
+            for precision in variant.precisions {
+                assert_eq!(
+                    variant.unavailable.contains(precision),
+                    !published_in_full(variant, *precision),
+                    "{} at {precision:?}",
+                    variant.codename
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_precision_whose_model_only_the_fork_names_and_has_not_placed_is_marked_unavailable_and_no_other() {
+        // Stockholm at FP32 taken out of a kept copy of the published listing and named by the fork instead: the one
+        // precision a chooser cannot have. Every other one stays offered.
+        let server = TestServer::start(vec![]).await;
+        let (_root, app_dir) = app();
+        let stockholm = crate::VariantEntry::published(crate::Family::Denoise, "stockholm").unwrap();
+        let id = stockholm.build(crate::Precision::Fp32, &ParameterValues::new()).unwrap().required_artifacts();
+        let [id] = id.as_slice() else { panic!("Stockholm runs one graph: {id:?}") };
+        let graph = format!("{id}.onnx");
+
+        let published: Vec<_> = crate::deps::model::manifest::tests::published()
+            .into_iter()
+            .filter(|file| !file.name.starts_with(&graph))
+            .collect();
+        std::fs::create_dir_all(app_dir.join("models")).unwrap();
+        Listing::new(published).write_cached(&app_dir.join("models")).unwrap();
+        let fork = fixture_listing(std::slice::from_ref(&graph));
+        write_fork_listing(&app_dir, &fork);
+
+        let unavailable = |served: &[FamilyEntry]| -> Vec<(&'static str, Vec<crate::Precision>)> {
+            served
+                .iter()
+                .flat_map(|family| &family.variants)
+                .filter(|variant| !variant.unavailable.is_empty())
+                .map(|variant| (variant.codename, variant.unavailable.clone()))
+                .collect()
+        };
+
+        // What an install with none of the fork's models placed marks already, which this one marks too.
+        let (_empty, nothing) = app();
+        let baseline = unavailable(&installable_catalogue_at(&server.base_url, &nothing, ModelTrust::Published));
+        let beyond = |served: &[FamilyEntry]| -> Vec<(&'static str, Vec<crate::Precision>)> {
+            unavailable(served).into_iter().filter(|entry| !baseline.contains(entry)).collect()
+        };
+
+        let before = installable_catalogue_at(&server.base_url, &app_dir, ModelTrust::Published);
+        let served = before
+            .iter()
+            .flat_map(|family| &family.variants)
+            .find(|variant| variant.codename == "stockholm")
+            .expect("Stockholm is published");
+
+        assert_eq!(beyond(&before), vec![("stockholm", vec![crate::Precision::Fp32])]);
+        assert_eq!(served.available().collect::<Vec<_>>(), vec![crate::Precision::Fp16]);
+        // A saved Stockholm HD runs Stockholm SD rather than failing.
+        assert_eq!(served.nearest_available(crate::Precision::Fp32), Some(crate::Precision::Fp16));
+        assert_eq!(served.nearest_available(crate::Precision::Fp16), Some(crate::Precision::Fp16));
+
+        // Placed, it is offered again.
+        install_from(&server, &fork, &app_dir, id, ModelTrust::Published).await.unwrap();
+        let after = installable_catalogue_at(&server.base_url, &app_dir, ModelTrust::Published);
+        assert!(beyond(&after).is_empty(), "{:?}", beyond(&after));
     }
 }

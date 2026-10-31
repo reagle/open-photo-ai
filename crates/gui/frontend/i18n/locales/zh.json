@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "此安装中不可用",
+        "unavailableLabel": "{{model}}（不可用）"
     },
     "settings": {
         "title": "设置",
@@ -60,6 +62,10 @@
             "analytics": {
                 "title": "使用分析",
                 "description": "发送匿名使用数据。绝不会收集图像或个人数据。"
+            },
+            "askBeforePause": {
+                "title": "暂停批处理前询问",
+                "description": "批处理进行时选择其他照片，先询问。关闭后会暂停批处理并显示该照片。"
             }
         },
         "performance": {
@@ -143,7 +149,8 @@
                 "openOptions7": "增强 7 的选项",
                 "openOptions8": "增强 8 的选项",
                 "cropRotate": "裁剪/旋转",
-                "showShortcuts": "显示键盘快捷键"
+                "showShortcuts": "显示键盘快捷键",
+                "toggleInfo": "显示或隐藏照片信息"
             },
             "add": "添加快捷键",
             "addLabel": "为{{action}}添加快捷键",
@@ -181,6 +188,12 @@
             "cropped": "裁剪后",
             "output": "输出"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "这张照片带有 HDR 增益图。导出为 JPG（Ultra HDR）时会保留；普通 JPG 不含增益图，其他格式目前仅输出 SDR。",
+            "transfer": "这张照片是 HDR（{{transfer}}）。所有格式目前仅输出 SDR。",
+            "other": "这张照片是 HDR。所有格式目前仅输出 SDR。"
+        },
         "about_dialog": {
             "iconAlt": "应用图标",
             "version": "版本 {{version}}"
@@ -209,6 +222,12 @@
             "full": "整图",
             "sideBySide": "并排",
             "split": "分割"
+        },
+        "badge": {
+            "queued": "等待增强",
+            "processing": "正在增强",
+            "done": "已增强",
+            "failed": "增强失败"
         }
     },
     "faces": {
@@ -300,7 +319,8 @@
             },
             "format": {
                 "title": "格式",
-                "preserve": "保持原格式"
+                "preserve": "保持原格式",
+                "ultraHdr": "{{format}}（Ultra HDR）"
             },
             "quality": {
                 "title": "质量"
@@ -338,8 +358,10 @@
         "loss": {
             "notice": "{{total}} 张图像中有 {{count}} 张在此格式下会损失质量。将指针悬停在某行的警告上可查看详情。",
             "warning": "此格式会损失质量",
+            "chosen": "所选格式不包含此项",
             "hdrGainMap": "已丢弃 HDR 增益图：{{format}} 目前仅输出 SDR",
             "hdrGainMapNotCarried": "已丢弃 HDR 增益图：无法保留",
+            "hdrGainMapLeftOut": "以 SDR 输出（不含增益图）",
             "hdrTransfer": "已丢弃 HDR（{{transfer}}）：{{format}} 目前仅输出 SDR",
             "depth": "{{format}} 中 {{from}} → {{to}}",
             "bits": "{{bits}} 位",
@@ -485,7 +507,20 @@
             "setFocus": "设置对焦",
             "refine": "细化",
             "editRefine": "编辑细化",
-            "focusHint": "点击照片中应当清晰的位置。按 Esc 取消。"
+            "focusHint": "点击照片中应当清晰的位置。按 Esc 取消。",
+            "littleBlur": "在此焦距和对焦距离下几乎没有模糊。请对焦到更近的物体，或增大模糊程度。"
+        },
+        "grain": {
+            "name": "颗粒",
+            "amount": "数量",
+            "match": "匹配原图",
+            "matchHint": "在增强处理抹平之处还原照片自身的噪点；降噪之后，则匹配降噪留下的噪点。",
+            "addHint": "无论照片已有多少噪点，都在整张照片上添加相机传感器的颗粒。",
+            "matched": "匹配",
+            "added": "添加",
+            "models": {
+                "sensor": "用于让增强后的照片重新呈现真实拍摄的质感：数码传感器的噪点，主要在亮度上，带少许色彩，略粗于一个像素。不运行 AI 模型，也无需下载。"
+            }
         },
         "add": "添加增强",
         "remove": "移除增强",
@@ -511,6 +546,7 @@
         "infoScale": "{{name}}，{{scale}}x，{{quality}}",
         "infoRestore": "{{name}}，{{scale}}x，{{intensity}}%，{{quality}}",
         "infoLensBlur": "{{name}}，模糊 {{amount}}",
+        "infoGrain": "{{name}}，{{intensity}}%，{{mode}}",
         "groups": {
             "cleanUp": "清理",
             "lightColor": "光线与色彩",
@@ -541,11 +577,30 @@
             "sharpen": "锐化中",
             "restore": "修复中",
             "lensBlur": "虚化中",
+            "grain": "颗粒",
             "enhancing": "增强中",
             "compiling": "正在编译 {{model}} 模型",
             "loading": "正在加载 {{model}} 模型",
             "firstUse": "仅首次使用，可能需要几分钟",
-            "firstUseAbout_other": "仅首次使用，可能需要约 {{count}} 分钟"
+            "firstUseAbout_other": "仅首次使用，可能需要约 {{count}} 分钟",
+            "waiting": "等待中…"
+        },
+        "info": {
+            "title": "照片信息",
+            "equivalent": "等效 {{value}} mm",
+            "croppedEquivalent": "等效 {{shot}} → {{rendered}} mm（裁剪）",
+            "simulated": "{{value}}（模拟）",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "HDR 增益图",
+                "pq": "HDR（PQ）",
+                "hlg": "HDR（HLG）",
+                "other": "HDR"
+            },
+            "located": "已记录位置",
+            "edits": "编辑",
+            "blurredEarlier": "已应用镜头模糊（模拟 {{value}}）",
+            "enhancedEarlier": "已用 Open Photo AI 增强"
         }
     },
     "menu": {
@@ -600,7 +655,9 @@
             "title": "出了点问题",
             "message": "Open Photo AI 遇到了意外错误，无法继续运行。重新加载通常可以解决问题；你的设置会被保留，但当前会话中未保存的工作会丢失。",
             "reload": "重新加载"
-        }
+        },
+        "modelUnavailable": "{{model}}（{{precision}}）在此安装中不可用；请使用 {{alternative}}。",
+        "modelUnavailableAlone": "{{model}}（{{precision}}）在此安装中不可用。"
     },
     "shortcuts": {
         "title": "键盘快捷键",
@@ -619,6 +676,34 @@
             "pan": "平移",
             "images": "上一张图像 / 下一张图像",
             "options": "增强 1–8 的选项"
+        }
+    },
+    "batch": {
+        "processing": "正在处理第 {{current}} 张，共 {{total}} 张",
+        "pause": "暂停",
+        "paused": "已暂停 — 剩余 {{left}} 张",
+        "resume": "继续",
+        "processAll": "全部处理（{{count}}）",
+        "exportHeld": "暂停或完成处理后即可导出",
+        "finished_other": "已处理 {{count}} 张照片",
+        "finishedWithFailures_other": "已处理 {{count}} 张照片，{{failed}} 张失败",
+        "done": "完成 — 已处理 {{processed}} 张",
+        "doneWithFailures": "完成 — 已处理 {{processed}} 张（{{failed}} 张失败）",
+        "list": {
+            "title": "此批次中的照片"
+        },
+        "state": {
+            "done": "完成",
+            "processing": "处理中",
+            "pending": "等待中",
+            "failed": "失败"
+        },
+        "ask": {
+            "title": "暂停处理并查看这张照片？",
+            "body": "处理将在当前位置停止。稍后可继续处理剩余的照片。",
+            "pause": "暂停并查看",
+            "keep": "继续处理",
+            "dontAsk": "不再询问"
         }
     }
 }

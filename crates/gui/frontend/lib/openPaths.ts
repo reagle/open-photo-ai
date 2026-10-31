@@ -4,6 +4,7 @@ import { describeImages, type ImageRecord, inputExtensions } from "@/ipc/images"
 import { formatsOf } from "@/lib/events";
 import { track } from "@/lib/faro";
 import { extensionOf, fileName } from "@/lib/paths";
+import { useBatchStore } from "@/stores/batch";
 import { useFileStore } from "@/stores/files";
 
 /** How paths from outside the window reached it: a drop on the canvas, the platform asking (Open With), or Open Recent. */
@@ -56,7 +57,9 @@ export const openPaths = async (paths: string[], source: PathSource): Promise<Im
     if (supported.length === 0) return [];
 
     const admitted = await describeImages(supported);
-    useFileStore.getState().addFiles(admitted);
+    // While a batch pages through the photographs the view is the batch's: what is added joins the strip, and the
+    // photograph on screen stays the one being worked on.
+    useFileStore.getState().addFiles(admitted, { keepCurrent: useBatchStore.getState().phase === "running" });
 
     if (admitted.length > 0) {
         track("files_added", { count: admitted.length, source, formats: formatsOf(admitted.map((file) => file.path)) });

@@ -27,7 +27,7 @@ use opai::{
 // What this slice added: the fidelity Athens carries, the carrier for the run path that produces no image, the kind
 // a published parameter reports, and the value a progress report names a run by — each reached only through the
 // crate root, as a front end reaches it.
-use opai::{Analysis, Fidelity, ParameterKind, Subject};
+use opai::{Analysis, Fidelity, Grain, GrainAmount, GrainMode, GrainParams, GrainVariant, ParameterKind, Subject};
 // The generative family, reached the way the other eight are.
 use opai::{Restore, RestoreParams, RestoreVariant};
 // What this slice added: the catalogue's inverse - the refusal a lookup or a build answers with, and the per-run
@@ -215,7 +215,7 @@ fn the_five_enhancement_families_are_reachable_from_the_crate_root() {
     let denoise: Operation = Denoise::stockholm(FloatPrecision::Fp32, strength);
     assert_eq!(denoise.display_name(), "Stockholm (FP32)");
     assert_eq!(denoise.precision(), Precision::Fp32);
-    assert_eq!(denoise.cache_tag(), "dn-stockholm-fp32-t0.5");
+    assert_eq!(denoise.cache_tag(), "dn-stockholm-fp32-t0.5-v4");
     let required: Vec<ArtifactId> = denoise.required_artifacts();
     assert_eq!(required.iter().map(ArtifactId::as_str).collect::<Vec<_>>(), vec!["dn_stockholm_fp32"]);
 
@@ -484,14 +484,35 @@ fn the_restore_family_is_reachable_from_the_crate_root() {
     let wide = Restore::new(RestoreVariant::Kazan(FloatPrecision::Fp32), Scale::clamped(8.0), Strength::clamped(3.0));
     assert_eq!((wide.scale().get(), wide.strength().get()), (Restore::MAX_SCALE, Restore::MAX_STRENGTH));
 
-    // And after everything faithful in every chain, followed only by a lens blur.
-    assert_eq!(Family::APPLY_ORDER.last_chunk(), Some(&[Family::Restore, Family::LensBlur]));
+    // And after everything faithful in every chain, followed only by a lens blur and a grain.
+    assert_eq!(Family::APPLY_ORDER.last_chunk(), Some(&[Family::Restore, Family::LensBlur, Family::Grain]));
 }
 
-/// The catalogue as a front end offering all twelve families reads it: every chooser and every control configured
+/// The grain family, reached the way a front end that offers it reaches it: an amount and a mode, a run of no model,
+/// last in every chain.
+#[test]
+fn the_grain_family_is_reachable_from_the_crate_root() {
+    let half = GrainAmount::new(0.5).expect("in range");
+
+    let carried: Operation = Grain::sensor(half, GrainMode::Match);
+    assert_eq!(carried.family(), Family::Grain);
+    assert_eq!(carried.display_name(), "Sensor (FP32)");
+    assert_eq!(carried.cache_tag(), "gr-sensor-fp32-m0.5v1");
+    assert!(carried.required_artifacts().is_empty(), "the grain asked for a model");
+
+    let Operation::Grain(grain) = carried else {
+        panic!("Grain::sensor built another family");
+    };
+    let params: GrainParams = grain.params();
+    assert_eq!((params.amount, params.mode), (half, GrainMode::Match));
+    assert_eq!(grain.variant(), GrainVariant::Sensor(FloatPrecision::Fp32));
+    assert_eq!(Family::APPLY_ORDER.last(), Some(&Family::Grain));
+}
+
+/// The catalogue as a front end offering all thirteen families reads it: every chooser and every control configured
 /// from this alone.
 #[test]
-fn the_catalogue_publishes_all_twelve_families_to_the_crate_root() {
+fn the_catalogue_publishes_all_thirteen_families_to_the_crate_root() {
     let families: &'static [FamilyEntry] = catalogue();
 
     assert_eq!(
@@ -510,6 +531,7 @@ fn the_catalogue_publishes_all_twelve_families_to_the_crate_root() {
             Family::LensBlur,
             Family::Matting,
             Family::Remove,
+            Family::Grain,
         ]
     );
 
@@ -733,6 +755,8 @@ fn a_published_catalogue_row_can_be_turned_back_into_an_operation_from_the_crate
                             values.set(parameter.name, midpoint).expect("a published name");
                             values
                         }
+                        GrainAmount::NAME => values.with_amount(GrainAmount::clamped(midpoint)),
+                        GrainMode::NAME => values.with_grain_mode(GrainMode::from_switch(midpoint)),
                         other => {
                             panic!("{} publishes a range this test supplies no value for: {other}", variant.codename)
                         }
@@ -760,7 +784,8 @@ fn a_published_catalogue_row_can_be_turned_back_into_an_operation_from_the_crate
 
                 assert_eq!(run.family(), entry.family);
                 assert_eq!(run.precision(), precision);
-                assert!(!run.required_artifacts().is_empty());
+                // The grain runs no model; every other family needs one.
+                assert_eq!(run.required_artifacts().is_empty(), entry.family == Family::Grain);
             }
         }
     }
@@ -1491,11 +1516,16 @@ fn a_matting_can_be_named_and_its_outcome_read_through_the_public_surface_alone(
         ChainMatte::NotAsked,
         ChainMatte::Matted,
         ChainMatte::Skipped,
+        ChainMatte::LittleBlur,
         ChainMatte::Unavailable(unavailable.clone()),
         ChainMatte::Failed(unavailable),
     ] {
         let said = match &outcome {
-            ChainMatte::NotAsked | ChainMatte::Matted | ChainMatte::Skipped | ChainMatte::Unavailable(_) => None,
+            ChainMatte::NotAsked
+            | ChainMatte::Matted
+            | ChainMatte::Skipped
+            | ChainMatte::LittleBlur
+            | ChainMatte::Unavailable(_) => None,
             ChainMatte::Failed(error) => Some(error.to_string()),
         };
         assert_eq!(said.is_some(), matches!(outcome, ChainMatte::Failed(_)));
@@ -1782,7 +1812,8 @@ fn the_lens_blur_family_is_reachable_from_the_crate_root() {
         carried.required_artifacts().iter().map(ArtifactId::as_str).collect::<Vec<_>>(),
         vec!["dp_lisbon_landscape_fp16", "dp_lisbon_portrait_fp16"]
     );
-    assert_eq!(Family::APPLY_ORDER.last(), Some(&Family::LensBlur));
+    // Last but for the grain, which puts back the noise a real blurred background still has.
+    assert_eq!(Family::APPLY_ORDER.last_chunk(), Some(&[Family::LensBlur, Family::Grain]));
     assert_eq!(
         LensBlurVariant::from_codename("lisbon", Precision::Fp16),
         Some(LensBlurVariant::Lisbon(FloatPrecision::Fp16))

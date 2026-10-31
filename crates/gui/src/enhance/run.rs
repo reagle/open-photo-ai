@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use opai::{
-    ChainFaces, ChainMatte, Enhanced, ExecutionProvider, FaceSelection, InferenceError, Mask, Opai, OutputDepth,
-    Picture, ProcessOptions,
+    ChainFaces, ChainMatte, Enhanced, ExecutionProvider, FaceSelection, Family, InferenceError, InitError, Mask, Opai,
+    OutputDepth, Picture, Precision, ProcessOptions,
 };
 use serde::{Deserialize, Serialize};
 
@@ -60,6 +60,10 @@ impl From<Processor> for ExecutionProvider {
 #[serde(tag = "outcome", rename_all = "camelCase")]
 pub(crate) enum Enhancement {
     /// The chain ran and its result is being held.
+    // The fields camel-cased too, as `frontend/ipc/enhance.ts` reads them: the enum's `rename_all` names the variants
+    // alone, so without this `faces_error` and `matte_error` crossed as written and the window's `facesError` and
+    // `matteError` never saw a failure.
+    #[serde(rename_all = "camelCase")]
     Enhanced {
         /// What the result's pixels are addressed by, composed from the source's identity and every operation
         /// applied.
@@ -81,6 +85,10 @@ pub(crate) enum Enhancement {
         /// matting model that is not installed is not one: it is expected until its graph is published.
         #[serde(skip_serializing_if = "Option::is_none")]
         matte_error: Option<String>,
+        /// Whether a lens blur in the chain added too little blur to see ([`ChainMatte::LittleBlur`]), which the Lens
+        /// Blur panel says, with what to change. Absent where it did not.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        little_blur: bool,
     },
     /// The run was stopped, by the window or by a later run displacing it. No image at all.
     Stopped,
@@ -140,6 +148,23 @@ pub(crate) enum EnhanceError {
         /// The library's own sentence, untranslated and in full.
         message: String,
     },
+
+    // Fork-only, not for upstream: see `opai::installable_catalogue`. A case of its own rather than `Enhance` with a
+    // message to parse, because the window says which model and which precision to use instead, in the user's
+    // language, and composing that takes the model as data.
+    /// The run needed a model this fork exports and this install does not have at the precision asked for:
+    /// [`InitError::UnavailableModel`], with the operation that asked for it.
+    #[error("{message}")]
+    UnavailableModel {
+        /// The library's own sentence, untranslated and in full.
+        message: String,
+        /// The family of the operation whose model is missing.
+        family: Family,
+        /// That operation's model, as the catalogue publishes it.
+        codename: String,
+        /// The precision it was asked for at, which this install cannot serve.
+        precision: Precision,
+    },
 }
 
 impl CommandError for EnhanceError {
@@ -150,7 +175,9 @@ impl CommandError for EnhanceError {
                 Ended::Failed { error: self, recorded: false }
             }
             // `opai` records the failed decode and the failed run, where each happened.
-            Self::UnreadableSource { .. } | Self::Enhance { .. } => Ended::Failed { error: self, recorded: true },
+            Self::UnreadableSource { .. } | Self::Enhance { .. } | Self::UnavailableModel { .. } => {
+                Ended::Failed { error: self, recorded: true }
+            }
         }
     }
 }
@@ -402,12 +429,17 @@ pub(crate) async fn enhance_with<E: Enhancer>(
                 ChainFaces::Failed(error) => (None, Some(error.to_string())),
             };
 
+            let little_blur = matches!(matte, ChainMatte::LittleBlur);
             let matte_error = match matte {
                 ChainMatte::Failed(error) => Some(error.to_string()),
-                ChainMatte::NotAsked | ChainMatte::Matted | ChainMatte::Skipped | ChainMatte::Unavailable(_) => None,
+                ChainMatte::NotAsked
+                | ChainMatte::Matted
+                | ChainMatte::Skipped
+                | ChainMatte::LittleBlur
+                | ChainMatte::Unavailable(_) => None,
             };
 
-            Ok(Enhancement::Enhanced { identity, width, height, faces, faces_error, matte_error })
+            Ok(Enhancement::Enhanced { identity, width, height, faces, faces_error, matte_error, little_blur })
         }
         // Not a failure — a user who changed their mind and a run displaced on their behalf both arrive here.
         Err(InferenceError::Cancelled) => {
@@ -415,8 +447,32 @@ pub(crate) async fn enhance_with<E: Enhancer>(
 
             Ok(Enhancement::Stopped)
         }
-        Err(error) => Err(EnhanceError::Enhance { message: error.to_string() }),
+        Err(error) => Err(failed(&request.operations, &error)),
     }
+}
+
+/// What a run that failed with `error` answers the window: [`EnhanceError::UnavailableModel`] naming the operation of
+/// `requested` that needed the missing model, or else [`EnhanceError::Enhance`].
+fn failed(requested: &[Requested], error: &InferenceError) -> EnhanceError {
+    let message = error.to_string();
+
+    if let InferenceError::Install(install) = error
+        && let InitError::UnavailableModel { artifact } = &**install
+        // Found again by the artifacts each operation needs rather than carried out of the library: the refusal is
+        // the install's, which knows the artifact and nothing about the chain that asked for it.
+        && let Some(asked) = requested.iter().find(|asked| {
+            asked.resolve().is_ok_and(|operation| operation.required_artifacts().iter().any(|id| id.as_str() == artifact))
+        })
+    {
+        return EnhanceError::UnavailableModel {
+            message,
+            family: asked.family,
+            codename: asked.codename.clone(),
+            precision: asked.precision,
+        };
+    }
+
+    EnhanceError::Enhance { message }
 }
 
 #[cfg(test)]
@@ -780,6 +836,46 @@ mod tests {
     }
 
     #[test]
+    fn a_model_this_install_cannot_have_is_reported_with_the_operation_that_asked_for_it() {
+        // Kazan HD on an install that placed only Kazan SD, here as the 2x Kyoto graph: the window is told which model
+        // and precision, so it can say which to use instead, and the library's sentence travels with it.
+        let unavailable =
+            InferenceError::Install(Arc::new(InitError::UnavailableModel { artifact: "up_kyoto_2x_fp32".to_string() }));
+
+        let failed = failed(&[kyoto()], &unavailable);
+
+        assert_eq!(
+            failed,
+            EnhanceError::UnavailableModel {
+                message: unavailable.to_string(),
+                family: opai::Family::Upscale,
+                codename: "kyoto".to_string(),
+                precision: Precision::Fp32,
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(&failed).expect("a failure serializes"),
+            serde_json::json!({
+                "kind": "unavailableModel",
+                "message": unavailable.to_string(),
+                "family": "upscale",
+                "codename": "kyoto",
+                "precision": "fp32",
+            })
+        );
+    }
+
+    #[test]
+    fn a_missing_model_no_operation_of_the_chain_needs_is_an_ordinary_failure() {
+        // Not a case the library produces, and answered with its sentence rather than with a model the window would
+        // then name wrongly.
+        let unavailable =
+            InferenceError::Install(Arc::new(InitError::UnavailableModel { artifact: "rs_kazan_fp32".to_string() }));
+
+        assert_eq!(failed(&[kyoto()], &unavailable), EnhanceError::Enhance { message: unavailable.to_string() });
+    }
+
+    #[test]
     fn a_second_run_stops_the_first_without_the_window_asking() {
         let (_dir, opened, runs, identity) = fixture();
         let (opened, runs) = (Arc::new(opened), Arc::new(runs));
@@ -1066,6 +1162,15 @@ mod tests {
             (EnhanceError::UnknownOperation { index: 0, reason }, "recorded by the wrapper"),
             (EnhanceError::UnreadableSource { identity: s(), message: s() }, "recorded by opai"),
             (EnhanceError::Enhance { message: s() }, "recorded by opai"),
+            (
+                EnhanceError::UnavailableModel {
+                    message: s(),
+                    family: opai::Family::Upscale,
+                    codename: s(),
+                    precision: Precision::Fp32,
+                },
+                "recorded by opai",
+            ),
         ];
         for (error, cell) in cells {
             assert_eq!(CommandError::ended(&error).cell(), cell, "{error:?}");
@@ -1078,6 +1183,7 @@ mod tests {
             faces: None,
             faces_error: None,
             matte_error: None,
+            little_blur: false,
         };
         assert_eq!(Answer::ended(&answer).cell(), "finished");
         assert_eq!(Answer::ended(&Enhancement::Stopped).cell(), "stopped");
@@ -1093,6 +1199,7 @@ mod tests {
             faces: None,
             faces_error: None,
             matte_error: None,
+            little_blur: false,
         };
 
         assert_eq!(
@@ -1210,6 +1317,59 @@ mod tests {
             // `opai`'s own sentence, as a failed detection's is answered.
             let Enhancement::Enhanced { matte_error, .. } = answer else { panic!("stopped: {answer:?}") };
             assert_eq!(matte_error, said.then(|| porto_failed().to_string()));
+        }
+    }
+
+    #[test]
+    fn an_answer_names_its_fields_as_the_window_reads_them() {
+        // `facesError` and `matteError`, as `frontend/ipc/enhance.ts` reads them, rather than as Rust spells them.
+        let answer = Enhancement::Enhanced {
+            identity: "cafebabecafebabe".to_string(),
+            width: 8,
+            height: 6,
+            faces: None,
+            faces_error: Some("a".to_string()),
+            matte_error: Some("b".to_string()),
+            little_blur: true,
+        };
+
+        assert_eq!(
+            serde_json::to_value(&answer).expect("an outcome serializes"),
+            serde_json::json!({
+                "outcome": "enhanced",
+                "identity": "cafebabecafebabe",
+                "width": 8,
+                "height": 6,
+                "facesError": "a",
+                "matteError": "b",
+                "littleBlur": true,
+            })
+        );
+    }
+
+    #[test]
+    fn a_lens_blur_too_small_to_see_is_answered_and_only_then() {
+        // What the Lens Blur panel says "focus on something nearer" off. Absent on the wire otherwise, so an answer
+        // that has nothing to say keeps the shape it always had.
+        let outcomes: [(fn() -> ChainMatte, bool); 3] = [
+            (|| ChainMatte::LittleBlur, true),
+            (|| ChainMatte::Skipped, false),
+            (|| ChainMatte::Matted, false),
+        ];
+
+        for (matte, said) in outcomes {
+            let (_dir, opened, runs, identity) = fixture();
+            let answer = run_now(&Matting { matte }, &opened, &runs, request("run-1", &identity, vec![kyoto()]))
+                .expect("the chain runs");
+
+            let wire = serde_json::to_value(&answer).expect("an outcome serializes");
+            let Enhancement::Enhanced { little_blur, matte_error, .. } = answer else {
+                panic!("stopped: {answer:?}")
+            };
+            assert_eq!(little_blur, said);
+            assert_eq!(matte_error, None);
+            assert_eq!(wire.get("littleBlur"), said.then_some(&serde_json::Value::Bool(true)), "{wire}");
+            assert!(wire.get("little_blur").is_none(), "{wire}");
         }
     }
 

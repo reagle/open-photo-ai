@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "No disponible en esta instalación",
+        "unavailableLabel": "{{model}} (no disponible)"
     },
     "settings": {
         "title": "Ajustes",
@@ -60,6 +62,10 @@
             "analytics": {
                 "title": "Estadísticas",
                 "description": "Enviar datos de uso anónimos. Nunca se recopilan imágenes ni datos personales."
+            },
+            "askBeforePause": {
+                "title": "Preguntar antes de pausar un lote",
+                "description": "Al elegir otra foto mientras se procesa un lote, preguntar primero. Desactivado, pausa el lote y muestra la foto."
             }
         },
         "performance": {
@@ -143,7 +149,8 @@
                 "openOptions7": "Opciones de la mejora 7",
                 "openOptions8": "Opciones de la mejora 8",
                 "cropRotate": "Recortar/Girar",
-                "showShortcuts": "Mostrar atajos de teclado"
+                "showShortcuts": "Mostrar atajos de teclado",
+                "toggleInfo": "Mostrar u ocultar la información de la foto"
             },
             "add": "Añadir atajo",
             "addLabel": "Añadir atajo para {{action}}",
@@ -181,6 +188,12 @@
             "cropped": "Recortada",
             "output": "Salida"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "Esta foto tiene un mapa de ganancia HDR. Al exportar a JPG (Ultra HDR) se conserva; el JPG normal lo omite y, por ahora, los demás formatos solo se escriben en SDR.",
+            "transfer": "Esta foto es HDR ({{transfer}}). Por ahora todos los formatos solo se escriben en SDR.",
+            "other": "Esta foto es HDR. Por ahora todos los formatos solo se escriben en SDR."
+        },
         "about_dialog": {
             "iconAlt": "Icono de la aplicación",
             "version": "Versión {{version}}"
@@ -210,6 +223,12 @@
             "full": "Completa",
             "sideBySide": "Lado a lado",
             "split": "Dividida"
+        },
+        "badge": {
+            "queued": "Esperando la mejora",
+            "processing": "Mejorando",
+            "done": "Mejorada",
+            "failed": "La mejora falló"
         }
     },
     "faces": {
@@ -302,7 +321,8 @@
             },
             "format": {
                 "title": "Formato",
-                "preserve": "Conservar"
+                "preserve": "Conservar",
+                "ultraHdr": "{{format}} (Ultra HDR)"
             },
             "quality": {
                 "title": "Calidad"
@@ -344,8 +364,10 @@
         "loss": {
             "notice": "{{count}} de {{total}} imágenes perderán calidad en este formato. Pasa el puntero sobre la advertencia de una fila para ver qué.",
             "warning": "Pérdida de calidad en este formato",
+            "chosen": "Omitido por el formato elegido",
             "hdrGainMap": "Mapa de ganancia HDR descartado: por ahora {{format}} solo se escribe en SDR",
             "hdrGainMapNotCarried": "Mapa de ganancia HDR descartado: no se pudo conservar",
+            "hdrGainMapLeftOut": "Escrito en SDR (mapa de ganancia omitido)",
             "hdrTransfer": "HDR ({{transfer}}) descartado: por ahora {{format}} solo se escribe en SDR",
             "depth": "{{from}} → {{to}} en {{format}}",
             "bits": "{{bits}} bits",
@@ -493,7 +515,20 @@
             "setFocus": "Definir enfoque",
             "refine": "Refinar",
             "editRefine": "Editar refinamiento",
-            "focusHint": "Haga clic en la fotografía donde debe quedar nítido. Esc para cancelar."
+            "focusHint": "Haga clic en la fotografía donde debe quedar nítido. Esc para cancelar.",
+            "littleBlur": "Apenas hay desenfoque con esta distancia focal y distancia de enfoque. Enfoca algo más cercano o aumenta la cantidad de desenfoque."
+        },
+        "grain": {
+            "name": "Grano",
+            "amount": "Cantidad",
+            "match": "Igualar al original",
+            "matchHint": "Devuelve el ruido propio de la foto donde las mejoras lo suavizaron; tras una reducción de ruido, el ruido que esta dejó.",
+            "addHint": "Añade el grano de un sensor de cámara en toda la imagen, sea cual sea el ruido que ya tenga la foto.",
+            "matched": "igualado",
+            "added": "añadido",
+            "models": {
+                "sensor": "Úsalo para devolver a una foto mejorada el aspecto de una captura real: el ruido de un sensor digital, sobre todo en la luminosidad con algo de color, algo más grueso que un píxel. No ejecuta ningún modelo de IA ni necesita descarga."
+            }
         },
         "add": "Añadir mejora",
         "remove": "Quitar mejora",
@@ -521,6 +556,7 @@
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
         "infoLensBlur": "{{name}}, desenfoque {{amount}}",
+        "infoGrain": "{{name}}, {{intensity}}%, {{mode}}",
         "groups": {
             "cleanUp": "Limpieza",
             "lightColor": "Luz y color",
@@ -551,12 +587,31 @@
             "sharpen": "Enfocando",
             "restore": "Restaurando",
             "lensBlur": "Desenfocando",
+            "grain": "Grano",
             "enhancing": "Mejorando",
             "compiling": "Compilando el modelo {{model}}",
             "loading": "Cargando el modelo {{model}}",
             "firstUse": "Solo la primera vez, puede tardar unos minutos",
             "firstUseAbout_one": "Solo la primera vez, puede tardar alrededor de {{count}} minuto",
-            "firstUseAbout_other": "Solo la primera vez, puede tardar unos {{count}} minutos"
+            "firstUseAbout_other": "Solo la primera vez, puede tardar unos {{count}} minutos",
+            "waiting": "Esperando…"
+        },
+        "info": {
+            "title": "Información de la foto",
+            "equivalent": "{{value}} mm equiv.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm equiv. (recorte)",
+            "simulated": "{{value}} simulado",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "Mapa de ganancia HDR",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Ubicación registrada",
+            "edits": "Ediciones",
+            "blurredEarlier": "Desenfoque de lente ya aplicado ({{value}} simulado)",
+            "enhancedEarlier": "Ya mejorada con Open Photo AI"
         }
     },
     "menu": {
@@ -611,7 +666,9 @@
             "title": "Algo ha ido mal",
             "message": "Open Photo AI ha sufrido un error inesperado y no puede continuar. Recargar suele solucionarlo; tus ajustes se conservan, pero cualquier trabajo sin guardar de esta sesión se perderá.",
             "reload": "Recargar"
-        }
+        },
+        "modelUnavailable": "{{model}} ({{precision}}) no está disponible en esta instalación; usa {{alternative}}.",
+        "modelUnavailableAlone": "{{model}} ({{precision}}) no está disponible en esta instalación."
     },
     "shortcuts": {
         "title": "Atajos de teclado",
@@ -630,6 +687,36 @@
             "pan": "Desplazar",
             "images": "Imagen anterior / Imagen siguiente",
             "options": "Opciones de la mejora 1–8"
+        }
+    },
+    "batch": {
+        "processing": "Procesando {{current}} de {{total}}",
+        "pause": "Pausar",
+        "paused": "En pausa — quedan {{left}}",
+        "resume": "Reanudar",
+        "processAll": "Procesar todas ({{count}})",
+        "exportHeld": "La exportación estará disponible cuando el procesamiento se pause o termine",
+        "finished_one": "{{count}} foto procesada",
+        "finished_other": "{{count}} fotos procesadas",
+        "finishedWithFailures_one": "{{count}} foto procesada, {{failed}} con error",
+        "finishedWithFailures_other": "{{count}} fotos procesadas, {{failed}} con error",
+        "done": "Listo — {{processed}} procesadas",
+        "doneWithFailures": "Listo — {{processed}} procesadas ({{failed}} con error)",
+        "list": {
+            "title": "Fotos de este lote"
+        },
+        "state": {
+            "done": "Lista",
+            "processing": "Procesando",
+            "pending": "Pendiente",
+            "failed": "Error"
+        },
+        "ask": {
+            "title": "¿Pausar el procesamiento y ver esta foto?",
+            "body": "El procesamiento se detiene donde está. Reanúdalo más tarde para seguir con las fotos que quedan.",
+            "pause": "Pausar y ver",
+            "keep": "Seguir procesando",
+            "dontAsk": "No volver a preguntar"
         }
     }
 }

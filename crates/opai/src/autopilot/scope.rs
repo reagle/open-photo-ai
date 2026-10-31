@@ -91,9 +91,9 @@ fn bit(family: Family) -> u16 {
 mod tests {
     use super::*;
 
-    /// Every family some signal can suggest: not detection or depth, which are never applied, and not restore or lens
-    /// blur, which an analysis never suggests — a generative redraw or a depth of field is a user's choice, never an
-    /// automatic one.
+    /// Every family some signal can suggest: not detection or depth, which are never applied, and not restore, lens
+    /// blur or grain, which an analysis never suggests — a generative redraw, a depth of field or grain is a user's
+    /// choice, never an automatic one.
     fn suggestible() -> impl Iterator<Item = Family> {
         Family::ALL.into_iter().filter(|family| {
             !matches!(
@@ -104,6 +104,7 @@ mod tests {
                     | Family::Remove
                     | Family::Restore
                     | Family::LensBlur
+                    | Family::Grain
             )
         })
     }

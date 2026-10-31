@@ -109,7 +109,7 @@ Where the results go: one file, or a directory. Without it, each result is writt
 
 ### `--gui`
 
-Opens the images in the GUI instead of processing them, and ignores every other option but a lens blur. The inputs are expanded exactly as for a run, `-r` included, and every image found is added to the GUI's open images. If the GUI is already open, they are added to that window; if not, it is started first.
+Opens the images in the GUI instead of processing them, and ignores every other option but a sharpen and a lens blur. The inputs are expanded exactly as for a run, `-r` included, and every image found is added to the GUI's open images. If the GUI is already open, they are added to that window; if not, it is started first.
 
 ```
 $ opai photos -r --gui
@@ -124,10 +124,12 @@ $ opai beach.jpg --up osaka -q sd -o out --gui
 🖼️ Opening 1 image in Open Photo AI
 ```
 
-The one exception is a lens blur: with [`--lens-blur`](#lens-blur---lens-blur-model---lb-model), each image opens with a Lens Blur at `--lb-f` or `--lb-amount` and `--lb-focus`, and Autopilot is switched off in the GUI, as a run refuses `--ap` with an enhancement. What is left out is the GUI's own default for a new Lens Blur; `--lb-edges` and `--lb-refine` are ignored with a warning, since the GUI has no such setting (its Refine brush is painted in the window).
+The two exceptions are a sharpen and a lens blur. With [`--sharpen`](#sharpen---sharpen-model---sh-model), each image opens with a Sharpen of that model (Moscow for a bare `--sh`, as in a run) at `--sh-str`, or the default strength of 100 without it. Its precision is the one a run without `-q` would use: the quality (HD or SD) of the Sharpen model saved in the GUI's settings, or HD; `-q` itself is ignored with a warning. With [`--lens-blur`](#lens-blur---lens-blur-model---lb-model), each image opens with a Lens Blur at `--lb-f` or `--lb-amount` and `--lb-focus`; what is left out is the GUI's own default for a new Lens Blur, and `--lb-edges` and `--lb-refine` are ignored with a warning, since the GUI has no such setting (its Refine brush is painted in the window). Both may be given together, and each image then gets both, in the order a run applies them (the Sharpen first). Either one switches Autopilot off in the GUI, as a run refuses `--ap` with an enhancement, and no other enhancement is added.
 
 ```
 $ opai beach.jpg --gui --lb --lb-f 1.4 --lb-focus 0.4,0.5
+🖼️ Opening 1 image in Open Photo AI
+$ opai beach.jpg --gui --sh novgorod --sh-str 150 --lb
 🖼️ Opening 1 image in Open Photo AI
 ```
 
@@ -147,10 +149,13 @@ The format every result is written in. Not accepted with an output **file**, who
 
 | Value | Result |
 |-------|--------|
-| `preserve` (default) | Each image keeps its own format and extension, written in lowercase (`a.JPG` gives `a.jpg`). Camera RAW (and anything else `opai` can't write) is saved as TIFF. |
-| `avif`, `bmp`, `gif`, `heic`, `jpeg`, `png`, `tiff`, `webp` | Every result in this format. JPEG is saved with the extension `.jpg`. |
+| `preserve` (default) | Each image keeps its own format and extension, written in lowercase (`a.JPG` gives `a.jpg`). Camera RAW (and anything else `opai` can't write) is saved as TIFF. An [Ultra HDR](#output-formats) JPEG stays one. |
+| `avif`, `bmp`, `gif`, `heic`, `jpeg`, `png`, `tiff`, `webp` | Every result in this format. JPEG is saved with the extension `.jpg`. **`jpeg` is SDR:** an Ultra HDR input's gain map is left out, for the sites and apps that mishandle Ultra HDR. |
+| `uhdr` | Every result as JPEG (`.jpg`) **keeping an HDR gain map**: an Ultra HDR JPEG wherever the input is one, and an ordinary JPEG wherever it is not. The GUI's *JPG (Ultra HDR)*. |
 
 The value is case-insensitive, and `jpg`, `tif` and `heif` are accepted for `jpeg`, `tiff` and `heic`.
+
+**Changed:** before `uhdr` existed, `--format jpeg` kept an input's gain map. It now means what the GUI's plain *JPG* means, an SDR JPEG, and says so for each such input (`written as SDR (gain map left out)`); use `uhdr` for the old behaviour. `preserve` and an output file ending in `.jpg` keep the gain map as before.
 
 ### `--prefix <TEXT>`, `--suffix <TEXT>`
 
@@ -289,6 +294,7 @@ Default models are in **bold**.
 | Upscale          | `--upscale`          | `--up` | **tokyo**, kyoto, saitama                      | `--scale` (1.0 to 8.0)     |
 | Restore          | `--restore`          | `--rs` | **kazan**, osaka                               | `--rs-scale` (1, 2 or 4), `--rs-str` (1 to 100) |
 | Lens Blur        | `--lens-blur`        | `--lb` | **lisbon**                                     | `--lb-f` (1.0 to 32) or `--lb-amount` (0 to 100), `--lb-focus` (X,Y), `--lb-edges` (matte, depth), `--lb-refine` (FILE) |
+| Grain            | `--grain`            | `--gr` | **sensor**                                     | `--gr-amount` (0 to 100), `--gr-add` |
 
 `--mask <FILE>` limits whichever enhancements are asked for (or chosen by `--ap`) to part of the photograph, and under a lens blur keeps that part in focus; `--mask-use` narrows it to one of the two. See [Masks](#masks).
 
@@ -428,7 +434,7 @@ Option: `--scale <FACTOR>`, the upscale factor, from `1.0` to `8.0`. Decimals ar
 
 ### Restore: `--restore [MODEL]`, `--rs [MODEL]`
 
-Restores detail generatively: the model **redraws** plausible detail where the photo lost it, rather than recovering what was there. Use it when the faithful models can't do enough, such as an out-of-focus face or a photo from an old camera that was never sharp. It can change faces, textures and lettering, so lower `--rs-str` if the result looks invented. Restore runs **after every other enhancement but Lens Blur**.
+Restores detail generatively: the model **redraws** plausible detail where the photo lost it, rather than recovering what was there. Use it when the faithful models can't do enough, such as an out-of-focus face or a photo from an old camera that was never sharp. It can change faces, textures and lettering, so lower `--rs-str` if the result looks invented. Restore runs after every other enhancement but [Grain](#grain---grain-model---gr-model), which you can add after it to give the restored photo its own noise back.
 
 | Model      | Use it for                                                                                        |
 |------------|---------------------------------------------------------------------------------------------------|
@@ -448,7 +454,7 @@ opai soft.jpg --rs --rs-scale 2 --rs-str 70 -o soft-2x.png
 
 ### Lens Blur: `--lens-blur [MODEL]`, `--lb [MODEL]`
 
-Gives the photo the shallow depth of field of a wider lens aperture: the point you focus on stays sharp, and everything nearer or farther is blurred as much as a real lens would blur it, with bright points spreading into discs. The model estimates how far from the camera every pixel is, and the blur follows that depth. Lens Blur always runs **last**, after any upscale or restore.
+Gives the photo the shallow depth of field of a wider lens aperture: the point you focus on stays sharp, and everything nearer or farther is blurred as much as a real lens would blur it, with bright points spreading into discs. The model estimates how far from the camera every pixel is, and the blur follows that depth. Lens Blur runs after any upscale or restore, with only [Grain](#grain---grain-model---gr-model) after it.
 
 | Model      | Use it for                                                                                        |
 |------------|---------------------------------------------------------------------------------------------------|
@@ -493,6 +499,26 @@ opai portrait.jpg --lb --lb-f f/1.4 --lb-focus 0.6,0.3 --lb-edges depth -o portr
 opai portrait.jpg --lb --lb-f f/1.4 --lb-focus 0.6,0.3 --lb-refine portrait-refine.png -o portrait-f1.4-refined.jpg
 ```
 
+### Grain: `--grain [MODEL]`, `--gr [MODEL]`
+
+Adds grain, **last**, after every other enhancement, the lens blur included: a real photo's blurred background still has its sensor's noise. A denoise, a restore or a sharpen can leave a photo smoother than any camera records ("plastic" skin and skies); by default the grain puts back the photo's **own** sensor noise, measured per brightness on the original, only where the enhancements smoothed it away, so a clean photo gets none and a grainy one gets its own back. If the command also denoises (`--dn`), the noise the denoise **left** is matched instead, so the grain never undoes the denoise. Grain runs no model and needs no download. On an upscaled photo it's drawn at the new pixels, finer than an enlarged copy of the original's grain.
+
+| Model      | Use it for                                                       |
+|------------|------------------------------------------------------------------|
+| `sensor` (default) | A digital sensor's noise: mostly brightness, a little colour, slightly coarser than a pixel. |
+
+Options:
+
+- `--gr-amount <AMOUNT>`, a whole number from 0 to 100 (default 100): how much of the missing noise is put back. `50` puts back half of it.
+- `--gr-add`: add grain everywhere, whatever noise the photo has, instead of matching the photo's own. `--gr-amount` is then a share of a high-ISO sensor's grain (about 4 levels of fine noise at mid-grey at `100`), as Lightroom's Grain Amount is.
+
+```bash
+# Restore a soft photo and give it its own noise back
+opai soft.jpg --rs --gr -o soft-restored.png
+# Add a little grain on purpose
+opai portrait.jpg --gr --gr-add --gr-amount 30 -o portrait-grain.png
+```
+
 ## Masks
 
 `--mask <FILE>` applies the enhancements only where a mask image is white, and leaves the photograph as it was where the mask is black:
@@ -513,6 +539,7 @@ opai photos --dn --mask sky.png -o enhanced
 - **The models still run over the whole photograph**; the mask decides afterwards how much of their result each pixel shows. So a mask adds a quick blend to a run (and, under an upscale, an enlargement of the photograph), but changes neither how long the models take nor what the [run cache](#run-cache) stores, and running the same enhancements again with a different mask runs no model.
 - **With an upscale**, the black part shows a plain (Lanczos) enlargement of the photograph, which is softer than the upscaled part. A strongly changed result, such as an upscale or a colorization, can show a visible seam at the mask's edge: a softer edge in the mask hides it.
 - **With a lens blur, the white part is the subject, kept in focus.** The lens blur holds it sharp, in proportion to the mask (a grey pixel's blur is scaled down by its grey), and blurs the rest as it would without a mask. The enhancements are blended with the photograph *before* the blur, so the black part is the photograph blurred, not the photograph as it was, and an Ultra HDR gain map is blurred with the photograph and kept sharp in the same place. Changing only the mask estimates no depth and runs no model again: the blend and the blur are redone. A hard-edged mask can show a thin halo of background at the subject's edge; a softer edge hides it. With a lens blur and no other enhancement, a mask no longer limits where the blur applies: it is only what stays sharp, so to blur only part of the photograph, mask the part to keep sharp.
+- **The grain is not limited by the mask.** It runs over the blended photograph, after any lens blur, and puts back the photo's own noise only where it is missing: inside the mask where an enhancement smoothed it, and wherever the lens blur blurred, while the part the mask kept as the photograph keeps its own noise and gets none. `--gr-add` adds its grain everywhere.
 - **`--mask-use <USE>`** says which of the two the mask is for: `both` (the default), `enhancements` (limit the enhancements; the lens blur ignores the mask) or `lens-blur` (keep the mask in focus and apply every other enhancement to the whole photograph). `lens-blur` without `--lens-blur` is refused, since the mask would have no effect, and so is `--mask-use` without `--mask`.
 
 ```bash
@@ -549,7 +576,7 @@ opai street.jpg --rm passer-by.png --fr --sh -o street-clean.jpg
 opai photos --ap -o enhanced
 ```
 
-- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--rs`, `--lb`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--rs-scale`, `--rs-str`, `--lb-f`, `--lb-amount`, `--lb-focus`, `--lb-edges`, `--lb-refine`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `--mask`, `--mask-use`, `--remove`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
+- **It replaces the enhancement flags.** Combining `--ap` with any enhancement flag (`--dn`, `--fr`, `--cl`, `--la`, `--cb`, `--sh`, `--up`, `--rs`, `--lb`, `--gr`) or their options (`--dn-str`, `--sh-str`, `--la-bias`, `--cb-bias`, `--scale`, `--rs-scale`, `--rs-str`, `--lb-f`, `--lb-amount`, `--lb-focus`, `--lb-edges`, `--lb-refine`, `--gr-amount`, `--gr-add`) fails with exit code `2`, for example `error: the argument '--autopilot' cannot be used with '--upscale [<MODEL>]'`. Every other option (`-q`, `-p`, `-r`, `--format`, `--prefix`, `--suffix`, `--overwrite`, `--mask`, `--mask-use`, `--remove`, `-o`) works as usual, and `-q` picks the build of the models autopilot runs.
 - **Each enhancement uses its default strength or bias**: strength `100` for denoise and sharpen, bias `50` for light adjustment and color balance. An upscale runs at the factor the image's size calls for (see [Upscale](#upscale---upscale-model---up-model)); an image above 4 MP is not upscaled.
 - **An image that needs nothing is still written**, unchanged, in the format asked for. Its row ends with `Enhancements applied to` as any other.
 - **If face detection can't run** (for example, its model can't be downloaded), the image still gets the other enhancements, without face recovery, and the [log file](#log-file) records a warning.
@@ -637,7 +664,7 @@ opai photos --ap --no-gui-settings -o out      # the built-in defaults, as if th
 The enhancements always run in this order, no matter what order you type the flags in:
 
 ```
-Remove → Denoise → Face Recovery → Colorization → Light Adjustment → Color Balance → Sharpen → Upscale → Restore → Lens Blur
+Remove → Denoise → Face Recovery → Colorization → Light Adjustment → Color Balance → Sharpen → Upscale → Restore → Lens Blur → Grain
 ```
 
 So these two commands do exactly the same thing:
@@ -647,7 +674,7 @@ opai photo.jpg --up --dn -o out.png
 opai photo.jpg --dn --up -o out.png
 ```
 
-The order is designed so that every step works on the cleanest image possible. For example, noise is removed before faces are restored, and the image is upscaled after the faithful corrections so they work at the original resolution. Restore comes after all of them: it redraws detail, so it is handed the best image the faithful models can make, and no faithful model after it corrects what it drew. Lens Blur comes last of all: it is a creative choice rather than a correction, so every other step works on the sharp photo, and nothing after it sharpens, denoises or restores the blur.
+The order is designed so that every step works on the cleanest image possible. For example, noise is removed before faces are restored, and the image is upscaled after the faithful corrections so they work at the original resolution. Restore comes after all of them: it redraws detail, so it is handed the best image the faithful models can make, and no faithful model after it corrects what it drew. Lens Blur comes after them: it is a creative choice rather than a correction, so every other step works on the sharp photo, and nothing after it sharpens, denoises or restores the blur. Grain comes last of all, so it can put back the noise any step before it smoothed away, the blurred background's included.
 
 ## Supported formats
 
@@ -690,7 +717,7 @@ With an output **file**, the format is the one its extension names. With an outp
 
 **Colour profile:** if the input embeds an ICC colour profile (a Display P3 photograph from a phone or camera, an Adobe RGB scan), the result embeds the same profile when it is written as JPEG, PNG, TIFF or WebP, so it shows in the same colours as the input. BMP, GIF, AVIF and HEIF results are written without it for now, and the [log file](#log-file) records a warning naming the format. Colours are not converted: the profile is carried over unchanged, and an input without one produces a result without one. Camera RAW inputs have none.
 
-**HDR (Ultra HDR):** an Ultra HDR JPEG — a JPEG with an HDR gain map, as Lightroom, Camera Raw and Android phones write them (ISO 21496-1 or Adobe `hdrgm`) — stays one when the result is written as JPEG: its gain map is carried through every enhancement and written back after the result, so an HDR display still shows it in HDR. The gain map is turned upright with the photograph, keeps its own resolution and is never enlarged: after an upscale it is smaller than the result, which the format allows and every viewer resamples. When the result is not cropped and not smaller than the gain map, the gain map is written back exactly as the input had it, so enhancing a result again loses nothing of it; otherwise it is re-encoded at the result's JPEG quality, but never below 90, with its own gain-map metadata. A gain map without gain-map metadata of its own is not one any viewer can apply, and is left out; so is one whose result would have more XMP metadata than a JPEG's main XMP segment holds, since viewers would not find the declaration that the gain map is there. Results in any other format are SDR, and say so (below). A gain map that cannot be read or written is left out, and the result is an ordinary SDR JPEG that says so. **One caveat:** the gain map records how much brighter each part of the original was in HDR, so enhancements that change the photograph's brightness or colour — light adjustment, color balance and colorization — leave its HDR rendition slightly off; denoise, sharpen, face recovery and upscale barely change it.
+**HDR (Ultra HDR):** an Ultra HDR JPEG — a JPEG with an HDR gain map, as Lightroom, Camera Raw and Android phones write them (ISO 21496-1 or Adobe `hdrgm`) — stays one when the result is written as JPEG: its gain map is carried through every enhancement and written back after the result, so an HDR display still shows it in HDR. `--format jpeg` is the exception: it writes an SDR JPEG on purpose, leaving out the gain map and every trace of it (the `hdrgm:` XMP, the ISO 21496-1 marker and the MPF index), and `--format uhdr` or `preserve` keeps it. The gain map is turned upright with the photograph, keeps its own resolution and is never enlarged: after an upscale it is smaller than the result, which the format allows and every viewer resamples. When the result is not cropped and not smaller than the gain map, the gain map is written back exactly as the input had it, so enhancing a result again loses nothing of it; otherwise it is re-encoded at the result's JPEG quality, but never below 90, with its own gain-map metadata. A gain map without gain-map metadata of its own is not one any viewer can apply, and is left out; so is one whose result would have more XMP metadata than a JPEG's main XMP segment holds, since viewers would not find the declaration that the gain map is there. Results in any other format are SDR, and say so (below). A gain map that cannot be read or written is left out, and the result is an ordinary SDR JPEG that says so. **One caveat:** the gain map records how much brighter each part of the original was in HDR, so enhancements that change the photograph's brightness or colour — light adjustment, color balance and colorization — leave its HDR rendition slightly off; denoise, sharpen, face recovery and upscale barely change it.
 
 **Metadata:** the result keeps the input's EXIF — capture date and time zone, camera, lens and exposure, GPS location, copyright and the rest — and its XMP — rating, label, keywords and their hierarchy, title, caption, creator, rights and edit history — whenever it is written as JPEG, PNG or WebP, and its IPTC (keywords, caption, creator, copyright) when it is written as JPEG; a PNG or WebP result carries the IPTC values in its XMP instead. There is no option to strip it, location included. A few fields are rewritten so that they stay true of the result: the software becomes `Open Photo AI <version> (<date>)`, the modification time and its offset become the time of the export, the pixel dimensions become the result's, the orientation says "upright" because the result is saved the right way up, the embedded thumbnail is removed (it would show the unenhanced, uncropped input), the result gets a new XMP document ID that names the input as its source, and the edit history gains an Open Photo AI entry. Lightroom's develop settings (`crs:`) are dropped, since Lightroom would apply them again to the already developed result. The camera's private MakerNote is kept byte for byte; in the rare case that the rewritten EXIF would not fit a JPEG, it is left out and the [log file](#log-file) says so. Nothing is written for BMP, GIF, TIFF, AVIF or HEIF results yet; the log file records a warning naming the format. Camera RAW inputs carry no metadata over yet.
 
@@ -702,7 +729,7 @@ With an output **file**, the format is the one its extension names. With an outp
 ⚠️ phone.jpg: Display P3 profile not embedded in AVIF
 ```
 
-It names an **HDR** input written as SDR: an Ultra HDR / ISO 21496-1 gain-map JPEG written as anything but JPEG, or written as JPEG when its gain map could not be carried (`HDR gain map dropped: it could not be carried`), or a PQ or HLG PNG, AVIF or HEIF, which every format writes as SDR for now; **fewer bits per channel** than the input, or integer samples from a floating-point one; and a **colour profile** that is not in the result (the format cannot hold one, it is for another colour model, the encoder could not write it — a profile too large for the format — or the input carried a coded colour description such as Display P3 instead of a profile). A plain sRGB profile left out of an AVIF or HEIF result is not reported: those formats read as sRGB without one. Off a terminal the line follows that input's own line; on one it is printed once the progress view finishes, before the summary. With several inputs a count follows, such as `⚠️ 2 of 5 images lost something: 2 HDR, 1 bit depth`. Each loss is also recorded in the [log file](#log-file). **The exit status is unchanged:** a loss is a warning, and the result is still written. Not detected yet: AVIF and HEIF gain maps, and the private gain maps of older iPhones.
+It names an **HDR** input written as SDR: an Ultra HDR / ISO 21496-1 gain-map JPEG written as anything but JPEG, or written as JPEG when its gain map could not be carried (`HDR gain map dropped: it could not be carried`), or written as plain JPEG with `--format jpeg`, which leaves it out as asked (`written as SDR (gain map left out)`), or a PQ or HLG PNG, AVIF or HEIF, which every format writes as SDR for now; **fewer bits per channel** than the input, or integer samples from a floating-point one; and a **colour profile** that is not in the result (the format cannot hold one, it is for another colour model, the encoder could not write it — a profile too large for the format — or the input carried a coded colour description such as Display P3 instead of a profile). A plain sRGB profile left out of an AVIF or HEIF result is not reported: those formats read as sRGB without one. Off a terminal the line follows that input's own line; on one it is printed once the progress view finishes, before the summary. With several inputs a count follows, such as `⚠️ 2 of 5 images lost something: 2 HDR, 1 bit depth`. Each loss is also recorded in the [log file](#log-file). **The exit status is unchanged:** a loss is a warning, and the result is still written. Not detected yet: AVIF and HEIF gain maps, and the private gain maps of older iPhones.
 
 ## What happens during a run
 

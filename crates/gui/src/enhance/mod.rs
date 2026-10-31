@@ -6,6 +6,8 @@
 
 // The commands stay here, because `tauri::generate_handler!` in `src/lib.rs` names them through this module.
 
+use std::time::Instant;
+
 use opai::{Mask, Opai};
 use tauri::State;
 
@@ -74,6 +76,7 @@ pub(crate) async fn enhance(
     processor: Processor,
     crop: Option<Crop>,
     mask: Option<Mask>,
+    kind: Option<RunKind>,
     setup: State<'_, Setup<Opai>>,
     opened: State<'_, Opened>,
     runs: State<'_, Runs>,
@@ -85,16 +88,55 @@ pub(crate) async fn enhance(
         let opai = setup.peek(Opai::clone).await.ok_or(EnhanceError::NotReady)?;
         let reporting = reporting(&app, &run);
 
-        enhance_with(
+        let kind = kind.unwrap_or_default();
+        let started = Instant::now();
+        tracing::info!(run, kind = kind.as_str(), source, operations = operations.len(), "window run started");
+
+        let outcome = enhance_with(
             &opai,
             &opened,
             &runs,
             Some(reporting),
-            Request { run, source, operations, processor, crop, mask },
+            Request { run: run.clone(), source, operations, processor, crop, mask },
         )
-        .await
+        .await;
+
+        // `info` for every ending, a failure included: the pair is what lets a reader of `opai.log` say which run was
+        // the window's, which the batch's, and how long each held the slot.
+        let duration = started.elapsed();
+        let ended = match &outcome {
+            Ok(Enhancement::Enhanced { .. }) => "enhanced",
+            Ok(Enhancement::Stopped) => "stopped",
+            Err(_) => "failed",
+        };
+        tracing::info!(run, kind = kind.as_str(), outcome = ended, ?duration, "window run ended");
+
+        outcome
     })
     .await
+}
+
+/// Who asked for a window run: the person looking at the photograph, or the batch paging through them.
+///
+/// Only for the log — both are the same run in the same slot.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum RunKind {
+    /// The photograph on screen, shown by the person using the window.
+    #[default]
+    Window,
+    /// The photograph on screen, shown by the batch.
+    Batch,
+}
+
+impl RunKind {
+    /// The name the log records.
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Window => "window",
+            Self::Batch => "batch",
+        }
+    }
 }
 
 // The command's name is written once more, in `frontend/ipc/enhance.ts`.

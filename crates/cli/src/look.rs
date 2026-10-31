@@ -354,6 +354,7 @@ pub(crate) const fn family_label(family: Family) -> &'static str {
         Family::Upscale => "Upscale",
         Family::Restore => "Restore",
         Family::Depth | Family::Matting | Family::LensBlur => "Lens Blur",
+        Family::Grain => "Grain",
     }
 }
 
@@ -870,7 +871,8 @@ mod tests {
                 "Sharpen",
                 "Upscale",
                 "Restore",
-                "Lens Blur"
+                "Lens Blur",
+                "Grain"
             ]
         );
     }

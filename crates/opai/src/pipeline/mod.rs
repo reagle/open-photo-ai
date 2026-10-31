@@ -122,7 +122,7 @@ pub(crate) trait ImagePipeline<B: Backend>: Model<B> {
     ) -> Result<DynamicImage, InferenceError>;
 
     // A gain map is the one thing a picture carries that a step can make untrue by moving light around the frame. Every
-    // step but the lens blur and a removal leaves it as it is, which is why both methods have a default: the chain keeps the
+    // step but the lens blur and a removal leaves it as it is (a grain included: it is base pixels only), which is why both methods have a default: the chain keeps the
     // picture's gain map, shared, across a step that answers `false` here.
     //
     // One call for the pixels and the gain map rather than a second method called after `run`: the lens blur's rewrite
@@ -155,6 +155,35 @@ pub(crate) trait ImagePipeline<B: Backend>: Model<B> {
         cancelled: &dyn Fn() -> bool,
     ) -> Result<(DynamicImage, Option<Result<GainMap, InferenceError>>), InferenceError> {
         self.run(input, sessions, depth, progress, cancelled).map(|image| (image, None))
+    }
+
+    // Every step but a grain matching its source answers from its own input alone, which is why both methods have a
+    // default. One call with the photograph beside the input rather than a second method called before `run`, so a
+    // pipeline shared between runs holds no photograph between them. A step that measures against the photograph leaves
+    // the gain map as it is, so the chain calls this in place of `run_with_gain_map` too.
+
+    /// Whether this step measures what it makes against the chain's photograph — its input, or what its last denoise
+    /// made — as well as its own input: a grain matching its source does, and nothing else. The chain then calls
+    /// [`run_against`](Self::run_against) in place of `run`, and keeps the gain map as it was.
+    fn measures_against_photograph(&self) -> bool {
+        false
+    }
+
+    /// [`run`](Self::run), with `photograph`, the chain's input or what its last denoise made, to measure against.
+    ///
+    /// # Errors
+    ///
+    /// [`InferenceError`] as for `run`.
+    fn run_against(
+        &self,
+        input: &DynamicImage,
+        _photograph: &DynamicImage,
+        sessions: &[SessionHandle<B::Session>],
+        depth: ChannelDepth,
+        progress: Option<&dyn Fn(f64)>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<DynamicImage, InferenceError> {
+        self.run(input, sessions, depth, progress, cancelled)
     }
 }
 

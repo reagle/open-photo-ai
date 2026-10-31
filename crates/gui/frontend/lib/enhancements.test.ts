@@ -64,8 +64,8 @@ describe("the order a chain runs in", () => {
 });
 
 describe("the enhancements this application presents", () => {
-    it("names ten", () => {
-        expect(ENHANCEMENTS).toHaveLength(10);
+    it("names eleven", () => {
+        expect(ENHANCEMENTS).toHaveLength(11);
     });
 
     it("groups them in runs of their own order, each heading used and in the order the headings are listed", () => {
@@ -110,16 +110,18 @@ describe("the enhancements this application presents", () => {
             "upscale",
             "restore",
             "lens_blur",
+            "grain",
         ]);
     });
 
-    it("offers Autopilot's suggestions for every enhancement but the removal, the restore and the lens blur", () => {
-        // What to take out of a photograph, a generative redraw, and where a photograph's focus should fall, are the
-        // user's choice, and the analysis has no signal for any of them.
+    it("offers Autopilot's suggestions for every enhancement but the removal, the restore, the lens blur and the grain", () => {
+        // What to take out of a photograph, a generative redraw, where a photograph's focus should fall, and grain, are
+        // the user's choice, and the analysis has no signal for any of them.
         expect(ENHANCEMENTS.filter(({ family }) => !isSuggestible(family)).map(({ family }) => family)).toEqual([
             "remove",
             "restore",
             "lens_blur",
+            "grain",
         ]);
         expect(isSuggestible("upscale")).toBe(true);
         // Not enhancements at all, so not suggestible either.
@@ -185,7 +187,14 @@ describe("what a family offers", () => {
         const { options } = modelChoice(single, undefined);
 
         expect(options).toEqual([
-            { value: "stockholm_fp32", codename: "stockholm", precision: "fp32", first: true, label: "Stockholm" },
+            {
+                value: "stockholm_fp32",
+                codename: "stockholm",
+                precision: "fp32",
+                first: true,
+                label: "Stockholm",
+                available: true,
+            },
         ]);
     });
 
@@ -305,6 +314,7 @@ describe("what the progress chip calls the family a report carries", () => {
         upscale: true,
         restore: true,
         lens_blur: true,
+        grain: true,
     };
 
     it("answers a name for every family a report can carry", () => {
@@ -739,16 +749,17 @@ describe("the operation an Autopilot suggestion becomes", () => {
         face_recovery: "santorini_fp32",
         upscale: "saitama_fp16",
         restore: "kazan_fp16",
+        grain: "sensor_fp32",
     };
 
-    // Not restore or the lens blur, which no analysis suggests, and never a painted one - see `SETTABLE`.
+    // Not restore, the lens blur or the grain, which no analysis suggests, and never a painted one - see `SETTABLE`.
     it.each(
         SETTABLE.map(({ family }) => family).filter(
             (
                 family,
             ): family is Exclude<
                 Family,
-                "detection" | "depth" | "matting" | "upscale" | "restore" | "lens_blur" | "remove"
+                "detection" | "depth" | "matting" | "upscale" | "restore" | "lens_blur" | "grain" | "remove"
             > => family !== "upscale" && isSuggestible(family),
         ),
     )("is exactly what the add menu builds for %s, with the user's stored model", (family) => {
@@ -767,5 +778,81 @@ describe("the operation an Autopilot suggestion becomes", () => {
     it("builds nothing for a family the catalogue publishes no model for", () => {
         expect(suggestedOperation({ family: "denoise" }, undefined, undefined)).toBeUndefined();
         expect(suggestedOperation({ family: "upscale", scale: 2 }, undefined, undefined)).toBeUndefined();
+    });
+});
+
+// Fork-only: a model this fork exports and has not placed at every precision, as `opai::installable_catalogue`
+// serves it. Kazan here is Stockholm, published at both and placed at FP16 alone.
+describe("a model this install cannot run at every precision", () => {
+    const placed: FamilyEntry = {
+        family: "denoise",
+        variants: [
+            {
+                codename: "stockholm",
+                label: "Stockholm",
+                precisions: ["fp32", "fp16"],
+                unavailable: ["fp32"],
+                parameters: [],
+            },
+            { codename: "gothenburg", label: "Gothenburg", precisions: ["fp32", "fp16"], parameters: [] },
+        ],
+    };
+
+    it("keeps the precision in its place, unavailable, so the tiers read as before", () => {
+        const { options } = modelChoice(placed, undefined);
+
+        expect(valuesOf({ options })).toEqual([
+            "stockholm_fp32",
+            "stockholm_fp16",
+            "gothenburg_fp32",
+            "gothenburg_fp16",
+        ]);
+        expect(options.map((option) => option.available)).toEqual([false, true, true, true]);
+        // SD is still SD with HD missing.
+        expect(options[1]?.quality).toEqual({ kind: "tier", tier: "md" });
+    });
+
+    it("repairs a saved choice of the precision it cannot run to the same model at one it can", () => {
+        expect(modelChoice(placed, "stockholm_fp32").selected).toBe("stockholm_fp16");
+    });
+
+    it("defaults a family never chosen for to the first option it can run", () => {
+        expect(modelChoice(placed, undefined).selected).toBe("stockholm_fp16");
+        expect(modelChoice(placed, "retired_fp32").selected).toBe("stockholm_fp16");
+    });
+
+    it("leaves a choice it can run as it is", () => {
+        expect(modelChoice(placed, "gothenburg_fp32").selected).toBe("gothenburg_fp32");
+    });
+
+    it("builds a new enhancement from a saved default it cannot run at the precision it can", () => {
+        expect(newOperation("denoise", placed, "stockholm_fp32")).toMatchObject({
+            codename: "stockholm",
+            precision: "fp16",
+        });
+    });
+
+    it("refuses to switch an enhancement to the precision it cannot run", () => {
+        const running: Operation = { family: "denoise", codename: "gothenburg", precision: "fp32", parameters: {} };
+
+        expect(withModel(running, placed, "stockholm_fp32")).toBeUndefined();
+        expect(withModel(running, placed, "stockholm_fp16")?.precision).toBe("fp16");
+    });
+
+    it("falls back to the first option where a family can run nothing, as it always has", () => {
+        const nothing: FamilyEntry = {
+            family: "denoise",
+            variants: [
+                {
+                    codename: "stockholm",
+                    label: "Stockholm",
+                    precisions: ["fp32"],
+                    unavailable: ["fp32"],
+                    parameters: [],
+                },
+            ],
+        };
+
+        expect(modelChoice(nothing, undefined).selected).toBe("stockholm_fp32");
     });
 });

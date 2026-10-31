@@ -227,6 +227,15 @@ const LENS_BLUR: VariantEntry["parameters"] = [
     { name: "focus_y", kind: "range", min: 0, max: 1, default: 0.5 },
 ];
 
+/**
+ * What the grain publishes: an amount, all of it to start, and a switch from adding (0) to matching the
+ * source (1), matching to start.
+ */
+const GRAIN: VariantEntry["parameters"] = [
+    { name: "amount", kind: "range", min: 0, max: 1, default: 1 },
+    { name: "match", kind: "range", min: 0, max: 1, default: 1 },
+];
+
 /** The place `opai`'s `Family::APPLY_ORDER` gives each family in a chain; detection, depth and matting have none. */
 const ORDER: Partial<Record<Family, number>> = {
     remove: 0,
@@ -239,6 +248,7 @@ const ORDER: Partial<Record<Family, number>> = {
     upscale: 7,
     restore: 8,
     lens_blur: 9,
+    grain: 10,
 };
 
 const family = (name: Family, variants: VariantEntry[]): FamilyEntry => {
@@ -308,6 +318,8 @@ export const CATALOGUE: FamilyEntry[] = [
     family("lens_blur", [variant("lisbon", "Lisbon", ["fp16"], LENS_BLUR)]),
     // Published, and drawn by nothing, for depth's reason: the model a lens blur mattes its subject with.
     family("matting", [variant("porto", "Porto", ["fp32"]), variant("bilbao", "Bilbao", ["fp16"])]),
+    // One precision, its arithmetic's: the grain runs no model.
+    family("grain", [variant("sensor", "Sensor", ["fp32"], GRAIN)]),
 ];
 
 /**
@@ -341,7 +353,12 @@ export const answerExportNames = async (paths: readonly string[], naming: Export
         const stem = dot > 0 ? file.slice(0, dot) : file;
         const own = dot > 0 ? file.slice(dot + 1).toLowerCase() : "";
         const preserved = EXPORT_FORMATS.formats.find((capability) => capability.preserves.includes(own));
-        const format = naming.format !== "preserve" ? naming.format : (preserved?.format ?? EXPORT_FORMATS.fallback);
+        const format =
+            naming.format === "uhdr"
+                ? "jpeg"
+                : naming.format !== "preserve"
+                  ? naming.format
+                  : (preserved?.format ?? EXPORT_FORMATS.fallback);
         const extension =
             naming.format === "preserve" && preserved
                 ? own
@@ -349,7 +366,10 @@ export const answerExportNames = async (paths: readonly string[], naming: Export
         const name = `${naming.prefix}${stem}${naming.suffix}.${extension}`;
         const folder = naming.location ?? path.slice(0, Math.max(slash, 0));
 
-        return { path, name, destination: `${folder}/${name}`, format, extension };
+        // Only plain JPEG leaves a gain map out, as `FormatChoice::gain_map` decides.
+        const gainMap = naming.format === "jpeg" ? "drop" : "keep";
+
+        return { path, name, destination: `${folder}/${name}`, format, extension, gainMap };
     });
 
 /** What each lossy format in {@link EXPORT_FORMATS} starts at, by format - the quality a user never moved. */

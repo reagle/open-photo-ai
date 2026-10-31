@@ -26,6 +26,7 @@ import { ColorBalanceOptions } from "./ColorBalanceOptions";
 import { ColorizationOptions } from "./ColorizationOptions";
 import { DenoiseOptions } from "./DenoiseOptions";
 import { FaceRecoveryOptions } from "./FaceRecoveryOptions";
+import { GrainOptions, matchesSource } from "./GrainOptions";
 import { LensBlurOptions } from "./LensBlurOptions";
 import { LightAdjustmentOptions } from "./LightAdjustmentOptions";
 import { OptionsPanel } from "./OptionsPanel";
@@ -284,6 +285,10 @@ export const EnhancementRow = ({
                         onChange={onChange}
                     />
                 );
+            case "grain":
+                return (
+                    <GrainOptions enhancement={enhancement} operation={operation} entry={entry} onChange={onChange} />
+                );
         }
     };
 
@@ -381,6 +386,15 @@ export const EnhancementRow = ({
                           amount: shownAmount(f, (lens ?? ASSUMED_LENS).ownFNumber),
                       });
             }
+            case "grain":
+                // The amount, and what it is a share of: the photograph's own noise, or a sensor's added.
+                return t("enhancements.infoGrain", {
+                    name,
+                    intensity: toPercent(amount("amount")),
+                    mode: t(
+                        matchesSource(operation, entry) ? "enhancements.grain.matched" : "enhancements.grain.added",
+                    ),
+                });
         }
     };
 

@@ -14,8 +14,8 @@ use opai::Family;
 use opai::settings::SharedSettings;
 
 use crate::args::{
-    Args, BalanceModel, ColorizationModel, DenoiseModel, FaceModel, LensBlurModel, LightModel, RestoreModel,
-    SharpenModel, UpscaleModel,
+    Args, BalanceModel, ColorizationModel, DenoiseModel, FaceModel, GrainModel, LensBlurModel, LightModel,
+    RestoreModel, SharpenModel, UpscaleModel,
 };
 use crate::settings::Source;
 
@@ -83,6 +83,11 @@ impl CatalogueModel for RestoreModel {
 // autopilot has no model to choose for it and there is no `OPAI_AP_LENS_BLUR`.
 impl CatalogueModel for LensBlurModel {
     const FAMILY: Family = Family::LensBlur;
+}
+
+// A command-line family only, for the same reason: grain is a user's choice about a photograph, never an analysis's.
+impl CatalogueModel for GrainModel {
+    const FAMILY: Family = Family::Grain;
 }
 
 /// Autopilot's model for every family, in the library's apply order: `None` where the family is switched off.
@@ -357,12 +362,12 @@ mod tests {
     }
 
     /// Every family an analysis can suggest, in the library's apply order: all of them but restore, which a generative
-    /// redraw is never chosen automatically, lens blur, a creative choice an analysis never makes, and remove, whose
-    /// region is the user's to paint.
+    /// redraw is never chosen automatically, lens blur, a creative choice an analysis never makes, grain, likewise, and
+    /// remove, whose region is the user's to paint.
     fn suggestible() -> Vec<Family> {
         Family::APPLY_ORDER
             .into_iter()
-            .filter(|family| !matches!(family, Family::Remove | Family::Restore | Family::LensBlur))
+            .filter(|family| !matches!(family, Family::Remove | Family::Restore | Family::LensBlur | Family::Grain))
             .collect()
     }
 

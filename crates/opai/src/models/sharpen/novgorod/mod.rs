@@ -1,10 +1,22 @@
-//! Novgorod: a Restormer sharpener — the execution-provider profile measured for it. The sharpening it runs is the
-//! shared [`filter`](crate::models::filter), with no guard.
+//! Novgorod: a Restormer sharpener — the anchor its tiles are held by and the execution-provider profile measured for
+//! it. The sharpening it runs is the shared [`filter`](crate::models::filter), with no guard.
 
 // Deleting the model is deleting this directory plus the arms in `SharpenVariant` that name it.
 
+use crate::models::filter::Anchor;
 use crate::models::precision::Precision;
 use crate::providers::profile::{EpProfile, cpu_and_gpu_at_fp16};
+
+// Novgorod barely drifts, so the anchor is not what stops a grid here: measured at the default strength over the
+// synthetic 3000x2000 gradient and three AIM-500 photographs with large flat areas, its seam steps were 0.03 to 0.11
+// grey levels on average and at most 0.32 at the 90th percentile, its tiles at most half a level apart, and the
+// photograph as a whole unmoved. Held anyway, because it costs nothing measurable and takes out a low-frequency change
+// of the model's own: over `o_f12a8afc`'s flat sky its change low-passed at 3 pixels spreads 2.2 levels unheld and 1.8
+// held, 1st to 99th percentile (1.0 and 0.65 over the gradient), its seam steps halve, and what it adds to strong edges
+// between 2 and 32 pixels is the same to two decimals with and without it. A model retrained without that texture can
+// drop this.
+/// How Novgorod's tiles are held to their input's local brightness: a box 16 pixels in radius, twice.
+pub(crate) const ANCHOR: Anchor = Anchor { radius: 16 };
 
 /// The execution-provider tuning measured for this model, at the precision it carries: CoreML off the Neural Engine
 /// at FP16, and the provider defaults at FP32.
@@ -104,6 +116,16 @@ mod tests {
 
     use crate::models::precision::FloatPrecision;
     use crate::models::sharpen::SharpenVariant;
+
+    #[test]
+    fn novgorod_is_anchored_at_the_measured_radius() {
+        // Pinned as a literal, for the reason `ANCHOR` gives.
+        assert_eq!(ANCHOR, Anchor { radius: 16 });
+
+        for precision in FloatPrecision::ALL {
+            assert_eq!(SharpenVariant::Novgorod(precision).anchor(), Some(ANCHOR), "{precision:?}");
+        }
+    }
 
     #[test]
     fn novgorod_adds_its_webgpu_nodes_to_the_shared_fp16_profile() {

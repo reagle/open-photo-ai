@@ -5,7 +5,8 @@
 //! matte kept at that size — what the lens blur reads of it is coarse (where a hole is, not its edge, which Porto
 //! draws), so a megapixel is all it needs and all the run cache stores. Progress is reported at three phase
 //! boundaries — 0.1 once the tensor is built, 0.9 once the graph returns, 1.0 once the matte is made — and cancellation
-//! is checked at the same three points.
+//! is checked before the graph only: once it has returned, the matte is finished and handed back even to a stopped run,
+//! so the run cache keeps it.
 
 // A run:
 //
@@ -48,9 +49,17 @@ const AFTER_INPUT: f64 = 0.1;
 const AFTER_GRAPH: f64 = 0.9;
 const AFTER_MATTE: f64 = 1.0;
 
-/// The execution-provider tuning for Bilbao at `precision`: the provider defaults, on the CPU (see [`provider`]).
+/// The execution-provider tuning for Bilbao at `precision`: the provider defaults, on the CPU (see [`provider`]), with
+/// its session released as soon as its run is done.
 pub(crate) fn profile(_precision: Precision) -> EpProfile {
-    EpProfile::default()
+    // Released, because what the session keeps once it has run is the largest thing a lens blur holds. Measured with
+    // the CLI on three photographs (1.7 to 25 megapixels; the graph's input is 1024 x 1024 either way), `footprint`
+    // per stage: Bilbao's run took `Malloc Large` from 0.6 to 8.5 GB, and the session kept it through Porto, the render
+    // and the write, so a lens blur peaked at 24 to 27 GB (18 to 21 GB with the re-exported Porto). Released, it falls
+    // back to 0.5 GB as Porto starts and the peak is 11 to 12 GB, with the same output. What it costs is a rebuild per
+    // photograph, 0.8 to 1.0 s in the application's log. The arena alone was not it: with the arena off the session
+    // still kept 9 to 11 GB.
+    EpProfile { release_after_use: true, ..EpProfile::default() }
 }
 
 /// The provider Bilbao runs on when `requested` is asked for: the CPU wherever Core ML would be tried.
@@ -141,7 +150,13 @@ impl<B: Backend> DataPipeline<B> for Bilbao {
         )
         .map_err(InferenceError::run(&self.graph.name, 0))?;
 
-        checkpoint(&report, cancelled, AFTER_GRAPH)?;
+        // Reported, but not a place a stop is honoured. The graph is one call — 6 s on its own, and minutes on a CPU
+        // shared with other runs — which a stop now terminates while it runs (`session::terminable`); one that arrives
+        // after it has returned used to be noticed here, after all of that was spent, and the matte thrown away with it:
+        // paging through a batch of lens blurs cancelled each photograph's Bilbao this way and ran it again from nothing
+        // on the way back. What is left is a sigmoid over a megapixel, so the matte is finished and handed back, which
+        // is what lets `execute` store it; the run it was for notices the stop at its own next checkpoint.
+        report(AFTER_GRAPH);
 
         let coverage: Vec<f32> = logits.iter().map(|&logit| 1.0 / (1.0 + (-logit).exp())).collect();
         tracing::debug!(operation = %self.graph.name, width = input.width(), height = input.height(), "salient subject matted");
@@ -250,11 +265,35 @@ mod tests {
     }
 
     #[test]
+    fn a_stop_that_arrives_while_the_graph_runs_still_hands_back_its_matte() {
+        let handle = SessionHandle::held(FakeSession { means: Arc::default() }, ExecutionProvider::Cpu);
+        let image = DynamicImage::ImageRgb8(image::RgbImage::new(64, 48));
+        // Clear at the two checks before the graph, stopped at every one after it.
+        let checks = std::cell::Cell::new(0_usize);
+        let cancelled = || {
+            checks.set(checks.get() + 1);
+            checks.get() > 2
+        };
+
+        let outcome = pipeline::<Fake>(&Matting::bilbao()).run(&image, &[handle], None, &cancelled);
+
+        // Thrown away, the graph's whole run would be paid for again the next time the photograph is shown.
+        assert!(outcome.is_ok(), "a matte the graph had finished was discarded for a stop: {outcome:?}");
+    }
+
+    #[test]
     fn bilbao_is_moved_off_core_ml_and_nothing_else_is() {
         let moved = if cfg!(target_os = "macos") { ExecutionProvider::Cpu } else { ExecutionProvider::Auto };
 
         assert_eq!(provider(ExecutionProvider::Auto), moved);
         assert_eq!(provider(ExecutionProvider::Cpu), ExecutionProvider::Cpu);
         assert_eq!(provider(ExecutionProvider::Cuda), ExecutionProvider::Cuda);
+    }
+
+    #[test]
+    fn bilbao_is_let_go_of_once_its_run_is_done_and_nothing_else_changes() {
+        for precision in [Precision::Fp16, Precision::Fp32] {
+            assert_eq!(profile(precision), EpProfile { release_after_use: true, ..EpProfile::default() });
+        }
     }
 }

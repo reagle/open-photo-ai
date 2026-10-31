@@ -141,6 +141,18 @@ pub(crate) struct EpProfile {
     /// Only `Auto` is redirected: a provider asked for by name is the user's choice and is honoured, falling back as any
     /// other model's does.
     pub(crate) cpu_on_auto: bool,
+
+    // A residency rather than a tuning, and here because the profile is what an operation already hands the session
+    // request: what a session costs to keep against what it costs to build again is a property of the model and the
+    // provider it runs on, as everything else here is. Bilbao is the case that put it here: once it has run, its CPU
+    // session holds 7.5 to 9 GB of `Malloc Large` that the runtime frees only with the session — the arena, which grew
+    // to 15 GB over a second run, and as much again with the arena off; neither the memory planner nor the number of
+    // threads changed it — against a rebuild of about a second in the application (0.8 to 1.0 s in its log). It runs
+    // once a photograph, and while it was resident it held all of that beside Lisbon and Porto through the rest of a
+    // lens blur, and in the application for as long as it stayed resident.
+    /// Whether this model's session is let go of as soon as the run using it lets go, rather than kept resident for the
+    /// next.
+    pub(crate) release_after_use: bool,
 }
 
 // Established by measurement rather than taken from a binding's documentation, because getting it wrong is invisible:
@@ -269,6 +281,7 @@ mod tests {
         assert_eq!(profile.coreml_specialization, CoreMlSpecialization::Default);
         assert_eq!(profile.execution_mode, ExecutionMode::Parallel);
         assert!(!profile.disable_mem_pattern, "the memory planner was off before anything was measured");
+        assert!(!profile.release_after_use, "a session was released after use before anything was measured");
         assert!(profile.disabled_optimizers.is_empty(), "an optimizer was disabled before anything was measured");
         assert!(!profile.cuda_prefer_nhwc, "NCHW is the runtime's own default and stays the default here");
         assert!(profile.trt_options.is_empty(), "a TensorRT override was applied before anything was measured");

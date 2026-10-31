@@ -18,7 +18,7 @@
 //! because the resampled image is also what its colour fix corrects towards. Osaka was an upscale model until this
 //! family existed; its artifacts keep the `up_` they were published under.
 //!
-//! **Where it runs.** Last, after every faithful family; see [`Family::APPLY_ORDER`].
+//! **Where it runs.** After every faithful family, with only a grain after it; see [`Family::APPLY_ORDER`].
 
 pub(crate) mod kazan;
 pub(crate) mod osaka;
@@ -224,6 +224,7 @@ impl Restore {
                     self.profile(),
                     kazan::RANGE,
                     params.strength,
+                    None,
                     None,
                     kazan::GEOMETRY,
                 ),

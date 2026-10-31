@@ -208,7 +208,15 @@ async fn gain_map_after(
         source(48, 32),
         gain_map,
         planned,
-        Steps { provider: ExecutionProvider::Auto, depth: ChannelDepth::Eight, keep: 0, from: 0, part: None },
+        Steps {
+            provider: ExecutionProvider::Auto,
+            depth: ChannelDepth::Eight,
+            keep: 0,
+            from: 0,
+            part: None,
+            measured_after: false,
+        },
+        None,
         None,
         &CancellationToken::new(),
         cache,
@@ -383,4 +391,19 @@ async fn a_lens_blur_rewrites_the_gain_map_fresh_or_cached_and_a_denoise_leaves_
     .await
     .expect("ran");
     assert!(Arc::ptr_eq(&denoised.shared_gain_map().expect("kept"), &source_map));
+}
+
+#[tokio::test]
+async fn a_grain_hands_the_gain_map_on_as_it_was_whether_it_matches_or_adds() {
+    // Base pixels only: the grain leaves the gain map shared, and an HDR display raises the grain with its highlight as
+    // it would a capture's own noise.
+    use crate::models::{Grain, GrainAmount, GrainMode};
+
+    let source_map = ramp_gain_map();
+    for mode in [GrainMode::Match, GrainMode::Add] {
+        let planned = plan::<Fake>(&[Grain::sensor(GrainAmount::clamped(1.0), mode)]).expect("planned");
+        let map = gain_map_after(&Fake::new(), &planned, Some(Arc::clone(&source_map)), None).await;
+
+        assert!(map.is_some_and(|map| Arc::ptr_eq(&map, &source_map)), "{mode:?} rewrote the gain map");
+    }
 }

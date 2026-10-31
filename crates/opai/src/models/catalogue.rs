@@ -13,6 +13,7 @@ use super::bias::Bias;
 use super::f_number::FNumber;
 use super::fidelity::Fidelity;
 use super::fraction::Fraction;
+use super::grain::{GrainAmount, GrainMode};
 use super::lens_blur::{FOCUS_X, FOCUS_Y};
 use super::precision::{FloatPrecision, Precision};
 use super::restore::Restore;
@@ -21,7 +22,7 @@ use super::simple::SimpleVariant;
 use super::strength::Strength;
 use super::upscale;
 use super::{
-    color_balance, colorization, denoise, depth, detection, face_recovery, lens_blur, light_adjustment, matting,
+    color_balance, colorization, denoise, depth, detection, face_recovery, grain, lens_blur, light_adjustment, matting,
     remove, restore, sharpen,
 };
 
@@ -48,6 +49,18 @@ pub struct VariantEntry {
     pub label: &'static str,
     /// Every precision this variant is published in, in the order a chooser should offer them.
     pub precisions: &'static [Precision],
+    /// The precisions in [`precisions`](Self::precisions) **this install** cannot serve, in the same order; empty in
+    /// [`fn@catalogue`], which describes what the library can name rather than what one machine can run.
+    ///
+    /// Fork-only, not for upstream: filled in by [`installable_catalogue`](crate::installable_catalogue) for a model
+    /// this fork exports itself and has not placed at that precision (see `deps::model::manifest::FORK_NAME`), which
+    /// has nowhere to be fetched from. Every published model is served at every precision it is published at, so
+    /// upstream's models never land here. Kept beside `precisions` rather than taken out of it, because a chooser
+    /// reads a model's quality tiers positionally off that list: Kazan's SD has to stay SD when its HD is missing.
+    ///
+    /// Not serialized where it is empty, so the wire shape of every model served in full is unchanged.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unavailable: Vec<Precision>,
     /// The parameters **this variant** takes.
     ///
     /// Per variant rather than per family, because two variants of one family may take different parameters: Athens
@@ -58,6 +71,23 @@ pub struct VariantEntry {
     /// The seven families whose variants agree repeat one entry across them, which is duplication in the published
     /// JSON and not in the source: these are `&'static` borrows of the same constants.
     pub parameters: &'static [ParameterEntry],
+}
+
+impl VariantEntry {
+    /// The precisions this variant can be run at, in the order a chooser offers them: its published ones less any
+    /// [`unavailable`](Self::unavailable) here.
+    pub fn available(&self) -> impl Iterator<Item = Precision> + '_ {
+        self.precisions.iter().copied().filter(|precision| !self.unavailable.contains(precision))
+    }
+
+    /// `precision` where this variant can be run at it, or else the first precision it can be run at — `None` only
+    /// where it can be run at none.
+    ///
+    /// The repair a saved choice is put through: a default of Kazan HD on an install that has only Kazan SD runs Kazan
+    /// SD rather than failing.
+    pub fn nearest_available(&self, precision: Precision) -> Option<Precision> {
+        self.available().find(|&candidate| candidate == precision).or_else(|| self.available().next())
+    }
 }
 
 /// What kind of value a published parameter is.
@@ -197,6 +227,23 @@ pub(crate) const RESTORE_PARAMETERS: [ParameterEntry; 2] = [
     },
 ];
 
+/// What a grain run takes: how much, and whether that is a share of what the result lacks of the photograph's own grain
+/// or of a sensor's, added on purpose.
+///
+/// The amount starts at all of it and the mode at matching the source: a grain is never added by default, so a user who
+/// adds one asks for the photograph's own noise back, and a clean photograph is given nothing. The mode is a switch,
+/// published as a range from 0 (add) to 1 (match), which a front end draws as one; any value from a half up matches.
+pub(crate) const GRAIN_PARAMETERS: [ParameterEntry; 2] = [
+    ParameterEntry {
+        name: GrainAmount::NAME,
+        kind: ParameterKind::Range { min: GrainAmount::MIN, max: GrainAmount::MAX, default: GrainAmount::MAX },
+    },
+    ParameterEntry {
+        name: GrainMode::NAME,
+        kind: ParameterKind::Range { min: 0.0, max: 1.0, default: GrainMode::Match.as_switch() },
+    },
+];
+
 /// What a lens blur takes: the equivalent f-number to simulate and the focus point, as fractions across and down the
 /// frame, from the same constants `FNumber::new` and `Fraction::new` enforce.
 pub(crate) const LENS_BLUR_PARAMETERS: [ParameterEntry; 3] = [
@@ -273,6 +320,22 @@ static CATALOGUE: LazyLock<Vec<FamilyEntry>> = LazyLock::new(|| {
         // Listed last, though it runs first: where an entry is listed is a presentation decision, and `order` is what
         // says where it runs.
         remove_family(),
+        // Appended, as each family after the first six was. One precision, the arithmetic's, since it runs no model.
+        FamilyEntry {
+            family: Family::Grain,
+            order: Family::Grain.applied_at(),
+            variants: grain::ALL
+                .iter()
+                .map(|row| VariantEntry {
+                    family: Family::Grain,
+                    codename: row.codename,
+                    label: row.label,
+                    precisions: &grain::variant::PRECISIONS,
+                    parameters: row.parameters,
+                    unavailable: Vec::new(),
+                })
+                .collect(),
+        },
     ]
 });
 
@@ -299,6 +362,7 @@ fn simple_family(family: Family, rows: &[SimpleVariant]) -> FamilyEntry {
                 codename: row.codename,
                 label: row.label,
                 precisions: &FloatPrecision::PRECISIONS,
+                unavailable: Vec::new(),
                 parameters: row.parameters,
             })
             .collect(),
@@ -317,6 +381,7 @@ fn depth_family() -> FamilyEntry {
                 codename: row.codename,
                 label: row.label,
                 precisions: &depth::variant::PRECISIONS,
+                unavailable: Vec::new(),
                 parameters: row.parameters,
             })
             .collect(),
@@ -335,6 +400,7 @@ fn lens_blur_family() -> FamilyEntry {
                 codename: row.codename,
                 label: row.label,
                 precisions: &lens_blur::variant::PRECISIONS,
+                unavailable: Vec::new(),
                 parameters: row.parameters,
             })
             .collect(),
@@ -353,6 +419,7 @@ fn matting_family() -> FamilyEntry {
                 codename: row.codename,
                 label: row.label,
                 precisions: matting::variant::precisions(row.codename),
+                unavailable: Vec::new(),
                 parameters: row.parameters,
             })
             .collect(),
@@ -371,6 +438,7 @@ fn remove_family() -> FamilyEntry {
                 codename: row.codename,
                 label: row.label,
                 precisions: &remove::variant::PRECISIONS,
+                unavailable: Vec::new(),
                 parameters: row.parameters,
             })
             .collect(),
@@ -394,6 +462,7 @@ fn upscale_family() -> FamilyEntry {
                 codename: model.codename(),
                 label: model.label(),
                 precisions: model.precisions(),
+                unavailable: Vec::new(),
                 parameters: model.parameters(),
             })
             .collect(),
@@ -415,6 +484,7 @@ fn restore_family() -> FamilyEntry {
                 codename: model.row.codename,
                 label: model.row.label,
                 precisions: model.precisions,
+                unavailable: Vec::new(),
                 parameters: model.row.parameters,
             })
             .collect(),
@@ -435,23 +505,31 @@ mod tests {
     /// [`Family::ALL`] rather than transcribed, so a family added later is covered here without being remembered:
     /// restore is left out, because Osaka's precisions are its own, depth, because Lisbon is published at FP16 alone
     /// and two graphs at that, matting, because Porto is published at FP32 alone and Bilbao at FP16, lens blur, which
-    /// runs no graph of its own, and remove, published at FP32 alone.
+    /// runs no graph of its own, remove, published at FP32 alone, and grain, whose one precision is its arithmetic's.
     fn single_graph_families() -> Vec<Family> {
         Family::ALL
             .into_iter()
             .filter(|family| {
-                !matches!(family, Family::Restore | Family::Depth | Family::Matting | Family::LensBlur | Family::Remove)
+                !matches!(
+                    family,
+                    Family::Restore
+                        | Family::Depth
+                        | Family::Matting
+                        | Family::LensBlur
+                        | Family::Remove
+                        | Family::Grain
+                )
             })
             .collect()
     }
 
     #[test]
-    fn lens_blur_is_published_last_as_lisbon_with_an_f_number_and_a_focus_point() {
+    fn lens_blur_is_published_before_the_grain_as_lisbon_with_an_f_number_and_a_focus_point() {
         let entry = family_entry(Family::LensBlur);
 
         assert_eq!(variants(Family::LensBlur), vec![("lisbon", "Lisbon")]);
         assert_eq!(entry.variants[0].precisions, [Precision::Fp16]);
-        assert_eq!(entry.order, Some(Family::APPLY_ORDER.len() - 1));
+        assert_eq!(entry.order, Some(Family::APPLY_ORDER.len() - 2));
         assert_eq!(
             variant_parameters(Family::LensBlur, "lisbon"),
             vec![
@@ -481,6 +559,29 @@ mod tests {
         assert_eq!(entry.variants[1].precisions, [Precision::Fp16]);
         assert!(entry.variants.iter().all(|variant| variant.parameters.is_empty()));
         assert_eq!(entry.order, None, "matting was published as an enhancement a chain applies");
+    }
+
+    #[test]
+    fn a_precision_this_install_cannot_serve_is_on_the_wire_only_where_there_is_one() {
+        // Fork-only. A variant served in full keeps the shape it always had; one with a precision missing names it,
+        // beside the full list its quality tiers are read from.
+        let mut variant = upscale().variants[0].clone();
+        let full = serde_json::to_value(&variant).unwrap();
+        assert!(full.get("unavailable").is_none(), "an empty list crossed the wire: {full}");
+
+        variant.unavailable = vec![Precision::Fp32];
+        let narrowed = serde_json::to_value(&variant).unwrap();
+        assert_eq!(narrowed["unavailable"], serde_json::json!(["fp32"]));
+        assert_eq!(narrowed["precisions"], full["precisions"]);
+        assert_eq!(variant.available().collect::<Vec<_>>(), vec![Precision::Fp16]);
+        assert_eq!(variant.nearest_available(Precision::Fp32), Some(Precision::Fp16));
+
+        variant.unavailable = vec![Precision::Fp32, Precision::Fp16];
+        assert_eq!(
+            variant.nearest_available(Precision::Fp32),
+            None,
+            "a variant with nothing to run offered something"
+        );
     }
 
     fn family_entry(family: Family) -> &'static FamilyEntry {
@@ -617,7 +718,7 @@ mod tests {
             other => panic!("restore publishes a parameter its bounds do not name: {other}"),
         };
 
-        let accepts: [Enforced; 7] = [
+        let accepts: [Enforced; 9] = [
             (Scale::NAME, Scale::MIN, Scale::MAX, |value| Scale::new(value).is_ok()),
             (FNumber::NAME, FNumber::MIN, FNumber::MAX, |value| FNumber::new(value).is_ok()),
             (FOCUS_X, Fraction::MIN, Fraction::MAX, |value| Fraction::new(value).is_ok()),
@@ -625,6 +726,9 @@ mod tests {
             (Strength::NAME, Strength::MIN, Strength::MAX, |value| Strength::new(value).is_ok()),
             (Bias::NAME, Bias::MIN, Bias::MAX, |value| Bias::new(value).is_ok()),
             (Fidelity::NAME, Fidelity::MIN, Fidelity::MAX, |value| Fidelity::new(value).is_ok()),
+            (GrainAmount::NAME, GrainAmount::MIN, GrainAmount::MAX, |value| GrainAmount::new(value).is_ok()),
+            // A switch: every value in its range names a mode, and `ParameterValues::set` clamps the rest.
+            (GrainMode::NAME, 0.0, 1.0, |value| (0.0..=1.0).contains(&value)),
         ];
 
         for (family, codename, parameter) in every_published_parameter() {
@@ -708,6 +812,9 @@ mod tests {
             FNumber::NAME => values.with_f_number(FNumber::clamped(FNumber::MIN)),
             FOCUS_X => values.with_focus(Fraction::clamped(Fraction::MAX), Fraction::CENTRE),
             FOCUS_Y => values.with_focus(Fraction::CENTRE, Fraction::clamped(Fraction::MAX)),
+            GrainAmount::NAME => values.with_amount(GrainAmount::clamped(GrainAmount::MAX)),
+            // The neutral mode is matching, so the one to move to is adding.
+            GrainMode::NAME => values.with_grain_mode(GrainMode::Add),
             other => panic!("nothing here moves a {other}"),
         }
     }
@@ -732,7 +839,17 @@ mod tests {
                     .build(precision, &neutral)
                     .unwrap_or_else(|error| panic!("{} at {precision}: {error}", variant.codename));
 
-                for name in [Scale::NAME, Strength::NAME, Bias::NAME, Fidelity::NAME, FNumber::NAME, FOCUS_X, FOCUS_Y] {
+                for name in [
+                    Scale::NAME,
+                    Strength::NAME,
+                    Bias::NAME,
+                    Fidelity::NAME,
+                    GrainAmount::NAME,
+                    GrainMode::NAME,
+                    FNumber::NAME,
+                    FOCUS_X,
+                    FOCUS_Y,
+                ] {
                     let published = variant.parameters.iter().any(|parameter| parameter.name == name);
                     let built = variant
                         .build(precision, &moved(name, neutral.clone()))
@@ -776,6 +893,7 @@ mod tests {
         assert_eq!(parameters(Family::ColorBalance), vec![("bias", -1.0, 1.0)]);
         assert_eq!(parameters(Family::Upscale), vec![("scale", 1.0, 8.0)]);
         assert_eq!(parameters(Family::Restore), vec![("scale", 1.0, 4.0), ("strength", 0.0, 1.0)]);
+        assert_eq!(parameters(Family::Grain), vec![("amount", 0.0, 1.0), ("match", 0.0, 1.0)]);
     }
 
     #[test]
@@ -802,6 +920,7 @@ mod tests {
                 Family::LensBlur,
                 Family::Matting,
                 Family::Remove,
+                Family::Grain,
             ]
         );
 
@@ -837,6 +956,7 @@ mod tests {
             vec![("delhi", "Delhi"), ("mumbai", "Mumbai"), ("jaipur", "Jaipur")]
         );
         assert_eq!(variants(Family::Restore), vec![("kazan", "Kazan"), ("osaka", "Osaka")]);
+        assert_eq!(variants(Family::Grain), vec![("sensor", "Sensor")]);
     }
 
     #[test]
@@ -1028,9 +1148,10 @@ mod tests {
                         variant.codename
                     );
 
+                    // A grain runs no model, and is the one family that resolves to nothing.
                     let artifacts = operation.required_artifacts();
                     assert!(
-                        !artifacts.is_empty(),
+                        !artifacts.is_empty() || entry.family == Family::Grain,
                         "{:?}'s {} at {precision} is listed but resolves to nothing",
                         entry.family,
                         variant.codename

@@ -141,13 +141,14 @@ async fn a_stop_while_matting_stops_the_run() {
 }
 
 #[tokio::test]
-async fn a_blur_too_small_to_show_an_edge_mattes_nothing() {
-    // The fake photograph has no EXIF, so it is assumed at f/8: f/7 adds well under 3 px anywhere on 960 x 640.
+async fn a_blur_too_small_to_see_is_said_to_be_and_mattes_nothing() {
+    // The fake photograph has no EXIF, so it is assumed at f/8: f/7 adds well under 3 px anywhere on 960 x 640, and
+    // under the diagonal / 1500 a blur has to reach to be seen at all.
     let (backend, cache) = (Fake::new(), store());
 
     let small = outcome(&backend, &cache, &[matted(7.0, 0.5)]).await;
 
-    assert!(matches!(small.matte, ChainMatte::Skipped), "{:?}", small.matte);
+    assert!(matches!(small.matte, ChainMatte::LittleBlur), "{:?}", small.matte);
     assert_eq!(runs(&backend, PORTO), 0, "a blur of a pixel or two was matted");
     assert_eq!(runs(&backend, LANDSCAPE), 1);
 }

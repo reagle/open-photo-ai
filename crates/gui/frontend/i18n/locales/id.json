@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "Tidak tersedia di instalasi ini",
+        "unavailableLabel": "{{model}} (tidak tersedia)"
     },
     "settings": {
         "title": "Pengaturan",
@@ -60,6 +62,10 @@
             "analytics": {
                 "title": "Analitik",
                 "description": "Kirim data penggunaan anonim. Gambar atau data pribadi tidak pernah dikumpulkan."
+            },
+            "askBeforePause": {
+                "title": "Tanya sebelum menjeda batch",
+                "description": "Saat Anda memilih foto lain ketika batch sedang diproses, tanya dulu. Jika nonaktif, batch dijeda dan foto ditampilkan."
             }
         },
         "performance": {
@@ -143,7 +149,8 @@
                 "openOptions7": "Opsi peningkatan 7",
                 "openOptions8": "Opsi peningkatan 8",
                 "cropRotate": "Pangkas/Putar",
-                "showShortcuts": "Tampilkan pintasan papan ketik"
+                "showShortcuts": "Tampilkan pintasan papan ketik",
+                "toggleInfo": "Tampilkan atau sembunyikan info foto"
             },
             "add": "Tambah pintasan",
             "addLabel": "Tambah pintasan untuk {{action}}",
@@ -181,6 +188,12 @@
             "cropped": "Terpotong",
             "output": "Keluaran"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "Foto ini memiliki gain map HDR. Ekspor ke JPG (Ultra HDR) mempertahankannya; JPG biasa tidak menyertakannya, dan format lain untuk saat ini hanya ditulis sebagai SDR.",
+            "transfer": "Foto ini HDR ({{transfer}}). Untuk saat ini semua format hanya ditulis sebagai SDR.",
+            "other": "Foto ini HDR. Untuk saat ini semua format hanya ditulis sebagai SDR."
+        },
         "about_dialog": {
             "iconAlt": "Ikon Aplikasi",
             "version": "Versi {{version}}"
@@ -209,6 +222,12 @@
             "full": "Penuh",
             "sideBySide": "Berdampingan",
             "split": "Terbagi"
+        },
+        "badge": {
+            "queued": "Menunggu ditingkatkan",
+            "processing": "Sedang ditingkatkan",
+            "done": "Sudah ditingkatkan",
+            "failed": "Peningkatan gagal"
         }
     },
     "faces": {
@@ -300,7 +319,8 @@
             },
             "format": {
                 "title": "Format",
-                "preserve": "Pertahankan"
+                "preserve": "Pertahankan",
+                "ultraHdr": "{{format}} (Ultra HDR)"
             },
             "quality": {
                 "title": "Kualitas"
@@ -338,8 +358,10 @@
         "loss": {
             "notice": "{{count}} dari {{total}} gambar akan kehilangan kualitas dalam format ini. Arahkan penunjuk ke peringatan di sebuah baris untuk melihat apa yang hilang.",
             "warning": "Kualitas hilang dalam format ini",
+            "chosen": "Tidak disertakan oleh format yang dipilih",
             "hdrGainMap": "Gain map HDR dihapus: keluaran {{format}} untuk saat ini hanya SDR",
             "hdrGainMapNotCarried": "Gain map HDR dihapus: tidak dapat dipertahankan",
+            "hdrGainMapLeftOut": "Ditulis sebagai SDR (gain map tidak disertakan)",
             "hdrTransfer": "HDR ({{transfer}}) dihapus: keluaran {{format}} untuk saat ini hanya SDR",
             "depth": "{{from}} → {{to}} di {{format}}",
             "bits": "{{bits}}-bit",
@@ -485,7 +507,20 @@
             "setFocus": "Atur fokus",
             "refine": "Perhalus",
             "editRefine": "Edit perhalusan",
-            "focusHint": "Klik bagian foto yang harus tajam. Esc untuk membatalkan."
+            "focusHint": "Klik bagian foto yang harus tajam. Esc untuk membatalkan.",
+            "littleBlur": "Blur sangat sedikit pada panjang fokus dan jarak fokus ini. Fokuskan pada sesuatu yang lebih dekat, atau naikkan jumlah blur."
+        },
+        "grain": {
+            "name": "Butiran",
+            "amount": "Jumlah",
+            "match": "Sesuaikan dengan asli",
+            "matchHint": "Mengembalikan noise asli foto di bagian yang dihaluskan oleh peningkatan; setelah denoise, noise yang ditinggalkan denoise.",
+            "addHint": "Menambahkan butiran sensor kamera di seluruh foto, berapa pun noise yang sudah ada.",
+            "matched": "disesuaikan",
+            "added": "ditambahkan",
+            "models": {
+                "sensor": "Gunakan ini untuk mengembalikan tampilan tangkapan asli pada foto yang ditingkatkan: noise sensor digital, terutama pada kecerahan dengan sedikit warna, sedikit lebih kasar dari satu piksel. Tidak menjalankan model AI dan tidak perlu diunduh."
+            }
         },
         "add": "Tambah peningkatan",
         "remove": "Hapus peningkatan",
@@ -511,6 +546,7 @@
         "infoScale": "{{name}}, {{scale}}x, {{quality}}",
         "infoRestore": "{{name}}, {{scale}}x, {{intensity}}%, {{quality}}",
         "infoLensBlur": "{{name}}, blur {{amount}}",
+        "infoGrain": "{{name}}, {{intensity}}%, {{mode}}",
         "groups": {
             "cleanUp": "Pembersihan",
             "lightColor": "Cahaya & warna",
@@ -541,11 +577,30 @@
             "sharpen": "Mempertajam",
             "restore": "Merestorasi",
             "lensBlur": "Memburamkan",
+            "grain": "Butiran",
             "enhancing": "Meningkatkan",
             "compiling": "Mengompilasi model {{model}}",
             "loading": "Memuat model {{model}}",
             "firstUse": "Hanya pada penggunaan pertama, bisa memakan beberapa menit",
-            "firstUseAbout_other": "Hanya pada penggunaan pertama, bisa memakan sekitar {{count}} menit"
+            "firstUseAbout_other": "Hanya pada penggunaan pertama, bisa memakan sekitar {{count}} menit",
+            "waiting": "Menunggu…"
+        },
+        "info": {
+            "title": "Info foto",
+            "equivalent": "{{value}} mm setara",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm setara (pangkas)",
+            "simulated": "{{value}} simulasi",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "Peta gain HDR",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Lokasi tercatat",
+            "edits": "Suntingan",
+            "blurredEarlier": "Lens Blur sudah diterapkan ({{value}} simulasi)",
+            "enhancedEarlier": "Sudah ditingkatkan dengan Open Photo AI"
         }
     },
     "menu": {
@@ -600,7 +655,9 @@
             "title": "Terjadi kesalahan",
             "message": "Open Photo AI mengalami kesalahan tak terduga dan tidak dapat melanjutkan. Memuat ulang biasanya memperbaikinya; pengaturan Anda tetap tersimpan, tetapi pekerjaan yang belum disimpan pada sesi saat ini akan hilang.",
             "reload": "Muat ulang"
-        }
+        },
+        "modelUnavailable": "{{model}} ({{precision}}) tidak tersedia di instalasi ini; gunakan {{alternative}}.",
+        "modelUnavailableAlone": "{{model}} ({{precision}}) tidak tersedia di instalasi ini."
     },
     "shortcuts": {
         "title": "Pintasan papan ketik",
@@ -619,6 +676,34 @@
             "pan": "Geser",
             "images": "Gambar sebelumnya / Gambar berikutnya",
             "options": "Opsi peningkatan 1–8"
+        }
+    },
+    "batch": {
+        "processing": "Memproses {{current}} dari {{total}}",
+        "pause": "Jeda",
+        "paused": "Dijeda — tersisa {{left}}",
+        "resume": "Lanjutkan",
+        "processAll": "Proses semua ({{count}})",
+        "exportHeld": "Ekspor tersedia setelah pemrosesan dijeda atau selesai",
+        "finished_other": "{{count}} foto diproses",
+        "finishedWithFailures_other": "{{count}} foto diproses, {{failed}} gagal",
+        "done": "Selesai — {{processed}} diproses",
+        "doneWithFailures": "Selesai — {{processed}} diproses ({{failed}} gagal)",
+        "list": {
+            "title": "Foto dalam batch ini"
+        },
+        "state": {
+            "done": "Selesai",
+            "processing": "Memproses",
+            "pending": "Menunggu",
+            "failed": "Gagal"
+        },
+        "ask": {
+            "title": "Jeda pemrosesan dan lihat foto ini?",
+            "body": "Pemrosesan berhenti di tempatnya. Lanjutkan nanti untuk meneruskan foto yang tersisa.",
+            "pause": "Jeda & lihat",
+            "keep": "Terus memproses",
+            "dontAsk": "Jangan tanya lagi"
         }
     }
 }

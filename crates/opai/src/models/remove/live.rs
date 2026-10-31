@@ -158,3 +158,62 @@ async fn lima_removes_the_tag_under_core_ml() {
 
     removes_on(&opai, &source, ExecutionProvider::CoreMl).await;
 }
+
+/// The environment variable naming the bench's jobs: a file of lines `photograph<TAB>mask<TAB>output`, white in the
+/// mask removed, the result written as PNG.
+const BENCH_JOBS: &str = "OPAI_REMOVE_BENCH";
+
+/// The environment variable naming what the bench runs: `plain` (the model's fill alone, as before 2026-10-31), or
+/// `grain`.
+const BENCH_FINISH: &str = "OPAI_REMOVE_FINISH";
+
+/// The finish `name` names, as [`BENCH_FINISH`] spells it.
+fn finish_named(name: &str) -> super::process::Finish {
+    match name {
+        "plain" => super::process::Finish { grain: false },
+        "grain" => super::process::Finish { grain: true },
+        other => panic!("{BENCH_FINISH}={other} is neither plain nor grain"),
+    }
+}
+
+/// The fork's Remove bench (`remove/README.md` in its notes): each job removed on the CPU, uncached, under the finish
+/// [`BENCH_FINISH`] names, with the seconds the removal took printed as `bench<TAB>output<TAB>seconds`. The first job is
+/// run once more before the rest and not reported, so every reported time is warm.
+#[tokio::test]
+#[ignore = "the fork's bench: needs OPAI_REMOVE_BENCH, OPAI_REMOVE_FINISH and Lima installed under OPAI_LIVE_DIR"]
+async fn bench() {
+    let (Some(jobs), Some(finish)) = (std::env::var_os(BENCH_JOBS), std::env::var(BENCH_FINISH).ok()) else {
+        println!("skipped: {BENCH_JOBS} or {BENCH_FINISH} is not set");
+        return;
+    };
+    let Some(opai) = application().await else { return };
+    *super::process::BENCH_FINISH.lock().unwrap() = Some(finish_named(&finish));
+
+    let jobs = std::fs::read_to_string(&jobs).expect("the bench's jobs are readable");
+    let jobs: Vec<Vec<&str>> =
+        jobs.lines().filter(|line| !line.is_empty()).map(|line| line.split('\t').collect()).collect();
+
+    for (index, job) in std::iter::once(&jobs[0]).chain(&jobs).enumerate() {
+        let [photograph, mask, output] = job[..] else { panic!("a job is three paths: {job:?}") };
+        let source = crate::image::load(std::path::Path::new(photograph)).await.expect("the photograph decodes");
+        let mask = crate::image::load(std::path::Path::new(mask)).await.expect("the mask decodes");
+        let operation = Remove::lima(Arc::new(Mask::from_image(mask.pixels())));
+        let options = ProcessOptions { provider: ExecutionProvider::Cpu, cache: false, ..Default::default() };
+
+        let started = Instant::now();
+        let run = opai.process(&source, std::slice::from_ref(&operation), Some(options)).await.unwrap();
+        let seconds = started.elapsed().as_secs_f64();
+
+        if index == 0 {
+            continue;
+        }
+
+        let path = PathBuf::from(output);
+        crate::image::save(run.picture.shared_pixels(), run.picture.shared_metadata(), &path, ImageFormat::Png, None)
+            .await
+            .expect("the result encodes");
+        println!("bench\t{output}\t{seconds:.3}");
+    }
+
+    *super::process::BENCH_FINISH.lock().unwrap() = None;
+}
