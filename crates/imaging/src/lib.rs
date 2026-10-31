@@ -12,7 +12,8 @@
 //! ([`canvas`]) — the fixed-canvas plan and presentation a whole-image run reaches its graph through ([`present`]), the
 //! per-run control blend that moves a photograph towards a finished result ([`mix`]), the align-centres bilinear read
 //! of a graph's square plane back onto the photograph ([`bilinear`]), the row-banded split of a full-resolution CPU
-//! pass across cores ([`rows`]), and the tiling driver [`run_tiled`].
+//! pass across cores ([`rows`]), a photograph's grain measured per brightness and synthesised back ([`grain`]), and the
+//! tiling driver [`run_tiled`].
 //!
 //! **This crate knows nothing of `opai`**: no model, session, execution provider or orchestration. It depends on
 //! `image` and `thiserror` alone, so that independence is a compile error to break rather than a convention to keep.
@@ -44,6 +45,7 @@
 pub mod bilinear;
 pub mod blend;
 pub mod canvas;
+pub mod grain;
 pub mod grid;
 pub mod mix;
 pub mod pad;
