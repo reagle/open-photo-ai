@@ -1,10 +1,12 @@
 import { useRef } from "react";
 import { ShineBorder } from "@/components/ui/shine-border";
+import { InfoCard } from "@/features/preview/InfoCard";
 import { PreviewEmpty } from "@/features/preview/PreviewEmpty";
 import { PreviewImage } from "@/features/preview/PreviewImage";
 import { useDroppedImages } from "@/hooks/useDroppedImages";
 import { useCanvasSurface } from "@/lib/canvas";
 import { DRAWER_HEIGHT } from "@/lib/constants";
+import { KEEPS_LIVE_SURFACE } from "@/lib/layers";
 import { cn } from "@/lib/utils";
 import { useDrawerStore } from "@/stores/drawer";
 import { useCurrentFile } from "@/stores/files";
@@ -65,6 +67,8 @@ export const Preview = () => {
     return (
         <div
             data-slot="preview-canvas"
+            // A press here is looking at the photograph, which an open options panel stays open for - see `lib/layers.ts`.
+            {...{ [KEEPS_LIVE_SURFACE]: "" }}
             className={cn("absolute inset-x-0 top-0 bottom-12 flex items-center justify-center", className)}
         >
             {/*
@@ -78,6 +82,9 @@ export const Preview = () => {
             <div className="relative z-10 flex h-full w-full items-center justify-center">
                 {file ? <PreviewImage /> : <PreviewEmpty />}
             </div>
+
+            {/* Over the photograph and under the drop region, which stays the topmost layer for the shine it draws. */}
+            {file && <InfoCard bottom={covered} />}
 
             {/*
              * Where a dragged file will be taken: the rectangle the drop is hit-tested against, and

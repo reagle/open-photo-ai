@@ -13,7 +13,8 @@ import { useFileStore } from "@/stores/files";
  * folded or not, so unfolding slides this over the canvas without resizing it.
  *
  * **It unfolds itself whenever the number of open images changes to more than one**, and **folds
- * itself when the last open image is closed**. A press outside it folds it too.
+ * itself when the last open image is closed**. A press on the preview canvas outside it folds it too;
+ * a press anywhere else - the sidebar, the navbar, a dialog, a menu, a toast - leaves it as it is.
  */
 export const Drawer = () => {
     const open = useDrawerStore((state) => state.open);
@@ -66,10 +67,15 @@ export const Drawer = () => {
         if (!open) return;
 
         /*
-         * A click outside folds the drawer, so that the canvas it is covering is reachable again by
-         * the same gesture that moves attention back to it - which is what the reference's
-         * `ClickAwayListener` does. A listener on the document rather than an overlay, because an
-         * overlay would swallow the click that the canvas or the sidebar is being reached *for*.
+         * A press on the preview canvas folds the drawer, so that the part of the canvas it is covering
+         * is reachable again by the same gesture that moves attention back to it. The reference's
+         * `ClickAwayListener` folds on a press anywhere outside, but that punishes the commonest
+         * workflow: adding an enhancement in the sidebar or exporting from the navbar would fold the
+         * strip the user is working through. Only the canvas is what the drawer covers, so only a
+         * press there folds it; dialogs, menus and toasts portal to the body, outside the canvas, and
+         * leave it alone. A menu portalled into the drawer is inside it and so stays exempt as well.
+         * A listener on the document rather than an overlay, because an overlay would swallow the
+         * click that the canvas is being reached *for*.
          *
          * `pointerdown` rather than `click`: a press that starts inside the strip and drifts outside
          * it - a scroll of the strip on a trackpad, a drag begun on a thumbnail - reports its click
@@ -85,7 +91,9 @@ export const Drawer = () => {
          * say about them.
          */
         const onPointerDown = (event: PointerEvent) => {
-            if (!element?.contains(event.target as Node)) setOpen(false);
+            const target = event.target as Element | null;
+            if (!target?.closest?.('[data-slot="preview-canvas"]')) return;
+            if (!element?.contains(target)) setOpen(false);
         };
 
         document.addEventListener("pointerdown", onPointerDown);

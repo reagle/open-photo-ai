@@ -12,8 +12,11 @@ const LOG_COMMAND = "log";
  * Rust decides the rest: the record's target, and how long each text may be.
  */
 export type WindowRecord = {
-    /** `error` for a render crash, which the window does not survive; `warn` for everything else. */
-    level: "warn" | "error";
+    /**
+     * `error` for a render crash, which the window does not survive; `warn` for every other failure; `info` for one of
+     * the window's own timings (`lib/timing.ts`).
+     */
+    level: "info" | "warn" | "error";
     /** What the window was doing, in its own sentence. */
     message: string;
     /** The error's own text. */

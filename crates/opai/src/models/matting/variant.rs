@@ -63,6 +63,15 @@ impl MattingVariant {
         }
     }
 
+    /// Whether this variant's session is let go of as soon as the run using it lets go: Bilbao's,
+    /// [`bilbao::RELEASE_AFTER_USE`].
+    pub(crate) const fn release_after_use(self) -> bool {
+        match self {
+            Self::Porto(_) => false,
+            Self::Bilbao(_) => bilbao::RELEASE_AFTER_USE,
+        }
+    }
+
     /// The variant this family publishes under `codename` at `precision`, or `None` where it publishes none.
     ///
     /// The inverse of the codename each variant reports, as every family's is. A precision this row does not publish
@@ -96,6 +105,14 @@ impl MattingVariant {
     pub(crate) const fn codename(self) -> &'static str {
         self.row().codename
     }
+}
+
+/// Whether `artifact` is one of this family's whose session is let go of as soon as the run using it lets go.
+pub(crate) fn release_after_use(artifact: &crate::models::ArtifactId) -> bool {
+    ALL.iter()
+        .flat_map(|row| precisions(row.codename).iter().map(move |precision| (row.codename, *precision)))
+        .filter_map(|(codename, precision)| MattingVariant::from_codename(codename, precision))
+        .any(|variant| variant.release_after_use() && super::Matting::new(variant).artifact() == *artifact)
 }
 
 #[cfg(test)]

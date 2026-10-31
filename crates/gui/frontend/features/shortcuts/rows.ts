@@ -1,4 +1,4 @@
-import type { ParseKeys } from "i18next";
+import type { ParseKeys, TFunction } from "i18next";
 import { formatBinding, parseBinding, type ShortcutAction } from "@/lib/shortcuts";
 
 /**
@@ -39,6 +39,7 @@ export const LIST_SECTIONS: readonly ListSection[] = [
             { id: "pan", label: "shortcuts.rows.pan", actions: ["panLeft", "panRight", "panUp", "panDown"] },
             single("showOriginal"),
             single("cyclePreview"),
+            single("toggleInfo"),
             single("toggleDrawer"),
             single("showShortcuts"),
         ],
@@ -101,4 +102,42 @@ export const rowKeys = (lists: readonly (readonly string[])[], mac: boolean, spa
     const prefix = shown[0].slice(0, shown[0].length - first.length);
 
     return [`${prefix}${first}–${last}`];
+};
+
+/** One row of the list's fixed part: what the pointer and the dialogs answer, which no setting rebinds. */
+export type InputRow = { id: string; label: string; keys: string[] };
+
+/**
+ * **The input rules every surface follows** (`lib/layers.ts`), as the list's last section: Return accepts a dialog and
+ * finishes a panel or a brush, Escape cancels a dialog and finishes a panel or a brush, a pinch or the modifier with
+ * the wheel zooms, and a scroll, a drag and Space with a drag pan - or, under the Scroll wheel zooms setting, a scroll
+ * zooms and the pan is the drag alone. Fixed, so written here rather than read from the bindings.
+ */
+export const inputRows = (t: TFunction, mac: boolean, wheelZooms: boolean): InputRow[] => {
+    const mod = mac ? "⌘" : "Ctrl";
+    const space = t("settings.keyboard.space");
+    const scroll = t("shortcuts.input.scroll");
+
+    return [
+        { id: "accept", label: t("shortcuts.input.accept"), keys: [mac ? "↩" : "Enter"] },
+        { id: "escape", label: t("shortcuts.input.escape"), keys: [mac ? "⎋" : "Esc"] },
+        {
+            id: "zoom",
+            label: t("shortcuts.input.zoom"),
+            keys: [
+                t("shortcuts.input.pinch"),
+                t("shortcuts.input.modScroll", { key: mod }),
+                ...(wheelZooms ? [scroll] : []),
+            ],
+        },
+        {
+            id: "pan",
+            label: t("shortcuts.input.pan"),
+            keys: [
+                ...(wheelZooms ? [] : [scroll]),
+                t("shortcuts.input.drag"),
+                t("shortcuts.input.spaceDrag", { key: space }),
+            ],
+        },
+    ];
 };

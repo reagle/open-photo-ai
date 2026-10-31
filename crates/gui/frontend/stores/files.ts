@@ -27,6 +27,20 @@ export type FileOwner = {
 
 const owners = new Set<FileOwner>();
 
+/** What is asked before the user's choice of photograph changes the one on screen: see {@link guardNavigation}. */
+let guard: ((index: number) => boolean) | undefined;
+
+/**
+ * Registers what decides whether a choice of photograph by the user - a click in the strip, a paging key - goes
+ * ahead: `check` answers `true` to let it, or `false` having taken it over. One at a time; `undefined` removes it.
+ *
+ * Only `setCurrentIndex` asks. Opening and closing photographs move the current one by their own rules, and whatever
+ * registered the guard writes `currentIndex` directly when it moves on its own account.
+ */
+export const guardNavigation = (check: ((index: number) => boolean) | undefined) => {
+    guard = check;
+};
+
 /** Registers `owner` for the life of the process. Called at module scope by each per-file store. */
 export const registerFileOwner = (owner: FileOwner) => {
     owners.add(owner);
@@ -62,7 +76,8 @@ type FileStore = {
     selectedPaths: Set<string>;
 
     setCurrentIndex: (index: number) => void;
-    addFiles: (files: ImageRecord[]) => void;
+    /** Adds `files`; `keepCurrent` leaves the photograph on screen where it is rather than showing the first added. */
+    addFiles: (files: ImageRecord[], options?: { keepCurrent?: boolean }) => void;
     closeFile: (path: string) => void;
     closeAll: () => void;
     toggleSelected: (path: string) => void;
@@ -122,8 +137,15 @@ export const useFileStore = create<FileStore>()((set) => ({
      *
      * Written by the drawer's strip, which is the only thing that offers the choice. It changes
      * nothing else - not the list, not its order, not what is picked.
+     *
+     * **Asked of the navigation guard first**, where one is registered ({@link guardNavigation}): a batch paging
+     * through the photographs answers no and asks the user whether to pause it.
      */
-    setCurrentIndex: (index: number) => set({ currentIndex: index }),
+    setCurrentIndex: (index: number) => {
+        if (guard && !guard(index)) return;
+
+        set({ currentIndex: index });
+    },
 
     /**
      * Appends what is new and makes the first of it current.
@@ -135,7 +157,7 @@ export const useFileStore = create<FileStore>()((set) => ({
      * **A batch opened into an empty window picks its first file.** A batch arriving into a window
      * that already had images picks nothing.
      */
-    addFiles: (files: ImageRecord[]) =>
+    addFiles: (files: ImageRecord[], { keepCurrent = false } = {}) =>
         set((state) => {
             // The reference's rules. Within the batch because a drop can carry the same file twice. The
             // Set is built once per call rather than scanning the list per incoming file, which is the
@@ -154,7 +176,7 @@ export const useFileStore = create<FileStore>()((set) => ({
 
             const next = {
                 files: [...state.files, ...added],
-                currentIndex: state.files.length,
+                currentIndex: keepCurrent && state.files.length > 0 ? state.currentIndex : state.files.length,
             };
 
             // Picking the first file of a batch opened into an empty window makes a window with one

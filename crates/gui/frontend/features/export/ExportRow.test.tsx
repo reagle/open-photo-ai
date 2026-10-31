@@ -210,6 +210,21 @@ describe("the loss warning", () => {
         expect(warning()).not.toBeInTheDocument();
     });
 
+    it("says a source that could not be read was probably moved, and is not drawn once the row has failed", async () => {
+        const words = "Can't read the source file: it was probably moved, renamed or deleted after it was opened";
+        const UnreadableRow = () => (
+            <ExportRow path={HOLIDAY.path} name={useNames()?.byPath.get(HOLIDAY.path)} predicted={[]} unreadable />
+        );
+        render(<UnreadableRow />);
+        await named();
+
+        expect(screen.getByRole("button", { name: words })).toBeInTheDocument();
+        expect(warning()).not.toBeInTheDocument();
+
+        await at({ stage: "failed", reason: "unreadable" });
+        expect(screen.queryByRole("button", { name: words })).not.toBeInTheDocument();
+    });
+
     it("says what was written once the row is done, in place of the prediction", async () => {
         render(<PredictedRow predicted={[HDR]} />);
         await named();

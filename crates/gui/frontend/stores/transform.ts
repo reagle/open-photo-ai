@@ -177,9 +177,9 @@ export const useTransformStore = create<TransformStore>()((set) => ({
 // One accessor rather than every reader spelling out the identity lookup and the fallback, as the
 // reference's `useImageTransform` is.
 //
-// Takes the identity rather than reading the current file, because the canvas draws the *settled*
-// photograph - see `hooks/useSettledFile.ts` - and reading the current one there would apply the
-// incoming image's magnification to the outgoing image's pixels for as long as the swap takes.
+// Takes the identity rather than reading the current file, because a pane is keyed by the identity
+// it is handed - the source's, for the enhanced pane drawing a result's pixels - and that is the
+// photograph whose magnification it draws.
 /**
  * How one photograph is being looked at, fitted if it has never been magnified.
  *

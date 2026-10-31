@@ -5,8 +5,9 @@ import { DialogTitleBar } from "@/components/ui/dialog-title-bar";
 import { useAppShortcuts } from "@/hooks/useAppShortcuts";
 import { useShortcutBindings } from "@/hooks/useShortcuts";
 import { isMacOs } from "@/ipc/os";
+import { useSettingsStore } from "@/stores/settings";
 import { useShortcutsListStore } from "@/stores/shortcutsList";
-import { LIST_SECTIONS, rowKeys } from "./rows.ts";
+import { inputRows, LIST_SECTIONS, rowKeys } from "./rows.ts";
 
 /**
  * The keyboard shortcuts list: every action with the keys it is bound to now, as this platform writes
@@ -17,7 +18,9 @@ import { LIST_SECTIONS, rowKeys } from "./rows.ts";
  * list says where that is. While it is open the window's shortcuts are off - it is a dialog - so the
  * key that opened it does not close it; Escape, the close box and a click outside do. The
  * application's own keys (Open, Export, Settings, Close Image, Close All Images, Quit) head the list, fixed.
- * The rest sit under View, Images and Enhancements, with alike actions on one row - see `rows.ts`.
+ * The rest sit under View, Images and Enhancements, with alike actions on one row - see `rows.ts`. Last, fixed again,
+ * the pointer's and the dialogs' rules: Return, Escape, pinch, scroll and Space with a drag (`inputRows`), as the
+ * Scroll wheel zooms setting has them now.
  */
 export const ShortcutsDialog = () => {
     const { t } = useTranslation();
@@ -29,6 +32,8 @@ export const ShortcutsDialog = () => {
     const applicationId = useId();
     const sectionId = useId();
     const fixed = useAppShortcuts();
+    const inputId = useId();
+    const wheelZooms = useSettingsStore((state) => state.wheelZooms);
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
@@ -115,6 +120,29 @@ export const ShortcutsDialog = () => {
                             </dl>
                         </section>
                     ))}
+
+                    <section aria-labelledby={inputId} className="flex flex-col gap-2" data-slot="shortcuts-input">
+                        <h3 id={inputId} className="m-0 font-medium text-[13px] text-muted-foreground">
+                            {t("shortcuts.sections.input")}
+                        </h3>
+                        <dl className="m-0 flex flex-col divide-y divide-border rounded-lg border border-border">
+                            {inputRows(t, mac, wheelZooms).map(({ id, label, keys }) => (
+                                <div key={id} className="flex items-center justify-between gap-6 px-4 py-2">
+                                    <dt className="text-sm">{label}</dt>
+                                    <dd className="m-0 flex flex-wrap justify-end gap-1.5">
+                                        {keys.map((shown) => (
+                                            <kbd
+                                                key={shown}
+                                                className="rounded-md border border-border bg-background px-2 py-0.5 font-mono text-[12px]"
+                                            >
+                                                {shown}
+                                            </kbd>
+                                        ))}
+                                    </dd>
+                                </div>
+                            ))}
+                        </dl>
+                    </section>
 
                     <p className="m-0 text-[12px] text-muted-foreground">{t("shortcuts.hint")}</p>
                 </div>

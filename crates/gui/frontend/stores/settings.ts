@@ -5,7 +5,7 @@ import type { Family } from "@/ipc/catalogue";
 import type { ExportFormat } from "@/ipc/export";
 import type { SupportedProviders } from "@/ipc/setup";
 import { familiesWhere } from "@/lib/enhancements";
-import { isFormatChoice } from "@/lib/export";
+import { isExportFormat } from "@/lib/export";
 import { repairShortcuts, type StoredShortcuts } from "@/lib/shortcuts";
 import { clampTo } from "@/lib/utils";
 
@@ -123,6 +123,20 @@ export type SettingsData = {
      * which fills in the defaults and keeps any one key press from being claimed twice.
      */
     shortcuts: StoredShortcuts;
+    // A preference rather than a fact of the user's history beside `tensorrtAsked`, although the question's "Don't ask
+    // again" sets it too: the General page turns it back off, so it is drafted, saved and reset like the others, and
+    // Reset to defaults asks again.
+    /**
+     * Whether a click on another photograph while a batch runs pauses it without asking. See `lib/batch.ts`.
+     */
+    pauseBatchWithoutAsking: boolean;
+    // Off by default, which is the reversal of the reference: Photos, Preview and Lightroom pan on a scroll and zoom
+    // on a pinch, and a two-finger scroll that magnifies surprises everyone who has used them.
+    /**
+     * Whether a plain wheel event zooms the preview by a fixed step, as the reference does, rather than panning it.
+     * A pinch, and Command or Control with the wheel, zoom either way - see `features/preview/PreviewImage.tsx`.
+     */
+    wheelZooms: boolean;
 };
 
 // Beside the preferences rather than among them: `SettingsData` is what the settings dialog drafts,
@@ -147,6 +161,8 @@ type SettingsStore = SettingsData &
          * either way the question has been answered.
          */
         answerTensorRT: (enable: boolean) => void;
+        /** Records that a click during a batch is to pause it without asking from now on. */
+        stopAskingBeforePause: () => void;
     };
 
 /** The preferences out of a store state, which is what the dialog seeds a draft from and Save hands back. */
@@ -159,6 +175,8 @@ export const settingsData = ({
     autopilotExcluded,
     quality,
     shortcuts,
+    pauseBatchWithoutAsking,
+    wheelZooms,
 }: SettingsData): SettingsData => ({
     language,
     background,
@@ -168,6 +186,8 @@ export const settingsData = ({
     autopilotExcluded,
     quality,
     shortcuts,
+    pauseBatchWithoutAsking,
+    wheelZooms,
 });
 
 // A function rather than a constant for two reasons: the language is detected, and a record handed
@@ -190,6 +210,9 @@ export const settingsDefaults = (): SettingsData => ({
     quality: {},
     // No choice for any action: each is bound to its defaults.
     shortcuts: {},
+    // Asked.
+    pauseBatchWithoutAsking: false,
+    wheelZooms: false,
 });
 
 /**
@@ -212,8 +235,7 @@ const repairQuality = (value: unknown): QualityChoices => {
         Object.entries(value).flatMap(([format, stored]) => {
             const quality = Number(stored);
 
-            return isFormatChoice(format) &&
-                format !== "preserve" &&
+            return isExportFormat(format) &&
                 Number.isFinite(quality) &&
                 quality >= MIN_QUALITY &&
                 quality <= MAX_QUALITY
@@ -266,8 +288,9 @@ const repairExcluded = (value: unknown): Family[] => {
  * **values** are this application's - see {@link Processor}.
  *
  * **Nothing reaches here until it is kept.** {@link SettingsStore.apply} - the settings dialog's Save -
- * and {@link SettingsStore.answerTensorRT} are the only things that write this store, so a preference
- * the user has not kept cannot be observed by anything - not by a subscriber, and not by the file.
+ * {@link SettingsStore.answerTensorRT} and {@link SettingsStore.stopAskingBeforePause} - two questions' answers - are
+ * the only things that write this store, so a preference the user has not kept cannot be observed by anything - not
+ * by a subscriber, and not by the file.
  *
  * Every field has a stated repair - see `merge` below.
  */
@@ -318,6 +341,8 @@ export const useSettingsStore = create<SettingsStore>()(
             // depending on nothing having changed the preference first. No is the next best thing
             // on a machine that offers TensorRT, which is installed as a layer on the CUDA libraries.
             answerTensorRT: (enable: boolean) => set({ processor: enable ? "auto" : "cuda", tensorrtAsked: true }),
+
+            stopAskingBeforePause: () => set({ pauseBatchWithoutAsking: true }),
         }),
         {
             // The Wails app's key, unchanged.
@@ -343,7 +368,7 @@ export const useSettingsStore = create<SettingsStore>()(
              * wrong on a user's machine and right here: a language catalogue is dropped, a graphics
              * driver is removed, a model stops being published.
              *
-             * All nine are repaired on rehydrate below, against something already present at that
+             * All eleven are repaired on rehydrate below, against something already present at that
              * moment - the models in shape only. Whether a stored model is still published, and so
              * which model a family defaults to, is resolved where it is drawn, for the reason
              * `ModelChoices` gives. The processor's second repair is the same
@@ -390,10 +415,13 @@ export const useSettingsStore = create<SettingsStore>()(
                     // as every action at its defaults. Repaired without the platform, which is not
                     // known at import; what this platform refuses is dropped where it is resolved.
                     shortcuts: repairShortcuts(stored.shortcuts),
+                    // Absent for every user who saved before the choice existed, which reads as the wheel panning.
+                    wheelZooms: stored.wheelZooms === true,
                     // Answered here, or answered in the Wails application, which stored `false` once
                     // it had been - so a user upgrading is not asked a second time. Anything else,
                     // including nothing at all, is a question not yet asked.
                     tensorrtAsked: stored.tensorrtAsked === true || stored.isFirstTensorRT === false,
+                    pauseBatchWithoutAsking: stored.pauseBatchWithoutAsking === true,
                 };
             },
         },

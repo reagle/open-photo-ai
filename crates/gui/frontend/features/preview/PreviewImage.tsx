@@ -6,21 +6,32 @@ import { BrushCursor } from "@/features/mask/BrushCursor";
 import { MaskOverlay } from "@/features/mask/MaskOverlay";
 import { useEnhancementRun } from "@/hooks/useEnhancementRun";
 import { useResizeObserver } from "@/hooks/useResizeObserver";
-import { useSettledFile } from "@/hooks/useSettledFile";
+import { useStandIn } from "@/hooks/useStandIn";
 import { framedDimensions } from "@/ipc/crop";
-import { renditionFor } from "@/ipc/images";
-import { DRAWER_HEIGHT, PAN_KEY_STEP, ZOOM_MIN, ZOOM_WHEEL_STEP } from "@/lib/constants";
+import { resultUrl } from "@/ipc/images";
+import {
+    DRAWER_HEIGHT,
+    PAN_KEY_STEP,
+    WHEEL_LINE_PIXELS,
+    ZOOM_MIN,
+    ZOOM_PINCH_MAX_DELTA,
+    ZOOM_PINCH_RATE,
+    ZOOM_WHEEL_STEP,
+} from "@/lib/constants";
 import { FOCUS_X, FOCUS_Y, withParameter } from "@/lib/enhancements";
-import { OPEN_LAYER } from "@/lib/layers";
+import { acceptOnReturn, OPEN_LAYER } from "@/lib/layers";
 import { onMac, radiusOf } from "@/lib/mask";
-import { cn } from "@/lib/utils";
+import { clampTo, cn } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
 import { useDrawerStore } from "@/stores/drawer";
 import { useEnhancementStore, useFileEnhancements } from "@/stores/enhancements";
+import { useCurrentFile } from "@/stores/files";
 import { useFocusPickStore, useIsArmed } from "@/stores/focusPick";
 import { useIsEditing, useMaskStore } from "@/stores/mask";
+import { usePanKeyStore } from "@/stores/panKey";
 import { usePeekStore } from "@/stores/peek";
 import { usePreviewStore } from "@/stores/preview";
+import { useSettingsStore } from "@/stores/settings";
 import {
     clampScale,
     type ImageTransform,
@@ -31,7 +42,8 @@ import {
 } from "@/stores/transform";
 import { CLICK_SLOP, FocusHint, FocusPick } from "./FocusPick";
 import { constrain, constrainPosition, fitInside, imageFraction, type Size } from "./geometry";
-import { ProgressBar } from "./ProgressBar";
+import { ProgressBar, useShownProgress } from "./ProgressBar";
+import { useSpacePan } from "./useSpacePan";
 
 /**
  * What a pane does with a press while the mask is being painted: the brush, and what to tell the store as a stroke
@@ -56,7 +68,7 @@ type Paint = {
 
 type PaneProps = {
     // Handed down rather than read from the store here, so that both panes draw the same photograph on
-    // the same render and one preload serves the pair. See `hooks/useSettledFile.ts`.
+    // the same render and one stand-in serves the pair. See `hooks/useStandIn.ts`.
     //
     // The dimensions alone rather than a whole `ImageRecord`, because the enhanced pane's result is
     // not one: it has no path, no format and no size on disk, and a record built by swapping the
@@ -64,7 +76,7 @@ type PaneProps = {
     // everything else - so anything this component read off it would be reading the wrong image's
     // data. Taking what is actually used means there is nothing to fabricate.
     /**
-     * The settled photograph's dimensions. Partial because an unparseable header publishes neither;
+     * The photograph's dimensions. Partial because an unparseable header publishes neither;
      * the decoded image's own size is the fallback.
      */
     published?: Partial<Size>;
@@ -116,6 +128,8 @@ type PaneProps = {
     // the canvas instead, which nothing clips.
     /** The canvas to draw the brush's ring in, over both panes, or absent to draw it inside this pane. */
     ringIn?: HTMLElement | null;
+    /** Whether Space is held as the pan modifier: a press pans, whatever else a press would do. */
+    panKey?: boolean;
 };
 
 /** The gap between a pane's chip and whatever is beneath it. */
@@ -203,6 +217,7 @@ const Pane = ({
     paint,
     maskPath,
     ringIn,
+    panKey = false,
 }: PaneProps) => {
     const container = useRef<HTMLDivElement>(null);
 
@@ -327,32 +342,60 @@ const Pane = ({
     }, [transform, fitted, measured, identity, imageWidth, publishViewport, setViewport, setFit]);
 
     /*
-     * The wheel, and the trackpad pinch the webview delivers as one.
+     * The drag that pans, coalesced to one store write per frame - and the wheel's pan, below, through the same write.
+     *
+     * Without the coalescing every pointer frame re-renders both panes, re-runs the resolution above
+     * and republishes the viewport - "a sustained ~60Hz cascade through the tree for the length of a
+     * drag", which is the reference's own measurement. A trackpad's scroll arrives at the same rate.
+     */
+    const grab = useRef<{ pointer: { x: number; y: number }; from: { x: number; y: number } }>(undefined);
+    const pending = useRef<ImageTransform>(undefined);
+    const frame = useRef<number>(undefined);
+    const [dragging, setDragging] = useState(false);
+
+    /** Writes `transform` for `id` on the next frame, replacing whatever was waiting for it. */
+    const schedule = useCallback(
+        (id: string, transform: ImageTransform) => {
+            pending.current = transform;
+            if (frame.current !== undefined) return;
+
+            frame.current = requestAnimationFrame(() => {
+                frame.current = undefined;
+                if (pending.current) setTransform(id, pending.current);
+            });
+        },
+        [setTransform],
+    );
+
+    /*
+     * The wheel: a trackpad's two-finger scroll and pinch, and a mouse's wheel.
      *
      * A native, non-passive listener because React's synthetic `onWheel` is registered passive and
      * `preventDefault()` on it is a silent no-op. Per pane rather than once on the canvas, because the
      * handler needs this pane's own rectangle to turn a client coordinate into a point of the
      * photograph, and in side by side the pointer is over one particular half.
      *
-     * **Every wheel event zooms, by a fixed step whatever its magnitude.** That is parity with the
-     * reference's `ZOOM_WHEEL_STEP`, and it surprises: a two-finger scroll on a trackpad magnifies.
+     * **As Photos, Preview and Lightroom have it: a scroll pans, and a pinch zooms.** The webview delivers a pinch as a
+     * wheel event with Control held, which is also what Control - or Command - with a mouse's wheel is, so those zoom
+     * too, by an amount proportional to the delta (`ZOOM_PINCH_RATE`, capped per event) about the point under the
+     * pointer. A plain wheel event, or one with Shift, pans by its delta in both directions, as a page scrolls - in
+     * pixels, whatever unit the event counts in. **The Scroll wheel zooms setting** puts back the reference's
+     * behaviour for a plain wheel, every event zooming by a fixed step whatever its magnitude (`ZOOM_WHEEL_STEP`);
+     * pinch and the modifier still zoom as above.
      */
     useEffect(() => {
         const element = container.current;
         if (!element) return;
 
-        const onWheel = (event: WheelEvent) => {
-            event.preventDefault();
-
+        const zoom = (event: WheelEvent, scale: number) => {
             const { drawn: current, fitted: fittedNow, measured: measuredNow, identity: id } = live.current;
             if (id === undefined) return;
 
-            // Wheel up is zoom in. Clamped here as well as in the store, because the position
-            // resolved below is only the right position for a scale the store will actually keep:
-            // resolving against 8.05 and then storing 8 would move the photograph by the difference.
-            // The store's own `clampScale`, so the two cannot come to mean different numbers.
-            const direction = event.deltaY < 0 ? 1 : -1;
-            const scale = clampScale(current.scale + direction * ZOOM_WHEEL_STEP);
+            // A scroll's pan still waiting for its frame would land after this at the old scale, and undo it.
+            if (frame.current !== undefined) {
+                cancelAnimationFrame(frame.current);
+                frame.current = undefined;
+            }
 
             const rect = element.getBoundingClientRect();
             const size = scaled(fittedNow, current.scale);
@@ -378,28 +421,67 @@ const Pane = ({
              * The anchor rides along regardless: it is what a sibling pane applies to its own
              * container, which is the whole reason it is a fraction rather than a pixel offset - see
              * `imageFraction`.
+             *
+             * Written at once rather than coalesced, as the wheel's zoom always has been: it resolves against what is
+             * drawn, which a write waiting for a frame would leave behind.
              */
             const next = resolve({ scale, x: current.x, y: current.y, anchor }, current, id, fittedNow, measuredNow);
 
             setTransform(id, { scale: next.scale, x: next.x, y: next.y, anchor });
         };
 
+        const pan = (dx: number, dy: number) => {
+            const { drawn: current, fitted: fittedNow, measured: measuredNow, identity: id } = live.current;
+            if (id === undefined) return;
+
+            // From the write still waiting for its frame, if there is one: what is drawn has not caught up with it, and
+            // starting again from there would drop every event since the last frame.
+            const from = frame.current !== undefined && pending.current ? pending.current : current;
+            const position = constrainPosition(
+                { x: from.x - dx, y: from.y - dy },
+                scaled(fittedNow, current.scale),
+                measuredNow,
+            );
+
+            schedule(id, { scale: current.scale, ...position });
+        };
+
+        const onWheel = (event: WheelEvent) => {
+            event.preventDefault();
+
+            const { drawn: current, measured: measuredNow } = live.current;
+
+            // Every delta in pixels: a mouse on some systems counts in lines, and a page key's scroll in pages.
+            const unit =
+                event.deltaMode === WheelEvent.DOM_DELTA_LINE
+                    ? { x: WHEEL_LINE_PIXELS, y: WHEEL_LINE_PIXELS }
+                    : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+                      ? { x: measuredNow.width, y: measuredNow.height }
+                      : { x: 1, y: 1 };
+            const dx = event.deltaX * unit.x;
+            const dy = event.deltaY * unit.y;
+
+            // Wheel up is zoom in. Clamped here as well as in the store, because the position
+            // resolved below is only the right position for a scale the store will actually keep:
+            // resolving against 8.05 and then storing 8 would move the photograph by the difference.
+            // The store's own `clampScale`, so the two cannot come to mean different numbers.
+            if (event.ctrlKey || event.metaKey) {
+                const delta = clampTo(dy, -ZOOM_PINCH_MAX_DELTA, ZOOM_PINCH_MAX_DELTA);
+                zoom(event, clampScale(current.scale * Math.exp(-delta * ZOOM_PINCH_RATE)));
+            } else if (useSettingsStore.getState().wheelZooms) {
+                if (dy !== 0) zoom(event, clampScale(current.scale + (dy < 0 ? 1 : -1) * ZOOM_WHEEL_STEP));
+            } else if (event.shiftKey && dx === 0) {
+                // A mouse's wheel with Shift is a sideways scroll, which only some systems turn into `deltaX` for us.
+                pan(dy, 0);
+            } else {
+                pan(dx, dy);
+            }
+        };
+
         element.addEventListener("wheel", onWheel, { passive: false });
 
         return () => element.removeEventListener("wheel", onWheel);
-    }, [setTransform]);
-
-    /*
-     * The drag that pans, coalesced to one store write per frame.
-     *
-     * Without the coalescing every pointer frame re-renders both panes, re-runs the resolution above
-     * and republishes the viewport - "a sustained ~60Hz cascade through the tree for the length of a
-     * drag", which is the reference's own measurement.
-     */
-    const grab = useRef<{ pointer: { x: number; y: number }; from: { x: number; y: number } }>(undefined);
-    const pending = useRef<ImageTransform>(undefined);
-    const frame = useRef<number>(undefined);
-    const [dragging, setDragging] = useState(false);
+    }, [setTransform, schedule]);
 
     /*
      * A press that may turn out to be the click that sets the focus: where it went down, and whether it has been
@@ -454,8 +536,9 @@ const Pane = ({
             return;
         }
 
+        // With Space held a press is a pan and never a pick.
         press.current =
-            armed && event.button === 0 ? { x: event.clientX, y: event.clientY, dragged: false } : undefined;
+            armed && !panKey && event.button === 0 ? { x: event.clientX, y: event.clientY, dragged: false } : undefined;
 
         // Capture rather than document-level listeners, because a drag that leaves the pane - and one
         // that leaves the window - must keep delivering moves to the element that started it, and the
@@ -494,13 +577,7 @@ const Pane = ({
             measuredNow,
         );
 
-        pending.current = { scale: current.scale, ...position };
-        if (frame.current !== undefined) return;
-
-        frame.current = requestAnimationFrame(() => {
-            frame.current = undefined;
-            if (pending.current) setTransform(id, pending.current);
-        });
+        schedule(id, { scale: current.scale, ...position });
     };
 
     /*
@@ -657,8 +734,17 @@ const Pane = ({
             style={style}
             className={cn(
                 "relative min-w-0 flex-1 touch-none overflow-hidden",
-                // No system cursor while painting: the ring under the pointer is the cursor.
-                dragging ? "cursor-grabbing" : paint ? "cursor-none" : armed ? "cursor-crosshair" : "cursor-grab",
+                // No system cursor while painting: the ring under the pointer is the cursor. A hand while Space is held,
+                // whatever a press would otherwise do.
+                dragging
+                    ? "cursor-grabbing"
+                    : panKey
+                      ? "cursor-grab"
+                      : paint
+                        ? "cursor-none"
+                        : armed
+                          ? "cursor-crosshair"
+                          : "cursor-grab",
                 className,
             )}
             data-slot="preview-pane"
@@ -687,7 +773,13 @@ const Pane = ({
              * zoom and pan are a compositor transform and the pane is never repainted. An `<img>` is
              * composited directly from its decoded pixels, so magnification stays sharp.
              */}
+            {/*
+             * Keyed by the photograph, so a new one starts from an empty element rather than a webview that goes on
+             * painting the previous photograph's bitmap into the new box until the new one arrives: the stand-in is
+             * this photograph's own thumbnail, already decoded, so the empty frame is not seen.
+             */}
             <img
+                key={transformKey}
                 {...(source !== undefined && { src: source })}
                 alt={alt}
                 draggable={false}
@@ -769,32 +861,31 @@ const DIVIDER_STEP = 2;
  *   chip reads *Original*, as if there were no result.
  * - The URL carries no size bound; the canvas asks for the photograph at its own size.
  * - Both panes share one transform, so zooming or panning either moves both.
- * - It draws the settled image rather than the current one (`hooks/useSettledFile.ts`).
+ * - It draws the current image at once, from its thumbnail upwards (`hooks/useStandIn.ts`).
  */
 export const PreviewImage = () => {
     const { t } = useTranslation();
     // Everything a pane needs - the URL, the dimensions it is fitted from, the identity its transform
     // is stored under - comes off this one record, so a change of image reaches all of them on the
-    // same render. Reading the current file here instead would put the new photograph's shape on the
-    // old one's pixels for the length of a decode.
-    const file = useSettledFile();
+    // same render. The current one, on the click: every URL drawn for it is its own, from its thumbnail
+    // up (`hooks/useStandIn.ts`), so its shape is never put on another photograph's pixels.
+    const file = useCurrentFile();
     const previewMode = usePreviewStore((state) => state.previewMode);
 
     /*
-     * How the settled photograph is framed, which both panes draw through: the original pane asks the
-     * protocol for the framing, and the enhanced pane draws a result that was *already* made from it,
-     * so its own URL carries no crop. Against the settled file for the reason everything else on the
-     * canvas is - a framing read off the current file would be applied to the outgoing photograph's
-     * pixels for the length of a decode.
+     * How the photograph is framed, which both panes draw through: the original pane asks the protocol
+     * for the framing, and the enhanced pane draws a result that was *already* made from it, so its own
+     * URL carries no crop.
      */
     const crop = useImageCrop(file?.identity);
     /*
      * The run, owned here because this is the component that draws both panes and the bar, and is
-     * mounted for as long as a file is open. Against the *settled* file, like everything else the
-     * canvas keys off: a run started for a photograph that is not drawn yet would land a result on
-     * the one still on screen.
+     * mounted for as long as a file is open. Asked for on the click: Rust decodes its own pixels, so
+     * the run need not wait for the canvas's, and the previous photograph's result is not drawn over
+     * this one's stand-in - it belongs to another identity.
      */
     const { enhanced: result, report, running, fraction } = useEnhancementRun(file, crop);
+    const progressShown = useShownProgress(running, report);
 
     /*
      * While the show-original key is held the result is set aside for this render, and everything
@@ -819,15 +910,17 @@ export const PreviewImage = () => {
      * the encode. Bounding the panes the way the sidebar's miniature is bounded would change what the
      * canvas draws, so it is a decision for the canvas rather than a cleanup.
      *
-     * No bound, which is `getImage(file, 0)` in the reference: the photograph at its own size is what
-     * makes 8x a magnification of real pixels rather than of a canvas-sized rendition.
+     * The strip's thumbnail on the click, a screen-sized rendition once it has decoded, and the photograph at its own
+     * size - `getImage(file, 0)` in the reference - only once it is magnified: that is what makes 8x a magnification of
+     * real pixels rather than of a canvas-sized rendition, and it is a cost the fitted view does not need to pay.
      *
      * Absent for a file whose pixels nothing can serve: the `<img>` then has no source and draws as
      * broken, which is also what a file deleted between being described and being drawn does.
      * Inventing a state for that here would be designing an error screen for a case no user has
      * reached.
      */
-    const source = renditionFor(file, 0, crop);
+    const magnified = useImageTransform(file?.identity).scale > ZOOM_MIN;
+    const source = useStandIn(file, crop, magnified);
 
     /*
      * The pane labels ride above whichever of the drawer's two states is showing, as the design's own
@@ -855,12 +948,14 @@ export const PreviewImage = () => {
      * Painting the mask: whether a press on the photograph paints, and with what.
      *
      * It does while the preview is in paint mode for this photograph and Space is not held - Space turns the drag back
-     * into a pan. The stack has to have something in it, for there is nothing for a mask to limit otherwise. The
-     * strokes go to the store, which holds them until the pointer comes up; both panes paint the same mask.
+     * into a pan, here as everywhere on the preview (`useSpacePan`, mounted here). The stack has to have something in
+     * it, for there is nothing for a mask to limit otherwise. The strokes go to the store, which holds them until the
+     * pointer comes up; both panes paint the same mask.
      */
     const path = file?.path;
     const editing = useIsEditing(path);
-    const panning = useMaskStore((state) => state.panning);
+    useSpacePan();
+    const panning = usePanKeyStore((state) => state.held);
     const tool = useMaskStore((state) => state.tool);
     const stacked = useFileEnhancements(path).length > 0;
     const paintable = editing && stacked && path !== undefined;
@@ -895,13 +990,16 @@ export const PreviewImage = () => {
         if (!armed) return;
         useMaskStore.getState().stopEditing();
 
-        // An Escape that something else has taken - a dialog or a menu closing on it - is not this mode's: the dialog's
-        // own layer marks the event handled, and a surface still open over the photograph would be left by the same
-        // press that closed it.
+        // A live surface (`lib/layers.ts`): Escape and Return both leave it, as Done - nothing was picked, and the focus
+        // point is what it was. An Escape that something else has taken - a dialog or a menu closing on it - is not this
+        // mode's: the dialog's own layer marks the event handled, and a surface still open over the photograph would be
+        // left by the same press that closed it. Return is left to a focused button.
         const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key !== "Escape" || event.defaultPrevented || document.querySelector(OPEN_LAYER)) return;
+            if (event.defaultPrevented || document.querySelector(OPEN_LAYER)) return;
 
-            useFocusPickStore.getState().disarm();
+            const disarm = () => useFocusPickStore.getState().disarm();
+            if (event.key === "Escape") disarm();
+            else acceptOnReturn(event, disarm);
         };
 
         window.addEventListener("keydown", onKeyDown);
@@ -979,8 +1077,10 @@ export const PreviewImage = () => {
      * No framing on the result's own URL: the run was given the framed pixels, so what it produced is
      * already the enhancement of the framing and asking for it to be framed again would cut the
      * rectangle out of it a second time.
+     *
+     * Named by the run that produced it as well as by its identity - see `resultUrl`.
      */
-    const enhancedSource = enhanced ? renditionFor(enhanced) : source;
+    const enhancedSource = enhanced ? resultUrl(enhanced) : source;
 
     return (
         <div ref={setCanvas} className="relative flex size-full flex-row gap-0.5 p-0.5">
@@ -1002,6 +1102,7 @@ export const PreviewImage = () => {
                     onPick={onPick}
                     {...(paint && { paint })}
                     {...(previewMode === "split" && { ringIn: canvas })}
+                    panKey={panning}
                 />
             )}
 
@@ -1036,11 +1137,12 @@ export const PreviewImage = () => {
                 {...(paint && { paint })}
                 {...(maskPath !== undefined && { maskPath })}
                 {...(previewMode === "split" && { ringIn: canvas })}
+                panKey={panning}
             />
 
             {armed && <FocusHint />}
 
-            {running && <ProgressBar fraction={fraction} {...(report && { report })} operations={operations} />}
+            {progressShown && <ProgressBar fraction={fraction} {...(report && { report })} operations={operations} />}
 
             {previewMode === "split" && (
                 /*

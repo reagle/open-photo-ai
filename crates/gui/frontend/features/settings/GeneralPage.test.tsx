@@ -8,6 +8,10 @@ import { type SettingsData, useSettingsStore } from "@/stores/settings";
 import { DraftHarness, render } from "@/test/support";
 import { GeneralPage } from "./GeneralPage.tsx";
 
+// The real `platform()` reads a global the plugin's init script installs, which jsdom has none of - and the wheel's
+// row asks it, to name the modifier that zooms.
+vi.mock("@/ipc/os", () => ({ isMacOs: vi.fn(() => false), isWindows: vi.fn(() => false) }));
+
 /**
  * The page, on a draft of its own.
  *
@@ -173,6 +177,55 @@ describe("the analytics row", () => {
         // An opt-out that is transmitted is not an opt-out. Nothing in this application reports an
         // event yet, and this row is the reason that stays true rather than happening to be true.
         expect(invoked).not.toHaveBeenCalled();
+    });
+});
+
+describe("the row that asks before pausing a batch", () => {
+    const row = () => screen.getByRole("switch", { name: "Ask before pausing a batch" });
+
+    it("is on while the question is asked, which is the default", () => {
+        renderPage();
+
+        expect(row()).toBeChecked();
+    });
+
+    it("turns the question back on after its Don't ask again", () => {
+        useSettingsStore.getState().stopAskingBeforePause();
+        renderPage();
+        expect(row()).not.toBeChecked();
+
+        fireEvent.click(row());
+
+        expect(drafted().pauseBatchWithoutAsking).toBe(false);
+        // A draft: what is in force waits for Save.
+        expect(useSettingsStore.getState().pauseBatchWithoutAsking).toBe(true);
+    });
+
+    it("turns it off, which is the question's Don't ask again", () => {
+        renderPage();
+
+        fireEvent.click(row());
+
+        expect(drafted().pauseBatchWithoutAsking).toBe(true);
+    });
+});
+
+describe("the Scroll wheel zooms row", () => {
+    it("is off by default, and turns on in the draft alone", () => {
+        renderPage();
+        const row = screen.getByRole("switch", { name: "Scroll wheel zooms" });
+
+        expect(row).not.toBeChecked();
+        expect(
+            screen.getByText(
+                "Zoom the preview with the scroll wheel or a two-finger scroll instead of moving it. Pinching, or scrolling with Ctrl held, always zooms.",
+            ),
+        ).toBeInTheDocument();
+
+        fireEvent.click(row);
+
+        expect(drafted().wheelZooms).toBe(true);
+        expect(useSettingsStore.getState().wheelZooms).toBe(false);
     });
 });
 

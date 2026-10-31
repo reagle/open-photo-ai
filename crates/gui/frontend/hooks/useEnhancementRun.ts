@@ -7,13 +7,16 @@ import { type CropInfo, sameCrop } from "@/ipc/crop";
 import { cancelEnhance, enhance, onEnhanceProgress, type RunProgress } from "@/ipc/enhance";
 import type { Face } from "@/ipc/faces";
 import type { ImageRecord } from "@/ipc/images";
+import { keyOf } from "@/lib/batch";
 import { maskLimits, runnable } from "@/lib/enhancements";
 import { withChoice } from "@/lib/faces";
 import { refineOf, regionOf, toWire, withRefine, withRemoval } from "@/lib/mask";
 import { report } from "@/lib/report";
 import { isUnavailableModel, unavailableNotice } from "@/lib/unavailable";
+import { useBatchStore } from "@/stores/batch";
 import { useFileEnhancements } from "@/stores/enhancements";
 import { useFaceChoice, useFacesStore } from "@/stores/faces";
+import { useLittleBlurStore } from "@/stores/littleBlur";
 import { useFileMask } from "@/stores/mask";
 import { useSettingsStore } from "@/stores/settings";
 
@@ -60,8 +63,13 @@ const useSettledRegion = <T extends { strokes: readonly unknown[] }>(
     return settled.path !== path || now ? entry : settled.entry;
 };
 
-/** Where an enhanced result's pixels are, and how large they are. */
-export type EnhancedImage = { identity: string; width: number; height: number };
+/**
+ * Where an enhanced result's pixels are, how large they are, and the run that produced them.
+ *
+ * The run is part of the address the pane draws (`resultUrl`): a cached chain run again answers the same identity, and
+ * an `<img>` handed the address it already failed to load would never ask for it again.
+ */
+export type EnhancedImage = { identity: string; width: number; height: number; run: string };
 
 /** What the canvas needs while and after a run: the result to draw, and what to say about the run. */
 export type EnhancementRun = {
@@ -165,6 +173,23 @@ export type EnhancementRun = {
  * whatever it returned, precisely so this can branch on the outcome and never ask whether the run it
  * is holding is still the current one. A rejection raises the notice; a stop does not, because a
  * user who changed their mind has not been told their enhancement broke.
+ *
+ * # A result is only drawable while the backend still holds it
+ *
+ * The backend holds one result, the latest run's, and lets go of it the moment the next run is asked for. So a result
+ * held here stops being drawable as soon as a run starts over another photograph or another framing, and it is dropped
+ * then, not merely hidden by the comparison below: otherwise paging back to the photograph it was made from matches it
+ * again, and the pane is pointed at an address the backend answers `GONE` for. That is what a batch did after *Pause &
+ * view*: the photograph it had just finished was left in `result` while the next one ran, and clicking back to it drew
+ * the old address before its new run had even started; the new run, served from the cache, answered the same identity,
+ * so the `<img>` never asked again and kept a broken image under the *Enhanced* chip.
+ *
+ * For the same reason only **the current run** writes a result. A run that answers `enhanced` after a newer one was
+ * asked for finished in the backend just before it was displaced, so its pixels are already gone. And the run is part
+ * of the address, so a result the same as the last one is still a new address for the pane to load.
+ *
+ * A re-run of the photograph and framing on screen keeps the result, as above: the pane has its pixels painted already
+ * and is not asked to load them again.
  */
 export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo): EnhancementRun => {
     const { t } = useTranslation();
@@ -294,6 +319,8 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
             if (incoming.run !== mine.current) return;
 
             setIndicator(incoming);
+            // The strip's spinner is for a photograph actually computing, which a run is once it has reported.
+            useBatchStore.getState().started();
         });
 
         /*
@@ -329,10 +356,14 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
             setRunning(false);
             setResult(undefined);
             setIndicator(undefined);
+            useBatchStore.getState().showing(undefined);
             return;
         }
 
         setIndicator(undefined);
+        // A run over another photograph or framing is the backend letting go of the result held here: see "A result is
+        // only drawable while the backend still holds it" above.
+        setResult((held) => (held && held.source === source && sameCrop(held.crop, crop) ? held : undefined));
 
         // The mask as it is now, whatever started the run: a stack that changed while strokes were waiting takes them
         // along.
@@ -341,9 +372,24 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
         computing.current = !cheap;
 
         const chain = withRefine(withRemoval(withChoice(operations, choice), region), refine);
-        const { run, done } = enhance(source, chain, processor, crop, sent);
+        /*
+         * Told to the batch and the strip's badges: which photograph is working, and how its run ended for the request
+         * it was - keyed as `lib/batch.ts` keys what it compares, so a photograph finished here, by the batch or by the
+         * user paging to it, reads as finished there. Whether the batch is the one showing it is for the log alone.
+         */
+        const path = file?.path;
+        const key = keyOf({ source, operations: chain, processor, ...(crop && { crop }), ...(sent && { mask: sent }) });
+        const batch = useBatchStore.getState();
+        const { run, done } =
+            batch.phase === "running" && batch.current === path
+                ? enhance(source, chain, processor, crop, sent, "batch")
+                : enhance(source, chain, processor, crop, sent);
         mine.current = run;
         setRunning(true);
+        useBatchStore.getState().showing(path);
+        const outcomeOf = (failed: boolean) => {
+            if (path !== undefined) useBatchStore.getState().record(path, key, failed);
+        };
 
         // Only for the run that is still current: an older run resolving after a newer one started
         // would otherwise take the bar down over a run that is still working, and wipe the newer
@@ -354,6 +400,7 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
             computing.current = false;
             setRunning(false);
             setIndicator(undefined);
+            useBatchStore.getState().showing(undefined);
         };
 
         /*
@@ -381,12 +428,19 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
 
                 if (outcome.outcome !== "enhanced") return;
 
-                setResult({
-                    source,
-                    ...(crop && { crop }),
-                    image: { identity: outcome.identity, width: outcome.width, height: outcome.height },
-                });
-                if (current) catchUp();
+                // A superseded run's pixels went when the newer run was asked for: drawing them is a broken image.
+                if (current) {
+                    outcomeOf(false);
+                    setResult({
+                        source,
+                        ...(crop && { crop }),
+                        image: { identity: outcome.identity, width: outcome.width, height: outcome.height, run },
+                    });
+                    // Every finished run over the photograph answers it, so the next one with a visible blur clears
+                    // it - the current one's only, since a superseded run was over settings already changed.
+                    useLittleBlurStore.getState().ran(source, outcome.littleBlur === true);
+                    catchUp();
+                }
 
                 if (outcome.faces) record(outcome.faces);
 
@@ -411,6 +465,7 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
                 }
             },
             (error: unknown) => {
+                if (mine.current === run) outcomeOf(true);
                 ended();
 
                 // The reason in full is reported and the catalogue's own sentence goes to
@@ -435,6 +490,7 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
         );
 
         return () => {
+            if (mine.current === run) useBatchStore.getState().showing(undefined);
             cancelEnhance(run).catch((error: unknown) =>
                 // A stop that cannot be delivered means the bridge is gone, which the next run would
                 // discover anyway. There is nobody to propagate it to from a cleanup.

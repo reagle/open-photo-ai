@@ -3,9 +3,12 @@ import { useTranslation } from "react-i18next";
 import { HintTooltip } from "@/components/HintTooltip";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { BatchPauseDialog } from "@/features/batch/BatchPauseDialog";
+import { BatchStatus } from "@/features/batch/BatchStatus";
 import { FileMenuTrigger, FileOptionsMenu, NAVBAR_ANCHOR } from "@/features/files/FileOptionsMenu";
 import { AboutDialog } from "@/features/navbar/AboutDialog";
 import { NavbarDimensions } from "@/features/navbar/NavbarDimensions";
+import { NavbarHdr } from "@/features/navbar/NavbarHdr";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import { useSettingsDialog } from "@/features/settings/useSettingsDialog";
 import { useAppShortcutHint } from "@/hooks/useAppShortcuts";
@@ -119,11 +122,21 @@ export const Navbar = () => {
 
             <div className="flex-1" />
 
+            {/* The batch the window pages through by itself: how far it has got, Pause, Resume or Process all. */}
+            <BatchStatus />
+            <BatchPauseDialog />
+
             {/*
              * Its own component because it reads the enhancement stack and the crop store, decides
              * which of three numbers describes what the user is working on, and compares all three on
              * hover. See `NavbarDimensions`, including why it can be absent.
              */}
+            {/*
+             * Beside the size rather than in it: a fact about the file, which the dimensions block's
+             * hover comparison is not about, and absent for most photographs. See `NavbarHdr`.
+             */}
+            {file && <NavbarHdr file={file} />}
+
             {file && <NavbarDimensions file={file} />}
 
             <HintTooltip tip={settingsHint.tooltip}>

@@ -220,14 +220,12 @@ describe("the tool", () => {
 });
 
 describe("editing", () => {
-    it("is for one photograph, and stopping leaves Space and the live stroke behind", () => {
+    it("is for one photograph, and stopping leaves the live stroke behind", () => {
         store().startEditing(PATH);
-        store().setPanning(true);
         store().beginStroke(PATH, 0.1, 0.1, false);
         store().stopEditing();
 
         expect(store().editing).toBeUndefined();
-        expect(store().panning).toBe(false);
         expect(store().live).toBeUndefined();
     });
 });

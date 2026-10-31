@@ -2,23 +2,45 @@ import { act, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EnhancementRun } from "@/hooks/useEnhancementRun";
 import { useShortcuts } from "@/hooks/useShortcuts";
+import { useStandIn } from "@/hooks/useStandIn";
 import "@/i18n";
 import type { Family } from "@/ipc/catalogue";
 import { cropQuery } from "@/ipc/crop";
 import type { RunProgress } from "@/ipc/enhance";
 import type { Face } from "@/ipc/faces";
-import { DRAWER_HEIGHT, ZOOM_MAX, ZOOM_MIN, ZOOM_WHEEL_STEP } from "@/lib/constants";
+import {
+    DRAWER_HEIGHT,
+    WHEEL_LINE_PIXELS,
+    ZOOM_MAX,
+    ZOOM_MIN,
+    ZOOM_PINCH_MAX_DELTA,
+    ZOOM_PINCH_RATE,
+    ZOOM_WHEEL_STEP,
+} from "@/lib/constants";
 import { useDrawerStore } from "@/stores/drawer";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { useFacesStore } from "@/stores/faces";
 import { useFileStore } from "@/stores/files";
 import { useFocusPickStore } from "@/stores/focusPick";
 import { useMaskStore } from "@/stores/mask";
+import { usePanKeyStore } from "@/stores/panKey";
 import { usePeekStore } from "@/stores/peek";
 import { usePreviewStore } from "@/stores/preview";
+import { useSettingsStore } from "@/stores/settings";
 import { type ImageTransform, panCurrent, useTransformStore } from "@/stores/transform";
-import { FRAMING, frame, HOLIDAY, openFiles, render, resetCropStore, resetFileStore, SUNSET } from "@/test/support";
+import {
+    FRAMING,
+    frame,
+    HOLIDAY,
+    openFiles,
+    render,
+    resetCropStore,
+    resetFileStore,
+    resetSettingsStore,
+    SUNSET,
+} from "@/test/support";
 import { PreviewImage } from "./PreviewImage";
+import { SERVED_GRACE_MS } from "./ProgressBar";
 
 // `convertFileSrc` reads a global Tauri's init script installs, which jsdom has none of. Mocked to
 // answer the identity it was asked for, so a test can tell which photograph a pane is drawing without
@@ -34,6 +56,18 @@ vi.mock("@tauri-apps/api/core", () => ({
 // The tint over a mask being painted asks Rust for its picture; what it does with the answer is
 // `MaskOverlay.test.tsx`'s subject, and here only that it is drawn, or not, over the pane it should be.
 vi.mock("@/ipc/mask", () => ({ maskPreview: vi.fn(() => new Promise(() => {})) }));
+
+// The stand-in's stages are `hooks/useStandIn.test.tsx`'s; here it answers the photograph at its own size, so a pane's
+// URL says which photograph and which framing it draws and nothing about how far its decodes have got.
+vi.mock("@/hooks/useStandIn", async () => {
+    const { renditionFor } = await import("@/ipc/images");
+
+    return {
+        useStandIn: vi.fn((file: Parameters<typeof renditionFor>[0], crop: Parameters<typeof renditionFor>[2]) =>
+            renditionFor(file, 0, crop),
+        ),
+    };
+});
 
 // The run itself is `hooks/useEnhancementRun.test.tsx`'s subject - what it asks for, what it stops
 // and what it does with the answers. Mocked here so this file stays about what the canvas *draws*
@@ -52,7 +86,7 @@ vi.mock("@/hooks/useEnhancementRun", () => ({
 let run: Partial<EnhancementRun> = { running: false };
 
 /** The result of a run, as the hook reports one. A 2x enlargement of HOLIDAY's 3000x2000. */
-const ENHANCED = { identity: "fedcba9876543210", width: 6000, height: 4000 };
+const ENHANCED = { identity: "fedcba9876543210", width: 6000, height: 4000, run: "run-7" };
 
 /** One report about a run in flight. */
 const progress = (extra: Partial<RunProgress> = {}): RunProgress => ({
@@ -193,12 +227,14 @@ describe("the canvas", () => {
         }
     });
 
-    it("asks for the photograph at its own size, with no bound", () => {
+    it("asks the stand-in for the photograph at its own size once it is magnified", () => {
         draw("full");
+        expect(vi.mocked(useStandIn).mock.lastCall?.[2]).toBe(false);
 
-        // `renditionUrl(identity)` rather than a canvas-sized rendition: the zoom a later slice adds
-        // goes to 8x, and a bounded rendition would be an eight-times-magnified thumbnail.
-        expect(sources()[0]).not.toContain("size=");
+        magnify({ scale: 2, x: 0, y: 0 });
+
+        // A screen-sized rendition magnified 8x would be an eight-times-magnified thumbnail.
+        expect(vi.mocked(useStandIn).mock.lastCall?.[2]).toBe(true);
     });
 
     it("asks for the framing when the current image carries one", () => {
@@ -233,7 +269,7 @@ describe("the canvas", () => {
         const [original, enhanced] = sources();
 
         expect(original).toContain(`crop=${cropQuery(FRAMING)}`);
-        expect(enhanced).toBe(`opai://localhost/${ENHANCED.identity}`);
+        expect(enhanced).toBe(`opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`);
     });
 
     it("draws nothing rather than the wrong pixels for a file it could not read", () => {
@@ -511,7 +547,6 @@ describe("panning", () => {
     });
 });
 
-/** The wheel, and the trackpad pinch the webview delivers as one. */
 describe("the pan keys", () => {
     /** The canvas with the window's keys listening, as the shell mounts both. */
     const WithKeys = () => {
@@ -612,15 +647,152 @@ describe("the pan keys", () => {
     });
 });
 
-describe("the wheel", () => {
-    const wheel = (element: Element, { deltaY = -100, clientX = 500, clientY = 300 } = {}) => {
-        const event = new WheelEvent("wheel", { deltaY, clientX, clientY, cancelable: true, bubbles: true });
+/**
+ * A wheel event over `element`, as a trackpad's scroll (`deltaX`, `deltaY`), a pinch (`ctrlKey`) or a mouse's wheel
+ * sends one.
+ */
+const wheel = (element: Element, { deltaY = -100, clientX = 500, clientY = 300, ...rest }: WheelEventInit = {}) => {
+    const event = new WheelEvent("wheel", { deltaY, clientX, clientY, cancelable: true, bubbles: true, ...rest });
+    act(() => {
+        element.dispatchEvent(event);
+    });
+
+    return event;
+};
+
+/** The wheel by default: a pinch, or the modifier with the wheel, zooms; a plain scroll pans. */
+describe("the wheel and the pinch", () => {
+    let frames: FrameRequestCallback[] = [];
+
+    beforeEach(() => {
+        frames = [];
+        vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((callback) => {
+            frames.push(callback);
+
+            return frames.length;
+        });
+        vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        frames = [];
+        resetSettingsStore();
+    });
+
+    const runFrame = () =>
         act(() => {
-            element.dispatchEvent(event);
+            for (const callback of frames.splice(0)) callback(0);
         });
 
-        return event;
-    };
+    const pane = () => document.querySelector("[data-slot='preview-pane']") as HTMLElement;
+
+    it("zooms on a pinch, by an amount that follows the pinch, about the point under the pointer", () => {
+        stubPaneGeometry();
+        draw("full");
+
+        wheel(pane(), { deltaY: -10, ctrlKey: true });
+        expect(drawn().scale).toBeCloseTo(Math.exp(10 * ZOOM_PINCH_RATE), 10);
+
+        // A pinch twice as far is twice the step, in the logarithm: one pinch is one magnification however it is sliced.
+        wheel(pane(), { deltaY: -20, ctrlKey: true });
+        expect(drawn().scale).toBeCloseTo(Math.exp(30 * ZOOM_PINCH_RATE), 10);
+
+        wheel(pane(), { deltaY: 20, ctrlKey: true });
+        wheel(pane(), { deltaY: 10, ctrlKey: true });
+        expect(drawn().scale).toBeCloseTo(ZOOM_MIN, 10);
+    });
+
+    it("zooms with Command and the wheel, capping one large notch", () => {
+        stubPaneGeometry();
+        draw("full");
+
+        wheel(pane(), { deltaY: -100, metaKey: true });
+
+        expect(drawn().scale).toBeCloseTo(Math.exp(ZOOM_PINCH_MAX_DELTA * ZOOM_PINCH_RATE), 10);
+    });
+
+    it("holds a pinch at the end of the range", () => {
+        stubPaneGeometry();
+        magnify({ scale: ZOOM_MAX, x: 0, y: 0 });
+        draw("full");
+
+        wheel(pane(), { deltaY: -25, ctrlKey: true });
+
+        expect(drawn().scale).toBe(ZOOM_MAX);
+    });
+
+    it("pans a magnified photograph on a plain scroll, both ways at once, coalesced into a frame", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+
+        const event = wheel(pane(), { deltaX: 10, deltaY: 20 });
+        wheel(pane(), { deltaX: 5, deltaY: 5 });
+        expect(event.defaultPrevented).toBe(true);
+        // Nothing written yet: the two events wait for the frame, and the second adds to the first.
+        expect(drawn()).toEqual({ x: -100, y: -50, scale: 2 });
+
+        runFrame();
+
+        // The view moves the way the fingers scroll, so the photograph moves against them, and the scale stays.
+        expect(drawn()).toEqual({ x: -115, y: -75, scale: 2 });
+    });
+
+    it("counts a scroll in lines as pixels", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+
+        wheel(pane(), { deltaY: 2, deltaMode: WheelEvent.DOM_DELTA_LINE });
+        runFrame();
+
+        expect(drawn()).toEqual({ x: -100, y: -50 - 2 * WHEEL_LINE_PIXELS, scale: 2 });
+    });
+
+    it("scrolls sideways for a mouse's wheel with Shift", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+
+        wheel(pane(), { deltaY: 30, shiftKey: true });
+        runFrame();
+
+        expect(drawn()).toEqual({ x: -130, y: -50, scale: 2 });
+    });
+
+    it("leaves a photograph drawn whole where it is on a scroll", () => {
+        stubPaneGeometry();
+        draw("full");
+        const before = drawn();
+
+        wheel(pane(), { deltaY: -100 });
+        runFrame();
+
+        expect(drawn()).toEqual(before);
+    });
+
+    it("moves both panes of side by side together", () => {
+        stubPaneGeometry();
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("side");
+
+        wheel(pane(), { deltaX: 20 });
+        runFrame();
+
+        expect(drawn(0)).toEqual(drawn(1));
+        expect(drawn(0).x).toBe(-120);
+    });
+});
+
+/** Under the Scroll wheel zooms setting: the reference's wheel, every event a fixed step. */
+describe("the wheel, when Scroll wheel zooms is on", () => {
+    beforeEach(() => {
+        act(() => useSettingsStore.getState().apply({ wheelZooms: true }));
+    });
+
+    afterEach(() => {
+        resetSettingsStore();
+    });
 
     const pane = () => document.querySelector("[data-slot='preview-pane']") as HTMLElement;
 
@@ -866,7 +1038,10 @@ describe("what the enhanced pane draws", () => {
 
         // Which is what makes the two-pane and split comparisons show a comparison for the first
         // time: the original pane goes on drawing the photograph as it was.
-        expect(sources()).toEqual([`opai://localhost/${HOLIDAY.identity}`, `opai://localhost/${ENHANCED.identity}`]);
+        expect(sources()).toEqual([
+            `opai://localhost/${HOLIDAY.identity}`,
+            `opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`,
+        ]);
     });
 
     it("draws the result across the whole canvas in full", () => {
@@ -874,7 +1049,7 @@ describe("what the enhanced pane draws", () => {
 
         draw("full");
 
-        expect(sources()).toEqual([`opai://localhost/${ENHANCED.identity}`]);
+        expect(sources()).toEqual([`opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`]);
     });
 
     it("moves both panes together although they draw different pixels", () => {
@@ -895,7 +1070,7 @@ describe("what the enhanced pane draws", () => {
         run = { running: false, enhanced: ENHANCED };
         const view = draw("side");
 
-        expect(sources()[1]).toBe(`opai://localhost/${ENHANCED.identity}`);
+        expect(sources()[1]).toBe(`opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`);
 
         run = { running: false };
         view.rerender(<PreviewImage />);
@@ -967,7 +1142,7 @@ describe("while the original is held", () => {
     const labels = () => [...document.querySelectorAll("[data-slot='preview-chip']")].map((chip) => chip.textContent);
     const hold = (showing: boolean) => act(() => usePeekStore.getState().setShowingOriginal(showing));
     const SOURCE = `opai://localhost/${HOLIDAY.identity}`;
-    const RESULT = `opai://localhost/${ENHANCED.identity}`;
+    const RESULT = `opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`;
 
     beforeEach(() => {
         run = { running: false, enhanced: ENHANCED };
@@ -1034,16 +1209,24 @@ describe("what the canvas reports about a run", () => {
         expect(bar()).toBeNull();
     });
 
-    it("shows an empty bar as soon as a run starts, before it has reported", () => {
+    it("says it is waiting, over a sweeping bar, moments after a run starts and before it has reported", () => {
+        vi.useFakeTimers();
         run = { running: true };
 
         draw("side");
 
+        // Not at once: a photograph the run cache already holds is served in tens of milliseconds, and a bar
+        // flashed for it reads as work that never happened.
+        expect(bar()).toBeNull();
+
+        act(() => vi.advanceTimersByTime(SERVED_GRACE_MS));
+
         // A run spends its first seconds loading a model and reports nothing while it does. Waiting
-        // for the first report put the bar on screen long after the enhancement was added, and the
-        // interval in between read as the application having ignored it.
-        expect(bar()).toHaveTextContent("Enhancing");
-        expect(filled()).toHaveStyle({ transform: "translateX(-100%)" });
+        // for the first report put the bar on screen long after the enhancement was added; a bar
+        // standing at 0% then read as a stall. Neither says what is true: the run has not spoken yet.
+        expect(bar()).toHaveTextContent("Waiting…");
+        expect(bar()?.querySelector("[role='progressbar']")).not.toHaveAttribute("aria-valuenow");
+        vi.useRealTimers();
     });
 
     it("says what the enhancement being run is doing, in the interface's own language", () => {
@@ -1174,7 +1357,7 @@ describe("the faces in the photograph on the canvas", () => {
 
         draw("side");
 
-        expect(sources()).toContain(`opai://localhost/${ENHANCED.identity}`);
+        expect(sources()).toContain(`opai://localhost/${ENHANCED.identity}?run=${ENHANCED.run}`);
         expect(boxes()).toHaveLength(0);
     });
 });
@@ -1387,6 +1570,38 @@ describe("setting the focus of a lens blur by clicking the photograph", () => {
         expect(focusOf()).toEqual({ x: 0.5, y: 0.5 });
     });
 
+    it("leaves the mode on Return too, as Done, but leaves a focused button its Return", () => {
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+        const button = document.body.appendChild(document.createElement("button"));
+
+        fireEvent.keyDown(button, { key: "Enter" });
+        expect(useFocusPickStore.getState().armed).toBe(true);
+
+        fireEvent.keyDown(window, { key: "Enter" });
+        expect(useFocusPickStore.getState().armed).toBe(false);
+        expect(focusOf()).toEqual({ x: 0.5, y: 0.5 });
+
+        button.remove();
+    });
+
+    it("pans rather than picks while Space is held, with a hand for the cursor", () => {
+        magnify({ scale: 2, x: -100, y: -50 });
+        draw("full");
+        act(() => useFocusPickStore.getState().arm(id));
+
+        fireEvent.keyDown(document.body, { key: " ", code: "Space" });
+        expect(pane().className).toContain("cursor-grab");
+        expect(pane().className).not.toContain("cursor-crosshair");
+
+        click(pane(), 320, 360);
+        fireEvent.keyUp(document.body, { key: " ", code: "Space" });
+
+        expect(focusOf()).toEqual({ x: 0.5, y: 0.5 });
+        expect(useFocusPickStore.getState().armed).toBe(true);
+        expect(pane().className).toContain("cursor-crosshair");
+    });
+
     it("keeps the mode on an Escape that something else has taken", () => {
         draw("full");
         act(() => useFocusPickStore.getState().arm(id));
@@ -1571,7 +1786,7 @@ describe("painting the mask", () => {
         paintMode();
         magnify({ scale: 2, x: -100, y: -50 });
         draw("full");
-        act(() => store().setPanning(true));
+        act(() => usePanKeyStore.getState().setHeld(true));
 
         fireEvent.pointerDown(pane(), at(0.5, 0.5));
         fireEvent.pointerMove(pane(), at(0.6, 0.5));
@@ -1587,7 +1802,7 @@ describe("painting the mask", () => {
         draw("full");
 
         fireEvent.pointerDown(pane(), at(0.3, 0.5));
-        act(() => store().setPanning(true));
+        act(() => usePanKeyStore.getState().setHeld(true));
         fireEvent.pointerMove(pane(), at(0.4, 0.5));
         fireEvent.pointerUp(pane(), at(0.5, 0.5));
 

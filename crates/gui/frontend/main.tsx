@@ -17,6 +17,7 @@ import { appVersion, telemetryIds } from "@/ipc/app";
 import { windowReady } from "@/ipc/window";
 import { mirrorAnalytics } from "@/lib/analytics";
 import { suppressContextMenu } from "@/lib/contextMenu";
+import { mirrorDock } from "@/lib/dock";
 import { startFaro } from "@/lib/faro";
 import { mirrorGuiSettings } from "@/lib/guiSettings";
 import { watchRecent } from "@/lib/recent";
@@ -49,6 +50,10 @@ mirrorAnalytics();
 // Beside it, for the same reasons: the preferences the command line can follow are published from the
 // store, at boot and on every Save that changes one. Never unsubscribed.
 mirrorGuiSettings();
+
+// The batch on the Dock tile (the taskbar button on Windows): its bar and the count left, kept in step with the batch
+// from the stores. Never unsubscribed.
+mirrorDock();
 
 // Before the app mounts, so no photograph enters the gallery unnoted - a file handed over at launch included - and
 // the Open Recent list is filled from Rust's. Never unsubscribed.

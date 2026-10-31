@@ -1,5 +1,5 @@
-//! What the command line asks the GUI to do with the photographs `opai --gui` hands it, beyond opening them: today, a
-//! lens blur on each, with Autopilot off.
+//! What the command line asks the GUI to do with the photographs `opai --gui` hands it, beyond opening them: a sharpen,
+//! a lens blur or both on each, with Autopilot off.
 //!
 //! Why a file and not arguments: on macOS a running application receives a handover as an "open documents" Apple Event,
 //! which carries file paths only; arguments reach it only on a fresh launch. A custom URL scheme could carry them, but
@@ -9,7 +9,9 @@
 //! photograph opened later from the Finder. A claimed or stale request is deleted.
 //!
 //! The format is versioned ([`VERSION`]); a file of another version, or one that cannot be read, is ignored and
-//! deleted. Claiming never fails a caller.
+//! deleted. Claiming never fails a caller. Version 2 added the sharpen and made the lens blur optional; a request is
+//! written at the oldest version that carries it ([`OpenRequest::new`]), so a version 1 reader still takes a lens blur
+//! alone and refuses a sharpen whole rather than silently dropping it, and version 1 files are still read.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -19,8 +21,12 @@ use serde::{Deserialize, Serialize};
 /// The file's name inside the configuration directory, beside `gui-settings.json`.
 pub const FILE: &str = "open-request.json";
 
-/// The version of the format [`write_at`] writes and [`claim_at`] accepts.
-pub const VERSION: u64 = 1;
+/// The newest version of the format: [`write_at`] writes no later one, and [`claim_at`] accepts it and every one back to
+/// [`OLDEST_VERSION`].
+pub const VERSION: u64 = 2;
+
+/// The oldest version [`claim_at`] still reads: a lens blur alone, as the first `--gui --lens-blur` wrote it.
+pub const OLDEST_VERSION: u64 = 1;
 
 /// How long after it was written a request may still be claimed: far longer than a handover takes, even one that has
 /// to launch the application first, and short enough that a forgotten one does not linger.
@@ -29,14 +35,18 @@ pub const FRESH_FOR: Duration = Duration::from_secs(120);
 /// What to do with the photographs handed over, besides opening them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OpenRequest {
-    /// Always [`VERSION`] when written by this build.
+    /// The oldest version that carries what is asked, when written by this build: 1 without a sharpen, else 2.
     pub version: u64,
     /// When it was written, in seconds since the Unix epoch.
     pub written_at: u64,
     /// The photographs it is for, as the command line resolved them.
     pub paths: Vec<PathBuf>,
-    /// The lens blur to add to each.
-    pub lens_blur: LensBlurRequest,
+    /// The lens blur to add to each, if any; always present in version 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lens_blur: Option<LensBlurRequest>,
+    /// The sharpen to add to each, if any; from version 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sharpen: Option<SharpenRequest>,
 }
 
 /// A lens blur as `--lens-blur` asks for it. What is absent is the GUI's own default for a freshly added one.
@@ -51,10 +61,22 @@ pub struct LensBlurRequest {
     pub focus: Option<(f64, f64)>,
 }
 
+/// A sharpen as `--sharpen` asks for it. The model is always named, as a run names Moscow for a bare `--sharpen`; the
+/// precision is not, and the GUI picks the build a run would, at the tier of its saved sharpen model or else HD.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SharpenRequest {
+    /// The model's codename, `--sharpen MODEL`.
+    pub model: String,
+    /// The strength in percent of the model's own effect, `--sh-str`; absent is the published default, 100.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strength: Option<u16>,
+}
+
 impl OpenRequest {
-    /// A request for `paths`, written now.
-    pub fn new(paths: Vec<PathBuf>, lens_blur: LensBlurRequest) -> Self {
-        Self { version: VERSION, written_at: seconds_since_epoch(SystemTime::now()), paths, lens_blur }
+    /// A request for `paths`, written now, at the oldest version that carries it.
+    pub fn new(paths: Vec<PathBuf>, lens_blur: Option<LensBlurRequest>, sharpen: Option<SharpenRequest>) -> Self {
+        let version = if sharpen.is_some() || lens_blur.is_none() { VERSION } else { OLDEST_VERSION };
+        Self { version, written_at: seconds_since_epoch(SystemTime::now()), paths, lens_blur, sharpen }
     }
 }
 
@@ -104,8 +126,13 @@ pub fn claim_at(path: &Path, opened: &[PathBuf], now: SystemTime) -> Option<Open
     };
 
     let mut request = match serde_json::from_slice::<OpenRequest>(&raw) {
-        Ok(request) if request.version == VERSION => request,
-        Ok(request) => return discard(&format!("it is version {}, and this build reads {VERSION}", request.version)),
+        Ok(request) if (OLDEST_VERSION..=VERSION).contains(&request.version) => request,
+        Ok(request) => {
+            return discard(&format!(
+                "it is version {}, and this build reads {OLDEST_VERSION} to {VERSION}",
+                request.version
+            ));
+        }
         Err(error) => return discard(&format!("it is not a request: {error}")),
     };
 
@@ -163,11 +190,11 @@ mod tests {
     #[test]
     fn a_fresh_request_is_claimed_once_by_the_batch_it_names() {
         let (_dir, file, photo) = fixture();
-        write_at(&file, &OpenRequest::new(vec![photo.clone()], blur())).expect("written");
+        write_at(&file, &OpenRequest::new(vec![photo.clone()], Some(blur()), None)).expect("written");
 
         let claimed = claim_at(&file, std::slice::from_ref(&photo), SystemTime::now()).expect("claimed");
 
-        assert_eq!((claimed.paths, claimed.lens_blur), (vec![photo.clone()], blur()));
+        assert_eq!((claimed.paths, claimed.lens_blur), (vec![photo.clone()], Some(blur())));
         assert!(!file.exists(), "a claimed request is deleted");
         assert_eq!(claim_at(&file, &[photo], SystemTime::now()), None);
     }
@@ -175,7 +202,7 @@ mod tests {
     #[test]
     fn a_batch_it_does_not_name_leaves_it_for_its_own() {
         let (dir, file, photo) = fixture();
-        write_at(&file, &OpenRequest::new(vec![photo.clone()], blur())).expect("written");
+        write_at(&file, &OpenRequest::new(vec![photo.clone()], Some(blur()), None)).expect("written");
 
         assert_eq!(claim_at(&file, &[dir.path().join("other.jpg")], SystemTime::now()), None);
         assert!(file.exists());
@@ -187,7 +214,7 @@ mod tests {
         let (dir, file, photo) = fixture();
         let other = dir.path().join("other.jpg");
         let spelled = dir.path().join(".").join("a.jpg");
-        write_at(&file, &OpenRequest::new(vec![spelled], blur())).expect("written");
+        write_at(&file, &OpenRequest::new(vec![spelled], Some(blur()), None)).expect("written");
 
         let claimed = claim_at(&file, &[other, photo.clone()], SystemTime::now()).expect("claimed");
 
@@ -199,11 +226,11 @@ mod tests {
         let (_dir, file, photo) = fixture();
         let later = SystemTime::now() + FRESH_FOR + Duration::from_secs(5);
 
-        write_at(&file, &OpenRequest::new(vec![photo.clone()], blur())).expect("written");
+        write_at(&file, &OpenRequest::new(vec![photo.clone()], Some(blur()), None)).expect("written");
         assert_eq!(claim_at(&file, std::slice::from_ref(&photo), later), None);
         assert!(!file.exists());
 
-        let future = OpenRequest { version: VERSION + 1, ..OpenRequest::new(vec![photo.clone()], blur()) };
+        let future = OpenRequest { version: VERSION + 1, ..OpenRequest::new(vec![photo.clone()], Some(blur()), None) };
         write_at(&file, &future).expect("written");
         assert_eq!(claim_at(&file, std::slice::from_ref(&photo), SystemTime::now()), None);
         assert!(!file.exists());
@@ -211,6 +238,52 @@ mod tests {
         std::fs::write(&file, b"not json").expect("written");
         assert_eq!(claim_at(&file, &[photo], SystemTime::now()), None);
         assert!(!file.exists());
+    }
+
+    #[test]
+    fn a_lens_blur_alone_is_written_as_version_1_and_a_sharpen_as_version_2() {
+        let sharpen = SharpenRequest { model: "novgorod".to_owned(), strength: Some(150) };
+        let (_dir, file, photo) = fixture();
+
+        let alone = OpenRequest::new(vec![photo.clone()], Some(blur()), None);
+        assert_eq!(alone.version, 1);
+        let json = serde_json::to_value(&alone).expect("serializes");
+        assert_eq!(json.get("sharpen"), None, "a version 1 reader sees only what it knows");
+
+        let both = OpenRequest::new(vec![photo.clone()], Some(blur()), Some(sharpen.clone()));
+        assert_eq!(both.version, 2);
+        write_at(&file, &both).expect("written");
+        let claimed = claim_at(&file, std::slice::from_ref(&photo), SystemTime::now()).expect("claimed");
+        assert_eq!((claimed.lens_blur, claimed.sharpen), (Some(blur()), Some(sharpen.clone())));
+
+        let sharpen_alone = OpenRequest::new(vec![photo], None, Some(sharpen));
+        assert_eq!(sharpen_alone.version, 2);
+        assert_eq!(serde_json::to_value(&sharpen_alone).expect("serializes").get("lens_blur"), None);
+    }
+
+    #[test]
+    fn a_version_1_request_as_the_first_build_wrote_it_is_still_claimed() {
+        let (_dir, file, photo) = fixture();
+        let written_at = seconds_since_epoch(SystemTime::now());
+        let raw = serde_json::json!({
+            "version": 1,
+            "written_at": written_at,
+            "paths": [photo],
+            "lens_blur": { "f_number": 1.4, "amount": null, "focus": [0.3, 0.6] },
+        });
+        std::fs::create_dir_all(file.parent().expect("a parent")).expect("created");
+        std::fs::write(&file, raw.to_string()).expect("written");
+
+        let claimed = claim_at(&file, &[photo], SystemTime::now()).expect("claimed");
+
+        assert_eq!((claimed.lens_blur, claimed.sharpen), (Some(blur()), None));
+    }
+
+    #[test]
+    fn a_sharpen_without_a_strength_leaves_it_absent() {
+        let request: SharpenRequest = serde_json::from_str(r#"{"model":"moscow"}"#).expect("parses");
+
+        assert_eq!(request, SharpenRequest { model: "moscow".to_owned(), strength: None });
     }
 
     #[test]

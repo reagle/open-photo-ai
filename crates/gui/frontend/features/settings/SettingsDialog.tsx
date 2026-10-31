@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { DialogTitleBar } from "@/components/ui/dialog-title-bar";
+import { DIALOG_PRIMARY } from "@/lib/layers";
 import { type SettingsData, settingsDefaults } from "@/stores/settings";
 import { type SettingsDraft, SettingsDraftProvider } from "./draft.tsx";
 import { EnhancementsPage } from "./EnhancementsPage.tsx";
@@ -90,7 +91,7 @@ const SettingsSurface = ({ close, draft }: { close: (save: boolean) => void; dra
                         <Button variant="secondary" className="h-9 px-5" onClick={() => close(false)}>
                             {t("common.cancel")}
                         </Button>
-                        <Button className="h-9 px-5" onClick={() => close(true)}>
+                        <Button className="h-9 px-5" onClick={() => close(true)} {...{ [DIALOG_PRIMARY]: "" }}>
                             {t("common.save")}
                         </Button>
                     </div>

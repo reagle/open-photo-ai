@@ -8,6 +8,7 @@ import { useFaceSelection } from "@/features/faces/useFaceSelection";
 import { framedDimensions } from "@/ipc/crop";
 import { renditionFor } from "@/ipc/images";
 import { FACES_DIALOG_BOUND } from "@/lib/constants";
+import { DIALOG_PRIMARY } from "@/lib/layers";
 import { useImageCrop } from "@/stores/crop";
 import { useImageFaces } from "@/stores/faces";
 import { useCurrentFile } from "@/stores/files";
@@ -185,7 +186,11 @@ export const SelectFacesDialog = ({ open, onClose }: { open: boolean; onClose: (
                 <div className="flex h-13 flex-none items-center justify-between gap-4 border-t border-border px-3">
                     <span className="text-foreground-dim text-xs">{t("faces.hint")}</span>
 
-                    <Button className="h-8 px-3.5 font-semibold text-[13px]" onClick={commit}>
+                    <Button
+                        className="h-8 px-3.5 font-semibold text-[13px]"
+                        onClick={commit}
+                        {...{ [DIALOG_PRIMARY]: "" }}
+                    >
                         {t("faces.apply", { count: faces.length, enabled: chosen })}
                     </Button>
                 </div>

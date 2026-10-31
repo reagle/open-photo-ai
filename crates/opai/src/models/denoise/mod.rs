@@ -119,6 +119,7 @@ impl Denoise {
             RANGE,
             self.params().strength,
             self.variant.guard(),
+            None,
             TileGeometry::DEFAULT,
         )
     }
@@ -142,16 +143,18 @@ impl Denoise {
     /// Carries the strength, which the tag has to spell itself because it is written out by hand rather than derived
     /// from the identity: two strengths are one model and two images, so a tag that left it out would serve the
     /// second run the first one's picture. Hyphen-separated, so it cannot be mistaken for an underscore-separated
-    /// artifact name.
+    /// artifact name. Ends in the filter's [`FILTER_VERSION`](filter::FILTER_VERSION), so an image an older build drew
+    /// is not served to a newer one.
     pub fn cache_tag(self) -> String {
         // Written deliberately rather than derived from the serialized form, so that renaming a field cannot silently
         // invalidate every cached image.
         format!(
-            "{}-{}-{}-t{}",
+            "{}-{}-{}-t{}-v{}",
             Family::Denoise.prefix(),
             self.variant.codename(),
             self.variant.precision(),
-            self.strength
+            self.strength,
+            filter::FILTER_VERSION
         )
     }
 }
@@ -216,12 +219,23 @@ mod tests {
         // image on every user's disk.
         assert_eq!(
             Denoise::new(DenoiseVariant::Stockholm(FloatPrecision::Fp32), strength(0.5)).cache_tag(),
-            "dn-stockholm-fp32-t0.5"
+            "dn-stockholm-fp32-t0.5-v4"
         );
         assert_eq!(
             Denoise::new(DenoiseVariant::Malmo(FloatPrecision::Fp16), strength(1.0)).cache_tag(),
-            "dn-malmo-fp16-t1"
+            "dn-malmo-fp16-t1-v4"
         );
+    }
+
+    #[test]
+    fn the_cache_tag_carries_the_filter_version_so_an_older_builds_image_is_not_served() {
+        for operation in every_variant().into_iter().map(|variant| Denoise::new(variant, strength(1.0))) {
+            assert!(
+                operation.cache_tag().ends_with(&format!("-v{}", filter::FILTER_VERSION)),
+                "{} carries no filter version",
+                operation.cache_tag()
+            );
+        }
     }
 
     #[test]

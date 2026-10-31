@@ -43,6 +43,24 @@ const useLingering = (key: string | undefined, delay: number) => {
     return key !== undefined && lingered === key;
 };
 
+/**
+ * How long a run that has said nothing of working goes undrawn: long enough for a photograph the run cache already
+ * holds, which the window is served in tens of milliseconds, and short enough that a run that really is waiting - for
+ * a model to load, or for the run it displaced to stop - is drawn before anyone wonders.
+ */
+export const SERVED_GRACE_MS = 250;
+
+/**
+ * Whether a run's bar is drawn: at once for a run that has reported working, and otherwise only once it has been
+ * running for {@link SERVED_GRACE_MS} - so paging back to a photograph already enhanced does not flash a bar for a
+ * result served from the store, whose reports, if any, are all of steps that ran nothing.
+ */
+export const useShownProgress = (running: boolean, report: RunProgress | undefined) => {
+    const lingered = useLingering(running ? "running" : undefined, SERVED_GRACE_MS);
+
+    return running && (report?.stage !== undefined || lingered);
+};
+
 /** How often a bar filling against an estimate moves: a compile of minutes has no use for a finer step. */
 export const ESTIMATE_TICK_MS = 1000;
 
@@ -121,17 +139,13 @@ const PreparingLabel = ({
  * is on is doing - *Upscaling*, *Restoring faces* - or the fetch's own percentage while a model is
  * being installed.
  *
- * **Drawn from the moment a run is asked for, before it has reported anything.** A run spends its
- * first seconds loading a model and arranging the work, and nothing reports during that - so a bar
- * that waited for the first report appeared long after the enhancement was added, and the interval
- * in between read as the application having ignored the click. An unreported run is drawn empty and
- * labelled generically, which is the one honest thing to say about it: something is running and it
- * has not said what yet.
- *
- * The cost is that a chain made entirely of results the application already had now flashes the bar
- * for as long as that chain takes, rather than never drawing it. That is the trade the reverse
- * asks for: the case it makes legible is every real run, and the case it spoils finishes too fast to
- * read either way.
+ * **Drawn soon after a run is asked for, before it has reported anything** - after
+ * {@link SERVED_GRACE_MS}, so a result served from the store draws no bar at all (see
+ * {@link useShownProgress}). A run spends its first seconds loading a model and arranging the work, and
+ * nothing reports during that - so a bar that waited for the first report appeared long after the
+ * enhancement was added, and the interval in between read as the application having ignored the click.
+ * An unreported run reads *Waiting…* over a sweeping bar, which is the one honest thing to say about it:
+ * something is running and it has not said what yet. A bar standing still at 0% said that it had stalled.
  *
  * **The activity is named from the report's own family**, in the language the rest of the window
  * is speaking. The report's `operation` is the library's composed English sentence, `Kyoto 4x
@@ -203,8 +217,12 @@ export const ProgressBar = ({
             ? `${preparing.run}:${preparing.family}:${preparing.provider ?? ""}`
             : undefined,
     );
+    // Indeterminate until there is a figure to show: a bar standing at 0% reads as a stall, and a run that has not
+    // reported - a model loading, or the displaced run still stopping - has no figure yet.
     const value = !slow
-        ? toPercent(fraction)
+        ? report === undefined || fraction <= 0
+            ? null
+            : toPercent(fraction)
         : expectedMs === undefined
           ? null
           : toPercent(estimatedFraction(elapsed, expectedMs));
@@ -216,6 +234,8 @@ export const ProgressBar = ({
             t("preview.progress.downloading", { percent: toPercent(report.installFraction) })
         ) : named ? (
             t(named)
+        ) : report === undefined ? (
+            t("preview.progress.waiting")
         ) : (
             t("preview.progress.enhancing")
         );
