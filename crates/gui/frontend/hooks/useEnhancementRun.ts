@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { familyEntry } from "@/hooks/useCatalogue";
+import { catalogue } from "@/ipc/catalogue";
 import { type CropInfo, sameCrop } from "@/ipc/crop";
 import { cancelEnhance, enhance, onEnhanceProgress, type RunProgress } from "@/ipc/enhance";
 import type { Face } from "@/ipc/faces";
@@ -9,6 +11,7 @@ import { maskLimits, runnable } from "@/lib/enhancements";
 import { withChoice } from "@/lib/faces";
 import { refineOf, regionOf, toWire, withRefine, withRemoval } from "@/lib/mask";
 import { report } from "@/lib/report";
+import { isUnavailableModel, unavailableNotice } from "@/lib/unavailable";
 import { useFileEnhancements } from "@/stores/enhancements";
 import { useFaceChoice, useFacesStore } from "@/stores/faces";
 import { useFileMask } from "@/stores/mask";
@@ -414,6 +417,19 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
                 // the user, which is what every failed IPC call in this application does: a toast
                 // fades before anyone copies a diagnostic out of it.
                 report("enhancing the image failed", error);
+
+                // Fork-only: a model this install cannot have at that precision gets a notice saying which,
+                // and what to use instead, in place of the generic one. Asked of the catalogue, which is
+                // already fetched by the time a run can have been asked for.
+                if (isUnavailableModel(error)) {
+                    catalogue()
+                        .then((families) =>
+                            toast.error(unavailableNotice(notice.current, error, familyEntry(families, error.family))),
+                        )
+                        .catch(() => toast.error(notice.current("errors.enhanceFailed")));
+                    return;
+                }
+
                 toast.error(notice.current("errors.enhanceFailed"));
             },
         );

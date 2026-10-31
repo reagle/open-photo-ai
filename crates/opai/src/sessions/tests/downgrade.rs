@@ -262,6 +262,7 @@ async fn a_model_that_prefers_the_cpu_opens_there_under_auto_and_where_it_is_nam
     let (_root, app_dir) = app();
     let bench = Arc::new(Bench::default());
     let id = crate::models::RemoveVariant::Lima(crate::models::FloatPrecision::Fp32).artifact();
+    place_fork_model(&app_dir, &id);
     let sessions = sessions(&bench, &server, models_for(&[&id]), &app_dir, nvidia_with_webgpu());
 
     let auto = sessions
