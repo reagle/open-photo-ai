@@ -15,6 +15,11 @@ const MASK_PREVIEW_COMMAND = "mask_preview";
 export type Stroke = {
     /** Whether the stroke takes weight away from what is painted so far, rather than adding to it. */
     erase: boolean;
+    /**
+     * On a lens blur's refinement only: whether the stroke paints blur rather than focus. Absent for focus, for an
+     * erase (which takes either away), and for every stroke of a mask or a removal.
+     */
+    blur?: boolean;
     /** The brush's radius as a fraction of the photograph's longer side. Rust brings it inside `0.0005..=0.5`. */
     radius: number;
     /** `0` is a hard edge (anti-aliased only); `1` feathers from the middle out. Rust brings it inside `0..=1`. */
@@ -38,6 +43,13 @@ export type Mask = {
     /** Whether a lens blur keeps what the mask covers in focus. Rust reads it absent as `true`. */
     keepsSharp?: boolean;
 };
+
+/**
+ * A lens blur's refinement, in the wire's spelling: `opai::LensBlurRefine`, its strokes painted in order. A focus stroke
+ * (no `blur`) keeps what it covers sharp, a blur stroke blurs it, an erase takes either away, and each takes the other
+ * kind away under it. Sent as the Lens Blur's own `refine` - see `withRefine` in `lib/mask.ts`.
+ */
+export type Refine = { strokes: Stroke[] };
 
 /**
  * Draws the weight `mask` gives a `width` x `height` picture, as a PNG, for the preview's tint.

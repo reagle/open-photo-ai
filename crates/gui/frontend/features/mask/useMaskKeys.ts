@@ -21,6 +21,9 @@ const takesSpace = (target: EventTarget | null) =>
  *   Escape  done          Space (held)  pan instead of paint
  * ```
  *
+ * On a lens blur's refinement the brush's letters are its three tools: `F` focus, `B` blur, `E` erase, and `X` swaps
+ * focus and blur.
+ *
  * **Registered here, not through the fork's keyboard-shortcut settings**, which this branch does not have. When both
  * are merged the shortcut series can adopt these; what it must keep is that Undo and Redo are taken here and go no
  * further.
@@ -88,6 +91,9 @@ export const useMaskKeys = (path: string, target: Target = "limit") => {
             else if (event.code === "BracketRight")
                 handled(() => (event.shiftKey ? store().stepSoftness(1) : store().stepSize(1)));
             else if (event.shiftKey) return;
+            else if (target === "refine" && event.code === "KeyF") handled(() => store().setPaints("focus"));
+            else if (target === "refine" && event.code === "KeyB") handled(() => store().setPaints("blur"));
+            else if (target === "refine" && event.code === "KeyX") handled(() => store().swapPaints());
             else if (event.code === "KeyB") handled(() => store().setMode("paint"));
             else if (event.code === "KeyE") handled(() => store().setMode("erase"));
             else if (event.code === "KeyX") handled(() => store().swapMode());
