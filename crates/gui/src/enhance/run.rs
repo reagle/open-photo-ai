@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use opai::{
-    ChainFaces, Enhanced, ExecutionProvider, FaceSelection, InferenceError, Opai, OutputDepth, Picture, ProcessOptions,
+    ChainFaces, Enhanced, ExecutionProvider, FaceSelection, Family, InferenceError, InitError, Opai, OutputDepth,
+    Picture, Precision, ProcessOptions,
 };
 use serde::{Deserialize, Serialize};
 
@@ -134,6 +135,23 @@ pub(crate) enum EnhanceError {
         /// The library's own sentence, untranslated and in full.
         message: String,
     },
+
+    // Fork-only, not for upstream: see `opai::installable_catalogue`. A case of its own rather than `Enhance` with a
+    // message to parse, because the window says which model and which precision to use instead, in the user's
+    // language, and composing that takes the model as data.
+    /// The run needed a model this fork exports and this install does not have at the precision asked for:
+    /// [`InitError::UnavailableModel`], with the operation that asked for it.
+    #[error("{message}")]
+    UnavailableModel {
+        /// The library's own sentence, untranslated and in full.
+        message: String,
+        /// The family of the operation whose model is missing.
+        family: Family,
+        /// That operation's model, as the catalogue publishes it.
+        codename: String,
+        /// The precision it was asked for at, which this install cannot serve.
+        precision: Precision,
+    },
 }
 
 impl CommandError for EnhanceError {
@@ -144,7 +162,9 @@ impl CommandError for EnhanceError {
                 Ended::Failed { error: self, recorded: false }
             }
             // `opai` records the failed decode and the failed run, where each happened.
-            Self::UnreadableSource { .. } | Self::Enhance { .. } => Ended::Failed { error: self, recorded: true },
+            Self::UnreadableSource { .. } | Self::Enhance { .. } | Self::UnavailableModel { .. } => {
+                Ended::Failed { error: self, recorded: true }
+            }
         }
     }
 }
@@ -391,8 +411,32 @@ pub(crate) async fn enhance_with<E: Enhancer>(
 
             Ok(Enhancement::Stopped)
         }
-        Err(error) => Err(EnhanceError::Enhance { message: error.to_string() }),
+        Err(error) => Err(failed(&request.operations, &error)),
     }
+}
+
+/// What a run that failed with `error` answers the window: [`EnhanceError::UnavailableModel`] naming the operation of
+/// `requested` that needed the missing model, or else [`EnhanceError::Enhance`].
+fn failed(requested: &[Requested], error: &InferenceError) -> EnhanceError {
+    let message = error.to_string();
+
+    if let InferenceError::Install(install) = error
+        && let InitError::UnavailableModel { artifact } = &**install
+        // Found again by the artifacts each operation needs rather than carried out of the library: the refusal is
+        // the install's, which knows the artifact and nothing about the chain that asked for it.
+        && let Some(asked) = requested.iter().find(|asked| {
+            asked.resolve().is_ok_and(|operation| operation.required_artifacts().iter().any(|id| id.as_str() == artifact))
+        })
+    {
+        return EnhanceError::UnavailableModel {
+            message,
+            family: asked.family,
+            codename: asked.codename.clone(),
+            precision: asked.precision,
+        };
+    }
+
+    EnhanceError::Enhance { message }
 }
 
 #[cfg(test)]
@@ -756,6 +800,46 @@ mod tests {
     }
 
     #[test]
+    fn a_model_this_install_cannot_have_is_reported_with_the_operation_that_asked_for_it() {
+        // Kazan HD on an install that placed only Kazan SD, here as the 2x Kyoto graph: the window is told which model
+        // and precision, so it can say which to use instead, and the library's sentence travels with it.
+        let unavailable =
+            InferenceError::Install(Arc::new(InitError::UnavailableModel { artifact: "up_kyoto_2x_fp32".to_string() }));
+
+        let failed = failed(&[kyoto()], &unavailable);
+
+        assert_eq!(
+            failed,
+            EnhanceError::UnavailableModel {
+                message: unavailable.to_string(),
+                family: opai::Family::Upscale,
+                codename: "kyoto".to_string(),
+                precision: Precision::Fp32,
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(&failed).expect("a failure serializes"),
+            serde_json::json!({
+                "kind": "unavailableModel",
+                "message": unavailable.to_string(),
+                "family": "upscale",
+                "codename": "kyoto",
+                "precision": "fp32",
+            })
+        );
+    }
+
+    #[test]
+    fn a_missing_model_no_operation_of_the_chain_needs_is_an_ordinary_failure() {
+        // Not a case the library produces, and answered with its sentence rather than with a model the window would
+        // then name wrongly.
+        let unavailable =
+            InferenceError::Install(Arc::new(InitError::UnavailableModel { artifact: "rs_kazan_fp32".to_string() }));
+
+        assert_eq!(failed(&[kyoto()], &unavailable), EnhanceError::Enhance { message: unavailable.to_string() });
+    }
+
+    #[test]
     fn a_second_run_stops_the_first_without_the_window_asking() {
         let (_dir, opened, runs, identity) = fixture();
         let (opened, runs) = (Arc::new(opened), Arc::new(runs));
@@ -965,6 +1049,15 @@ mod tests {
             (EnhanceError::UnknownOperation { index: 0, reason }, "recorded by the wrapper"),
             (EnhanceError::UnreadableSource { identity: s(), message: s() }, "recorded by opai"),
             (EnhanceError::Enhance { message: s() }, "recorded by opai"),
+            (
+                EnhanceError::UnavailableModel {
+                    message: s(),
+                    family: opai::Family::Upscale,
+                    codename: s(),
+                    precision: Precision::Fp32,
+                },
+                "recorded by opai",
+            ),
         ];
         for (error, cell) in cells {
             assert_eq!(CommandError::ended(&error).cell(), cell, "{error:?}");

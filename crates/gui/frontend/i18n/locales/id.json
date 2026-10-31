@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "Tidak tersedia di instalasi ini",
+        "unavailableLabel": "{{model}} (tidak tersedia)"
     },
     "settings": {
         "title": "Pengaturan",
@@ -391,6 +393,8 @@
             "title": "Terjadi kesalahan",
             "message": "Open Photo AI mengalami kesalahan tak terduga dan tidak dapat melanjutkan. Memuat ulang biasanya memperbaikinya; pengaturan Anda tetap tersimpan, tetapi pekerjaan yang belum disimpan pada sesi saat ini akan hilang.",
             "reload": "Muat ulang"
-        }
+        },
+        "modelUnavailable": "{{model}} ({{precision}}) tidak tersedia di instalasi ini; gunakan {{alternative}}.",
+        "modelUnavailableAlone": "{{model}} ({{precision}}) tidak tersedia di instalasi ini."
     }
 }

@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "このインストールでは利用できません",
+        "unavailableLabel": "{{model}}（利用不可）"
     },
     "settings": {
         "title": "設定",
@@ -391,6 +393,8 @@
             "title": "問題が発生しました",
             "message": "Open Photo AI で予期しないエラーが発生したため、処理を続行できません。再読み込みすればたいてい解決します。設定は保持されますが、現在のセッションで保存していない作業は失われます。",
             "reload": "再読み込み"
-        }
+        },
+        "modelUnavailable": "{{model}}（{{precision}}）はこのインストールでは利用できません。{{alternative}} を使用してください。",
+        "modelUnavailableAlone": "{{model}}（{{precision}}）はこのインストールでは利用できません。"
     }
 }

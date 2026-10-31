@@ -173,7 +173,7 @@ finished!(
     Option<String>,
     Option<crate::TelemetryIds>,
     &'static str,
-    &'static [opai::FamilyEntry],
+    Vec<opai::FamilyEntry>,
     Vec<&'static str>
 );
 

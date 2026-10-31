@@ -41,6 +41,18 @@ pub struct VariantEntry {
     pub label: &'static str,
     /// Every precision this variant is published in, in the order a chooser should offer them.
     pub precisions: &'static [Precision],
+    /// The precisions in [`precisions`](Self::precisions) **this install** cannot serve, in the same order; empty in
+    /// [`fn@catalogue`], which describes what the library can name rather than what one machine can run.
+    ///
+    /// Fork-only, not for upstream: filled in by [`installable_catalogue`](crate::installable_catalogue) for a model
+    /// this fork exports itself and has not placed at that precision (see `deps::model::manifest::FORK_NAME`), which
+    /// has nowhere to be fetched from. Every published model is served at every precision it is published at, so
+    /// upstream's models never land here. Kept beside `precisions` rather than taken out of it, because a chooser
+    /// reads a model's quality tiers positionally off that list: Kazan's SD has to stay SD when its HD is missing.
+    ///
+    /// Not serialized where it is empty, so the wire shape of every model served in full is unchanged.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unavailable: Vec<Precision>,
     /// The parameters **this variant** takes.
     ///
     /// Per variant rather than per family, because two variants of one family may take different parameters: Athens
@@ -51,6 +63,23 @@ pub struct VariantEntry {
     /// The seven families whose variants agree repeat one entry across them, which is duplication in the published
     /// JSON and not in the source: these are `&'static` borrows of the same constants.
     pub parameters: &'static [ParameterEntry],
+}
+
+impl VariantEntry {
+    /// The precisions this variant can be run at, in the order a chooser offers them: its published ones less any
+    /// [`unavailable`](Self::unavailable) here.
+    pub fn available(&self) -> impl Iterator<Item = Precision> + '_ {
+        self.precisions.iter().copied().filter(|precision| !self.unavailable.contains(precision))
+    }
+
+    /// `precision` where this variant can be run at it, or else the first precision it can be run at — `None` only
+    /// where it can be run at none.
+    ///
+    /// The repair a saved choice is put through: a default of Kazan HD on an install that has only Kazan SD runs Kazan
+    /// SD rather than failing.
+    pub fn nearest_available(&self, precision: Precision) -> Option<Precision> {
+        self.available().find(|&candidate| candidate == precision).or_else(|| self.available().next())
+    }
 }
 
 /// What kind of value a published parameter is.
@@ -226,6 +255,7 @@ fn simple_family(family: Family, rows: &[SimpleVariant]) -> FamilyEntry {
                 codename: row.codename,
                 label: row.label,
                 precisions: &FloatPrecision::PRECISIONS,
+                unavailable: Vec::new(),
                 parameters: row.parameters,
             })
             .collect(),
@@ -249,6 +279,7 @@ fn upscale_family() -> FamilyEntry {
                 codename: model.codename(),
                 label: model.label(),
                 precisions: model.precisions(),
+                unavailable: Vec::new(),
                 parameters: model.parameters(),
             })
             .collect(),
@@ -270,6 +301,29 @@ mod tests {
     /// upscale is the one left out, because Osaka's precisions are its own.
     fn single_graph_families() -> Vec<Family> {
         Family::ALL.into_iter().filter(|family| *family != Family::Upscale).collect()
+    }
+
+    #[test]
+    fn a_precision_this_install_cannot_serve_is_on_the_wire_only_where_there_is_one() {
+        // Fork-only. A variant served in full keeps the shape it always had; one with a precision missing names it,
+        // beside the full list its quality tiers are read from.
+        let mut variant = upscale().variants[0].clone();
+        let full = serde_json::to_value(&variant).unwrap();
+        assert!(full.get("unavailable").is_none(), "an empty list crossed the wire: {full}");
+
+        variant.unavailable = vec![Precision::Fp32];
+        let narrowed = serde_json::to_value(&variant).unwrap();
+        assert_eq!(narrowed["unavailable"], serde_json::json!(["fp32"]));
+        assert_eq!(narrowed["precisions"], full["precisions"]);
+        assert_eq!(variant.available().collect::<Vec<_>>(), vec![Precision::Fp16]);
+        assert_eq!(variant.nearest_available(Precision::Fp32), Some(Precision::Fp16));
+
+        variant.unavailable = vec![Precision::Fp32, Precision::Fp16];
+        assert_eq!(
+            variant.nearest_available(Precision::Fp32),
+            None,
+            "a variant with nothing to run offered something"
+        );
     }
 
     fn family_entry(family: Family) -> &'static FamilyEntry {

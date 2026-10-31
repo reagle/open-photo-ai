@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "Non disponibile in questa installazione",
+        "unavailableLabel": "{{model}} (non disponibile)"
     },
     "settings": {
         "title": "Impostazioni",
@@ -411,6 +413,8 @@
             "title": "Si è verificato un problema",
             "message": "Open Photo AI ha riscontrato un errore imprevisto e non può continuare. Di solito ricaricare risolve il problema; le impostazioni vengono mantenute, ma il lavoro non salvato nella sessione corrente andrà perso.",
             "reload": "Ricarica"
-        }
+        },
+        "modelUnavailable": "{{model}} ({{precision}}) non è disponibile in questa installazione; usa {{alternative}}.",
+        "modelUnavailableAlone": "{{model}} ({{precision}}) non è disponibile in questa installazione."
     }
 }

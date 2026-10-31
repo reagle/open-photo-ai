@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "此安装中不可用",
+        "unavailableLabel": "{{model}}（不可用）"
     },
     "settings": {
         "title": "设置",
@@ -391,6 +393,8 @@
             "title": "出了点问题",
             "message": "Open Photo AI 遇到了意外错误，无法继续运行。重新加载通常可以解决问题；你的设置会被保留，但当前会话中未保存的工作会丢失。",
             "reload": "重新加载"
-        }
+        },
+        "modelUnavailable": "{{model}}（{{precision}}）在此安装中不可用；请使用 {{alternative}}。",
+        "modelUnavailableAlone": "{{model}}（{{precision}}）在此安装中不可用。"
     }
 }

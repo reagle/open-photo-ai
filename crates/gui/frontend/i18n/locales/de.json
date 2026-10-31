@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "In dieser Installation nicht verfügbar",
+        "unavailableLabel": "{{model}} (nicht verfügbar)"
     },
     "settings": {
         "title": "Einstellungen",
@@ -401,6 +403,8 @@
             "title": "Etwas ist schiefgelaufen",
             "message": "Open Photo AI ist auf einen unerwarteten Fehler gestoßen und kann nicht fortfahren. Ein Neuladen behebt das meist; Ihre Einstellungen bleiben erhalten, nicht gespeicherte Arbeit aus der aktuellen Sitzung geht jedoch verloren.",
             "reload": "Neu laden"
-        }
+        },
+        "modelUnavailable": "{{model}} ({{precision}}) ist in dieser Installation nicht verfügbar; verwende {{alternative}}.",
+        "modelUnavailableAlone": "{{model}} ({{precision}}) ist in dieser Installation nicht verfügbar."
     }
 }

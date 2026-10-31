@@ -46,7 +46,15 @@ const EnhancementRow = ({ entry, enhancement }: { entry: FamilyEntry | undefined
                          */}
                         {index > 0 && option.first && <SettingsSelectSeparator />}
 
-                        <SettingsSelectItem value={option.value}>{modelLabel(t, option)}</SettingsSelectItem>
+                        {/*
+                         * Fork-only: a precision this install cannot run the model at stays in the list,
+                         * unavailable and saying why, so the pairs still read as pairs.
+                         */}
+                        <SettingsSelectItem value={option.value} disabled={!option.available}>
+                            {option.available
+                                ? modelLabel(t, option)
+                                : t("models.unavailableLabel", { model: modelLabel(t, option) })}
+                        </SettingsSelectItem>
                     </Fragment>
                 ))}
             </SettingsSelect>

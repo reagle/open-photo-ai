@@ -276,6 +276,33 @@ pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+// Fork-only, not for upstream: every model upstream names is published, so this answers `catalogue` itself there.
+/// [`fn@catalogue`] as the application `name` can serve it on this machine: the same families, variants and precisions,
+/// with each variant's [`unavailable`](VariantEntry::unavailable) naming the precisions it cannot be run at here.
+///
+/// A precision is unavailable where a model it requires is exported by this fork, published nowhere, and not in place
+/// in `name`'s models directory — so an install of it has nowhere to fetch from and would be refused as
+/// [`InitError::UnavailableModel`]. `trust` is what [`InitOptions::models`] will declare, since a trusted process runs
+/// files placed by hand without the record an install would write.
+///
+/// Reads nothing over the network and creates nothing; needs no [`Opai`] and may be asked before initialization. Where
+/// `name`'s configuration directory cannot be resolved, every precision is reported as available, which is what a run
+/// would then find out for itself.
+pub fn installable_catalogue(name: &str, trust: ModelTrust) -> Vec<FamilyEntry> {
+    // `user_config_dir` resolves without creating, which `config::app_dir` does not: a chooser drawn before the first
+    // initialization must not be what creates the application's directory.
+    match config::validate_name(name).ok().and_then(|()| rust_sak::fs::user_config_dir(name, "").ok()) {
+        Some(app_dir) => installable_catalogue_in(&app_dir, trust),
+        None => catalogue().to_vec(),
+    }
+}
+
+/// [`installable_catalogue`] against the configuration directory `config_dir` itself rather than an application's
+/// name: what [`Opai::config_dir`] answers, or a temporary directory under test.
+pub fn installable_catalogue_in(config_dir: &Path, trust: ModelTrust) -> Vec<FamilyEntry> {
+    deps::model::installable_catalogue(config_dir, trust)
+}
+
 /// Everything about an initialization that has a sensible default.
 ///
 /// Passed as an `Option` to [`Opai::initialize`]: only `name` has no default, so a caller wanting to "just

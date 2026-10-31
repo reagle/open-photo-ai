@@ -104,7 +104,13 @@ export type EnhanceError =
     | { kind: "unknownSource"; identity: string }
     | { kind: "unknownOperation"; index: number; reason: UnknownOperation }
     | { kind: "unreadableSource"; identity: string; message: string }
-    | { kind: "enhance"; message: string };
+    | { kind: "enhance"; message: string }
+    /**
+     * Fork-only: the run needed a model this fork exports and this install has not placed at `precision`.
+     * Named by the operation that asked for it, so the notice can say what to use instead - see
+     * `lib/unavailable.ts`.
+     */
+    | { kind: "unavailableModel"; message: string; family: Family; codename: string; precision: Precision };
 
 /**
  * Unique run name generator. Session-scoped prefix + counter avoids collisions across reloads, since the

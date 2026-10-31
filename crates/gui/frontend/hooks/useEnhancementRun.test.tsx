@@ -12,7 +12,7 @@ import { useEnhancementStore } from "@/stores/enhancements";
 import { useFacesStore } from "@/stores/faces";
 import { useFileStore } from "@/stores/files";
 import { useSettingsStore } from "@/stores/settings";
-import { FRAMING, HOLIDAY, openFiles, render, resetFileStore, SUNSET } from "@/test/support";
+import { CATALOGUE, FRAMING, HOLIDAY, openFiles, render, resetFileStore, SUNSET } from "@/test/support";
 import { type EnhancementRun, useEnhancementRun } from "./useEnhancementRun";
 
 // The seams themselves are pinned by `ipc/enhance.test.ts` and `ipc/faces.test.ts` against the wire;
@@ -24,6 +24,12 @@ vi.mock("@/ipc/enhance", () => ({
     // Not this hook's, but the enhancement store's: closing a photograph tells every owner to forget
     // it, and that one hands the result it was holding back to Rust.
     releaseEnhanced: vi.fn(() => Promise.resolve()),
+}));
+
+// Read only for a notice naming a model this install cannot run, which is composed from the catalogue.
+vi.mock("@/ipc/catalogue", async (original) => ({
+    ...(await original<typeof import("@/ipc/catalogue")>()),
+    catalogue: vi.fn(() => Promise.resolve(CATALOGUE)),
 }));
 
 // Mocked only to say it is never reached: the run finds its own faces.
@@ -386,6 +392,27 @@ describe("a run that does not finish", () => {
         await waitFor(() => expect(toast()).toHaveTextContent("Failed to enhance image"));
         expect(answer.enhanced).toBeUndefined();
         expect(logged).toHaveBeenCalledWith("enhancing the image failed", failure);
+    });
+
+    it("says which model this install cannot run, and what to use instead", async () => {
+        // Fork-only: Kazan HD where only Kazan SD was placed, here as Kyoto.
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        const failure = {
+            kind: "unavailableModel",
+            message: "the model up_kyoto_2x_fp32 isn't available on this install",
+            family: "upscale",
+            codename: "kyoto",
+            precision: "fp32",
+        };
+        stack(HOLIDAY.path, upscale(2));
+        mount();
+
+        pending[0]?.reject(failure);
+
+        await waitFor(() =>
+            expect(toast()).toHaveTextContent("Kyoto HD (FP32) isn't available on this install; use SD."),
+        );
+        expect(toast()).not.toHaveTextContent("Failed to enhance image");
     });
 
     it("says nothing about a run that was stopped", async () => {

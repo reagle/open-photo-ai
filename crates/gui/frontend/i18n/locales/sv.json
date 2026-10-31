@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "Inte tillgänglig i den här installationen",
+        "unavailableLabel": "{{model}} (inte tillgänglig)"
     },
     "settings": {
         "title": "Inställningar",
@@ -401,6 +403,8 @@
             "title": "Något gick fel",
             "message": "Open Photo AI råkade ut för ett oväntat fel och kan inte fortsätta. Att ladda om brukar lösa det; dina inställningar behålls, men allt osparat arbete i den aktuella sessionen går förlorat.",
             "reload": "Ladda om"
-        }
+        },
+        "modelUnavailable": "{{model}} ({{precision}}) är inte tillgänglig i den här installationen; använd {{alternative}}.",
+        "modelUnavailableAlone": "{{model}} ({{precision}}) är inte tillgänglig i den här installationen."
     }
 }

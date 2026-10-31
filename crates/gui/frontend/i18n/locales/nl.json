@@ -15,7 +15,9 @@
         "quality": {
             "hd": "HD",
             "md": "SD"
-        }
+        },
+        "unavailable": "Niet beschikbaar in deze installatie",
+        "unavailableLabel": "{{model}} (niet beschikbaar)"
     },
     "settings": {
         "title": "Instellingen",
@@ -401,6 +403,8 @@
             "title": "Er is iets misgegaan",
             "message": "Open Photo AI liep tegen een onverwachte fout aan en kan niet verder. Opnieuw laden lost het meestal op; je instellingen blijven behouden, maar niet-opgeslagen werk in de huidige sessie gaat verloren.",
             "reload": "Opnieuw laden"
-        }
+        },
+        "modelUnavailable": "{{model}} ({{precision}}) is niet beschikbaar in deze installatie; gebruik {{alternative}}.",
+        "modelUnavailableAlone": "{{model}} ({{precision}}) is niet beschikbaar in deze installatie."
     }
 }

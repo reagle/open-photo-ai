@@ -1,5 +1,6 @@
+import { invoke } from "@tauri-apps/api/core";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import "@/i18n";
 import { forgetCatalogue } from "@/ipc/catalogue";
 import type { Operation } from "@/ipc/enhance";
@@ -51,6 +52,7 @@ const models = () => [
 ];
 
 beforeEach(() => {
+    (invoke as unknown as Mock).mockImplementation(() => Promise.resolve(CATALOGUE));
     localStorage.clear();
     forgetCatalogue();
     resetFileStore();
@@ -144,6 +146,36 @@ describe("the model tray", () => {
 
         fireEvent.pointerMove(tokyo.querySelector("[data-slot='tooltip-trigger']") as HTMLElement);
         await waitFor(() => expect(screen.getByRole("tooltip")).toHaveTextContent("without exaggeration"));
+    });
+
+    it("draws a precision this install cannot run unavailable, in its place, and says why", async () => {
+        // Fork-only: Kazan SD placed and Kazan HD not, here as Saitama.
+        const placed = CATALOGUE.map((entry) =>
+            entry.family === "upscale"
+                ? {
+                      ...entry,
+                      variants: entry.variants.map((variant) =>
+                          variant.codename === "saitama" ? { ...variant, unavailable: ["fp32" as const] } : variant,
+                      ),
+                  }
+                : entry,
+        );
+        (invoke as unknown as Mock).mockImplementation(() => Promise.resolve(placed));
+        await mount();
+        await open();
+
+        // Every option still in place, so each model's pair still reads as one row.
+        const offered = CATALOGUE.find((entry) => entry.family === "upscale")?.variants.flatMap((v) => v.precisions);
+        expect(models()).toHaveLength(offered?.length ?? 0);
+        const saitama = models().find((item) => item.textContent === "Saitama HD") as HTMLElement;
+        expect(saitama).toBeDisabled();
+        expect(models().find((item) => item.textContent === "Saitama SD")).toBeEnabled();
+
+        fireEvent.click(saitama);
+        expect(stack()).toEqual([upscale("kyoto", "fp32", 2)]);
+
+        fireEvent.pointerMove(saitama.closest("[data-slot='model-unavailable']") as HTMLElement);
+        await waitFor(() => expect(screen.getByRole("tooltip")).toHaveTextContent("Not available on this install"));
     });
 });
 
