@@ -88,10 +88,11 @@ export const ModelTray = ({ enhancement, entry, value, onChange }: ModelTrayProp
                         ? t(descriptionKey(enhancement, option.codename), { defaultValue: "" })
                         : "";
 
-                    return (
+                    const item = (
                         <ToggleGroupItem
                             key={option.value}
                             value={option.value}
+                            disabled={!option.available}
                             /*
                              * The selection is painted off `aria-checked` rather than the generated
                              * `data-[state=on]`, in `bg-input` and with the `aria-checked:hover:*`
@@ -160,6 +161,27 @@ export const ModelTray = ({ enhancement, entry, value, onChange }: ModelTrayProp
                             )}
                             {modelLabel(t, option)}
                         </ToggleGroupItem>
+                    );
+
+                    if (option.available) return item;
+
+                    /*
+                     * Fork-only: a precision this install cannot run the model at, drawn in its place and
+                     * unavailable - as the add menu draws an enhancement it cannot add - with the reason off
+                     * the whole option. A disabled button takes no pointer events, so the tooltip hangs off a
+                     * span around it, which is also what keeps the option in its cell of the grid.
+                     */
+                    return (
+                        <Tooltip key={option.value}>
+                            <TooltipTrigger asChild>
+                                <span className="flex" data-slot="model-unavailable">
+                                    {item}
+                                </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="left" sideOffset={16} className="max-w-72">
+                                {t("models.unavailable")}
+                            </TooltipContent>
+                        </Tooltip>
                     );
                 })}
             </ToggleGroup>

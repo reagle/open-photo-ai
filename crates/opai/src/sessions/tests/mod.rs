@@ -179,6 +179,19 @@ fn models_for(artifacts: &[&ArtifactId]) -> Vec<String> {
     artifacts.iter().map(|id| format!("{id}.onnx")).collect()
 }
 
+/// Places the files of `id`, a model this fork exports, in `app_dir` the way the fork's install scripts do, with a local
+/// listing naming them: nothing publishes such a model, and an install of one not placed is refused.
+fn place_fork_model(app_dir: &Path, id: &ArtifactId) {
+    let dir = app_dir.join(crate::deps::model::paths::model_dir(id));
+    let name = format!("{id}.onnx");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(&name), MODEL).unwrap();
+
+    let listing = format!(r#"[{{"name": "{name}", "size": {}}}]"#, MODEL.len());
+    let listing_path = app_dir.join(crate::deps::model::paths::MODELS_DIR).join(crate::deps::model::fork::FORK_LISTING);
+    std::fs::write(listing_path, listing).unwrap();
+}
+
 /// Sessions installing `models`, published on `server`, building through `bench`, on a machine reporting
 /// `supported`.
 fn sessions(

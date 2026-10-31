@@ -16,7 +16,8 @@ use serde::Deserialize;
 use crate::config;
 use crate::deps::model::paths::{MODELS_DIR, engine_dir, model_dir};
 use crate::error::InitError;
-use crate::models::ArtifactId;
+use crate::models::build::ParameterValues;
+use crate::models::{ArtifactId, FamilyEntry};
 
 /// The local listing of fork-exported model files, in the models directory.
 pub(crate) const FORK_LISTING: &str = ".fork-listing.json";
@@ -102,6 +103,40 @@ pub(crate) async fn install(
     }
 }
 
+/// [`catalogue`](crate::catalogue) as the install in `app_dir` can serve it: each variant's
+/// [`unavailable`](crate::VariantEntry::unavailable) lists the precisions at which a model it requires is one of this
+/// fork's and is not [`placed`], so an install of it would be refused as [`InitError::UnavailableModel`].
+///
+/// A few file reads and `stat` calls per variant, with nothing requested and nothing created, so a chooser can ask it
+/// before any initialization.
+pub(crate) fn installable_catalogue(app_dir: &Path) -> Vec<FamilyEntry> {
+    let missing = |id: &ArtifactId| exported(id) && !placed(app_dir, id, &listed(app_dir, id));
+    let mut families = crate::catalogue().to_vec();
+
+    for variant in families.iter_mut().flat_map(|family| family.variants.iter_mut()) {
+        variant.unavailable = variant
+            .precisions
+            .iter()
+            .copied()
+            .filter(|&precision| {
+                variant
+                    .build(precision, &ParameterValues::new())
+                    .is_ok_and(|subject| subject.required_artifacts().iter().any(missing))
+            })
+            .collect();
+
+        if !variant.unavailable.is_empty() {
+            tracing::debug!(
+                codename = variant.codename,
+                unavailable = ?variant.unavailable,
+                "a model is not available at every precision on this install"
+            );
+        }
+    }
+
+    families
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,5 +206,32 @@ mod tests {
 
         assert_eq!(installed, dir);
         assert_eq!(std::fs::read(dir.join("rm_lima_fp32.onnx")).unwrap(), b"abc");
+    }
+
+    /// The precisions `codename` is unavailable at in `families`.
+    fn unavailable(families: &[FamilyEntry], codename: &str) -> Vec<crate::models::Precision> {
+        families
+            .iter()
+            .flat_map(|family| family.variants.iter())
+            .find(|variant| variant.codename == codename)
+            .unwrap_or_else(|| panic!("the catalogue has no {codename}"))
+            .unavailable
+            .clone()
+    }
+
+    #[test]
+    fn a_fork_model_is_unavailable_until_it_is_placed_and_a_published_one_never_is() {
+        let root = app_listing(&[("rm_lima_fp32.onnx", 3)]);
+        let families = installable_catalogue(root.path());
+        assert_eq!(unavailable(&families, "lima"), [crate::models::Precision::Fp32]);
+        assert!(unavailable(&families, "kyoto").is_empty(), "a published model was marked unavailable");
+
+        let dir = root.path().join(model_dir(&lima()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("rm_lima_fp32.onnx"), b"abc").unwrap();
+        assert!(
+            unavailable(&installable_catalogue(root.path()), "lima").is_empty(),
+            "a placed model was unavailable"
+        );
     }
 }

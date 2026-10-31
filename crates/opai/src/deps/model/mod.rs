@@ -92,7 +92,8 @@ impl ModelFolder {
         let read = self
             .listing
             .get_or_try_init(|| async {
-                let listing = Listing::read_with(Hub::for_folder(&self.folder).retries(self.retries), &self.folder).await?;
+                let listing =
+                    Listing::read_with(Hub::for_folder(&self.folder).retries(self.retries), &self.folder).await?;
                 // `debug`: it happens once per process that acquires a model, and says only that nothing went wrong.
                 tracing::debug!(
                     url = %self.folder,
@@ -141,6 +142,11 @@ pub(crate) async fn install(
         if fork::placed(app_dir, id, &listed) {
             return fork::install(&folder.folder, app_dir, name, id, &listed).await;
         }
+
+        // Anything else would ask the published listing for a file it never had, and fail on it after creating the
+        // directory it was going to land in. Refused here, before that directory exists or a request is made.
+        tracing::warn!(artifact = %id, "this fork's model is not in place on this install; refusing to install it");
+        return Err(InitError::UnavailableModel { artifact: id.as_str().to_owned() });
     }
 
     let dir = config::sub_dir(app_dir, name, &model_dir(id))?;

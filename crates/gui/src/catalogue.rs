@@ -15,7 +15,7 @@
 // together would be a module named after one caller, which the tier rule `opai::models` states for its own files
 // refuses.
 
-use opai::FamilyEntry;
+use opai::{FamilyEntry, ModelTrust};
 
 use crate::command::{Traceparent, command_span, traced_sync};
 
@@ -27,13 +27,18 @@ use crate::command::{Traceparent, command_span, traced_sync};
 /// display label, the precisions it is published in, and its parameters with the bounds the same constructors
 /// enforce. A control built from this cannot offer a model that does not exist or a value the library would refuse.
 ///
-/// Nothing here can fail, and the answer never changes: the catalogue is static by construction, so there is no
-/// error to report and no state it could be asked for too early.
+/// Nothing here can fail, and it needs no initialized application, so there is no error to report and no state it
+/// could be asked for too early.
+///
+/// Fork-only, not for upstream: as `opai::installable_catalogue` serves it, so a model this fork exports carries the
+/// precisions this install cannot run it at in `unavailable`. For every published model that is the library's
+/// catalogue unchanged. The models directory does not change while the window is open — the fork's models are placed
+/// by a script with the application closed — so the window keeps the first answer, as it always has.
 #[tauri::command]
-pub(crate) fn catalogue(traceparent: Traceparent) -> &'static [FamilyEntry] {
-    // A borrow rather than a clone, because `opai::catalogue` answers from a `LazyLock` built once per process and a
-    // command's return value is serialized rather than kept.
-    traced_sync(command_span!("catalogue", traceparent), opai::catalogue)
+pub(crate) fn catalogue(traceparent: Traceparent) -> Vec<FamilyEntry> {
+    traced_sync(command_span!("catalogue", traceparent), || {
+        opai::installable_catalogue(opai::APP_NAME, ModelTrust::Published)
+    })
 }
 
 #[cfg(test)]
@@ -42,9 +47,22 @@ mod tests {
 
     use super::*;
 
+    /// What the command serves, with which precisions this install can run left out: the shape on the wire is what
+    /// these tests are about, and which precisions are unavailable is `opai`'s to test, against the models it knows
+    /// are placed rather than whatever the machine running the suite has.
+    fn served() -> Vec<FamilyEntry> {
+        let mut served = catalogue(Traceparent::default());
+
+        for variant in served.iter_mut().flat_map(|family| family.variants.iter_mut()) {
+            variant.unavailable.clear();
+        }
+
+        served
+    }
+
     #[test]
     fn every_family_the_library_names_is_published() {
-        let published = catalogue(Traceparent::default());
+        let published = served();
 
         // Driven from `Family::ALL` rather than from a list written here, so a family added to the library and left
         // out of the catalogue fails this rather than being noticed by whoever draws the chooser. Detection and
@@ -64,8 +82,8 @@ mod tests {
     fn a_family_with_nothing_to_adjust_arrives_with_an_empty_parameter_list() {
         // Colorization, which takes nothing. Present with an empty list rather than left out, so "this enhancement
         // has nothing to configure" is something the window is told rather than something it infers from an absence.
-        let colorization = catalogue(Traceparent::default())
-            .iter()
+        let colorization = served()
+            .into_iter()
             .find(|entry| entry.family == Family::Colorization)
             .expect("colorization is a family the library names");
 
@@ -79,17 +97,26 @@ mod tests {
     }
 
     #[test]
-    fn it_is_the_librarys_catalogue_unchanged() {
+    fn it_is_the_librarys_catalogue_with_nothing_but_the_unavailable_precisions_added() {
         // Nothing is filtered, reordered or renamed on the way through, asserted against the library's own answer
-        // rather than against a copy of it written here.
-        assert_eq!(catalogue(Traceparent::default()), opai::catalogue());
+        // rather than against a copy of it written here. What is unavailable is only ever a precision the library
+        // publishes.
+        for variant in catalogue(Traceparent::default()).iter().flat_map(|family| &family.variants) {
+            assert!(
+                variant.unavailable.iter().all(|precision| variant.precisions.contains(precision)),
+                "{} was marked unavailable at a precision it is not published at",
+                variant.codename
+            );
+        }
+
+        assert_eq!(served(), opai::catalogue());
     }
 
     /// What actually crosses the boundary, which is the half of the contract `frontend/ipc/catalogue.ts` is written
     /// against: the family key, and a variant's four fields with the parameter bounds flattened onto the kind.
     #[test]
     fn the_wire_shape_carries_the_bounds_a_control_is_built_from() {
-        let json = serde_json::to_value(catalogue(Traceparent::default())).expect("the catalogue should serialize");
+        let json = serde_json::to_value(served()).expect("the catalogue should serialize");
         let families = json.as_array().expect("the catalogue is a list of families");
 
         let sharpen = families
@@ -114,7 +141,7 @@ mod tests {
     /// edit rather than as a front end silently reading `undefined`.
     #[test]
     fn the_wire_shape_of_a_family_entry_is_pinned() {
-        let json = serde_json::to_value(catalogue(Traceparent::default())).expect("the catalogue should serialize");
+        let json = serde_json::to_value(served()).expect("the catalogue should serialize");
         let entry = |family: &str| {
             json.as_array()
                 .expect("the catalogue is a list of families")
