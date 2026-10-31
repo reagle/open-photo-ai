@@ -337,6 +337,8 @@
             "name": "Restore",
             "size": "Size",
             "generative": "Generative: redraws detail, and may change faces, textures and lettering.",
+            "grain": "Grain",
+            "grainHint": "Puts back the photograph's own noise that the restoration smoothed away.",
             "models": {
                 "kazan": "Use this model when the blur is too strong for Sharpen — e.g. an out-of-focus face, or a photo from an old camera that was never quite sharp. It redraws plausible detail rather than recovering it, so it can change faces, textures and small text; lower the strength if the result looks invented. It is slow and a large download.",
                 "osaka": "Use this model when you want the most thorough restoration available. It rebuilds detail rather than just sharpening it, going furthest on photos that are soft or heavily compressed. It's slow, though, and needs a powerful GPU to run well."

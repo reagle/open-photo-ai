@@ -345,6 +345,8 @@
             "name": "Restauro",
             "size": "Dimensione",
             "generative": "Generativo: ridisegna i dettagli e può alterare volti, texture e scritte.",
+            "grain": "Grana",
+            "grainHint": "Restituisce il rumore proprio della foto che il restauro ha levigato.",
             "models": {
                 "kazan": "Usa questo modello quando la sfocatura è troppo forte per Nitidezza — ad es. un volto fuori fuoco, o una foto di una vecchia fotocamera che non è mai stata davvero nitida. Ridisegna dettagli plausibili invece di recuperarli, quindi può alterare volti, texture e testo piccolo; riduci l'intensità se il risultato sembra inventato. È lento e richiede un download pesante.",
                 "osaka": "Usalo quando vuoi il restauro più approfondito possibile. Ricostruisce i dettagli invece di limitarsi ad aumentare la nitidezza, ottenendo il massimo su foto morbide o molto compresse. È però lento e richiede una GPU potente per funzionare bene."

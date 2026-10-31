@@ -337,6 +337,8 @@
             "name": "Restauratie",
             "size": "Grootte",
             "generative": "Generatief: tekent details opnieuw en kan gezichten, texturen en letters veranderen.",
+            "grain": "Korrel",
+            "grainHint": "Brengt de eigen ruis van de foto terug die het herstel heeft gladgestreken.",
             "models": {
                 "kazan": "Gebruik dit model wanneer de onscherpte te sterk is voor Verscherpen — bijv. een onscherp gezicht, of een foto van een oude camera die nooit echt scherp was. Het tekent aannemelijke details opnieuw in plaats van ze te herstellen, dus het kan gezichten, texturen en kleine tekst veranderen; verlaag de sterkte als het resultaat verzonnen lijkt. Het is traag en een grote download.",
                 "osaka": "Gebruik dit model wanneer je de grondigste restauratie wilt die er is. Het bouwt detail opnieuw op in plaats van het alleen te verscherpen en gaat het verst bij zachte of sterk gecomprimeerde foto's. Het is wel traag en heeft een krachtige GPU nodig om goed te draaien."

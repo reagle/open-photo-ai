@@ -337,6 +337,8 @@
             "name": "Restaurierung",
             "size": "Größe",
             "generative": "Generativ: zeichnet Details neu und kann Gesichter, Texturen und Schrift verändern.",
+            "grain": "Körnung",
+            "grainHint": "Bringt das eigene Rauschen des Fotos zurück, das die Restaurierung geglättet hat.",
             "models": {
                 "kazan": "Verwende dieses Modell, wenn die Unschärfe für „Schärfen“ zu stark ist — z. B. ein unscharfes Gesicht oder ein Foto aus einer alten Kamera, das nie ganz scharf war. Es zeichnet plausible Details neu, statt sie wiederherzustellen, und kann daher Gesichter, Texturen und kleinen Text verändern; verringere die Stärke, wenn das Ergebnis erfunden wirkt. Es ist langsam und ein großer Download.",
                 "osaka": "Verwenden Sie dieses Modell, wenn Sie die gründlichste verfügbare Restaurierung wollen. Es baut Details neu auf, statt sie nur nachzuschärfen, und geht bei weichen oder stark komprimierten Fotos am weitesten. Es ist allerdings langsam und braucht eine leistungsstarke GPU, um gut zu laufen."
