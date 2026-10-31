@@ -80,6 +80,14 @@ pub enum SelectionError {
         /// The codename, as the catalogue spells it.
         codename: &'static str,
     },
+
+    /// An enhancement that runs no model of its own — a grain, drawn from the photograph's own noise — named
+    /// explicitly.
+    #[error("{codename} runs no model of its own, and this harness measures one model at a time")]
+    NoModel {
+        /// The codename, as the catalogue spells it.
+        codename: &'static str,
+    },
 }
 
 /// The models `options` selects.
@@ -129,6 +137,12 @@ fn every_published(options: &Options) -> Result<Vec<Selected>, SelectionError> {
             continue;
         }
 
+        // A grain runs no model of its own: what it costs is a measurement and a draw over the finished image, which
+        // is not one model's inference. Naming it explicitly reports `SelectionError::NoModel`.
+        if entry.family == Family::Grain {
+            continue;
+        }
+
         for variant in &entry.variants {
             // The caller named nothing, so it asked for whatever this precision covers, and a `--precision int8`
             // sweep would otherwise fail on the first of the twenty variants that publish only the two float
@@ -167,6 +181,10 @@ fn select(entry: &FamilyEntry, variant: &VariantEntry, options: &Options) -> Res
 
     if entry.family == Family::Detection {
         return Err(SelectionError::NotAnEnhancement { codename: variant.codename });
+    }
+
+    if entry.family == Family::Grain {
+        return Err(SelectionError::NoModel { codename: variant.codename });
     }
 
     let operation = build(variant, precision, options)?
@@ -490,11 +508,12 @@ mod tests {
     ///
     /// Detection is excluded because its result is not a picture, so it is not carried in what this harness's one
     /// entry point takes. That is a property of the *path*, decided by the library's type, and not the "which models
-    /// will actually run" this module keeps no opinion about.
+    /// will actually run" this module keeps no opinion about. A grain is excluded because it runs no model.
     fn published_at(precision: Precision) -> Vec<&'static str> {
         catalogue()
             .iter()
             .filter(|entry| entry.family != Family::Detection)
+            .filter(|entry| entry.family != Family::Grain)
             .flat_map(|entry| &entry.variants)
             .filter(|variant| variant.precisions.contains(&precision))
             .map(|variant| variant.codename)
@@ -522,6 +541,16 @@ mod tests {
 
         assert_eq!(error, SelectionError::NotAnEnhancement { codename: "newyork" });
         assert!(error.to_string().contains("produces no image"), "{error}");
+    }
+
+    #[test]
+    fn a_family_that_runs_no_model_is_dropped_unnamed_and_reported_when_it_is_named() {
+        assert!(!selection(&[]).iter().any(|selected| selected.family == Family::Grain));
+
+        let error = resolve(&options(&["sensor"])).expect_err("a grain runs no model");
+
+        assert_eq!(error, SelectionError::NoModel { codename: "sensor" });
+        assert!(error.to_string().contains("runs no model"), "{error}");
     }
 
     #[test]

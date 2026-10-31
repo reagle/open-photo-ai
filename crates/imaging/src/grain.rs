@@ -238,20 +238,6 @@ fn profile(bands: &[Vec<[f32; 3]>; BANDS]) -> Option<Profile> {
     Some(Profile { sigma, centre: middles(), correlation })
 }
 
-/// What `result` lacks of `source`'s grain, per band and channel: `sqrt(max(0, source^2 - result^2))`, and nothing in
-/// a band whose source residual is under the rounding of a smooth 8-bit gradient. The correlation is the source's.
-pub fn missing(source: &Profile, result: &Profile) -> Profile {
-    let sigma = std::array::from_fn(|index| {
-        std::array::from_fn(|channel| {
-            let (had, has) = (source.sigma[index][channel], result.sigma[index][channel]);
-            if had < QUANTISATION { 0.0 } else { (had * had - has * has).max(0.0).sqrt() }
-        })
-    });
-
-    // The source's centres: the deviation belongs where the source's pixels of that band are.
-    Profile { sigma, centre: source.centre, correlation: source.correlation }
-}
-
 /// Where a result lacks a photograph's grain: per square tile of each, the share `r` of the photograph's per-band grain
 /// it holds there, the photograph's and the result's read at the same place, and missing `sqrt(max(0, had^2 - has^2))`
 /// of the band's deviation.

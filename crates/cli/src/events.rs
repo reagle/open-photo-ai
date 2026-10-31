@@ -110,6 +110,7 @@ fn family_name(family: Family) -> &'static str {
         Family::Sharpen => "sharpen",
         Family::Upscale => "upscale",
         Family::Restore => "restore",
+        Family::Grain => "grain",
     }
 }
 
@@ -199,6 +200,7 @@ mod tests {
             Family::Sharpen,
             Family::Upscale,
             Family::Restore,
+            Family::Grain,
         ]
         .map(family_name)
         .into();
@@ -215,7 +217,8 @@ mod tests {
                 "colorization",
                 "sharpen",
                 "upscale",
-                "restore"
+                "restore",
+                "grain"
             ]
         );
     }

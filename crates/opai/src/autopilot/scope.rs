@@ -90,10 +90,12 @@ fn bit(family: Family) -> u16 {
 mod tests {
     use super::*;
 
-    /// Every family some signal can suggest: not detection, which is never applied, and not restore, which an
-    /// analysis never suggests — a generative redraw is a user's choice, never an automatic one.
+    /// Every family some signal can suggest: not detection, which is never applied, and not restore or grain, which an
+    /// analysis never suggests — a generative redraw and grain are a user's choice, never an automatic one.
     fn suggestible() -> impl Iterator<Item = Family> {
-        Family::ALL.into_iter().filter(|family| !matches!(family, Family::Detection | Family::Restore))
+        Family::ALL
+            .into_iter()
+            .filter(|family| !matches!(family, Family::Detection | Family::Restore | Family::Grain))
     }
 
     #[test]

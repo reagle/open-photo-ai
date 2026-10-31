@@ -5,11 +5,11 @@
 //! later takes as a parameter — so they describe *what* to run and own no native resource, which is what lets one
 //! outlive and stay independent of any session built from it.
 //!
-//! All nine families are named here: [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`],
-//! [`Colorization`], [`Detection`], [`FaceRecovery`] and [`Restore`]. Each is its own type, so no codename can be paired with the
+//! All ten families are named here: [`Upscale`], [`Denoise`], [`Sharpen`], [`LightAdjustment`], [`ColorBalance`],
+//! [`Colorization`], [`Detection`], [`FaceRecovery`], [`Restore`] and [`Grain`]. Each is its own type, so no codename can be paired with the
 //! family it does not belong to.
 //!
-//! [`Operation`] is where that match lives. It carries an operation of any of the eight image families, one arm per
+//! [`Operation`] is where that match lives. It carries an operation of any of the nine image families, one arm per
 //! family holding that family's own type, and forwards the five questions they all answer; a detection run is
 //! carried by [`Analysis`] instead.
 //!
@@ -27,9 +27,9 @@
 //!
 //! **Every field is in the identity.** Two operations are equal exactly when they name the same model at the same
 //! precision and carry the same per-run parameters: Upscale's [`Scale`], the [`Strength`] denoise and sharpen carry,
-//! the [`Bias`] light adjustment and colour balance carry, the [`Fidelity`] Athens carries, the [`Grain`] Restore
-//! carries and the [`Faces`] face recovery carries each distinguish two operations. That is the question a consumer
-//! holding two of them has — did the user change anything — and it is not the question of which weights to load. [`Colorization`] and
+//! the [`Bias`] light adjustment and colour balance carry, the [`Fidelity`] Athens carries and the [`Faces`] face
+//! recovery carries each distinguish two operations. That is the question a consumer holding two of them has — did
+//! the user change anything — and it is not the question of which weights to load. [`Colorization`] and
 //! [`Detection`] carry no per-run parameter at all, rather than an unused one defaulted to something neutral.
 //!
 //! **Identity does not decide what is loaded.** A resident session is filed under the artifact it was opened from
@@ -144,7 +144,7 @@ pub use detection::{Detection, DetectionVariant};
 pub use face::{Confidence, DetectionOutput, Face, Faces, Point, Rect};
 pub use face_recovery::{FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant};
 pub use fidelity::Fidelity;
-pub use grain::Grain;
+pub use grain::{Grain, GrainAmount, GrainMode, GrainParams, GrainVariant};
 pub use light_adjustment::{LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant};
 pub use operation::{Analysis, DataOperation, Operation};
 pub use precision::{FloatPrecision, Precision};

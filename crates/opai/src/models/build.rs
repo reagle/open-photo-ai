@@ -13,12 +13,12 @@
 //!
 //! Two things decided by data the entry holds: a codename the family does not publish, and a precision this variant is
 //! not published at. Everything else is a value the caller already holds — a [`Scale`], a [`Strength`], a [`Bias`], a
-//! [`Fidelity`], a [`Grain`] or a set of [`Faces`] — and each of those is bounded on construction.
+//! [`Fidelity`], a [`GrainAmount`] or a set of [`Faces`] — and each of those is bounded on construction.
 //!
 //! The third arm on [`BuildError`] belongs to the one path that takes a value by **name** rather than by type,
 //! [`ParameterValues::set`]: a name no parameter is published under. It exists so a front end that speaks only the
 //! catalogue's vocabulary — a name and a number, as it read them — can hand them back without a match of its own over
-//! the five bounded types.
+//! the four bounded types.
 
 use super::artifact::Family;
 use super::bias::Bias;
@@ -30,7 +30,7 @@ use super::detection::{Detection, DetectionVariant};
 use super::face::Faces;
 use super::face_recovery::{FaceRecovery, FaceRecoveryVariant};
 use super::fidelity::Fidelity;
-use super::grain::Grain;
+use super::grain::{Grain, GrainAmount, GrainMode, GrainVariant};
 use super::light_adjustment::{LightAdjustment, LightAdjustmentVariant};
 use super::operation::Operation;
 use super::precision::Precision;
@@ -97,15 +97,17 @@ pub struct ParameterValues {
     bias: Bias,
     /// How closely Athens keeps to the face it was given.
     fidelity: Fidelity,
-    /// How much of the grain a restoration removed a restore puts back.
-    grain: Grain,
+    /// How much grain a grain run puts back or adds.
+    amount: GrainAmount,
+    /// Whether a grain run's amount is a share of what the result lacks of the photograph's grain, or of a sensor's.
+    grain_mode: GrainMode,
     /// The faces a face-recovery run restores, as a detection run found them.
     faces: Faces,
 }
 
 impl ParameterValues {
     /// Every parameter at its neutral value: no enlargement, no strength, no lean, Athens' own default fidelity, no
-    /// grain and no faces.
+    /// grain (matching the source) and no faces.
     ///
     /// Neutral rather than arbitrary, so that a caller which forgot to set the parameter its variant takes gets the
     /// run that does the least rather than one it did not ask for. [`Fidelity`] is the exception and is
@@ -118,7 +120,8 @@ impl ParameterValues {
             strength: Strength::clamped(Strength::MIN),
             bias: Bias::clamped(0.0),
             fidelity: Fidelity::MAXIMUM,
-            grain: Grain::OFF,
+            amount: GrainAmount::OFF,
+            grain_mode: GrainMode::Match,
             faces: Faces::empty(),
         }
     }
@@ -151,10 +154,17 @@ impl ParameterValues {
         self
     }
 
-    /// How much of the grain a restoration removed a restore puts back.
+    /// How much grain a grain run puts back or adds.
     #[must_use]
-    pub fn with_grain(mut self, grain: Grain) -> Self {
-        self.grain = grain;
+    pub fn with_amount(mut self, amount: GrainAmount) -> Self {
+        self.amount = amount;
+        self
+    }
+
+    /// What a grain run's amount is a share of.
+    #[must_use]
+    pub fn with_grain_mode(mut self, mode: GrainMode) -> Self {
+        self.grain_mode = mode;
         self
     }
 
@@ -170,7 +180,7 @@ impl ParameterValues {
     ///
     /// The by-name counterpart of the `with_*` methods, for a caller that speaks the catalogue's vocabulary — a
     /// [`ParameterEntry::name`](super::catalogue::ParameterEntry::name) and a number, as a control built from that
-    /// entry hands them back — and would otherwise have to match the name onto one of five bounded types itself. The
+    /// entry hands them back — and would otherwise have to match the name onto one of four bounded types itself. The
     /// match lives here, once, beside the types it constructs.
     ///
     /// **Clamped, and logged once when it had to be.** A value from a control bounded by the published range can only
@@ -196,7 +206,14 @@ impl ParameterValues {
             Fidelity::NAME => {
                 self.fidelity = clamped_logged(Fidelity::NAME, value, Fidelity::MIN, Fidelity::MAX, Fidelity::clamped);
             }
-            Grain::NAME => self.grain = clamped_logged(Grain::NAME, value, Grain::MIN, Grain::MAX, Grain::clamped),
+            GrainAmount::NAME => {
+                self.amount =
+                    clamped_logged(GrainAmount::NAME, value, GrainAmount::MIN, GrainAmount::MAX, GrainAmount::clamped);
+            }
+            // A switch, published as a range from 0 to 1 and read from a half up as matching the source.
+            GrainMode::NAME => {
+                self.grain_mode = clamped_logged(GrainMode::NAME, value, 0.0, 1.0, GrainMode::from_switch)
+            }
             name => return Err(BuildError::UnknownParameter { name: name.to_string() }),
         }
 
@@ -333,13 +350,18 @@ impl VariantEntry {
                 UpscaleVariant::Kyoto(precision) => Upscale::kyoto(precision, values.scale),
                 UpscaleVariant::Saitama(precision) => Upscale::saitama(precision, values.scale),
             },
-            // The one family reading three of the values: the size it restores at, under the name upscale's factor is
-            // published with, the strength and the grain. The first two are brought inside the family's own narrower
-            // bounds by the constructor. One arm for both models, which read the three alike.
-            Family::Restore => {
-                let variant = RestoreVariant::from_codename(codename, precision).ok_or_else(unpublished)?;
-                Operation::Restore(Restore::new(variant, values.scale, values.strength).with_grain(values.grain))
-            }
+            // The one family reading two of the values: the size it restores at, under the name upscale's factor is
+            // published with, and the strength. Each is brought inside the family's own narrower bounds by the
+            // constructor.
+            Family::Restore => match RestoreVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
+                RestoreVariant::Kazan(precision) => Restore::kazan(precision, values.scale, values.strength),
+                RestoreVariant::Osaka(precision) => Restore::osaka(precision, values.scale, values.strength),
+            },
+            Family::Grain => match GrainVariant::from_codename(codename, precision).ok_or_else(unpublished)? {
+                variant @ GrainVariant::Sensor(_) => {
+                    Operation::Grain(Grain::new(variant, values.amount, values.grain_mode))
+                }
+            },
         };
 
         Ok(Subject::Enhancement(enhancement))
@@ -434,7 +456,7 @@ mod tests {
     #[test]
     fn a_value_set_by_its_published_name_is_the_value_the_typed_builder_would_carry() {
         let mut named = ParameterValues::new();
-        for (name, value) in [("scale", 2.5), ("strength", 0.25), ("bias", -0.35), ("fidelity", 0.05), ("grain", 0.4)] {
+        for (name, value) in [("scale", 2.5), ("strength", 0.25), ("bias", -0.35), ("fidelity", 0.05)] {
             named.set(name, value).expect("every range the catalogue publishes can be set by its name");
         }
 
@@ -442,8 +464,7 @@ mod tests {
             .with_scale(Scale::clamped(2.5))
             .with_strength(Strength::clamped(0.25))
             .with_bias(Bias::clamped(-0.35))
-            .with_fidelity(Fidelity::clamped(0.05))
-            .with_grain(Grain::clamped(0.4));
+            .with_fidelity(Fidelity::clamped(0.05));
 
         assert_eq!(named, typed);
     }
