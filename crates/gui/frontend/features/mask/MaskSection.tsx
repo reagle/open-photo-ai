@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { isPainted } from "@/lib/enhancements";
+import { isPainted, maskLimits } from "@/lib/enhancements";
 import { useFileEnhancements } from "@/stores/enhancements";
 import { useCurrentFile } from "@/stores/files";
 import { useEditingTarget, useHasMask, useMaskStore } from "@/stores/mask";
@@ -11,8 +11,8 @@ import { MaskPanel } from "./MaskPanel";
  * The mask of the current photograph, under its enhancements: whether there is one, and the way to paint it.
  *
  * Reads "No mask" with **Paint mask**, or "Mask" with **Edit**, **Invert** and **Clear**; and while the preview is
- * painting, the panel of tools in their place. Not shown for a photograph with nothing in its stack - there is nothing
- * for a mask to limit - though what is painted is kept, and is there again when an enhancement is.
+ * painting, the panel of tools in their place. Not shown for a photograph whose stack gives a mask nothing to do -
+ * though what is painted is kept, and is there again when an enhancement is.
  *
  * **The removal's brush is drawn here too**, in the same place: while the area Remove takes out is being painted, the
  * panel for it - titled "Paint area to remove", with no Invert - stands in for the whole section. One region is edited
@@ -22,9 +22,11 @@ import { MaskPanel } from "./MaskPanel";
  * lens blur", with Focus, Blur and Erase for its tools - stands in for the section likewise, and Done brings the
  * buttons back.
  *
- * **A mask limits the enhancements that are not painted**: a stack holding only Remove has nothing for one to limit -
- * the limiting mask is blended in after the removals and never brings back what was removed - so the section is not
- * offered for it.
+ * **A mask limits the enhancements between the removals and the finishing Lens Blur and Grain** ({@link maskLimits}):
+ * the limiting mask is blended in after the removals, so it never brings back what was removed, and before the lens
+ * blur and the grain, which cover the whole picture. A stack holding only those has nothing for one to limit, so the
+ * section is not offered for it - unless the stack has a lens blur, under which the mask is also the subject kept in
+ * focus.
  *
  * **It also owns when painting stops**, being the one thing mounted for as long as a file is open: when the photograph
  * changes, and when the stack no longer holds what the region being painted is for. Escape and Done stop it from the
@@ -41,9 +43,10 @@ export const MaskSection = () => {
     const startEditing = useMaskStore((state) => state.startEditing);
     const invert = useMaskStore((state) => state.invert);
     const clear = useMaskStore((state) => state.clear);
-    const stacked = stack.some((operation) => !isPainted(operation.family));
     const removing = stack.some((operation) => isPainted(operation.family));
     const blurring = stack.some((operation) => operation.family === "lens_blur");
+    // Something for the mask to do: enhancements to limit, or a lens blur to keep it in focus under.
+    const stacked = maskLimits(stack) || blurring;
 
     useEffect(() => {
         const { editing: painting, stopEditing } = useMaskStore.getState();

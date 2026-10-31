@@ -6,7 +6,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { isPainted } from "@/lib/enhancements";
+import { maskLimits } from "@/lib/enhancements";
 import { isEmpty, isUsedFor, SLIDER_MAX, sizeToSlider, sliderToSize, type Use, withModifier } from "@/lib/mask";
 import { toPercent } from "@/lib/utils";
 import { useFileEnhancements } from "@/stores/enhancements";
@@ -133,7 +133,8 @@ const UseSwitch = ({
  *
  * **Under a lens blur the mask is also the subject**, kept in focus, and two switches say which of its uses it is for:
  * limiting the enhancements and keeping it in focus, both on until switched off, each an undoable step. Shown only
- * with a lens blur in the stack, and the first only with another enhancement for it to limit.
+ * with a lens blur in the stack, and the first only with an enhancement for it to limit ({@link maskLimits}): Grain,
+ * finishing the picture after the blur, is not one.
  *
  * **A control the mouse has pressed lets go of the focus.** A focused button is pressed again by Space, and Space is
  * how the photograph is panned while painting. Keyboard activation (a click with no pointer behind it) keeps its focus.
@@ -157,7 +158,7 @@ export const MaskPanel = ({ path, target = "limit" }: { path: string; target?: T
     // What the stack gives the uses to do: a lens blur to keep the mask in focus, and something before it to limit.
     const stack = useFileEnhancements(path);
     const blurred = target === "limit" && stack.some((operation) => operation.family === "lens_blur");
-    const limited = stack.some((operation) => operation.family !== "lens_blur" && !isPainted(operation.family));
+    const limited = maskLimits(stack);
     const use = (which: Use) => ({
         checked: isUsedFor(entry, which),
         onChange: (on: boolean) => useMaskStore.getState().setUse(path, which, on),
