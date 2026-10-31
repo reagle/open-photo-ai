@@ -55,7 +55,7 @@
 
 pub mod bilinear;
 pub mod blend;
-pub(crate) mod boxes;
+pub mod boxes;
 pub mod canvas;
 pub mod defocus;
 pub mod fill;

@@ -129,12 +129,14 @@ describe("what a restart reads back", () => {
         ["below the bounds", { jpeg: MIN_QUALITY - 1 }],
         ["not a number", { jpeg: "high" }],
         ["for a format this application has no name for", { jpeg: 50, raw: 50 }],
+        // Ultra HDR is written as JPEG, at JPEG's quality: it is a choice, not a format with a quality of its own.
+        ["for a choice that is not a format", { jpeg: 50, uhdr: 50, preserve: 50 }],
     ])("drops a %s quality, which reads as that format's published starting value", async (_case, quality) => {
         await stored({ ...SOUND, quality: { ...quality, avif: 42 } });
 
         const repaired = useSettingsStore.getState().quality as Record<string, number | undefined>;
-        if (_case.startsWith("for a format")) {
-            expect(repaired.raw).toBeUndefined();
+        if (_case.startsWith("for a ")) {
+            expect([repaired.raw, repaired.uhdr, repaired.preserve]).toEqual([undefined, undefined, undefined]);
             expect(repaired.jpeg).toBe(50);
         } else {
             expect(repaired.jpeg).toBeUndefined();
@@ -278,6 +280,27 @@ describe("the TensorRT question", () => {
         await stored({ ...SOUND, tensorrtAsked });
 
         expect(useSettingsStore.getState().tensorrtAsked).toBe(false);
+    });
+
+    it("remembers Don't ask again before pausing a batch, across a restart, and asks by default", async () => {
+        await useSettingsStore.persist.rehydrate();
+        expect(useSettingsStore.getState().pauseBatchWithoutAsking).toBe(false);
+
+        useSettingsStore.getState().stopAskingBeforePause();
+        expect(persisted()).toMatchObject({ pauseBatchWithoutAsking: true });
+
+        await stored({ ...SOUND, pauseBatchWithoutAsking: "yes" });
+        expect(useSettingsStore.getState().pauseBatchWithoutAsking).toBe(false);
+    });
+
+    it("is a preference the settings surface holds, so Settings can turn the question back on and a reset asks again", () => {
+        useSettingsStore.getState().stopAskingBeforePause();
+
+        expect(settingsData(useSettingsStore.getState())).toMatchObject({ pauseBatchWithoutAsking: true });
+        expect(settingsDefaults()).toMatchObject({ pauseBatchWithoutAsking: false });
+
+        useSettingsStore.getState().apply({ pauseBatchWithoutAsking: false });
+        expect(persisted()).toMatchObject({ pauseBatchWithoutAsking: false });
     });
 
     it("is not a preference the settings surface holds", () => {

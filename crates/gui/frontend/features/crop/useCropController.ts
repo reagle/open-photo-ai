@@ -203,7 +203,7 @@ export const useCropController = (open: boolean, onClose: () => void) => {
      *
      * The decode is waited for rather than handed straight to the widget because the factor is read
      * off it: `naturalWidth` is what Rust actually served, and that is the only honest divisor. The
-     * preload is the same one `hooks/useSettledFile.ts` uses on the canvas, including its feature
+     * preload is the same one `hooks/useStandIn.ts` uses on the canvas, including its feature
      * test - jsdom implements no `decode`, and a webview old enough to lack it is served by the
      * `load` event just as well here, since nothing is being painted at this point.
      */

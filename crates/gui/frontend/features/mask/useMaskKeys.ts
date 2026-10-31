@@ -1,14 +1,7 @@
 import { useEffect } from "react";
-import { OPEN_LAYER } from "@/lib/layers";
+import { isTyping } from "@/features/preview/useSpacePan";
+import { acceptOnReturn, OPEN_LAYER } from "@/lib/layers";
 import { type Target, useMaskStore } from "@/stores/mask";
-
-/** Whether `target` takes typed text, which a key meant for it is never one for the brush. */
-const isTyping = (target: EventTarget | null) =>
-    target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
-
-/** Whether `target` is a control that Space presses, which a keyboard user has focused on purpose. */
-const takesSpace = (target: EventTarget | null) =>
-    target instanceof HTMLElement && target.closest("button, [role='switch'], [role='radio'], a[href]") !== null;
 
 /**
  * The keys of editing a mask, for as long as this is mounted - which the panel is exactly while the preview is
@@ -18,7 +11,7 @@ const takesSpace = (target: EventTarget | null) =>
  *   B  paint        E  erase        X  swap          O  overlay
  *   [  ]  size      Shift+[  Shift+]  softness
  *   Cmd/Ctrl+Z  undo      Shift+Cmd/Ctrl+Z  redo      (Ctrl+Y too)
- *   Escape  done          Space (held)  pan instead of paint
+ *   Escape or Return  done          Space (held)  pan instead of paint
  * ```
  *
  * On a lens blur's refinement the brush's letters are its three tools: `F` focus, `B` blur, `E` erase, and `X` swaps
@@ -28,13 +21,16 @@ const takesSpace = (target: EventTarget | null) =>
  * are merged the shortcut series can adopt these; what it must keep is that Undo and Redo are taken here and go no
  * further.
  *
+ * **A live surface** (`lib/layers.ts`): what is painted is kept as it is painted, so Escape and Return both mean Done.
+ * Return is left to a focused button, as everywhere.
+ *
  * **Ignored while a text field, a dialog or a menu has the keys**, the rule the canvas applies to Escape. The handler
  * is on the window in the capture phase and consumes only the keys it acts on: Undo and Redo are stopped before any
  * other handler sees them, so Cmd+Z while editing a mask undoes a stroke and nothing else.
  *
- * **Space is the pan modifier, and does not press a button.** A button the mouse has just clicked keeps focus, and a
- * Space pressed to pan would press it again; the panel gives the focus back after a click, and a Space meant for a
- * control a keyboard user has focused on purpose is left to it.
+ * **Space, the pan modifier, is not here**: it pans everywhere on the preview, not only while painting - see
+ * `features/preview/useSpacePan.ts`, which keeps the rule this had that Space does not press a focused button. A
+ * button the mouse has just clicked keeps focus, so the panel gives the focus back after a click.
  *
  * Undo and Redo are read by what they spell, as the command is the letter on the key; the brush's keys - the letters
  * and the brackets - by where they are, so a layout that spells them differently, or a Cyrillic one, still has them
@@ -69,14 +65,7 @@ export const useMaskKeys = (path: string, target: Target = "limit") => {
                 return;
             }
 
-            if (key === " " || event.code === "Space") {
-                if (takesSpace(event.target)) return;
-
-                event.preventDefault();
-                store().setPanning(true);
-
-                return;
-            }
+            if (acceptOnReturn(event, () => store().stopEditing())) return;
 
             // A chord is some other command's: Cmd+B is not Paint.
             if (command || event.altKey) return;
@@ -100,26 +89,8 @@ export const useMaskKeys = (path: string, target: Target = "limit") => {
             else if (event.code === "KeyO") handled(() => store().setOverlay(!store().tool.overlay));
         };
 
-        const onKeyUp = (event: KeyboardEvent) => {
-            // Only the Space this took: one pressed on a control it left alone is that control's to release.
-            if ((event.key !== " " && event.code !== "Space") || !store().panning) return;
-
-            event.preventDefault();
-            store().setPanning(false);
-        };
-
-        // A window that loses the focus never hears the key come up.
-        const onBlur = () => store().setPanning(false);
-
         window.addEventListener("keydown", onKeyDown, true);
-        window.addEventListener("keyup", onKeyUp, true);
-        window.addEventListener("blur", onBlur);
 
-        return () => {
-            window.removeEventListener("keydown", onKeyDown, true);
-            window.removeEventListener("keyup", onKeyUp, true);
-            window.removeEventListener("blur", onBlur);
-            store().setPanning(false);
-        };
+        return () => window.removeEventListener("keydown", onKeyDown, true);
     }, [path, target]);
 };

@@ -43,7 +43,8 @@ pub(crate) struct BuildRequest {
     pub(crate) rung: Vec<ExecutionProvider>,
     /// The tuning measured for this artifact.
     pub(crate) tuning: Tuning,
-    /// The folders the providers compile into: this model's own, and the timing cache every model shares.
+    /// The folders the providers compile into: this model's own, and the timing cache every model shares. The CoreML
+    /// one is read here only to share the two copies of the weights CoreML leaves in it.
     pub(crate) cache: CachePaths,
     /// The graph file on disk.
     pub(crate) model: PathBuf,
@@ -102,6 +103,13 @@ pub(crate) fn build(request: BuildRequest) -> Result<Session, SessionError> {
     // A build is where the runtime's bursts happen, so its end is where their tallies are written — inside the span
     // above, so they name the model too.
     diagnostics::flush();
+
+    // After the build rather than at install or launch, because a build is what the CoreML provider writes its cache
+    // in — and a cache hit too, so an engine compiled before this existed is shared the next time it is opened.
+    #[cfg(unix)]
+    if session.is_ok() && rung.contains(&ExecutionProvider::CoreMl) {
+        super::caches::share_coreml_weights(&cache.coreml);
+    }
 
     session
 }

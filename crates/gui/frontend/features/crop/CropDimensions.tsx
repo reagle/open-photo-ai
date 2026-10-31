@@ -65,7 +65,8 @@ const DimensionField = ({
                     setFocused(false);
                 }}
                 // Enter blurs rather than submitting: there is no form here, and blurring is what
-                // runs the snap-back the field is holding off while it has focus.
+                // runs the snap-back the field is holding off while it has focus. The dialog's Return
+                // then goes on to Apply, with the committed size (`lib/layers.ts`).
                 onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
                     if (event.key === "Enter") event.currentTarget.blur();
                 }}

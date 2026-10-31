@@ -62,6 +62,14 @@
             "analytics": {
                 "title": "Análise de uso",
                 "description": "Enviar dados de uso anônimos. Imagens ou dados pessoais nunca são coletados."
+            },
+            "askBeforePause": {
+                "title": "Perguntar antes de pausar um lote",
+                "description": "Ao escolher outra foto enquanto um lote é processado, perguntar antes. Desativado, pausa o lote e mostra a foto."
+            },
+            "wheelZooms": {
+                "title": "A roda faz zoom",
+                "description": "Amplie a pré-visualização com a roda ou com dois dedos em vez de a mover. Fazer pinça, ou deslocar com {{key}} premido, faz sempre zoom."
             }
         },
         "performance": {
@@ -129,6 +137,7 @@
                 "panDown": "Mover para baixo",
                 "showOriginal": "Mostrar original enquanto pressionado",
                 "cyclePreview": "Alternar visualização de comparação",
+                "toggleInfo": "Mostrar ou ocultar as informações da foto",
                 "toggleDrawer": "Mostrar ou ocultar imagens",
                 "previousImage": "Imagem anterior",
                 "nextImage": "Próxima imagem",
@@ -183,6 +192,12 @@
             "cropped": "Recortada",
             "output": "Saída"
         },
+        "hdr": {
+            "label": "HDR",
+            "gainMap": "Esta foto tem um mapa de ganho HDR. Exportar como JPG (Ultra HDR) o mantém; o JPG simples o omite e, por enquanto, os outros formatos são gravados apenas em SDR.",
+            "transfer": "Esta foto é HDR ({{transfer}}). Por enquanto todos os formatos são gravados apenas em SDR.",
+            "other": "Esta foto é HDR. Por enquanto todos os formatos são gravados apenas em SDR."
+        },
         "about_dialog": {
             "iconAlt": "Ícone do aplicativo",
             "version": "Versão {{version}}"
@@ -212,6 +227,12 @@
             "full": "Completa",
             "sideBySide": "Lado a lado",
             "split": "Dividida"
+        },
+        "badge": {
+            "queued": "A aguardar melhoria",
+            "processing": "A melhorar",
+            "done": "Melhorada",
+            "failed": "A melhoria falhou"
         }
     },
     "faces": {
@@ -313,7 +334,8 @@
             },
             "format": {
                 "title": "Formato",
-                "preserve": "Preservar"
+                "preserve": "Preservar",
+                "ultraHdr": "{{format}} (Ultra HDR)"
             },
             "quality": {
                 "title": "Qualidade"
@@ -355,8 +377,10 @@
         "loss": {
             "notice": "{{count}} de {{total}} imagens perderão qualidade neste formato. Passe o ponteiro sobre o aviso de uma linha para ver o quê.",
             "warning": "Perda de qualidade neste formato",
+            "chosen": "Omitido pelo formato escolhido",
             "hdrGainMap": "Mapa de ganho HDR descartado: por enquanto {{format}} é gravado apenas em SDR",
             "hdrGainMapNotCarried": "Mapa de ganho HDR descartado: não foi possível mantê-lo",
+            "hdrGainMapLeftOut": "Gravado em SDR (mapa de ganho omitido)",
             "hdrTransfer": "HDR ({{transfer}}) descartado: por enquanto {{format}} é gravado apenas em SDR",
             "depth": "{{from}} → {{to}} em {{format}}",
             "bits": "{{bits}} bits",
@@ -504,7 +528,8 @@
             "setFocus": "Definir foco",
             "refine": "Refinar",
             "editRefine": "Editar refinamento",
-            "focusHint": "Clique na foto onde deve ficar nítido. Esc para cancelar."
+            "focusHint": "Clique na foto onde deve ficar nítido. Esc para cancelar.",
+            "littleBlur": "Pouco desfoque com esta distância focal e distância de foco. Foque em algo mais próximo ou aumente a intensidade do desfoque."
         },
         "grain": {
             "name": "Granulação",
@@ -581,7 +606,25 @@
             "loading": "Carregando o modelo {{model}}",
             "firstUse": "Só no primeiro uso, pode levar alguns minutos",
             "firstUseAbout_one": "Só no primeiro uso, pode levar cerca de {{count}} minuto",
-            "firstUseAbout_other": "Só no primeiro uso, pode levar cerca de {{count}} minutos"
+            "firstUseAbout_other": "Só no primeiro uso, pode levar cerca de {{count}} minutos",
+            "waiting": "Aguardando…"
+        },
+        "info": {
+            "title": "Informações da foto",
+            "equivalent": "{{value}} mm equiv.",
+            "croppedEquivalent": "{{shot}} → {{rendered}} mm equiv. (corte)",
+            "simulated": "{{value}} simulado",
+            "iso": "ISO {{value}}",
+            "hdr": {
+                "gainMap": "Mapa de ganho HDR",
+                "pq": "HDR (PQ)",
+                "hlg": "HDR (HLG)",
+                "other": "HDR"
+            },
+            "located": "Local registado",
+            "edits": "Edições",
+            "blurredEarlier": "Desfoque de lente já aplicado ({{value}} simulado)",
+            "enhancedEarlier": "Já melhorada com o Open Photo AI"
         }
     },
     "menu": {
@@ -650,13 +693,55 @@
         "sections": {
             "view": "Visualização",
             "images": "Imagens",
-            "enhancements": "Melhorias"
+            "enhancements": "Melhorias",
+            "input": "Ponteiro e diálogos"
         },
         "rows": {
             "zoom": "Aumentar zoom / Reduzir zoom",
             "pan": "Mover",
             "images": "Imagem anterior / Próxima imagem",
             "options": "Opções da melhoria 1–8"
+        },
+        "input": {
+            "accept": "Guardar ou aplicar um diálogo; concluir um painel ou pincel",
+            "escape": "Cancelar um diálogo; concluir um painel ou pincel",
+            "zoom": "Zoom com o ponteiro",
+            "pan": "Deslocar com o ponteiro",
+            "pinch": "Pinça",
+            "scroll": "Deslocar",
+            "modScroll": "{{key}} + deslocar",
+            "spaceDrag": "{{key}} + arrastar",
+            "drag": "Arrastar"
+        }
+    },
+    "batch": {
+        "processing": "A processar {{current}} de {{total}}",
+        "pause": "Pausar",
+        "paused": "Em pausa — faltam {{left}}",
+        "resume": "Retomar",
+        "processAll": "Processar todas ({{count}})",
+        "exportHeld": "A exportação fica disponível quando o processamento estiver em pausa ou terminado",
+        "finished_one": "{{count}} fotografia processada",
+        "finished_other": "{{count}} fotografias processadas",
+        "finishedWithFailures_one": "{{count}} fotografia processada, {{failed}} falharam",
+        "finishedWithFailures_other": "{{count}} fotografias processadas, {{failed}} falharam",
+        "done": "Concluído — {{processed}} processadas",
+        "doneWithFailures": "Concluído — {{processed}} processadas ({{failed}} com falha)",
+        "list": {
+            "title": "Fotos deste lote"
+        },
+        "state": {
+            "done": "Concluída",
+            "processing": "Processando",
+            "pending": "Pendente",
+            "failed": "Falhou"
+        },
+        "ask": {
+            "title": "Pausar o processamento e ver esta fotografia?",
+            "body": "O processamento para onde está. Retome-o mais tarde para continuar com as fotografias que faltam.",
+            "pause": "Pausar e ver",
+            "keep": "Continuar a processar",
+            "dontAsk": "Não perguntar novamente"
         }
     }
 }

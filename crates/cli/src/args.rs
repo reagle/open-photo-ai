@@ -115,7 +115,9 @@ pub struct Args {
     pub output: Option<PathBuf>,
 
     /// The format every result is written in, unless the output is a file: `preserve` (each source's own, TIFF for
-    /// camera RAW; the default), avif, bmp, gif, heic, jpeg, png, tiff or webp.
+    /// camera RAW; the default), avif, bmp, gif, heic, jpeg, png, tiff or webp, or `uhdr`, a JPEG keeping the source's
+    /// HDR gain map (Ultra HDR). A plain `jpeg` is SDR: the gain map is left out. `preserve` and an output file ending
+    /// in .jpg keep it.
     #[arg(help_heading = "Output", long, value_name = "FORMAT", value_parser = parse_format)]
     pub format: Option<FormatChoice>,
 
@@ -137,8 +139,9 @@ pub struct Args {
     #[arg(help_heading = "Output", long)]
     pub verbose: bool,
 
-    /// Open the photographs in Open Photo AI instead of processing them. With --lens-blur, each opens with a Lens Blur
-    /// at --lb-f, --lb-amount and --lb-focus and with Autopilot switched off; other options are ignored.
+    /// Open the photographs in Open Photo AI instead of processing them. With --sharpen, each opens with a Sharpen of
+    /// that model at --sh-str, and with --lens-blur, with a Lens Blur at --lb-f, --lb-amount and --lb-focus; either
+    /// switches Autopilot off. Other options are ignored.
     #[arg(help_heading = "Options", long)]
     pub gui: bool,
 
@@ -769,13 +772,16 @@ where
 }
 
 /// The arguments, by clap id, that `--gui` is never warned about: the inputs and `--recursive`, which choose what it
-/// opens, `--gui` itself, and the lens blur it asks the application to add. Every other argument is warned about when
-/// given, so an option added later is covered without being listed; one `--gui` should accept silently is added here.
+/// opens, `--gui` itself, and the sharpen and lens blur it asks the application to add. Every other argument is warned
+/// about when given, so an option added later is covered without being listed; one `--gui` should accept silently is
+/// added here.
 const NOT_IGNORED_BY_GUI: &[&str] = &[
     "inputs",
     "recursive",
     "gui",
     "verbose",
+    "sharpen",
+    "sharpen_strength",
     "lens_blur",
     "lens_blur_f",
     "lens_blur_amount",
@@ -817,7 +823,7 @@ fn parse_format(text: &str) -> Result<FormatChoice, String> {
         .or_else(|| ExportFormat::preserving(&word).map(FormatChoice::Format))
         .ok_or_else(|| {
             let names: Vec<_> = ExportFormat::ALL.into_iter().map(ExportFormat::name).collect();
-            format!("{text:?} is not a format; use preserve, {}", names.join(", "))
+            format!("{text:?} is not a format; use preserve, {}, {}", names.join(", "), FormatChoice::ULTRA_HDR)
         })
 }
 
@@ -1773,6 +1779,19 @@ mod tests {
     }
 
     #[test]
+    fn gui_takes_a_sharpen_with_its_strength_but_not_a_quality() {
+        let args = parse("opai a.jpg --gui --sh novgorod --sh-str 150 --lb").expect("parses");
+
+        assert!(args.ignored.is_empty(), "{:?}", args.ignored);
+        assert_eq!(args.selection.sharpen, Some(SharpenModel::Novgorod));
+        assert_eq!(args.selection.sharpen_strength, Some(150));
+
+        let args = parse("opai a.jpg --gui --sharpen -q sd").expect("parses");
+        assert_eq!(args.ignored, ["--quality"]);
+        assert_eq!(args.selection.sharpen, Some(SharpenModel::Moscow));
+    }
+
+    #[test]
     fn without_gui_nothing_is_collected() {
         assert!(parse("opai a.jpg --up -q sd -o out").expect("parses").ignored.is_empty());
     }
@@ -1846,6 +1865,8 @@ mod tests {
             ("tiff", ExportFormat::Tiff.into()),
             ("Tif", ExportFormat::Tiff.into()),
             ("WebP", ExportFormat::Webp.into()),
+            ("uhdr", FormatChoice::UltraHdr),
+            ("UHDR", FormatChoice::UltraHdr),
         ] {
             let args = parse(&format!("opai photos --up --format {word} -o out")).expect(word);
             assert_eq!(args.format, Some(choice), "{word}");
@@ -1859,7 +1880,7 @@ mod tests {
         assert_eq!(error.kind(), ErrorKind::ValueValidation);
         assert_eq!(error.exit_code(), 2);
         let message = error.to_string();
-        for name in ["preserve", "avif", "bmp", "gif", "heic", "jpeg", "png", "tiff", "webp"] {
+        for name in ["preserve", "avif", "bmp", "gif", "heic", "jpeg", "png", "tiff", "webp", "uhdr"] {
             assert!(message.contains(name), "{name} is not listed in: {message}");
         }
     }

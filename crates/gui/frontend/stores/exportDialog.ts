@@ -1,8 +1,14 @@
 import { create } from "zustand";
+import { useBatchStore } from "./batch";
 import { useFileStore } from "./files";
 
-/** Whether Export can be asked for: at least one image is picked - what the sidebar's Export button is gated on. */
-export const canExport = (selected: ReadonlySet<string>) => selected.size > 0;
+/**
+ * Whether Export can be asked for: at least one image is picked - what the sidebar's Export button is gated on - and no
+ * batch is paging through the photographs. An export runs a chain of its own beside the window's, and during a batch
+ * that is two heavy runs at once: it waits until the batch is paused or through.
+ */
+export const canExport = (selected: ReadonlySet<string>, batching = useBatchStore.getState().phase === "running") =>
+    selected.size > 0 && !batching;
 
 /**
  * Whether the export dialog is open.
@@ -27,4 +33,11 @@ export const useExportDialogStore = create<{
 }));
 
 /** Whether Export can be asked for now, as a hook - what the button and the menu item are both enabled by. */
-export const useCanExport = () => useFileStore((state) => canExport(state.selectedPaths));
+export const useCanExport = () => {
+    const batching = useBatchStore((state) => state.phase === "running");
+
+    return useFileStore((state) => canExport(state.selectedPaths, batching));
+};
+
+/** Whether Export is held back by a batch that is running, which is what its button's tooltip then says. */
+export const useExportHeldByBatch = () => useBatchStore((state) => state.phase === "running");

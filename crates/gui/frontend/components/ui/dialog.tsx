@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import { XIcon } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { Button } from "@/components/ui/button";
+import { pressPrimaryOnReturn } from "@/lib/layers";
 import { cn } from "@/lib/utils";
 
 const Dialog = ({ ...props }: ComponentProps<typeof DialogPrimitive.Root>) => {
@@ -48,12 +49,18 @@ const focusContent = (event: Event) => {
     if (content instanceof HTMLElement) content.focus();
 };
 
+/**
+ * The dialog's frame. **Return presses the button marked `DIALOG_PRIMARY`** inside it - Save, Apply - where the focus
+ * is not on something Return already operates (see `lib/layers.ts`); a dialog with no such button is unaffected.
+ * After the caller's own `onKeyDown`, which can take the press first by preventing it.
+ */
 const DialogContent = ({
     className,
     children,
     showCloseButton = true,
     focusContentOnOpen = false,
     onOpenAutoFocus,
+    onKeyDown,
     ...props
 }: ComponentProps<typeof DialogPrimitive.Content> & {
     showCloseButton?: boolean;
@@ -72,6 +79,10 @@ const DialogContent = ({
                     className,
                 )}
                 {...(openAutoFocus && { onOpenAutoFocus: openAutoFocus })}
+                onKeyDown={(event) => {
+                    onKeyDown?.(event);
+                    pressPrimaryOnReturn(event);
+                }}
                 {...props}
             >
                 {children}
