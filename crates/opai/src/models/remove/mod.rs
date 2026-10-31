@@ -23,6 +23,7 @@
 // enhancements apply, this says what to take out, and the two are painted separately.
 
 mod gain_map;
+mod grain;
 pub(crate) mod lima;
 #[cfg(test)]
 mod live;
@@ -159,15 +160,16 @@ impl Remove {
         vec![self.artifact()]
     }
 
-    /// The key the run cache stores this operation's result under: `rm-lima-fp32-m<signature>`.
+    /// The key the run cache stores this operation's result under: `rm-lima-fp32-r2-m<signature>`.
     ///
-    /// Carries the mask's signature, so a removal of another region is another image, and nothing else: the grow, the
-    /// context and the feather are constants of the family, and a change to one of them changes every removal.
+    /// Carries the mask's signature, so a removal of another region is another image, and the [`REVISION`] of how a
+    /// region is filled, and nothing else: the grow, the context and the feather are constants of the family, and a
+    /// change to one of them changes every removal.
     pub fn cache_tag(&self) -> String {
         // Written deliberately rather than derived from the serialized form, so that renaming a field cannot silently
         // invalidate every cached image.
         format!(
-            "{}-{}-{}-m{:016x}",
+            "{}-{}-{}-r{REVISION}-m{:016x}",
             Family::Remove.prefix(),
             self.variant.codename(),
             self.variant.precision(),
@@ -206,6 +208,11 @@ impl std::fmt::Display for Remove {
         write!(f, "{} ({})", self.variant.label(), self.variant.precision().label())
     }
 }
+
+/// How a region is filled, as the run cache knows it: raised whenever the same mask would give another fill, so a store
+/// written by an earlier build is not served for it. 1 was the model's fill alone (the tag carried no revision then); 2
+/// gives a fill made from a reduced crop the photograph's grain.
+const REVISION: u32 = 2;
 
 /// The longest side a removal's mask is rasterised at to be asked about single points: a face's centre is a coarse
 /// question, and a 24-megapixel plane per removal to answer it would be the run's largest allocation but one.
@@ -273,7 +280,7 @@ pub(crate) mod tests {
         let mask = dot(0.25, 0.75);
         let tag = lima(Arc::clone(&mask)).cache_tag();
 
-        assert_eq!(tag, format!("rm-lima-fp32-m{:016x}", mask.signature()));
+        assert_eq!(tag, format!("rm-lima-fp32-r2-m{:016x}", mask.signature()));
         assert!(!tag.contains('_'), "{tag}");
         assert_ne!(tag, lima(dot(0.25, 0.7)).cache_tag(), "two regions shared a tag");
     }
