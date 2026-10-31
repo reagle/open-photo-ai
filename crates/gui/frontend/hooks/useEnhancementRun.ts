@@ -11,6 +11,7 @@ import { refineOf, regionOf, toWire, withRefine, withRemoval } from "@/lib/mask"
 import { report } from "@/lib/report";
 import { useFileEnhancements } from "@/stores/enhancements";
 import { useFaceChoice, useFacesStore } from "@/stores/faces";
+import { useLittleBlurStore } from "@/stores/littleBlur";
 import { useFileMask } from "@/stores/mask";
 import { useSettingsStore } from "@/stores/settings";
 
@@ -372,6 +373,9 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
                 ended();
 
                 if (outcome.outcome !== "enhanced") return;
+
+                // Every finished run over the photograph answers it, so the next one with a visible blur clears it.
+                useLittleBlurStore.getState().ran(source, outcome.littleBlur === true);
 
                 setResult({
                     source,
