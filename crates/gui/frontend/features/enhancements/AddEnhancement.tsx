@@ -29,8 +29,9 @@ import { track } from "@/lib/faro";
 import { useAddEnhancementMenuStore } from "@/stores/addEnhancementMenu";
 import { useImageCrop } from "@/stores/crop";
 import { useEnhancementStore, useFileEnhancements } from "@/stores/enhancements";
-import { useCurrentFile } from "@/stores/files";
+import { useCurrentFile, useFileStore } from "@/stores/files";
 import { useMaskStore } from "@/stores/mask";
+import { useOptionsPanelStore } from "@/stores/optionsPanel";
 import { useSettingsStore } from "@/stores/settings";
 
 // Not the design's own 16px. The design puts the menu 16px clear of the **sidebar's** leading edge
@@ -100,7 +101,18 @@ export const AddEnhancement = () => {
         track("enhancement_added", { family, source: "manual" });
 
         // A painted enhancement does nothing until something is painted, so adding it is asking for the brush.
-        if (isPainted(family)) useMaskStore.getState().startEditing(file.path, "removal");
+        if (isPainted(family)) {
+            useMaskStore.getState().startEditing(file.path, "removal");
+
+            return;
+        }
+
+        // Every other enhancement is set in its panel, so a new one opens it: the run has started with its defaults,
+        // and the model and the values are the next thing to look at. Only if the photograph it was added to is still
+        // the one on screen - the scale and the aperture above are awaited, and a row that is not drawn would leave
+        // the panel to open on a later photograph's row of the same family.
+        const { files, currentIndex } = useFileStore.getState();
+        if (files.at(currentIndex)?.path === file.path) useOptionsPanelStore.getState().openPanel(family);
     };
 
     return (
@@ -136,6 +148,11 @@ export const AddEnhancement = () => {
                 alignOffset={MENU_ALIGN}
                 className="w-[230px] p-1"
                 data-slot="add-enhancement-menu"
+                // The menu gives the focus back to its button as it closes, and a panel opened by the pick that closed
+                // it would take that as the focus leaving and close itself. The panel's own focus is the one wanted.
+                onCloseAutoFocus={(event) => {
+                    if (useOptionsPanelStore.getState().family !== undefined) event.preventDefault();
+                }}
             >
                 {/*
                  * Under headings that name each run of the chain's order (see `ENHANCEMENT_GROUPS`), so the
