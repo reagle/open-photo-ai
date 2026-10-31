@@ -184,7 +184,7 @@
         },
         "hdr": {
             "label": "HDR",
-            "gainMap": "Esta foto tiene un mapa de ganancia HDR. Al exportar a JPEG se conserva; por ahora los demás formatos solo se escriben en SDR.",
+            "gainMap": "Esta foto tiene un mapa de ganancia HDR. Al exportar a JPG (Ultra HDR) se conserva; el JPG normal lo omite y, por ahora, los demás formatos solo se escriben en SDR.",
             "transfer": "Esta foto es HDR ({{transfer}}). Por ahora todos los formatos solo se escriben en SDR.",
             "other": "Esta foto es HDR. Por ahora todos los formatos solo se escriben en SDR."
         },
@@ -301,7 +301,8 @@
             },
             "format": {
                 "title": "Formato",
-                "preserve": "Conservar"
+                "preserve": "Conservar",
+                "ultraHdr": "{{format}} (Ultra HDR)"
             },
             "quality": {
                 "title": "Calidad"
@@ -343,8 +344,10 @@
         "loss": {
             "notice": "{{count}} de {{total}} imágenes perderán calidad en este formato. Pasa el puntero sobre la advertencia de una fila para ver qué.",
             "warning": "Pérdida de calidad en este formato",
+            "chosen": "Omitido por el formato elegido",
             "hdrGainMap": "Mapa de ganancia HDR descartado: por ahora {{format}} solo se escribe en SDR",
             "hdrGainMapNotCarried": "Mapa de ganancia HDR descartado: no se pudo conservar",
+            "hdrGainMapLeftOut": "Escrito en SDR (mapa de ganancia omitido)",
             "hdrTransfer": "HDR ({{transfer}}) descartado: por ahora {{format}} solo se escribe en SDR",
             "depth": "{{from}} → {{to}} en {{format}}",
             "bits": "{{bits}} bits",

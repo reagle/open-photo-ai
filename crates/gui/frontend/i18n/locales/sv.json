@@ -184,7 +184,7 @@
         },
         "hdr": {
             "label": "HDR",
-            "gainMap": "Det här fotot har en HDR-förstärkningskarta. Export som JPEG behåller den; de andra formaten skrivs tills vidare bara som SDR.",
+            "gainMap": "Det här fotot har en HDR-förstärkningskarta. Export som JPG (Ultra HDR) behåller den; vanlig JPG utelämnar den, och de andra formaten skrivs tills vidare bara som SDR.",
             "transfer": "Det här fotot är HDR ({{transfer}}). Alla format skrivs tills vidare bara som SDR.",
             "other": "Det här fotot är HDR. Alla format skrivs tills vidare bara som SDR."
         },
@@ -301,7 +301,8 @@
             },
             "format": {
                 "title": "Format",
-                "preserve": "Behåll"
+                "preserve": "Behåll",
+                "ultraHdr": "{{format}} (Ultra HDR)"
             },
             "quality": {
                 "title": "Kvalitet"
@@ -343,8 +344,10 @@
         "loss": {
             "notice": "{{count}} av {{total}} bilder förlorar kvalitet i det här formatet. Håll pekaren över varningen på en rad för att se vad.",
             "warning": "Kvalitetsförlust i det här formatet",
+            "chosen": "Utelämnas av det valda formatet",
             "hdrGainMap": "HDR-förstärkningskarta borttagen: {{format}} skrivs tills vidare bara som SDR",
             "hdrGainMapNotCarried": "HDR-förstärkningskarta borttagen: den kunde inte föras över",
+            "hdrGainMapLeftOut": "Skrivs som SDR (förstärkningskartan utelämnas)",
             "hdrTransfer": "HDR ({{transfer}}) borttaget: {{format}} skrivs tills vidare bara som SDR",
             "depth": "{{from}} → {{to}} i {{format}}",
             "bits": "{{bits}} bitar",

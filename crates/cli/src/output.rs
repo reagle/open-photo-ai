@@ -12,7 +12,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use opai::export::{self, FormatChoice, Naming, WriteOptions, Written};
+use opai::export::{self, FormatChoice, GainMapChoice, Naming, WriteOptions, Written};
 use opai::{ImageFormat, Picture};
 
 use crate::args::Args;
@@ -145,6 +145,17 @@ pub fn destination(target: &Target, source: &Source) -> (PathBuf, ImageFormat) {
     }
 }
 
+impl Target {
+    /// What a result does with its source's gain map: kept for a file named by its path, whose extension says JPEG but
+    /// not which, as Preserve keeps it; otherwise the format choice's, so only `--format jpeg` writes an SDR JPEG.
+    pub const fn gain_map(&self) -> GainMapChoice {
+        match self {
+            Self::File { .. } => GainMapChoice::Keep,
+            Self::Beside { naming, .. } | Self::Directory { naming, .. } => naming.format.gain_map(),
+        }
+    }
+}
+
 /// Records `sources` as the inputs a result written beside its source must never replace. Only a [`Target::Beside`]
 /// keeps them: under `-o` the inputs are the user's to place the output over, as upstream has always let them.
 ///
@@ -191,7 +202,12 @@ pub async fn write(
     format: ImageFormat,
     overwrite: bool,
 ) -> Result<Written, CliError> {
-    let options = WriteOptions { quality: None, overwrite, create_parent: matches!(target, Target::Directory { .. }) };
+    let options = WriteOptions {
+        quality: None,
+        overwrite,
+        create_parent: matches!(target, Target::Directory { .. }),
+        gain_map: target.gain_map(),
+    };
 
     export::write(picture, destination, format, options)
         .await
@@ -216,6 +232,22 @@ mod tests {
 
     fn unaffixed(format: FormatChoice) -> Naming {
         Naming { prefix: String::new(), suffix: String::new(), format }
+    }
+
+    #[test]
+    fn only_format_jpeg_leaves_a_gain_map_out_and_an_output_file_keeps_it() {
+        for (line, gain_map) in [
+            ("opai photo.jpg --up -o out.jpg", GainMapChoice::Keep),
+            ("opai photo.jpg --up -o out", GainMapChoice::Keep),
+            ("opai photo.jpg --up", GainMapChoice::Keep),
+            ("opai photo.jpg --up --format uhdr", GainMapChoice::Keep),
+            ("opai photo.jpg --up --format uhdr -o out", GainMapChoice::Keep),
+            ("opai photo.jpg --up --format png -o out", GainMapChoice::Keep),
+            ("opai photo.jpg --up --format jpeg -o out", GainMapChoice::Drop),
+            ("opai photo.jpg --up --format jpg", GainMapChoice::Drop),
+        ] {
+            assert_eq!(target(&args(line)).expect(line).gain_map(), gain_map, "{line}");
+        }
     }
 
     fn named(path: &str) -> Source {

@@ -184,7 +184,7 @@
         },
         "hdr": {
             "label": "HDR",
-            "gainMap": "Foto ini memiliki gain map HDR. Ekspor ke JPEG mempertahankannya; format lain untuk saat ini hanya ditulis sebagai SDR.",
+            "gainMap": "Foto ini memiliki gain map HDR. Ekspor ke JPG (Ultra HDR) mempertahankannya; JPG biasa tidak menyertakannya, dan format lain untuk saat ini hanya ditulis sebagai SDR.",
             "transfer": "Foto ini HDR ({{transfer}}). Untuk saat ini semua format hanya ditulis sebagai SDR.",
             "other": "Foto ini HDR. Untuk saat ini semua format hanya ditulis sebagai SDR."
         },
@@ -299,7 +299,8 @@
             },
             "format": {
                 "title": "Format",
-                "preserve": "Pertahankan"
+                "preserve": "Pertahankan",
+                "ultraHdr": "{{format}} (Ultra HDR)"
             },
             "quality": {
                 "title": "Kualitas"
@@ -337,8 +338,10 @@
         "loss": {
             "notice": "{{count}} dari {{total}} gambar akan kehilangan kualitas dalam format ini. Arahkan penunjuk ke peringatan di sebuah baris untuk melihat apa yang hilang.",
             "warning": "Kualitas hilang dalam format ini",
+            "chosen": "Tidak disertakan oleh format yang dipilih",
             "hdrGainMap": "Gain map HDR dihapus: keluaran {{format}} untuk saat ini hanya SDR",
             "hdrGainMapNotCarried": "Gain map HDR dihapus: tidak dapat dipertahankan",
+            "hdrGainMapLeftOut": "Ditulis sebagai SDR (gain map tidak disertakan)",
             "hdrTransfer": "HDR ({{transfer}}) dihapus: keluaran {{format}} untuk saat ini hanya SDR",
             "depth": "{{from}} → {{to}} di {{format}}",
             "bits": "{{bits}}-bit",

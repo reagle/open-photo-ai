@@ -208,10 +208,11 @@ pub(crate) async fn export_with<E: Enhancer>(
         reporting.writing();
     }
 
-    let (destination, Named { format, .. }) = request.naming.destination_for(&source_path);
+    let (destination, Named { format, gain_map, .. }) = request.naming.destination_for(&source_path);
 
     // The folder is not created: one the user removed since choosing it fails the export rather than reappearing.
-    let options = WriteOptions { quality: request.quality, overwrite: request.overwrite, create_parent: false };
+    let options =
+        WriteOptions { quality: request.quality, overwrite: request.overwrite, create_parent: false, gain_map };
     let Written { path: written, bytes, losses } =
         write(&picture, &destination, format.into(), options).await.map_err(|error| {
             let message = match error {
