@@ -4,7 +4,8 @@
 //! bridges photographs to and from those shapes: the tile grid ([`grid`]), padding ([`pad`]), tensor conversions
 //! ([`tensor`]), write-over blending for deterministic models ([`blend`]), averaged blending for stochastic ones
 //! ([`canvas`]), fixed-square presentation ([`present`]), control blending ([`mix`]), align-centres bilinear read-back
-//! ([`bilinear`]), row-banded CPU passes ([`rows`]), and the tiling driver [`run_tiled`].
+//! ([`bilinear`]), row-banded CPU passes ([`rows`]), grain measured per brightness and synthesised back ([`grain`]),
+//! and the tiling driver [`run_tiled`].
 //!
 //! **This crate knows nothing of `opai`** and depends only on `image` and `thiserror`, so that independence is a
 //! compile error to break. Items are `pub` only so `opai` can reach them; it is not published.
@@ -35,6 +36,7 @@
 pub mod bilinear;
 pub mod blend;
 pub mod canvas;
+pub mod grain;
 pub mod grid;
 pub mod mix;
 pub mod pad;
