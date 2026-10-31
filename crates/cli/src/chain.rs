@@ -6,7 +6,7 @@
 //! none restated.
 
 use opai::{
-    Bias, Family, Operation, ParameterKind, ParameterValues, Scale, Strength, Subject, Suggestion, VariantEntry,
+    Bias, Family, Grain, Operation, ParameterKind, ParameterValues, Scale, Strength, Subject, Suggestion, VariantEntry,
 };
 
 use crate::args::{Quality, Selection};
@@ -92,8 +92,9 @@ enum Parameter {
     Bias(Option<i16>),
     /// The factor an upscale runs at.
     Scale(Scale),
-    /// A restore: the size it runs at where one was given, else the published 1x, and its strength.
-    Restore { scale: Option<Scale>, strength: Option<u16> },
+    /// A restore: the size it runs at where one was given, else the published 1x, its strength, and the share of the
+    /// photograph's grain it puts back.
+    Restore { scale: Option<Scale>, strength: Option<u16>, grain: Option<u16> },
 }
 
 /// The chain `selection` asks for, each family at its quality in `qualities`, over a `width` x `height` photograph.
@@ -146,7 +147,11 @@ pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u3
         built.push(build(
             model,
             qualities,
-            Parameter::Restore { scale: selection.restore_scale, strength: selection.restore_strength },
+            Parameter::Restore {
+                scale: selection.restore_scale,
+                strength: selection.restore_strength,
+                grain: selection.restore_grain,
+            },
         ));
     }
 
@@ -188,10 +193,11 @@ fn build<M: CatalogueModel>(model: M, qualities: &Qualities, parameter: Paramete
             // `Scale` renders without a trailing `.0`: `2`, `1.5`.
             Some(format!("{scale}x"))
         }
-        Parameter::Restore { scale, strength } => {
+        Parameter::Restore { scale, strength, grain } => {
             if let Some(scale) = scale {
                 values = values.with_scale(scale);
             }
+            set(&mut values, variant, Grain::NAME, grain.map(f64::from));
             let percent = set(&mut values, variant, Strength::NAME, strength.map(f64::from));
             Some(match scale {
                 Some(scale) => format!("{scale}x, strength {percent}"),
@@ -394,6 +400,28 @@ mod tests {
                 Upscale::tokyo(FloatPrecision::Fp32, scale(4.0)),
                 Restore::kazan(FloatPrecision::Fp32, scale(1.0), strength(1.0))
             ]
+        );
+    }
+
+    #[test]
+    fn a_restore_puts_back_the_grain_asked_for_and_none_otherwise() {
+        let grained = |operation: Operation, grain: f64| match operation {
+            Operation::Restore(restore) => Operation::Restore(restore.with_grain(Grain::new(grain).expect("in range"))),
+            other => panic!("not a restore: {other:?}"),
+        };
+
+        assert_eq!(
+            plan("opai photo.jpg --rs --rs-grain 50 -o out.png", 4000, 3000).operations,
+            vec![grained(Restore::kazan(FloatPrecision::Fp32, scale(1.0), strength(1.0)), 0.5)]
+        );
+        assert_eq!(
+            plan("opai photo.jpg --rs osaka --rs-scale 2 --rs-grain 100 -o out.png", 1000, 800).operations,
+            vec![grained(Restore::osaka(OsakaPrecision::Fp16, scale(2.0), strength(1.0)), 1.0)]
+        );
+        // 0 is off, the same operation as no flag at all.
+        assert_eq!(
+            plan("opai photo.jpg --rs --rs-grain 0 -o out.png", 4000, 3000).operations,
+            plan("opai photo.jpg --rs -o out.png", 4000, 3000).operations
         );
     }
 
