@@ -268,16 +268,24 @@
             "title": "Pinta la zona que quieres eliminar",
             "hint": "Pinta sobre lo que quieras eliminar; se elimina al soltar. Mantén pulsada la tecla Space para mover la fotografía."
         },
+        "refine": {
+            "title": "Refinar desenfoque de lente",
+            "focus": "Enfoque",
+            "blur": "Desenfoque",
+            "hint": "Pinte con Enfoque lo que debe quedar nítido, como pelos sueltos, y con Desenfoque lo que debe desenfocarse. Mantenga pulsada la barra espaciadora para mover la foto."
+        },
         "crop": {
             "notice": "Cambiar el recorte borra la máscara.",
             "noticeRemoval": "Cambiar el recorte borra la zona pintada para Eliminar.",
-            "noticeBoth": "Cambiar el recorte borra la máscara y la zona pintada para Eliminar."
+            "noticeBoth": "Cambiar el recorte borra la máscara y la zona pintada para Eliminar.",
+            "noticeRefine": "Cambiar el recorte borra los trazos de refinamiento del desenfoque de lente."
         },
         "toast": {
             "cleared": "El recorte ha cambiado, así que se ha borrado la máscara.",
             "undo": "Deshacer",
             "clearedRemoval": "El recorte ha cambiado, así que se ha borrado la zona pintada para Eliminar.",
-            "clearedBoth": "El recorte ha cambiado, así que se han borrado la máscara y la zona pintada para Eliminar."
+            "clearedBoth": "El recorte ha cambiado, así que se han borrado la máscara y la zona pintada para Eliminar.",
+            "clearedRefine": "El recorte cambió, así que se borraron los trazos de refinamiento del desenfoque de lente."
         }
     },
     "export": {
@@ -483,6 +491,8 @@
             "assumed": "Esta fotografía no tiene información del objetivo; se asume f/{{f}}",
             "cannotBlurMore": "Esta fotografía se tomó a f/{{f}} (equivalente a pleno formato), tan abierto como llega el efecto; no se puede desenfocar más.",
             "setFocus": "Definir enfoque",
+            "refine": "Refinar",
+            "editRefine": "Editar refinamiento",
             "focusHint": "Haga clic en la fotografía donde debe quedar nítido. Esc para cancelar."
         },
         "add": "Añadir mejora",

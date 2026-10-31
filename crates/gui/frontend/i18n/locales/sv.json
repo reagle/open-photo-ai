@@ -268,16 +268,24 @@
             "title": "Måla området som ska tas bort",
             "hint": "Måla över det som ska bort; det tas bort när du släpper. Håll ner Space för att flytta fotot."
         },
+        "refine": {
+            "title": "Förfina objektivoskärpa",
+            "focus": "Fokus",
+            "blur": "Oskärpa",
+            "hint": "Måla med Fokus över det som ska förbli skarpt, som lösa hårstrån, och med Oskärpa över det som ska bli oskarpt. Håll ned blanksteg för att flytta fotot."
+        },
         "crop": {
             "notice": "Ändrad beskärning rensar masken.",
             "noticeRemoval": "Ändrad beskärning rensar området som målats för Ta bort.",
-            "noticeBoth": "Ändrad beskärning rensar masken och området som målats för Ta bort."
+            "noticeBoth": "Ändrad beskärning rensar masken och området som målats för Ta bort.",
+            "noticeRefine": "Att ändra beskärningen rensar objektivoskärpans förfiningsdrag."
         },
         "toast": {
             "cleared": "Beskärningen ändrades, så masken rensades.",
             "undo": "Ångra",
             "clearedRemoval": "Beskärningen ändrades, så området som målats för Ta bort rensades.",
-            "clearedBoth": "Beskärningen ändrades, så masken och området som målats för Ta bort rensades."
+            "clearedBoth": "Beskärningen ändrades, så masken och området som målats för Ta bort rensades.",
+            "clearedRefine": "Beskärningen ändrades, så objektivoskärpans förfiningsdrag rensades."
         }
     },
     "export": {
@@ -483,6 +491,8 @@
             "assumed": "Fotografiet saknar objektivinformation; f/{{f}} antas",
             "cannotBlurMore": "Fotografiet är taget vid f/{{f}} (fullformatsekvivalent), så öppet som effekten går; det kan inte göras mer oskarpt.",
             "setFocus": "Ställ in fokus",
+            "refine": "Förfina",
+            "editRefine": "Redigera förfining",
             "focusHint": "Klicka på fotografiet där det ska vara skarpt. Esc för att avbryta."
         },
         "add": "Lägg till förbättring",

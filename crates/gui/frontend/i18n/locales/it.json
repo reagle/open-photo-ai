@@ -270,16 +270,24 @@
             "title": "Dipingi l'area da rimuovere",
             "hint": "Dipingi sopra ciò che vuoi rimuovere; viene rimosso quando rilasci. Tieni premuto Space per spostare la fotografia."
         },
+        "refine": {
+            "title": "Rifinisci sfocatura obiettivo",
+            "focus": "Messa a fuoco",
+            "blur": "Sfocatura",
+            "hint": "Dipingi con Messa a fuoco ciò che deve restare nitido, come i capelli sparsi, e con Sfocatura ciò che va sfocato. Tieni premuto Spazio per spostare la foto."
+        },
         "crop": {
             "notice": "Cambiare il ritaglio cancella la maschera.",
             "noticeRemoval": "Cambiare il ritaglio cancella l'area dipinta per Rimuovi.",
-            "noticeBoth": "Cambiare il ritaglio cancella la maschera e l'area dipinta per Rimuovi."
+            "noticeBoth": "Cambiare il ritaglio cancella la maschera e l'area dipinta per Rimuovi.",
+            "noticeRefine": "Cambiare il ritaglio cancella i tratti di rifinitura della sfocatura obiettivo."
         },
         "toast": {
             "cleared": "Il ritaglio è cambiato, quindi la maschera è stata cancellata.",
             "undo": "Annulla",
             "clearedRemoval": "Il ritaglio è cambiato, quindi l'area dipinta per Rimuovi è stata cancellata.",
-            "clearedBoth": "Il ritaglio è cambiato, quindi la maschera e l'area dipinta per Rimuovi sono state cancellate."
+            "clearedBoth": "Il ritaglio è cambiato, quindi la maschera e l'area dipinta per Rimuovi sono state cancellate.",
+            "clearedRefine": "Il ritaglio è cambiato, quindi i tratti di rifinitura della sfocatura obiettivo sono stati cancellati."
         }
     },
     "export": {
@@ -491,6 +499,8 @@
             "assumed": "Questa fotografia non ha informazioni sull'obiettivo; f/{{f}} ipotizzato",
             "cannotBlurMore": "Questa fotografia è stata scattata a f/{{f}} (equivalente a pieno formato), tanto aperto quanto arriva l'effetto; non può essere sfocata di più.",
             "setFocus": "Imposta fuoco",
+            "refine": "Rifinisci",
+            "editRefine": "Modifica rifinitura",
             "focusHint": "Fai clic sulla fotografia nel punto che deve risultare nitido. Esc per annullare."
         },
         "add": "Aggiungi miglioramento",

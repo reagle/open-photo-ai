@@ -268,16 +268,24 @@
             "title": "Schilder het gebied dat weg moet",
             "hint": "Schilder over wat weg moet; het wordt verwijderd zodra je loslaat. Houd Space ingedrukt om de foto te verplaatsen."
         },
+        "refine": {
+            "title": "Lensvervaging verfijnen",
+            "focus": "Focus",
+            "blur": "Vervagen",
+            "hint": "Schilder met Focus over wat scherp moet blijven, zoals losse haren, en met Vervagen over wat vaag moet worden. Houd Spatie ingedrukt om de foto te verschuiven."
+        },
         "crop": {
             "notice": "Het bijsnijden wijzigen wist het masker.",
             "noticeRemoval": "Het bijsnijden wijzigen wist het gebied dat voor Verwijderen is geschilderd.",
-            "noticeBoth": "Het bijsnijden wijzigen wist het masker en het gebied dat voor Verwijderen is geschilderd."
+            "noticeBoth": "Het bijsnijden wijzigen wist het masker en het gebied dat voor Verwijderen is geschilderd.",
+            "noticeRefine": "Het wijzigen van de uitsnede wist de verfijningsstreken van de lensvervaging."
         },
         "toast": {
             "cleared": "De uitsnede is gewijzigd, dus het masker is gewist.",
             "undo": "Ongedaan maken",
             "clearedRemoval": "De uitsnede is gewijzigd, dus het gebied dat voor Verwijderen is geschilderd, is gewist.",
-            "clearedBoth": "De uitsnede is gewijzigd, dus het masker en het gebied dat voor Verwijderen is geschilderd, zijn gewist."
+            "clearedBoth": "De uitsnede is gewijzigd, dus het masker en het gebied dat voor Verwijderen is geschilderd, zijn gewist.",
+            "clearedRefine": "De uitsnede is gewijzigd, dus de verfijningsstreken van de lensvervaging zijn gewist."
         }
     },
     "export": {
@@ -483,6 +491,8 @@
             "assumed": "Deze foto bevat geen lensinformatie; f/{{f}} aangenomen",
             "cannotBlurMore": "Deze foto is genomen op f/{{f}} (kleinbeeldequivalent), zo open als het effect gaat; ze kan niet verder worden vervaagd.",
             "setFocus": "Scherpstelling instellen",
+            "refine": "Verfijnen",
+            "editRefine": "Verfijning bewerken",
             "focusHint": "Klik op de foto waar het scherp moet zijn. Esc om te annuleren."
         },
         "add": "Toevoegen",

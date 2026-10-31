@@ -279,6 +279,7 @@ export const EnhancementRow = ({
                         enhancement={enhancement}
                         operation={operation}
                         entry={entry}
+                        path={path}
                         {...(identity !== undefined && { identity })}
                         onChange={onChange}
                     />

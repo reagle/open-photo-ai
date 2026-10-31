@@ -266,16 +266,24 @@
             "title": "Lukis area yang akan dihapus",
             "hint": "Lukis di atas bagian yang ingin dihapus; bagian itu dihapus saat Anda melepas. Tahan Space untuk memindahkan foto."
         },
+        "refine": {
+            "title": "Perhalus blur lensa",
+            "focus": "Fokus",
+            "blur": "Blur",
+            "hint": "Lukis dengan Fokus bagian yang harus tetap tajam, seperti helai rambut yang lepas, dan dengan Blur bagian yang harus diburamkan. Tahan Spasi untuk menggeser foto."
+        },
         "crop": {
             "notice": "Mengubah pemangkasan akan menghapus masker.",
             "noticeRemoval": "Mengubah pemangkasan akan menghapus area yang dilukis untuk Hapus.",
-            "noticeBoth": "Mengubah pemangkasan akan menghapus masker dan area yang dilukis untuk Hapus."
+            "noticeBoth": "Mengubah pemangkasan akan menghapus masker dan area yang dilukis untuk Hapus.",
+            "noticeRefine": "Mengubah potongan menghapus goresan perhalusan blur lensa."
         },
         "toast": {
             "cleared": "Pemangkasan berubah, jadi masker dihapus.",
             "undo": "Urungkan",
             "clearedRemoval": "Pemangkasan berubah, jadi area yang dilukis untuk Hapus dihapus.",
-            "clearedBoth": "Pemangkasan berubah, jadi masker dan area yang dilukis untuk Hapus dihapus."
+            "clearedBoth": "Pemangkasan berubah, jadi masker dan area yang dilukis untuk Hapus dihapus.",
+            "clearedRefine": "Potongan berubah, jadi goresan perhalusan blur lensa dihapus."
         }
     },
     "export": {
@@ -475,6 +483,8 @@
             "assumed": "Foto ini tidak memiliki informasi lensa; f/{{f}} diasumsikan",
             "cannotBlurMore": "Foto ini diambil pada f/{{f}} (setara full-frame), selebar batas efeknya; foto ini tidak bisa diburamkan lagi.",
             "setFocus": "Atur fokus",
+            "refine": "Perhalus",
+            "editRefine": "Edit perhalusan",
             "focusHint": "Klik bagian foto yang harus tajam. Esc untuk membatalkan."
         },
         "add": "Tambah peningkatan",

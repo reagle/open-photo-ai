@@ -270,16 +270,24 @@
             "title": "Peignez la zone à supprimer",
             "hint": "Peignez sur ce qu'il faut supprimer ; c'est supprimé dès que vous relâchez. Maintenez Space enfoncé pour déplacer la photo."
         },
+        "refine": {
+            "title": "Affiner le flou d'objectif",
+            "focus": "Netteté",
+            "blur": "Flou",
+            "hint": "Peignez avec Netteté ce qui doit rester net, comme des cheveux épars, et avec Flou ce qui doit être flou. Maintenez Espace pour déplacer la photo."
+        },
         "crop": {
             "notice": "Modifier le recadrage efface le masque.",
             "noticeRemoval": "Modifier le recadrage efface la zone peinte pour Supprimer.",
-            "noticeBoth": "Modifier le recadrage efface le masque et la zone peinte pour Supprimer."
+            "noticeBoth": "Modifier le recadrage efface le masque et la zone peinte pour Supprimer.",
+            "noticeRefine": "Modifier le recadrage efface les traits d'affinage du flou d'objectif."
         },
         "toast": {
             "cleared": "Le recadrage a changé, le masque a donc été effacé.",
             "undo": "Annuler",
             "clearedRemoval": "Le recadrage a changé, la zone peinte pour Supprimer a donc été effacée.",
-            "clearedBoth": "Le recadrage a changé, le masque et la zone peinte pour Supprimer ont donc été effacés."
+            "clearedBoth": "Le recadrage a changé, le masque et la zone peinte pour Supprimer ont donc été effacés.",
+            "clearedRefine": "Le recadrage a changé, les traits d'affinage du flou d'objectif ont donc été effacés."
         }
     },
     "export": {
@@ -491,6 +499,8 @@
             "assumed": "Cette photo ne contient aucune information d'objectif, f/{{f}} supposé",
             "cannotBlurMore": "Cette photo a été prise à f/{{f}} (équivalent plein format), aussi ouvert que va l'effet ; elle ne peut pas être floutée davantage.",
             "setFocus": "Définir la mise au point",
+            "refine": "Affiner",
+            "editRefine": "Modifier l'affinage",
             "focusHint": "Cliquez sur la zone de la photo qui doit être nette. Esc pour annuler."
         },
         "add": "Ajouter",

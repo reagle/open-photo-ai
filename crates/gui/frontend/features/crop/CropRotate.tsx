@@ -34,8 +34,16 @@ export const CropRotate = ({ open, onClose }: { open: boolean; onClose: () => vo
     const masked = useHasMask(path);
     // And the area painted for Remove, for the same reason: both are said in one sentence where both are painted.
     const removing = useHasMask(path, "removal");
+    // And the Lens Blur's Refine brush, named only where nothing else painted is.
+    const refined = useHasMask(path, "refine");
     const notice =
-        masked && removing ? "mask.crop.noticeBoth" : removing ? "mask.crop.noticeRemoval" : "mask.crop.notice";
+        masked && removing
+            ? "mask.crop.noticeBoth"
+            : removing
+              ? "mask.crop.noticeRemoval"
+              : masked
+                ? "mask.crop.notice"
+                : "mask.crop.noticeRefine";
 
     // Escape and the close box both go through Radix's `onOpenChange`, so there is one way out rather
     // than two that could come to differ. None of them writes anything: there is no draft to unwind.
@@ -127,7 +135,7 @@ export const CropRotate = ({ open, onClose }: { open: boolean; onClose: () => vo
                             {t("crop.zoomHint")}
                         </p>
 
-                        {(masked || removing) && (
+                        {(masked || removing || refined) && (
                             <p
                                 role="note"
                                 className="mt-2 text-center text-[13px] leading-relaxed text-warning text-pretty"

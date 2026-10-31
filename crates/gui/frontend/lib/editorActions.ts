@@ -51,6 +51,8 @@ export const removeEnhancementOf = (path: string, family: Family) => {
     useEnhancementStore.getState().removeEnhancement(path, family);
     // A removal's strokes are its whole setting, and go with it as an upscale's scale goes.
     if (isPainted(family)) useMaskStore.getState().forgetTarget(path, "removal");
+    // And the Refine brush's strokes are the Lens Blur's.
+    if (family === "lens_blur") useMaskStore.getState().forgetTarget(path, "refine");
     track("enhancement_removed", { family });
 };
 

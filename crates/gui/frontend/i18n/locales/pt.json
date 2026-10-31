@@ -268,16 +268,24 @@
             "title": "Pinte a área a remover",
             "hint": "Pinte por cima do que quer remover; é removido ao soltar. Segure Space para mover a foto."
         },
+        "refine": {
+            "title": "Refinar desfoque de lente",
+            "focus": "Foco",
+            "blur": "Desfoque",
+            "hint": "Pinte com Foco o que deve ficar nítido, como fios de cabelo soltos, e com Desfoque o que deve ser desfocado. Mantenha Espaço pressionado para mover a foto."
+        },
         "crop": {
             "notice": "Alterar o recorte limpa a máscara.",
             "noticeRemoval": "Alterar o recorte limpa a área pintada para Remover.",
-            "noticeBoth": "Alterar o recorte limpa a máscara e a área pintada para Remover."
+            "noticeBoth": "Alterar o recorte limpa a máscara e a área pintada para Remover.",
+            "noticeRefine": "Alterar o recorte apaga os traços de refinamento do desfoque de lente."
         },
         "toast": {
             "cleared": "O recorte mudou, então a máscara foi limpa.",
             "undo": "Desfazer",
             "clearedRemoval": "O recorte mudou, então a área pintada para Remover foi limpa.",
-            "clearedBoth": "O recorte mudou, então a máscara e a área pintada para Remover foram limpas."
+            "clearedBoth": "O recorte mudou, então a máscara e a área pintada para Remover foram limpas.",
+            "clearedRefine": "O recorte mudou, então os traços de refinamento do desfoque de lente foram apagados."
         }
     },
     "export": {
@@ -483,6 +491,8 @@
             "assumed": "Esta foto não tem informações da lente; f/{{f}} assumido",
             "cannotBlurMore": "Esta foto foi tirada a f/{{f}} (equivalente em formato completo), tão aberto quanto o efeito alcança; não pode ficar mais desfocada.",
             "setFocus": "Definir foco",
+            "refine": "Refinar",
+            "editRefine": "Editar refinamento",
             "focusHint": "Clique na foto onde deve ficar nítido. Esc para cancelar."
         },
         "add": "Adicionar melhoria",

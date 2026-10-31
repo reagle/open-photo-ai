@@ -3,7 +3,7 @@ import type { Family, Precision } from "./catalogue";
 import type { CropInfo } from "./crop";
 import type { Face } from "./faces";
 import { call } from "./invoke";
-import type { Mask } from "./mask";
+import type { Mask, Refine } from "./mask";
 import type { SupportedProviders } from "./setup";
 
 /** Rust command names. Must match `#[tauri::command]` functions in `crates/gui/src/enhance/mod.rs`; renames aren't type-checked across the IPC boundary. */
@@ -50,6 +50,12 @@ export type Operation = {
      * to `enhance`, and sent even when nothing is painted: Rust leaves a removal of nothing out of the chain.
      */
     mask?: Mask;
+    /**
+     * A Lens Blur's Refine brush, as Rust's `Requested::refine` reads it: the focus and blur strokes painted over the
+     * framed photograph. Kept in `stores/mask.ts` with their undo, as a removal's region is, and put in by `withRefine`
+     * in `lib/mask.ts` on the way to `enhance` or `export`; left out where nothing is painted.
+     */
+    refine?: Refine;
 };
 
 /** User overrides to the default face-recovery selection, keyed by Rust's per-face id. Mirrors Rust's `FaceChoice` in `crates/gui/src/faces.rs`. */

@@ -1,9 +1,9 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { isPainted } from "@/lib/enhancements";
 import { useFileEnhancements } from "@/stores/enhancements";
 import { useCurrentFile } from "@/stores/files";
-import { isPainted } from "@/lib/enhancements";
 import { useEditingTarget, useHasMask, useMaskStore } from "@/stores/mask";
 import { MaskPanel } from "./MaskPanel";
 
@@ -17,6 +17,10 @@ import { MaskPanel } from "./MaskPanel";
  * **The removal's brush is drawn here too**, in the same place: while the area Remove takes out is being painted, the
  * panel for it - titled "Paint area to remove", with no Invert - stands in for the whole section. One region is edited
  * at a time, and the limiting mask's buttons come back when Done is pressed.
+ *
+ * **So is the Lens Blur's Refine brush**, opened from its panel: while it is being painted its panel - titled "Refine
+ * lens blur", with Focus, Blur and Erase for its tools - stands in for the section likewise, and Done brings the
+ * buttons back.
  *
  * **A mask limits the enhancements that are not painted**: a stack holding only Remove has nothing for one to limit -
  * the limiting mask is blended in after the removals and never brings back what was removed - so the section is not
@@ -39,6 +43,7 @@ export const MaskSection = () => {
     const clear = useMaskStore((state) => state.clear);
     const stacked = stack.some((operation) => !isPainted(operation.family));
     const removing = stack.some((operation) => isPainted(operation.family));
+    const blurring = stack.some((operation) => operation.family === "lens_blur");
 
     useEffect(() => {
         const { editing: painting, stopEditing } = useMaskStore.getState();
@@ -46,9 +51,9 @@ export const MaskSection = () => {
 
         // Painting on another photograph than the one open, or a region the stack has nothing left for: nowhere to
         // paint.
-        const wanted = painting.target === "removal" ? removing : stacked;
+        const wanted = { limit: stacked, removal: removing, refine: blurring }[painting.target];
         if (painting.path !== path || !wanted) stopEditing();
-    }, [path, stacked, removing]);
+    }, [path, stacked, removing, blurring]);
 
     if (path === undefined) return;
 
@@ -56,6 +61,13 @@ export const MaskSection = () => {
         return (
             <div className="flex flex-col gap-3 border-t border-border px-6 py-4" data-slot="mask-section">
                 <MaskPanel path={path} target="removal" />
+            </div>
+        );
+
+    if (editing === "refine" && blurring)
+        return (
+            <div className="flex flex-col gap-3 border-t border-border px-6 py-4" data-slot="mask-section">
+                <MaskPanel path={path} target="refine" />
             </div>
         );
 

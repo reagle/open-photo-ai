@@ -404,3 +404,53 @@ describe("the area painted for Remove", () => {
         expect(store().removals.size).toBe(0);
     });
 });
+
+describe("the Lens Blur's refinement", () => {
+    const refinement = (path = PATH) => store().refines.get(path);
+
+    it("takes the strokes painted while it is edited, each saying whether it blurs", () => {
+        store().startEditing(PATH, "refine");
+        stroke(0.1);
+        store().setPaints("blur");
+        stroke(0.4);
+        store().setMode("erase");
+        stroke(0.7);
+
+        const strokes = refinement()?.strokes ?? [];
+        expect(strokes.map((painted) => [painted.erase, painted.blur])).toEqual([
+            [false, undefined],
+            [false, true],
+            [true, undefined],
+        ]);
+        expect(entry()).toBeUndefined();
+        expect(store().removals.get(PATH)).toBeUndefined();
+    });
+
+    it("never marks a stroke of another region as blurring", () => {
+        store().setPaints("blur");
+        store().startEditing(PATH, "limit");
+        stroke(0.1);
+
+        expect(entry()?.strokes[0]).not.toHaveProperty("blur");
+    });
+
+    it("swaps focus and blur, and either choice paints rather than erases", () => {
+        store().setMode("erase");
+        store().swapPaints();
+        expect(store().tool).toMatchObject({ mode: "paint", paints: "blur" });
+        store().swapPaints();
+        expect(store().tool.paints).toBe("focus");
+    });
+
+    it("is forgotten with the photograph, and with the Lens Blur alone", () => {
+        store().startEditing(PATH, "refine");
+        stroke(0.1);
+        store().forgetTarget(PATH, "refine");
+        expect(refinement()).toBeUndefined();
+
+        store().startEditing(PATH, "refine");
+        stroke(0.1);
+        store().forget(PATH);
+        expect(refinement()).toBeUndefined();
+    });
+});

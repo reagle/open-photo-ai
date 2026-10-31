@@ -268,16 +268,24 @@
             "title": "Paint area to remove",
             "hint": "Paint over what to remove; it is removed when you let go. Hold Space to move the photograph."
         },
+        "refine": {
+            "title": "Refine lens blur",
+            "focus": "Focus",
+            "blur": "Blur",
+            "hint": "Paint Focus over what should stay sharp, such as stray hairs, and Blur over what should be blurred. Hold Space to move the photograph."
+        },
         "crop": {
             "notice": "Changing the crop clears the mask.",
             "noticeRemoval": "Changing the crop clears the area painted for Remove.",
-            "noticeBoth": "Changing the crop clears the mask and the area painted for Remove."
+            "noticeBoth": "Changing the crop clears the mask and the area painted for Remove.",
+            "noticeRefine": "Changing the crop clears the Lens Blur's refine strokes."
         },
         "toast": {
             "cleared": "The crop changed, so the mask was cleared.",
             "undo": "Undo",
             "clearedRemoval": "The crop changed, so the area painted for Remove was cleared.",
-            "clearedBoth": "The crop changed, so the mask and the area painted for Remove were cleared."
+            "clearedBoth": "The crop changed, so the mask and the area painted for Remove were cleared.",
+            "clearedRefine": "The crop changed, so the Lens Blur's refine strokes were cleared."
         }
     },
     "export": {
@@ -483,6 +491,8 @@
             "assumed": "This photograph has no lens information; f/{{f}} assumed",
             "cannotBlurMore": "This photograph was taken at f/{{f}} (full-frame equivalent), as wide as the blur goes, so it cannot be blurred more.",
             "setFocus": "Set focus",
+            "refine": "Refine",
+            "editRefine": "Edit refinement",
             "focusHint": "Click the photograph where it should be sharp. Esc to cancel."
         },
         "add": "Add enhancement",

@@ -6,7 +6,10 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use opai::{BuildError, Family, Mask, ParameterKind, ParameterValues, Precision, Subject, VariantEntry};
+use opai::{
+    BuildError, Family, LensBlurRefine, Mask, Operation, ParameterKind, ParameterValues, Precision, Subject,
+    VariantEntry,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::faces::FaceChoice;
@@ -20,6 +23,8 @@ use crate::faces::FaceChoice;
 /// { "family": "remove", "codename": "lima", "precision": "fp32",
 ///   "mask": { "strokes": [{ "erase": false, "radius": 0.02, "softness": 0, "points": [0.4, 0.5, 0.6, 0.5] }],
 ///             "inverted": false } }
+/// { "family": "lens_blur", "codename": "lisbon", "precision": "fp16", "parameters": { "f_number": 1.4, … },
+///   "refine": { "strokes": [{ "erase": false, "blur": true, "radius": 0.02, "softness": 0.5, "points": [0.4, 0.5] }] } }
 /// ```
 ///
 /// **One shape for every family**, spelled in the catalogue's own vocabulary: the family as [`Family`] spells it, the
@@ -69,6 +74,11 @@ pub(crate) struct Requested {
     /// chain before planning it, so no model is opened for it.
     #[serde(default)]
     pub(crate) mask: Option<Mask>,
+    /// A lens blur's Refine brush — the focus and blur strokes painted over the framed photograph — and absent for
+    /// every other operation, and for a lens blur nothing is painted for. Handed to the blur as it is built: the
+    /// strokes are not a parameter of the catalogue, which no control draws.
+    #[serde(default)]
+    pub(crate) refine: Option<LensBlurRefine>,
 }
 
 /// Why an operation the window named cannot be run.
@@ -163,7 +173,14 @@ impl Requested {
         }
 
         match row.build(self.precision, &values)? {
-            Subject::Enhancement(operation) => Ok(operation),
+            // The refinement goes to a lens blur alone, refused elsewhere as a region for a model that takes none is.
+            Subject::Enhancement(operation) => match (operation, &self.refine) {
+                (operation, None) => Ok(operation),
+                (Operation::LensBlur(blur), Some(refine)) => {
+                    Ok(Operation::LensBlur(blur.with_refine(Arc::new(refine.clone()))))
+                }
+                (_, Some(_)) => Err(UnknownOperation::Parameter { name: "refine".to_string() }),
+            },
             // Detection, the one family whose result is not an image: published, and not something a chain can
             // hold. Answered rather than asserted, so it is a refusal rather than a panic reachable from the wire.
             Subject::Analysis(_) => {
@@ -183,6 +200,7 @@ impl Requested {
             parameters: parameters.iter().map(|(name, value)| ((*name).to_string(), *value)).collect(),
             faces: None,
             mask: None,
+            refine: None,
         }
     }
 }
@@ -748,6 +766,47 @@ mod tests {
             parse(sent).resolve().expect_err("an upscale takes no region"),
             UnknownOperation::Parameter { name: "mask".to_string() }
         );
+    }
+
+    #[test]
+    fn a_lens_blur_is_handed_its_refine_strokes_and_no_other_model_takes_them() {
+        let stroke =
+            serde_json::json!({ "erase": false, "blur": true, "radius": 0.02, "softness": 0.5, "points": [0.4, 0.5] });
+        let mut sent = json(Family::LensBlur, "lisbon", "fp16", &[]);
+        sent["refine"] = serde_json::json!({ "strokes": [stroke] });
+
+        let opai::Operation::LensBlur(refined) = parse(sent.clone()).resolve().expect("Lisbon is published at FP16")
+        else {
+            panic!("a lens blur resolved to another family");
+        };
+        let opai::Operation::LensBlur(plain) = parse(json(Family::LensBlur, "lisbon", "fp16", &[]))
+            .resolve()
+            .expect("Lisbon is published at FP16")
+        else {
+            panic!("a lens blur resolved to another family");
+        };
+        let refine: LensBlurRefine = serde_json::from_value(sent["refine"].clone()).expect("the wire's refinement");
+        assert_eq!(refined, plain.clone().with_refine(Arc::new(refine)));
+        assert_ne!(refined.cache_tag(), plain.cache_tag());
+
+        // Nothing painted is no refinement: the lens blur it always was.
+        sent["refine"] = serde_json::json!({ "strokes": [] });
+        assert_eq!(
+            parse(sent).resolve().expect("an empty refinement is a request"),
+            opai::Operation::LensBlur(plain)
+        );
+
+        let mut upscaled = upscale("kyoto", "fp32", 2.0);
+        upscaled["refine"] = serde_json::json!({ "strokes": [stroke_json()] });
+        assert_eq!(
+            parse(upscaled).resolve().expect_err("an upscale takes no refinement"),
+            UnknownOperation::Parameter { name: "refine".to_string() }
+        );
+    }
+
+    /// One focus stroke, as the window sends it.
+    fn stroke_json() -> serde_json::Value {
+        serde_json::json!({ "erase": false, "radius": 0.02, "softness": 0.5, "points": [0.4, 0.5] })
     }
 
     #[test]

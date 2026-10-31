@@ -268,16 +268,24 @@
             "title": "Zu entfernenden Bereich malen",
             "hint": "Übermalen, was entfernt werden soll; es wird beim Loslassen entfernt. Space gedrückt halten, um das Foto zu verschieben."
         },
+        "refine": {
+            "title": "Objektivunschärfe verfeinern",
+            "focus": "Fokus",
+            "blur": "Unschärfe",
+            "hint": "Mit Fokus übermalen, was scharf bleiben soll, etwa abstehende Haare, und mit Unschärfe, was unscharf werden soll. Space gedrückt halten, um das Foto zu verschieben."
+        },
         "crop": {
             "notice": "Das Ändern des Zuschnitts löscht die Maske.",
             "noticeRemoval": "Das Ändern des Zuschnitts löscht den für „Entfernen“ gemalten Bereich.",
-            "noticeBoth": "Das Ändern des Zuschnitts löscht die Maske und den für „Entfernen“ gemalten Bereich."
+            "noticeBoth": "Das Ändern des Zuschnitts löscht die Maske und den für „Entfernen“ gemalten Bereich.",
+            "noticeRefine": "Eine Änderung des Zuschnitts löscht die Verfeinerungsstriche der Objektivunschärfe."
         },
         "toast": {
             "cleared": "Der Zuschnitt wurde geändert, daher wurde die Maske gelöscht.",
             "undo": "Rückgängig",
             "clearedRemoval": "Der Zuschnitt wurde geändert, daher wurde der für „Entfernen“ gemalte Bereich gelöscht.",
-            "clearedBoth": "Der Zuschnitt wurde geändert, daher wurden die Maske und der für „Entfernen“ gemalte Bereich gelöscht."
+            "clearedBoth": "Der Zuschnitt wurde geändert, daher wurden die Maske und der für „Entfernen“ gemalte Bereich gelöscht.",
+            "clearedRefine": "Der Zuschnitt wurde geändert, daher wurden die Verfeinerungsstriche der Objektivunschärfe gelöscht."
         }
     },
     "export": {
@@ -483,6 +491,8 @@
             "assumed": "Dieses Foto enthält keine Objektivinformationen; f/{{f}} angenommen",
             "cannotBlurMore": "Dieses Foto wurde mit f/{{f}} (Kleinbildäquivalent) aufgenommen, so offen wie der Effekt reicht; es lässt sich nicht weiter verwischen.",
             "setFocus": "Fokus setzen",
+            "refine": "Verfeinern",
+            "editRefine": "Verfeinerung bearbeiten",
             "focusHint": "Klicken Sie auf die Stelle des Fotos, die scharf sein soll. Esc zum Abbrechen."
         },
         "add": "Hinzufügen",

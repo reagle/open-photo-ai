@@ -1,5 +1,5 @@
 import type { Operation } from "@/ipc/enhance";
-import type { Mask, Stroke } from "@/ipc/mask";
+import type { Mask, Refine, Stroke } from "@/ipc/mask";
 import { isPainted } from "@/lib/enhancements";
 import { clampTo } from "@/lib/utils";
 
@@ -159,6 +159,41 @@ export const regionOf = (snapshot: Snapshot | undefined): Mask => ({
  */
 export const withRemoval = (operations: readonly Operation[], region: Mask): Operation[] =>
     operations.map((operation) => (isPainted(operation.family) ? { ...operation, mask: region } : operation));
+
+/**
+ * What a lens blur's refinement is on the wire, or `undefined` where nothing is painted: the strokes in order, each a
+ * focus stroke, a blur stroke (`blur`) or an erase, never turned over. The coordinates are rounded as {@link toWire}
+ * rounds them.
+ *
+ * Unlike a removal's region, left out when empty: a lens blur with no refinement is the lens blur it always was, its
+ * result and its cache key the same.
+ */
+export const refineOf = (snapshot: Snapshot | undefined): Refine | undefined => {
+    const strokes = toWire(snapshot && { strokes: snapshot.strokes, inverted: false })?.strokes;
+
+    return strokes && { strokes };
+};
+
+/**
+ * `operations` with `refine` as the refinement of each Lens Blur, and every other one as it was: the Refine brush's
+ * strokes put in on the way to `enhance` or `export`, as {@link withRemoval} puts in the removal's. Nothing changes
+ * where there is no refinement.
+ */
+export const withRefine = (operations: readonly Operation[], refine: Refine | undefined): Operation[] =>
+    operations.map((operation) => (refine && operation.family === "lens_blur" ? { ...operation, refine } : operation));
+
+/**
+ * The two masks a refinement's tint is drawn from, as Rust paints them: **focus**, where each focus stroke paints and
+ * every other stroke erases, and **blur**, where each blur stroke paints and every other stroke erases. So a stroke of
+ * one kind takes the other away under it, and an erase takes either.
+ */
+export const refineMasks = (snapshot: Snapshot | undefined): { focus: Snapshot; blur: Snapshot } => {
+    const strokes = snapshot?.strokes ?? [];
+    const painting = (blur: boolean) =>
+        strokes.map(({ blur: blurs, ...stroke }) => ({ ...stroke, erase: stroke.erase || (blurs ?? false) !== blur }));
+
+    return { focus: { strokes: painting(false), inverted: false }, blur: { strokes: painting(true), inverted: false } };
+};
 
 /**
  * The strokes `now` has beyond `base`, where `base` is `now` as it was a few strokes ago: the same strokes, the same
