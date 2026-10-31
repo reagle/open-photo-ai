@@ -353,3 +353,46 @@ describe("the uses of a mask under a lens blur", () => {
         expect(store().masks.get(HOLIDAY.path)?.strokes).toHaveLength(1);
     });
 });
+
+describe("a stack with nothing for the mask to limit", () => {
+    const remove: Operation = { family: "remove", codename: "lima", precision: "fp32", parameters: {} };
+    const blur: Operation = {
+        family: "lens_blur",
+        codename: "lisbon",
+        precision: "fp16",
+        parameters: { f_number: 1.4, focus_x: 0.5, focus_y: 0.5 },
+    };
+    const grain: Operation = { family: "grain", codename: "sensor", precision: "fp32", parameters: { amount: 1 } };
+
+    const holding = (...operations: Operation[]) =>
+        act(() => useEnhancementStore.setState({ enhancements: new Map([[HOLIDAY.path, operations]]) }));
+
+    it("offers no mask for Grain, alone or after Remove, which the mask never limits", () => {
+        for (const stack of [[grain], [remove, grain]]) {
+            holding(...stack);
+            const { unmount } = render(<MaskSection />);
+
+            expect(document.querySelector("[data-slot='mask-section']")).toBeNull();
+            unmount();
+        }
+    });
+
+    it("stops painting the limiting mask when only Grain is left", () => {
+        holding(sharpen, grain);
+        act(() => store().startEditing(HOLIDAY.path));
+        render(<MaskSection />);
+
+        holding(grain);
+
+        expect(store().editing).toBeUndefined();
+    });
+
+    it("offers the mask under a lens blur and Grain to keep in focus, with no limit switch", () => {
+        holding(blur, grain);
+        act(() => store().startEditing(HOLIDAY.path));
+        render(<MaskSection />);
+
+        expect(screen.queryByRole("switch", { name: "Limit the enhancements" })).toBeNull();
+        expect(screen.getByRole("switch", { name: "Keep the mask in focus" })).toBeInTheDocument();
+    });
+});

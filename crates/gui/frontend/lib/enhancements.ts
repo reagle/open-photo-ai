@@ -670,6 +670,24 @@ export const runnable = (operations: readonly Operation[]): readonly Operation[]
         : operations;
 
 /**
+ * The families a limiting mask never limits: Remove, which runs before the mask is blended in, so the mask never
+ * brings back what was removed, and the finishing Lens Blur and Grain, which run after it over the whole picture.
+ */
+const UNLIMITED: readonly Family[] = ["remove", "lens_blur", "grain"];
+
+/**
+ * Whether a limiting mask has anything to limit in `operations`: an enhancement that runs between the removals and
+ * the finishing Lens Blur and Grain.
+ *
+ * **The library's rule, restated once for the window**: `Opai::process` limits a chain only when it holds more
+ * operations than its leading removals and its trailing lens blurs and grain (`operations.len() > removals + ending`),
+ * and with every chain sorted into `Family::APPLY_ORDER` - Remove first, Lens Blur and Grain last - that is an
+ * operation of any other family. Of what runs, as the chain the library is sent.
+ */
+export const maskLimits = (operations: readonly Operation[]): boolean =>
+    runnable(operations).some((operation) => !UNLIMITED.includes(operation.family));
+
+/**
  * What the library calls a lens blur's aperture: its own `FNumber::NAME`, the name the catalogue publishes the range
  * under and the operation carries the value under.
  */
