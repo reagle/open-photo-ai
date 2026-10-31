@@ -1,16 +1,24 @@
 //! A photograph's grain, measured per brightness, and noise synthesised to put back what a result lacks of it.
 //!
-//! A generative restorer draws clean detail: the photograph's own sensor noise or film grain does not survive it, and a
-//! restored sky or cheek reads as smoother than any capture of the same scene. What is measured here is the fine
-//! residual — each pixel less the mean of its 3 x 3 neighbourhood — per channel, in eight bands of luminance, and how
-//! much the three channels' residuals move together. Measured on the image a run was given and on what it made, the
-//! difference per band is the grain the run took away; [`added`] draws noise of that deviation, interpolated by each
-//! pixel's own luminance, and adds it to the result.
+//! A generative restorer, a denoiser and a lens blur all leave smoother pixels than any capture of the same scene: the
+//! photograph's own sensor noise or film grain does not survive them, and a sky or a cheek reads as "plastic". What is
+//! measured here is the fine residual — each pixel less the mean of its 3 x 3 neighbourhood — per channel, in eight
+//! bands of luminance, and how much the three channels' residuals move together: a [`Profile`]. Measured on the
+//! photograph a chain was given, it says what grain a capture of this scene has at each brightness; [`lacking`] then
+//! says, tile by tile, how much of it the photograph held and the result still holds at each place; and
+//! [`added_where`] draws noise of the deviation the result lacks, interpolated by each pixel's own luminance and
+//! position, and adds it to the result.
 //!
 //! **Per brightness**, because a sensor's noise is signal-dependent: its variance grows with the light it counts and
 //! then shrinks again near white, where the tone curve compresses the highlights. sRGB is not raw, so the curve is
 //! measured rather than modelled — eight bands, the deviation interpolated linearly between their centres, which is the
 //! piecewise-linear scaling function AV1 signals its film grain with, fitted here rather than signalled.
+//!
+//! **Per tile, on both**, because what a chain took away is not the same everywhere: a lens blur smooths the
+//! background and leaves the subject's own noise, and a restorer smooths a cheek while it draws texture into hair of the
+//! same brightness. A whole-picture figure would put grain over a subject that kept its own, or none on a cheek that lost
+//! it; and a photograph's own noise is uneven, so the result is compared with the photograph at the same place rather
+//! than with the band's figure, and a result that is its photograph is given nothing.
 //!
 //! **Deterministic**: the noise is drawn from a hash of the result's own pixel coordinates and a salt, so a run gives
 //! the same pixels every time and a cached result is the same as a recomputed one. The hash is the one Remove's fill
@@ -87,6 +95,16 @@ impl Profile {
     #[must_use]
     pub fn scaled(self, share: f32) -> Self {
         Self { sigma: self.sigma.map(|band| band.map(|sigma| sigma * share)), ..self }
+    }
+
+    /// This profile with nothing in a band whose residual is under the rounding of a smooth 8-bit gradient: what a
+    /// reference has to put back, which a gradient's rounding is not.
+    #[must_use]
+    pub fn floored(self) -> Self {
+        Self {
+            sigma: self.sigma.map(|band| band.map(|sigma| if sigma < QUANTISATION { 0.0 } else { sigma })),
+            ..self
+        }
     }
 
     /// Whether a viewer could see any of it.
@@ -234,36 +252,255 @@ pub fn missing(source: &Profile, result: &Profile) -> Profile {
     Profile { sigma, centre: source.centre, correlation: source.correlation }
 }
 
+/// Where a result lacks a photograph's grain: per square tile of each, the share `r` of the photograph's per-band grain
+/// it holds there, the photograph's and the result's read at the same place, and missing `sqrt(max(0, had^2 - has^2))`
+/// of the band's deviation.
+///
+/// 0 where the result holds what the photograph held there or more (a texture, a subject that kept its own noise, a
+/// result that is the photograph), up to the photograph's own share where the result holds none (a lens blur's
+/// background, a restored cheek). Each map is read between its tiles' centres, at the same fraction of its picture, so
+/// a step from one tile to the next is never a seam and an enlarged result is read against the photograph it came from.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Lack {
+    /// The photograph's share of its band's grain, per tile.
+    had: Shares,
+    /// The result's, per tile of the result.
+    has: Shares,
+}
+
+/// One picture's share of a profile's grain, per square tile, row by row.
+#[derive(Debug, Clone, PartialEq)]
+struct Shares {
+    columns: usize,
+    rows: usize,
+    values: Vec<f32>,
+}
+
+impl Shares {
+    /// One share over the whole picture.
+    fn uniform(share: f32) -> Self {
+        Self { columns: 1, rows: 1, values: vec![share] }
+    }
+
+    /// The share along row `y` of a picture `width` x `height`, at each of its pixels: bilinear between the tiles'
+    /// centres, and the edge tiles' beyond them, at the same fraction of the picture whatever its size.
+    fn row(&self, y: usize, width: usize, height: usize) -> Vec<f32> {
+        // Where a coordinate falls between the centres of the tiles along an axis of `count` tiles over `size` pixels:
+        // the tile before, the one after, and how far towards the second.
+        let between = |at: usize, size: usize, count: usize| {
+            let position = ((at as f32 + 0.5) * count as f32 / size as f32 - 0.5).clamp(0.0, (count - 1) as f32);
+            let before = position.floor() as usize;
+            (before, (before + 1).min(count - 1), position - before as f32)
+        };
+        let (above, below, down) = between(y, height, self.rows);
+        let line = |row: usize| &self.values[row * self.columns..(row + 1) * self.columns];
+        let (above, below) = (line(above), line(below));
+
+        (0..width)
+            .map(|x| {
+                let (left, right, across) = between(x, width, self.columns);
+                let top = across.mul_add(above[right] - above[left], above[left]);
+                let bottom = across.mul_add(below[right] - below[left], below[left]);
+                down.mul_add(bottom - top, top)
+            })
+            .collect()
+    }
+}
+
+impl Lack {
+    /// The share missing everywhere: `1` for grain drawn over the whole of a picture.
+    pub fn everywhere(share: f32) -> Self {
+        Self { had: Shares::uniform(share.clamp(0.0, 1.0)), has: Shares::uniform(0.0) }
+    }
+
+    /// Whether nothing can be missing anywhere: the photograph held no grain, or the result holds at least the most
+    /// the photograph held anywhere.
+    pub fn is_nothing(&self) -> bool {
+        let most = self.had.values.iter().copied().fold(0.0, f32::max);
+        let least = self.has.values.iter().copied().fold(f32::INFINITY, f32::min);
+        most <= 0.0 || least >= most
+    }
+
+    /// The mean share missing at the result's tile centres, for a log reader.
+    pub fn mean(&self) -> f32 {
+        // At a picture of whole tiles, so each centre is a pixel; read as the drawing reads it.
+        let (width, height) = (self.has.columns * TILE, self.has.rows * TILE);
+        let total: f32 = (0..self.has.rows)
+            .flat_map(|row| {
+                let line = self.row(row * TILE + TILE / 2, width, height);
+                (0..self.has.columns).map(move |column| line[column * TILE + TILE / 2])
+            })
+            .sum();
+        total / self.has.values.len().max(1) as f32
+    }
+
+    /// The share missing along row `y` of the result, `width` x `height`, at each of its pixels.
+    fn row(&self, y: usize, width: usize, height: usize) -> Vec<f32> {
+        let had = self.had.row(y, width, height);
+        let has = self.has.row(y, width, height);
+        had.into_iter().zip(has).map(|(had, has)| (had * had - has * has).max(0.0).sqrt()).collect()
+    }
+}
+
+/// The side of the square tiles [`lacking`] measures over, in each picture's own pixels: about a thousand residuals
+/// each, so a tile's median is within a few percent of its grain, and small enough to follow a subject's outline to
+/// within a tile.
+pub const TILE: usize = 32;
+
+/// The fewest residuals a tile is judged from; a tile with fewer (a sliver at the edge, a clipped highlight whose
+/// profile has no grain to compare with) holds no share.
+const FEWEST_IN_TILE: usize = 32;
+
+/// How much of `photograph`'s grain `result` lacks, place by place: `profile` is the photograph's [`measured`] grain,
+/// and each picture is measured against it tile by tile.
+///
+/// A tile's share is each inner pixel's 3 x 3 residual, per channel, over the profile's deviation at the pixel's own
+/// luminance (the luma of its 3 x 3 mean), wherever the profile has grain there at all, as a deviation: 1.4826 times
+/// the median of those ratios, so an edge in the tile is ignored as it is in [`measured`]. Comparing the two at the
+/// same place rather than the result with the band's figure is what leaves a photograph's own uneven noise as it was: a
+/// result that is its photograph lacks nothing anywhere. Under an enlargement the result is asked for the photograph's
+/// per-pixel grain at its own, smaller pixels, which is what a sensor of its resolution would record.
+pub fn lacking(profile: &Profile, photograph: &DynamicImage, result: &DynamicImage) -> Lack {
+    Lack { had: shares(profile, photograph), has: shares(profile, result) }
+}
+
+/// `image`'s share of `profile`'s grain, tile by tile, the rows of tiles across the available cores.
+fn shares(profile: &Profile, image: &DynamicImage) -> Shares {
+    let (width, height) = (image.width() as usize, image.height() as usize);
+    let (columns, rows) = (width.div_ceil(TILE).max(1), height.div_ceil(TILE).max(1));
+    if width < 3 || height < 3 {
+        return Shares { columns, rows, values: vec![0.0; columns * rows] };
+    }
+
+    let sampler = Sampler::new(image);
+    let tile_row = |row: usize| -> Vec<f32> {
+        let unit = |x: usize, y: usize| sampler.rgb(x as u32, y as u32).map(|value| f32::from(value) / 65535.0);
+        let mut ratios: Vec<Vec<f32>> = vec![Vec::with_capacity(3 * TILE * TILE); columns];
+        let mut window = [[[0.0_f32; 3]; 3]; 3];
+        for y in (row * TILE).max(1)..((row + 1) * TILE).min(height - 1) {
+            for x in 1..width - 1 {
+                for (dy, line) in window.iter_mut().enumerate() {
+                    for (dx, pixel) in line.iter_mut().enumerate() {
+                        *pixel = unit(x + dx - 1, y + dy - 1);
+                    }
+                }
+                let mean: [f32; 3] =
+                    std::array::from_fn(|c| window.iter().flatten().map(|pixel| pixel[c]).sum::<f32>() / 9.0);
+                let luma = LUMA.iter().zip(mean).map(|(weight, value)| weight * value).sum::<f32>();
+                let deviation = profile.at(luma);
+
+                let tile = &mut ratios[x / TILE];
+                for channel in 0..3 {
+                    if deviation[channel] >= QUANTISATION {
+                        tile.push((window[1][1][channel] - mean[channel]).abs() / deviation[channel]);
+                    }
+                }
+            }
+        }
+
+        ratios
+            .into_iter()
+            .map(|mut tile| {
+                if tile.len() < FEWEST_IN_TILE {
+                    return 0.0;
+                }
+                let middle = tile.len() / 2;
+                let (_, median, _) = tile.select_nth_unstable_by(middle, f32::total_cmp);
+                *median * MAD_TO_SIGMA
+            })
+            .collect()
+    };
+
+    // A row of tiles per task; each reads only the picture, so the split changes nothing.
+    let workers = (*AVAILABLE).min(rows).max(1);
+    let values = std::thread::scope(|scope| {
+        let tasks: Vec<_> = (0..workers)
+            .map(|worker| {
+                let tile_row = &tile_row;
+                scope.spawn(move || (worker..rows).step_by(workers).map(|row| (row, tile_row(row))).collect::<Vec<_>>())
+            })
+            .collect();
+        let mut values = vec![0.0_f32; columns * rows];
+        for task in tasks {
+            for (row, shares) in task.join().expect("a grain measurement panicked") {
+                values[row * columns..(row + 1) * columns].copy_from_slice(&shares);
+            }
+        }
+        values
+    });
+
+    Shares { columns, rows, values }
+}
+
+/// A sensor's grain where there is no photograph to measure it from: `residual` at mid-grey (in the unit range), each
+/// channel alike, `correlation` between them, shaped by brightness as a capture's is.
+///
+/// The shape is a Poisson-Gaussian sensor's (variance `Y + 0.002` in linear light: shot noise with a read-noise floor)
+/// carried through the sRGB curve's slope: most in the shadows, where the curve lifts what little light there was, and
+/// least towards white. Normalised so that mid-grey (0.5) has `residual`.
+pub fn sensor(residual: f32, correlation: f32) -> Profile {
+    let shape = |luma: f32| {
+        let linear = if luma <= 0.040_45 { luma / 12.92 } else { ((luma + 0.055) / 1.055).powf(2.4) };
+        let slope = if linear <= 0.003_130_8 { 12.92 } else { 1.055 / 2.4 * linear.powf(1.0 / 2.4 - 1.0) };
+        (linear + 0.002).sqrt() * slope
+    };
+    let middle = shape(0.5);
+    let centre = middles();
+
+    Profile {
+        sigma: centre.map(|luma| [residual * shape(luma) / middle; 3]),
+        centre,
+        correlation: correlation.clamp(0.0, 1.0),
+    }
+}
+
 /// Adds to `image`, in place, noise whose residual is `profile`'s at each pixel's luminance, drawn from the hash of the
 /// pixel's coordinates under `salt`.
 ///
 /// Written at the image's own depth for the RGB and RGBA variants at 8 and 16 bits, which are what every pipeline hands
 /// back; alpha is left as it is, and any other variant is left untouched. A profile no viewer could see adds nothing.
 pub fn added(image: &mut DynamicImage, profile: &Profile, salt: u64) {
-    if profile.is_invisible() {
+    added_where(image, profile, &Lack::everywhere(1.0), salt);
+}
+
+/// [`added`], with the deviation at each pixel the share `lack` says is missing there of `profile`'s.
+pub fn added_where(image: &mut DynamicImage, profile: &Profile, lack: &Lack, salt: u64) {
+    if profile.is_invisible() || lack.is_nothing() {
         return;
     }
 
     let (width, height) = (image.width() as usize, image.height() as usize);
+    let at = Placed { profile, lack, width, height };
     match image {
-        DynamicImage::ImageRgb8(buffer) => add_to::<u8>(buffer, width, height, 3, profile, salt),
-        DynamicImage::ImageRgba8(buffer) => add_to::<u8>(buffer, width, height, 4, profile, salt),
-        DynamicImage::ImageRgb16(buffer) => add_to::<u16>(buffer, width, height, 3, profile, salt),
-        DynamicImage::ImageRgba16(buffer) => add_to::<u16>(buffer, width, height, 4, profile, salt),
+        DynamicImage::ImageRgb8(buffer) => add_to::<u8>(buffer, 3, &at, salt),
+        DynamicImage::ImageRgba8(buffer) => add_to::<u8>(buffer, 4, &at, salt),
+        DynamicImage::ImageRgb16(buffer) => add_to::<u16>(buffer, 3, &at, salt),
+        DynamicImage::ImageRgba16(buffer) => add_to::<u16>(buffer, 4, &at, salt),
         _ => {}
     }
 }
 
-/// [`added`] over one picture's storage, `channels` values a pixel, in bands of rows across the available cores.
-fn add_to<T: Channel + Send>(raw: &mut [T], width: usize, height: usize, channels: usize, profile: &Profile, salt: u64)
+/// What the noise is drawn to, and over how large a picture.
+struct Placed<'a> {
+    profile: &'a Profile,
+    lack: &'a Lack,
+    width: usize,
+    height: usize,
+}
+
+/// The cores a pass is split across.
+static AVAILABLE: LazyLock<usize> =
+    LazyLock::new(|| std::thread::available_parallelism().map_or(1, std::num::NonZero::get));
+
+/// [`added_where`] over one picture's storage, `channels` values a pixel, in bands of rows across the available cores.
+fn add_to<T: Channel + Send>(raw: &mut [T], channels: usize, at: &Placed<'_>, salt: u64)
 where
     image::Rgb<T>: image::Pixel<Subpixel = T>,
 {
     // Below this there is not enough work to pay for a thread.
     const MIN_ROWS_PER_WORKER: usize = 64;
-    static AVAILABLE: LazyLock<usize> =
-        LazyLock::new(|| std::thread::available_parallelism().map_or(1, std::num::NonZero::get));
 
+    let Placed { profile, lack, width, height } = *at;
     let workers = (*AVAILABLE).min(height.div_ceil(MIN_ROWS_PER_WORKER)).max(1);
     let rows_per_worker = height.div_ceil(workers).max(1);
     let row_len = width * channels;
@@ -275,19 +512,24 @@ where
             let first = index * rows_per_worker;
             scope.spawn(move || {
                 let mut field = Field::new(width, first, salt);
+                let shared = profile.correlation.sqrt();
+                let own = (1.0 - profile.correlation).sqrt();
                 for (offset, row) in band.chunks_mut(row_len).enumerate() {
-                    let noise = field.row(first + offset);
-                    let shared = profile.correlation.sqrt();
-                    let own = (1.0 - profile.correlation).sqrt();
+                    let y = first + offset;
+                    let missing = lack.row(y, width, height);
+                    let noise = field.row(y);
 
-                    for (pixel, draws) in row.chunks_mut(channels).zip(noise) {
+                    for ((pixel, draws), share) in row.chunks_mut(channels).zip(noise).zip(missing) {
+                        if share <= 0.0 {
+                            continue;
+                        }
                         let values: [f32; 3] = std::array::from_fn(|c| pixel[c].to_unit());
                         let luma = LUMA.iter().zip(values).map(|(weight, value)| weight * value).sum::<f32>();
                         let deviation = profile.at(luma);
 
                         for channel in 0..3 {
                             let draw = shared.mul_add(draws[0], own * draws[channel + 1]);
-                            let amount = deviation[channel] / SMOOTHED_RESIDUAL * draw;
+                            let amount = share * deviation[channel] / SMOOTHED_RESIDUAL * draw;
                             pixel[channel] = T::from_unit(values[channel] + amount);
                         }
                     }
@@ -450,23 +692,99 @@ mod tests {
     #[test]
     fn a_clean_picture_measures_no_grain_and_has_none_put_back() {
         let clean = ramp(512, 256);
-        let profile = measured(&clean).expect("a ramp has samples in every band");
+        let profile = measured(&clean).expect("a ramp has samples in every band").floored();
 
-        assert!(profile.sigma.iter().flatten().all(|sigma| *sigma < 1e-4), "{profile:?}");
-        let lacking = missing(&profile, &profile);
-        assert!(lacking.is_invisible());
+        assert!(profile.is_invisible(), "{profile:?}");
 
         let mut after = clean.clone();
-        added(&mut after, &lacking, SALT);
+        let lack = lacking(&profile, &clean, &clean);
+        added_where(&mut after, &profile, &lack, SALT);
         assert_eq!(after, clean);
     }
 
     #[test]
     fn a_band_under_the_rounding_of_eight_bit_levels_has_no_grain_to_put_back() {
         let faint = Profile { sigma: [[0.5 / 255.0; 3]; BANDS], centre: middles(), correlation: 1.0 };
-        let clean = Profile { sigma: [[0.0; 3]; BANDS], centre: middles(), correlation: 0.0 };
 
-        assert!(missing(&faint, &clean).sigma.iter().flatten().all(|sigma| *sigma == 0.0));
+        assert!(faint.floored().sigma.iter().flatten().all(|sigma| *sigma == 0.0));
+        assert_eq!(target().floored(), target(), "a visible grain was floored");
+    }
+
+    /// `picture` with white noise of the target's deviation at each pixel's level, one draw shared by the channels,
+    /// over the columns `from..to` only.
+    fn noisy_columns(picture: &DynamicImage, from: u32, to: u32) -> DynamicImage {
+        let picture = picture.to_rgb16();
+        DynamicImage::ImageRgb16(ImageBuffer::from_fn(picture.width(), picture.height(), |x, y| {
+            let pixel = picture.get_pixel(x, y).0;
+            if !(from..to).contains(&x) {
+                return Rgb(pixel);
+            }
+            let level = f32::from(pixel[1]) / 65535.0;
+            // The residual the target asks for, as the deviation of white noise.
+            let sigma = target().at(level)[1] / 0.942_809;
+            let [a, ..] = normals(u64::from(x), u64::from(y), SALT ^ 7);
+            Rgb(pixel.map(|value| ((f32::from(value) / 65535.0 + sigma * a).clamp(0.0, 1.0) * 65535.0).round() as u16))
+        }))
+    }
+
+    #[test]
+    fn a_result_without_grain_lacks_all_of_it_and_the_photograph_itself_lacks_none() {
+        let clean = ramp_between(512, 256, 0.05, 0.95);
+        let noisy = noisy_columns(&clean, 0, 512);
+        let reference = measured(&noisy).expect("measured");
+
+        let without = lacking(&reference, &noisy, &clean);
+        assert!((without.mean() - 1.0).abs() < 0.1, "a clean ramp lacks {} on average", without.mean());
+
+        // The photograph against itself, tile by tile: its own uneven noise is not something it lacks.
+        let with = lacking(&reference, &noisy, &noisy);
+        assert!(with.mean() == 0.0, "the photograph itself lacks {} on average", with.mean());
+    }
+
+    #[test]
+    fn grain_is_put_back_where_a_result_lost_it_and_not_where_it_kept_it() {
+        // The left half keeps its grain, as a subject in focus does; the right half lost it, as a blurred background.
+        let clean = ramp_between(768, 512, 0.05, 0.95).rotate90();
+        let (width, height) = (clean.width(), clean.height());
+        let photograph = noisy_columns(&clean, 0, width);
+        let reference = measured(&photograph).expect("measured");
+        let mut result = noisy_columns(&clean, 0, width / 2);
+
+        let lack = lacking(&reference, &photograph, &result);
+        added_where(&mut result, &reference, &lack, SALT);
+
+        let half = |picture: &DynamicImage, x: u32| measured(&picture.crop_imm(x, 0, width / 2, height));
+        let (kept, lost) = (half(&result, 0).expect("measured"), half(&result, width / 2).expect("measured"));
+        let (had_left, had_right) =
+            (half(&photograph, 0).expect("measured"), half(&photograph, width / 2).expect("measured"));
+        for index in 1..BANDS - 1 {
+            let (kept, had) = (kept.sigma[index][1], had_left.sigma[index][1]);
+            assert!(kept / had < 1.12, "band {index}: the half that kept its grain went from {had} to {kept}");
+            let (lost, had) = (lost.sigma[index][1], had_right.sigma[index][1]);
+            assert!((lost - had).abs() / had < 0.12, "band {index}: the half that lost it has {lost} against {had}");
+        }
+    }
+
+    #[test]
+    fn a_lack_is_read_between_the_tiles_centres() {
+        let lack = Lack { had: Shares { columns: 2, rows: 1, values: vec![0.0, 1.0] }, has: Shares::uniform(0.0) };
+        let row = lack.row(0, 64, 32);
+
+        assert_eq!(row[0], 0.0, "beyond the first centre is the first tile's");
+        assert_eq!(row[63], 1.0, "beyond the last centre is the last tile's");
+        assert!(row.windows(2).all(|pair| pair[0] <= pair[1]), "{row:?}");
+        assert!((row[31] - 0.5).abs() < 0.05 && (row[32] - 0.5).abs() < 0.05, "{row:?}");
+        assert!(Lack::everywhere(0.0).is_nothing());
+    }
+
+    #[test]
+    fn a_sensors_grain_is_most_in_the_shadows_and_least_towards_white() {
+        let profile = sensor(4.0 / 255.0, 0.8);
+        let green = |luma: f32| profile.at(luma)[1];
+
+        assert!((green(0.5) - 4.0 / 255.0).abs() < 0.2 / 255.0, "mid-grey has {}", green(0.5) * 255.0);
+        assert!(green(0.1) > green(0.5) && green(0.5) > green(0.95), "{profile:?}");
+        assert_eq!(profile.correlation, 0.8);
     }
 
     #[test]
