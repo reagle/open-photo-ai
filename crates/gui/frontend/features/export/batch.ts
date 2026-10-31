@@ -12,7 +12,7 @@ import { runnable } from "@/lib/enhancements";
 import { describeExportError, type ExportFailure, qualityFor } from "@/lib/export";
 import { withChoice } from "@/lib/faces";
 import { track } from "@/lib/faro";
-import { regionOf, toWire, withRemoval } from "@/lib/mask";
+import { refineOf, regionOf, toWire, withRefine, withRemoval } from "@/lib/mask";
 import { useCropStore } from "@/stores/crop";
 import { useEnhancementStore } from "@/stores/enhancements";
 import { batchSummary, useExportBatchStore } from "@/stores/exportBatch";
@@ -111,7 +111,9 @@ const exportOne = async (
     const mask = toWire(useMaskStore.getState().masks.get(path));
     // And what Remove takes out of it, as the preview sends it: the removal's region, carried by the Remove itself.
     const region = regionOf(useMaskStore.getState().removals.get(path));
-    const chain = withRemoval(withChoice(operations, choice), region);
+    // And the Lens Blur's Refine brush, carried by the Lens Blur itself.
+    const refine = refineOf(useMaskStore.getState().refines.get(path));
+    const chain = withRefine(withRemoval(withChoice(operations, choice), region), refine);
 
     const { run, done } = exportImage(identity, chain, processor, request, crop, mask);
     setCurrent({ path, run });

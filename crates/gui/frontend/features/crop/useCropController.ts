@@ -602,12 +602,15 @@ export const useCropController = (open: boolean, onClose: () => void) => {
             changed && path !== undefined ? useMaskStore.getState().takeMask(path, target) : undefined;
         const cleared = taken("limit");
         const removal = taken("removal");
+        // And the Lens Blur's Refine brush, which is strokes over the same framing too.
+        const refine = taken("refine");
 
-        if ((cleared || removal) && path !== undefined) {
+        if ((cleared || removal || refine) && path !== undefined) {
             // **The notice goes with the first stroke painted after the crop**, and its Undo restores only while the
             // photograph still has neither region: giving the old ones back over new strokes would overwrite them.
-            const repainted = (state: Pick<ReturnType<typeof useMaskStore.getState>, "masks" | "removals">) =>
-                state.masks.has(path) || state.removals.has(path);
+            const repainted = (
+                state: Pick<ReturnType<typeof useMaskStore.getState>, "masks" | "removals" | "refines">,
+            ) => state.masks.has(path) || state.removals.has(path) || state.refines.has(path);
 
             let noticeId: string | number | undefined;
             const unwatch = useMaskStore.subscribe((state) => {
@@ -617,12 +620,16 @@ export const useCropController = (open: boolean, onClose: () => void) => {
                 toast.dismiss(noticeId);
             });
 
+            // The refinement is named only alone: beside a mask or a removal, the notice for those says the crop
+            // cleared what was painted.
             const message =
                 cleared && removal
                     ? "mask.toast.clearedBoth"
                     : removal
                       ? "mask.toast.clearedRemoval"
-                      : "mask.toast.cleared";
+                      : cleared
+                        ? "mask.toast.cleared"
+                        : "mask.toast.clearedRefine";
 
             noticeId = toast(i18n.t(message), {
                 duration: MASK_UNDO_MS,
@@ -640,6 +647,7 @@ export const useCropController = (open: boolean, onClose: () => void) => {
                         setTransform(identity, FITTED);
                         if (cleared) useMaskStore.getState().restoreMask(path, cleared);
                         if (removal) useMaskStore.getState().restoreMask(path, removal, "removal");
+                        if (refine) useMaskStore.getState().restoreMask(path, refine, "refine");
                     },
                 },
             });

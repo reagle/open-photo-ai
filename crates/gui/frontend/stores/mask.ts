@@ -41,6 +41,11 @@ export type MaskEntry = Snapshot & {
  */
 export type Tool = {
     mode: "paint" | "erase";
+    /**
+     * What painting paints on the lens blur's refinement: focus, kept sharp, or blur. The limiting mask and the removal
+     * have one thing to paint, and ignore it.
+     */
+    paints: "focus" | "blur";
     /** The brush's diameter as a fraction of the longer side. */
     size: number;
     /** `0` is a hard edge and `1` feathers from the middle out. */
@@ -50,14 +55,15 @@ export type Tool = {
 };
 
 /**
- * Which of a photograph's two painted regions: the **limiting** mask, which keeps the chain's result where it is white
- * and the photograph where it is black, or the **removal**, what Remove takes out.
+ * Which of a photograph's painted regions: the **limiting** mask, which keeps the chain's result where it is white
+ * and the photograph where it is black, the **removal**, what Remove takes out, or the **refinement**, the lens blur's
+ * Refine brush - focus strokes kept sharp and blur strokes blurred, each stroke saying which (`Stroke.blur`).
  *
  * Painted with one brush and one panel, and independent in everything else: each has its own strokes and its own
- * history, and neither is ever sent in the place of the other - the limiting mask is the run's, the removal is the
- * Remove operation's. One is edited at a time.
+ * history, and none is ever sent in the place of another - the limiting mask is the run's, the removal is the Remove
+ * operation's, the refinement the Lens Blur's. One is edited at a time.
  */
-export type Target = "limit" | "removal";
+export type Target = "limit" | "removal" | "refine";
 
 /** A stroke being drawn, which belongs to no mask until the pointer comes up - then to `target`'s. */
 export type LiveStroke = { path: string; target: Target; stroke: Stroke };
@@ -72,6 +78,8 @@ type MaskStore = {
      * stack, so taking that off forgets it - see {@link MaskStore.forgetTarget}.
      */
     removals: Map<string, MaskEntry>;
+    /** Each open photograph's lens blur refinement, keyed the same way, and forgotten with the Lens Blur likewise. */
+    refines: Map<string, MaskEntry>;
     tool: Tool;
     /**
      * The photograph the preview is painting on, and which of its regions, or absent. The preview is in paint mode
@@ -85,6 +93,10 @@ type MaskStore = {
     live: LiveStroke | undefined;
 
     setMode: (mode: Tool["mode"]) => void;
+    /** Paints `paints` on the refinement, and leaves erasing for it. */
+    setPaints: (paints: Tool["paints"]) => void;
+    /** Swaps focus and blur. */
+    swapPaints: () => void;
     /** Swaps paint and erase. */
     swapMode: () => void;
     setSize: (size: number) => void;
@@ -146,7 +158,7 @@ type MaskStore = {
      * does to the strokes that were its whole setting, as taking off an upscale forgets its scale.
      */
     forgetTarget: (path: string, target: Target) => void;
-    /** Forgets both of a photograph's regions: the file closed. */
+    /** Forgets all of a photograph's regions: the file closed. */
     forget: (path: string) => void;
     forgetAll: () => void;
 };
@@ -175,18 +187,24 @@ const changed = (entry: MaskEntry | undefined, next: Snapshot): MaskEntry => ({
 const withEntry = (masks: Map<string, MaskEntry>, path: string, entry: MaskEntry) => new Map(masks).set(path, entry);
 
 /** The store's key for `target`'s map of entries. */
-const KEY = { limit: "masks", removal: "removals" } as const satisfies Record<Target, keyof MaskStore>;
+const KEY = { limit: "masks", removal: "removals", refine: "refines" } as const satisfies Record<
+    Target,
+    keyof MaskStore
+>;
+
+/** The store's maps of entries, one a region. */
+type Regions = Pick<MaskStore, "masks" | "removals" | "refines">;
 
 /** `state`'s map of `target`'s entries. */
-const mapOf = (state: Pick<MaskStore, "masks" | "removals">, target: Target) => state[KEY[target]];
+const mapOf = (state: Regions, target: Target) => state[KEY[target]];
 
 /** The change to the store that puts `entry` in as `path`'s `target` region. */
-const putting = (state: Pick<MaskStore, "masks" | "removals">, target: Target, path: string, entry: MaskEntry) => ({
+const putting = (state: Regions, target: Target, path: string, entry: MaskEntry) => ({
     [KEY[target]]: withEntry(mapOf(state, target), path, entry),
 });
 
 /** The change to the store that takes `path`'s `target` region out, or `undefined` where it has none. */
-const dropping = (state: Pick<MaskStore, "masks" | "removals">, target: Target, path: string) => {
+const dropping = (state: Regions, target: Target, path: string) => {
     const map = mapOf(state, target);
     if (!map.has(path)) return;
 
@@ -207,7 +225,8 @@ const dropping = (state: Pick<MaskStore, "masks" | "removals">, target: Target, 
 export const useMaskStore = create<MaskStore>()((set, get) => ({
     masks: new Map<string, MaskEntry>(),
     removals: new Map<string, MaskEntry>(),
-    tool: { mode: "paint", size: SIZE_DEFAULT, softness: SOFTNESS_DEFAULT, overlay: true },
+    refines: new Map<string, MaskEntry>(),
+    tool: { mode: "paint", paints: "focus", size: SIZE_DEFAULT, softness: SOFTNESS_DEFAULT, overlay: true },
     editing: undefined,
     panning: false,
     live: undefined,
@@ -215,6 +234,11 @@ export const useMaskStore = create<MaskStore>()((set, get) => ({
     setMode: (mode) => set((state) => ({ tool: { ...state.tool, mode } })),
     swapMode: () =>
         set((state) => ({ tool: { ...state.tool, mode: state.tool.mode === "paint" ? "erase" : "paint" } })),
+    setPaints: (paints) => set((state) => ({ tool: { ...state.tool, mode: "paint", paints } })),
+    swapPaints: () =>
+        set((state) => ({
+            tool: { ...state.tool, mode: "paint", paints: state.tool.paints === "focus" ? "blur" : "focus" },
+        })),
     setSize: (size) => set((state) => ({ tool: { ...state.tool, size } })),
     stepSize: (direction) => set((state) => ({ tool: { ...state.tool, size: stepSize(state.tool.size, direction) } })),
     setSoftness: (softness) => set((state) => ({ tool: { ...state.tool, softness: clampTo(softness, 0, 1) } })),
@@ -229,13 +253,17 @@ export const useMaskStore = create<MaskStore>()((set, get) => ({
 
     beginStroke: (path, x, y, erase) => {
         const { tool, editing } = get();
+        const target = editing?.path === path ? editing.target : "limit";
+        const erasing = erase || tool.mode === "erase";
 
         set({
             live: {
                 path,
-                target: editing?.path === path ? editing.target : "limit",
+                target,
                 stroke: {
-                    erase: erase || tool.mode === "erase",
+                    erase: erasing,
+                    // Only the refinement's strokes say which they paint, and only a blur says so.
+                    ...(target === "refine" && !erasing && tool.paints === "blur" && { blur: true }),
                     radius: radiusOf(tool.size),
                     softness: tool.softness,
                     points: [x, y],
@@ -382,15 +410,18 @@ export const useMaskStore = create<MaskStore>()((set, get) => ({
             const live = state.live?.path === path ? { live: undefined } : {};
             const masks = dropping(state, "limit", path);
             const removals = dropping(state, "removal", path);
-            if (!masks && !removals && Object.keys(left).length === 0 && Object.keys(live).length === 0) return state;
+            const refines = dropping(state, "refine", path);
+            if (!masks && !removals && !refines && Object.keys(left).length === 0 && Object.keys(live).length === 0)
+                return state;
 
-            return { ...masks, ...removals, ...left, ...live };
+            return { ...masks, ...removals, ...refines, ...left, ...live };
         }),
 
     forgetAll: () =>
         set({
             masks: new Map<string, MaskEntry>(),
             removals: new Map<string, MaskEntry>(),
+            refines: new Map<string, MaskEntry>(),
             editing: undefined,
             panning: false,
             live: undefined,

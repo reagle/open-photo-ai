@@ -1,4 +1,4 @@
-import { Crosshair } from "lucide-react";
+import { Brush, Crosshair } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { PopoverClose } from "@/components/ui/popover";
@@ -10,6 +10,7 @@ import { ASSUMED_LENS, canBlurMore, fNumberForAmount, formatFNumber, shownAmount
 import { type Enhancement, F_NUMBER, parameterOf, withParameter } from "@/lib/enhancements";
 import { useImageCrop } from "@/stores/crop";
 import { useFocusPickStore } from "@/stores/focusPick";
+import { useHasMask, useMaskStore } from "@/stores/mask";
 import { BlurAmountSlider } from "./BlurAmountSlider";
 import { OperationModelTray } from "./ModelTray";
 
@@ -25,6 +26,8 @@ type LensBlurOptionsProps = {
      * for. Absent for a file whose bytes could not be read, which has no pixels for either.
      */
     identity?: string;
+    /** The photograph's path, which the Refine brush's strokes are kept by. */
+    path: string;
     /** Writes the enhancement back to the stack, which is what re-runs the preview. */
     onChange: (operation: Operation) => void;
 };
@@ -42,11 +45,17 @@ type LensBlurOptionsProps = {
  * The panel is where it is chosen and the photograph is where the point is, so the two cannot be one surface - see
  * `features/preview/FocusPick.tsx`.
  *
+ * **Refine closes the panel and opens the brush** over the photograph, in the sidebar's mask section, as the area painted
+ * for Remove is: Focus over what should stay sharp (stray hairs the depth missed), Blur over what should not (a patch
+ * of background at the subject's distance), and Erase. The strokes are kept beside the stack, with their own undo, and
+ * sent with the Lens Blur; the button says Edit refinement once something is painted.
+ *
  * **Nothing is written on open.** The slider writes when released and the button writes nothing at all, so opening the
  * panel to see what a lens blur is set to never cancels the run in flight.
  */
-export const LensBlurOptions = ({ enhancement, operation, entry, identity, onChange }: LensBlurOptionsProps) => {
+export const LensBlurOptions = ({ enhancement, operation, entry, identity, path, onChange }: LensBlurOptionsProps) => {
     const { t } = useTranslation();
+    const refined = useHasMask(path, "refine");
 
     // As the photograph is framed: a crop is a smaller sensor, and its own f-number is the frame's times the framing.
     const crop = useImageCrop(identity);
@@ -103,6 +112,20 @@ export const LensBlurOptions = ({ enhancement, operation, entry, identity, onCha
                 >
                     <Crosshair className="size-4" />
                     {t("enhancements.lensBlur.setFocus")}
+                </Button>
+            </PopoverClose>
+
+            {/* Beside Set focus, and the same way out: the brush is painted on the photograph, not in the panel. */}
+            <PopoverClose asChild>
+                <Button
+                    variant="secondary"
+                    className="h-9 border border-input font-normal text-[13px]"
+                    disabled={identity === undefined}
+                    onClick={() => useMaskStore.getState().startEditing(path, "refine")}
+                    data-slot="lens-refine"
+                >
+                    <Brush className="size-4" />
+                    {refined ? t("enhancements.lensBlur.editRefine") : t("enhancements.lensBlur.refine")}
                 </Button>
             </PopoverClose>
         </>
