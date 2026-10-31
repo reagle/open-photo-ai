@@ -2,7 +2,7 @@
 
 ### Requirement: A mask image per enhancement
 
-The command SHALL accept `--dn-mask`, `--cl-mask`, `--la-mask`, `--cb-mask`, `--sh-mask` and `--rs-mask`, each taking
+The command SHALL accept `--dn-mask`, `--cl-mask`, `--la-mask`, `--cb-mask`, `--sh-mask`, `--rs-mask` and `--gr-mask`, each taking
 an image whose luminance is that enhancement's mask (white applies it, black leaves the step's input), each accepted
 only with its family's flag. Each SHALL be read once per command, resized to each photograph, and refused for a
 photograph whose aspect ratio differs by more than 1 percent, the other photographs still being processed. `--rs-mask`

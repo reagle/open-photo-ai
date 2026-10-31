@@ -3,7 +3,7 @@
 ### Requirement: An enhancement can be limited by a mask of its own
 
 A run SHALL accept at most one step mask per family for Denoise, Colorization, Light Adjustment, Color Balance, Sharpen,
-and Restore at a scale of 1. A step given a mask SHALL produce, per pixel and per channel, `prev + w (step(prev) -
+Restore at a scale of 1, and Grain. A step given a mask SHALL produce, per pixel and per channel, `prev + w (step(prev) -
 prev)`, where `prev` is the picture the step ran on and `w` the mask's weight, and the next step SHALL run on that
 result. A step mask given for Remove, Face Recovery, Upscale, Restore above a scale of 1 or Lens Blur SHALL be refused
 before any model runs. A run with no step masks, or only empty ones, SHALL produce the same pixels and identity as

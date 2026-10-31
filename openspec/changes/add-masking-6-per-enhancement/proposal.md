@@ -20,8 +20,8 @@ Fork work: whether to offer it upstream is Joseph's call later (HOLD: no upstrea
 
 Task estimate: **24** over three slices (see design.md - Slices).
 
-- **A step mask per enhancement**: Denoise, Colorization, Light Adjustment, Color Balance, Sharpen and Restore at 1x may
-  each carry an `opai::Mask`. Such a step's result is blended with its own input, `out = m x step(prev) + (1 - m) x
+- **A step mask per enhancement**: Denoise, Colorization, Light Adjustment, Color Balance, Sharpen, Restore at 1x and
+  Grain may each carry an `opai::Mask`. Such a step's result is blended with its own input, `out = m x step(prev) + (1 - m) x
   prev`, before the next step reads it. Remove (its region is its mask), Face Recovery (its face choice is its region),
   Upscale and an enlarging Restore (a step that resizes takes none) and Lens Blur (its Refine brush and the limiting
   mask's "keep in focus" already say where it applies) take none.
@@ -33,7 +33,7 @@ Task estimate: **24** over three slices (see design.md - Slices).
 - **Masks in the photograph's own coordinates**: step masks are painted over the photograph as loaded (before the crop,
   turn and flips) and reframed by the library for each run, so a crop change keeps them; they are rasterised at the
   chain input's size and read bilinearly at a step's size, so a step after an upscale gets the same region.
-- **CLI**: `--dn-mask`, `--cl-mask`, `--la-mask`, `--cb-mask`, `--sh-mask`, `--rs-mask <FILE>`, each requiring its
+- **CLI**: `--dn-mask`, `--cl-mask`, `--la-mask`, `--cb-mask`, `--sh-mask`, `--rs-mask`, `--gr-mask <FILE>`, each requiring its
   family's flag, beside `--rs-str` and `--lb-refine`.
 - **GUI**: a **Paint mask** action on each maskable row of the enhancement list, a badge on the row once a mask is
   painted, the brush and overlay of the row being edited, and the masks sent on their operations.

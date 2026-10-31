@@ -54,7 +54,7 @@ State of the code (`integration`, 2026-10-30, `crates/opai/src/inference/process
 | # | Change | Delivers | Depends on | Base | State |
 |---|---|---|---|---|---|
 | 6.1 | `add-masking-6-per-enhancement-1-core` | `ProcessOptions::step_masks`, the per-step blend in `run`, the masked step keys, `Family::takes_step_mask`, `Mask::reframed`, the export record | masking 3, remove 2, refine | local merge of `add-masking-3-lens-blur` and `fix-lens-blur-trimap-7-refine` | proposed |
-| 6.2 | `add-masking-6-per-enhancement-2-cli` | `--dn-mask`, `--cl-mask`, `--la-mask`, `--cb-mask`, `--sh-mask`, `--rs-mask`; docs | 6.1 | 6.1 | proposed |
+| 6.2 | `add-masking-6-per-enhancement-2-cli` | `--dn-mask`, `--cl-mask`, `--la-mask`, `--cb-mask`, `--sh-mask`, `--rs-mask`, `--gr-mask`; docs | 6.1 | 6.1 | proposed |
 | 6.3 | `add-masking-6-per-enhancement-3-gui` | Paint mask on a row, the badge, the overlay of the row edited, the masks on the wire, the crop keeping them, i18n | 6.1 | 6.1 | proposed |
 
 Library first, then the CLI (which proves the library on real photographs before any UI exists), then the GUI. Each
@@ -74,8 +74,10 @@ The obvious alternative, blending every masked step's result after the chain, is
 afterwards would still have run over it, and an upscale after it would have been fed a picture nobody sees. Blending
 in place is what the user means and what a layer stack in an editor does.
 
-**Which families** (`Family::takes_step_mask`): Denoise, Colorization, Light Adjustment, Color Balance, Sharpen, and
-Restore when its scale is 1. A step mask on any other operation is refused by `plan` as
+**Which families** (`Family::takes_step_mask`): Denoise, Colorization, Light Adjustment, Color Balance, Sharpen,
+Restore when its scale is 1, and Grain (`add-grain-family`): a Grain mask limits where grain is put back or added, and
+since the grain is the last step its masked result is the chain's. Its own match is unchanged by the mask: it compares
+the blended picture with the photograph tile by tile, so a Grain mask only narrows where that comparison may add. A step mask on any other operation is refused by `plan` as
 `InferenceError::Unsupported("a <family> takes no mask of its own")` before anything runs, so a front end that sends
 one by mistake is told rather than ignored.
 
@@ -226,7 +228,7 @@ test pins that a masked step leaves the map's bytes untouched.
 
 ### D15. CLI: `--<family>-mask <FILE>`
 
-`--dn-mask`, `--cl-mask`, `--la-mask`, `--cb-mask`, `--sh-mask`, `--rs-mask`, each `requires` its family's flag (as
+`--dn-mask`, `--cl-mask`, `--la-mask`, `--cb-mask`, `--sh-mask`, `--rs-mask`, `--gr-mask`, each `requires` its family's flag (as
 `--sh-str` requires `--sharpen`), with the help heading of its family's other flags. Read once per command
 (`Mask::from_image`), the aspect rule of `--mask` per photograph (refuse that photograph only), white applies. `--rs-mask`
 with `--rs-scale` above 1 is refused at parse time (D8). No `--up-mask`, `--fr-mask`, `--lb-mask`, `--rm-mask`.

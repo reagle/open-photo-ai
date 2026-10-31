@@ -11,7 +11,7 @@
 
 ## 2. CLI (slice 6.2, `add-masking-6-per-enhancement-2-cli`)
 
-- [ ] 2.1 Add `--dn-mask`, `--cl-mask`, `--la-mask`, `--cb-mask`, `--sh-mask`, `--rs-mask` to `args.rs` (`requires` the family, under its heading, `--rs-mask` refused with `--rs-scale` above 1, listed among the flags `--gui` ignores) (D15); parse tests
+- [ ] 2.1 Add `--dn-mask`, `--cl-mask`, `--la-mask`, `--cb-mask`, `--sh-mask`, `--rs-mask`, `--gr-mask` to `args.rs` (`requires` the family, under its heading, `--rs-mask` refused with `--rs-scale` above 1, listed among the flags `--gui` ignores) (D15); parse tests
 - [ ] 2.2 In `run.rs`, read each once, check the aspect per photograph (refuse that photograph only), fill `step_masks`; with `--autopilot`, warn once per unused family mask (D12); tests with in-test images
 - [ ] 2.3 Document the flags in `docs/CLI_REFERENCE.md` (the Masks section: one mask per enhancement, how it combines with `--mask`, what a mask edit costs, soften a hard file first)
 - [ ] 2.4 Release CLI on two bench photographs (AIM-500, outputs under `/Volumes/opai-bench/overnight/step-masks/`): denoise background + sharpen subject; the same with a Kazan restore after; record times and a rerun's cache hits in design.md
