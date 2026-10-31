@@ -8,6 +8,8 @@ import {
     pngDataUrl,
     previewSize,
     radiusOf,
+    refineMasks,
+    refineOf,
     regionOf,
     SIZE_MAX,
     SIZE_MIN,
@@ -17,6 +19,7 @@ import {
     stepSoftness,
     strokesAfter,
     toWire,
+    withRefine,
     withRemoval,
 } from "./mask";
 
@@ -162,6 +165,39 @@ describe("a removal's region on the wire", () => {
 
         expect(withRemoval([remove, upscale], region)).toEqual([{ ...remove, mask: region }, upscale]);
         expect(withRemoval([upscale], region)).toEqual([upscale]);
+    });
+});
+
+describe("a lens blur's refinement on the wire", () => {
+    const blur = { ...STROKE, blur: true, points: [0.5, 0.5] };
+    const erase = { ...STROKE, erase: true, points: [0.7, 0.5] };
+
+    it("is left out when nothing is painted, so the lens blur is the one it always was", () => {
+        expect(refineOf(undefined)).toBeUndefined();
+        expect(refineOf({ strokes: [], inverted: false })).toBeUndefined();
+    });
+
+    it("carries focus, blur and erase strokes in order, rounded as a mask's are", () => {
+        const painted = { strokes: [{ ...STROKE, points: [0.1234567, 0.2] }, blur, erase], inverted: false };
+
+        expect(refineOf(painted)).toEqual({ strokes: [{ ...STROKE, points: [0.12346, 0.2] }, blur, erase] });
+    });
+
+    it("is put on the Lens Blur of a chain and on nothing else", () => {
+        const lensBlur: Operation = { family: "lens_blur", codename: "lisbon", precision: "fp16", parameters: {} };
+        const upscale: Operation = { family: "upscale", codename: "kyoto", precision: "fp32", parameters: {} };
+        const refine = refineOf({ strokes: [STROKE], inverted: false });
+
+        expect(withRefine([upscale, lensBlur], refine)).toEqual([upscale, { ...lensBlur, refine }]);
+        expect(withRefine([upscale, lensBlur], undefined)).toEqual([upscale, lensBlur]);
+    });
+
+    it("is tinted as Rust paints it: each kind painting its own mask and erasing the other's", () => {
+        const { focus, blur: blurred } = refineMasks({ strokes: [STROKE, blur, erase], inverted: false });
+
+        expect(focus.strokes.map((stroke) => stroke.erase)).toEqual([false, true, true]);
+        expect(blurred.strokes.map((stroke) => stroke.erase)).toEqual([true, false, true]);
+        expect([...focus.strokes, ...blurred.strokes].some((stroke) => "blur" in stroke)).toBe(false);
     });
 });
 

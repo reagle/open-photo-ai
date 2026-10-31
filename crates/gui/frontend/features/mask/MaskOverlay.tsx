@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { type Mask, maskPreview, type Stroke } from "@/ipc/mask";
-import { isEmpty, pngDataUrl, previewSize, strokesAfter, toWire } from "@/lib/mask";
+import { isEmpty, pngDataUrl, previewSize, refineMasks, type Snapshot, strokesAfter, toWire } from "@/lib/mask";
 import { report } from "@/lib/report";
 import { cn } from "@/lib/utils";
 import { type MaskEntry, type Target, useEditingTarget, useFileMask, useMaskStore } from "@/stores/mask";
@@ -19,8 +19,15 @@ export type PhotographBox = { x: number; y: number; width: number; height: numbe
  * nothing and has no picture.
  *
  * Answers the picture with the entry it is of, so a caller can tell what it shows from what has been painted since.
+ *
+ * `wire` is what of the entry is drawn: the entry itself, or for a refinement one of its two kinds of stroke.
  */
-const usePreview = (entry: MaskEntry | undefined, width: number, height: number) => {
+const usePreview = (
+    entry: MaskEntry | undefined,
+    width: number,
+    height: number,
+    wire: (entry: MaskEntry) => Mask | undefined = toWire,
+) => {
     const [shown, setShown] = useState<{ url: string; of: MaskEntry }>();
 
     // What is wanted now, and what the request last started was for. Refs, because the request that settles has to
@@ -39,7 +46,7 @@ const usePreview = (entry: MaskEntry | undefined, width: number, height: number)
     }, []);
 
     useEffect(() => {
-        const mask = toWire(entry);
+        const mask = entry && wire(entry);
 
         if (!entry || !mask || width <= 0 || height <= 0) {
             wanted.current = undefined;
@@ -75,7 +82,7 @@ const usePreview = (entry: MaskEntry | undefined, width: number, height: number)
         };
 
         pump();
-    }, [entry, width, height]);
+    }, [entry, width, height, wire]);
 
     return shown;
 };
@@ -132,7 +139,7 @@ const Strokes = ({
                     key={index}
                     // Taking the tint away is drawn as a pale trace, not as a removal: the picture under it has not
                     // changed yet.
-                    className={takesAway ? "text-foreground" : TINT[target].stroke}
+                    className={takesAway ? "text-foreground" : strokeTint(target, stroke)}
                     opacity={takesAway ? 0.3 : 0.4}
                 >
                     {stroke.points.length <= 2 ? (
@@ -166,7 +173,39 @@ const Strokes = ({
 const TINT = {
     limit: { fill: "bg-primary/40", stroke: "text-primary" },
     removal: { fill: "bg-removal/35", stroke: "text-removal" },
+    // The refinement's focus; its blur is `BLUR_TINT`. Light, as the removal's is: what is under it is being judged.
+    refine: { fill: "bg-refine-focus/35", stroke: "text-refine-focus" },
 } as const satisfies Record<Target, { fill: string; stroke: string }>;
+
+/** The tint of a refinement's blur strokes, beside {@link TINT}'s focus. */
+const BLUR_TINT = { fill: "bg-refine-blur/35", stroke: "text-refine-blur" } as const;
+
+/** The colour a stroke of `target` is drawn in: a refinement's by which of the two it paints. */
+const strokeTint = (target: Target, stroke: Stroke) =>
+    target === "refine" && stroke.blur ? BLUR_TINT.stroke : TINT[target].stroke;
+
+/** What of a refinement each of its two tints is drawn from: Rust's own two masks of it, or nothing where it has none. */
+const focusWire = (entry: Snapshot) =>
+    entry.strokes.some((stroke) => !stroke.erase && !stroke.blur) ? toWire(refineMasks(entry).focus) : undefined;
+const blurWire = (entry: Snapshot) =>
+    entry.strokes.some((stroke) => !stroke.erase && stroke.blur) ? toWire(refineMasks(entry).blur) : undefined;
+
+/** A tint shaped by the picture at `url`, filling the box it is laid in. */
+const Tint = ({ url, fill }: { url: string; fill: string }) => (
+    <div
+        aria-hidden
+        className={cn("absolute inset-0", fill)}
+        style={{
+            maskImage: `url(${url})`,
+            WebkitMaskImage: `url(${url})`,
+            maskSize: "100% 100%",
+            WebkitMaskSize: "100% 100%",
+            maskRepeat: "no-repeat",
+            WebkitMaskRepeat: "no-repeat",
+        }}
+        data-slot="mask-tint"
+    />
+);
 
 type MaskOverlayProps = {
     /** The photograph whose mask is shown, by the path the store keys it by. */
@@ -196,11 +235,16 @@ export const MaskOverlay = ({ path, box }: MaskOverlayProps) => {
     );
 
     const wanted = previewSize(box.width, box.height, density());
-    const shown = usePreview(entry, wanted?.width ?? 0, wanted?.height ?? 0);
+    const refine = target === "refine";
+    // A refinement is drawn as two tints, focus and blur, each from its own picture; anything else as one.
+    const shown = usePreview(entry, wanted?.width ?? 0, wanted?.height ?? 0, refine ? focusWire : toWire);
+    const blurred = usePreview(refine ? entry : undefined, wanted?.width ?? 0, wanted?.height ?? 0, blurWire);
 
     // What is painted that the picture on show is not of: the strokes added since, where it is the same mask with more
-    // on the end. An undo, a clear or an invert has no such stroke to show, and waits for its picture.
-    const pending = strokesAfter(shown?.of, entry) ?? [];
+    // on the end. An undo, a clear or an invert has no such stroke to show, and waits for its picture. Of a
+    // refinement's two pictures, the older says.
+    const behind = refine && blurred && shown && blurred.of.version < shown.of.version ? blurred : shown;
+    const pending = strokesAfter(refine ? (behind ?? blurred)?.of : shown?.of, entry) ?? [];
 
     if (box.width <= 0 || box.height <= 0) return;
 
@@ -208,6 +252,7 @@ export const MaskOverlay = ({ path, box }: MaskOverlayProps) => {
     const longer = Math.max(box.width, box.height);
     const strokes = live ? [...pending, live] : pending;
     const picture = isEmpty(entry) ? undefined : shown?.url;
+    const blurPicture = isEmpty(entry) ? undefined : blurred?.url;
 
     return (
         <div
@@ -223,21 +268,8 @@ export const MaskOverlay = ({ path, box }: MaskOverlayProps) => {
             data-slot="mask-overlay"
             data-target={target}
         >
-            {picture && (
-                <div
-                    aria-hidden
-                    className={cn("absolute inset-0", TINT[target].fill)}
-                    style={{
-                        maskImage: `url(${picture})`,
-                        WebkitMaskImage: `url(${picture})`,
-                        maskSize: "100% 100%",
-                        WebkitMaskSize: "100% 100%",
-                        maskRepeat: "no-repeat",
-                        WebkitMaskRepeat: "no-repeat",
-                    }}
-                    data-slot="mask-tint"
-                />
-            )}
+            {picture && <Tint url={picture} fill={TINT[target].fill} />}
+            {refine && blurPicture && <Tint url={blurPicture} fill={BLUR_TINT.fill} />}
 
             {strokes.length > 0 && (
                 <Strokes

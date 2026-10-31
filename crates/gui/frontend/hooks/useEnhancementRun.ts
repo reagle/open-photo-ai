@@ -7,7 +7,7 @@ import type { Face } from "@/ipc/faces";
 import type { ImageRecord } from "@/ipc/images";
 import { runnable } from "@/lib/enhancements";
 import { withChoice } from "@/lib/faces";
-import { regionOf, toWire, withRemoval } from "@/lib/mask";
+import { refineOf, regionOf, toWire, withRefine, withRemoval } from "@/lib/mask";
 import { report } from "@/lib/report";
 import { useFileEnhancements } from "@/stores/enhancements";
 import { useFaceChoice, useFacesStore } from "@/stores/faces";
@@ -214,6 +214,15 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
     const region = useMemo(() => regionOf(removing), [removing]);
 
     /*
+     * The Lens Blur's Refine brush, settled as the removal's region is, and a dependency of the run likewise: a stroke
+     * changes the trimap the matting model is asked over, and the render. The depth and Bilbao's matte are served
+     * from the run cache, and so is the matte wherever a stroke left the trimap as it was. Nothing for a photograph
+     * with nothing painted, whose run is the one it always was.
+     */
+    const refining = useSettledRegion(file?.path, useFileMask(file?.path, "refine"));
+    const refine = useMemo(() => refineOf(refining), [refining]);
+
+    /*
      * What the mask-only re-run is built from, all read in the run effect rather than listed as its dependencies - a
      * mask change must not restart it on its own, which is the whole of the wait below.
      */
@@ -323,7 +332,7 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
         ran.current = sent;
         computing.current = !cheap;
 
-        const chain = withRemoval(withChoice(operations, choice), region);
+        const chain = withRefine(withRemoval(withChoice(operations, choice), region), refine);
         const { run, done } = enhance(source, chain, processor, crop, sent);
         mine.current = run;
         setRunning(true);
@@ -423,8 +432,9 @@ export const useEnhancementRun = (file: ImageRecord | undefined, crop?: CropInfo
         // mask the chain is limited to, and the effect below asks for a run for it once it has waited out the next
         // change. The models behind that run are served from the cache, so what it costs is the blend.
         //
-        // The region a removal takes out is one of these: it is part of what a model computes, the removal's.
-    }, [source, operations, processor, crop, choice, region, rerun]);
+        // The region a removal takes out is one of these: it is part of what a model computes, the removal's. So is the
+        // Lens Blur's refinement, which the matting model is asked over.
+    }, [source, operations, processor, crop, choice, region, refine, rerun]);
 
     /*
      * A change that is only to the mask asks for a re-run after a pause - and not at all while the run in flight is
