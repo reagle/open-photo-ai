@@ -27,9 +27,9 @@ use opai::{
 // What this slice added: the fidelity Athens carries, the carrier for the run path that produces no image, the kind
 // a published parameter reports, and the value a progress report names a run by — each reached only through the
 // crate root, as a front end reaches it.
-use opai::{Analysis, Fidelity, ParameterKind, Subject};
-// The generative family, reached the way the other eight are, and the grain it puts back.
-use opai::{Grain, Restore, RestoreParams, RestoreVariant};
+use opai::{Analysis, Fidelity, Grain, GrainAmount, GrainMode, GrainParams, GrainVariant, ParameterKind, Subject};
+// The generative family, reached the way the other eight are.
+use opai::{Restore, RestoreParams, RestoreVariant};
 // What this slice added: the catalogue's inverse - the refusal a lookup or a build answers with, and the per-run
 // values a build is handed - reached only through the crate root, as a front end reaches them.
 use opai::{BuildError, ParameterValues};
@@ -448,9 +448,8 @@ fn the_two_face_families_are_reachable_from_the_crate_root() {
     );
 }
 
-/// The generative family, reached the way a front end that offers it reaches it: a model, a size, a strength and a
-/// grain, each read back off the typed value, and the family's narrower bounds published beside the constructor that
-/// holds them.
+/// The generative family, reached the way a front end that offers it reaches it: a model, a size and a strength, each
+/// read back off the typed value, and the family's narrower bounds published beside the constructor that holds them.
 #[test]
 fn the_restore_family_is_reachable_from_the_crate_root() {
     let twice = Scale::new(2.0).expect("in range");
@@ -473,33 +472,39 @@ fn the_restore_family_is_reachable_from_the_crate_root() {
     assert_eq!((params.scale, params.strength), (twice, half));
     assert_eq!(restore.variant(), RestoreVariant::Kazan(FloatPrecision::Fp16));
 
-    // The grain, off unless asked for, and in the tag only when there is some.
-    assert_eq!(params.grain, Grain::OFF);
-    let grained = restore.with_grain(Grain::new(0.5).expect("in range"));
-    assert_eq!(grained.grain().get(), 0.5);
-    assert_eq!(grained.cache_tag(), "rs-kazan-fp16-s2-t0.5-g0.5v1");
-    assert_eq!((Grain::MIN, Grain::MAX, Grain::NAME), (0.0, 1.0, "grain"));
-    let values = ParameterValues::new().with_grain(Grain::clamped(1.0));
-    let built = VariantEntry::published(Family::Restore, "kazan")
-        .expect("restore publishes Kazan")
-        .build(Precision::Fp16, &values)
-        .expect("Kazan is published at FP16");
-    assert!(
-        matches!(built, Subject::Enhancement(Operation::Restore(restore)) if restore.grain() == Grain::clamped(1.0))
-    );
-
     // Past the family's own bounds, brought inside them rather than refused, so a value that exists is one offered.
     let wide = Restore::new(RestoreVariant::Kazan(FloatPrecision::Fp32), Scale::clamped(8.0), Strength::clamped(3.0));
     assert_eq!((wide.scale().get(), wide.strength().get()), (Restore::MAX_SCALE, Restore::MAX_STRENGTH));
 
-    // And last in every chain, after everything faithful.
-    assert_eq!(Family::APPLY_ORDER.last(), Some(&Family::Restore));
+    // And after everything faithful, with only the grain after it.
+    assert_eq!(Family::APPLY_ORDER.last_chunk::<2>(), Some(&[Family::Restore, Family::Grain]));
 }
 
-/// The catalogue as a front end offering all nine families reads it: every chooser and every control configured
+/// The grain family, reached the way a front end that offers it reaches it: an amount and a mode, a run of no model,
+/// last in every chain.
+#[test]
+fn the_grain_family_is_reachable_from_the_crate_root() {
+    let half = GrainAmount::new(0.5).expect("in range");
+
+    let carried: Operation = Grain::sensor(half, GrainMode::Match);
+    assert_eq!(carried.family(), Family::Grain);
+    assert_eq!(carried.display_name(), "Sensor (FP32)");
+    assert_eq!(carried.cache_tag(), "gr-sensor-fp32-m0.5v1");
+    assert!(carried.required_artifacts().is_empty(), "the grain asked for a model");
+
+    let Operation::Grain(grain) = carried else {
+        panic!("Grain::sensor built another family");
+    };
+    let params: GrainParams = grain.params();
+    assert_eq!((params.amount, params.mode), (half, GrainMode::Match));
+    assert_eq!(grain.variant(), GrainVariant::Sensor(FloatPrecision::Fp32));
+    assert_eq!(Family::APPLY_ORDER.last(), Some(&Family::Grain));
+}
+
+/// The catalogue as a front end offering all ten families reads it: every chooser and every control configured
 /// from this alone.
 #[test]
-fn the_catalogue_publishes_all_nine_families_to_the_crate_root() {
+fn the_catalogue_publishes_all_ten_families_to_the_crate_root() {
     let families: &'static [FamilyEntry] = catalogue();
 
     assert_eq!(
@@ -514,6 +519,7 @@ fn the_catalogue_publishes_all_nine_families_to_the_crate_root() {
             Family::Detection,
             Family::FaceRecovery,
             Family::Restore,
+            Family::Grain,
         ]
     );
 
@@ -709,7 +715,8 @@ fn a_published_catalogue_row_can_be_turned_back_into_an_operation_from_the_crate
                         Strength::NAME => values.with_strength(Strength::clamped(midpoint)),
                         Bias::NAME => values.with_bias(Bias::clamped(midpoint)),
                         Fidelity::NAME => values.with_fidelity(Fidelity::clamped(midpoint)),
-                        Grain::NAME => values.with_grain(Grain::clamped(midpoint)),
+                        GrainAmount::NAME => values.with_amount(GrainAmount::clamped(midpoint)),
+                        GrainMode::NAME => values.with_grain_mode(GrainMode::from_switch(midpoint)),
                         other => {
                             panic!("{} publishes a range this test supplies no value for: {other}", variant.codename)
                         }
@@ -737,7 +744,8 @@ fn a_published_catalogue_row_can_be_turned_back_into_an_operation_from_the_crate
 
                 assert_eq!(run.family(), entry.family);
                 assert_eq!(run.precision(), precision);
-                assert!(!run.required_artifacts().is_empty());
+                // The grain runs no model; every other family needs one.
+                assert_eq!(run.required_artifacts().is_empty(), entry.family == Family::Grain);
             }
         }
     }

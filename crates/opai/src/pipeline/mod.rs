@@ -119,6 +119,34 @@ pub(crate) trait ImagePipeline<B: Backend>: Model<B> {
         progress: Option<&dyn Fn(f64)>,
         cancelled: &dyn Fn() -> bool,
     ) -> Result<DynamicImage, InferenceError>;
+
+    // Every step but a grain matching its source answers from its own input alone, which is why both methods have a
+    // default. One call with the photograph beside the input rather than a second method called before `run`, so a
+    // pipeline shared between runs holds no photograph between them.
+
+    /// Whether this step measures what it makes against the chain's photograph — its input, or what its last denoise
+    /// made — as well as its own input: a grain matching its source does, and nothing else. The chain then calls
+    /// [`run_against`](Self::run_against) in place of `run`.
+    fn measures_against_photograph(&self) -> bool {
+        false
+    }
+
+    /// [`run`](Self::run), with `photograph`, the chain's input or what its last denoise made, to measure against.
+    ///
+    /// # Errors
+    ///
+    /// [`InferenceError`] as for `run`.
+    fn run_against(
+        &self,
+        input: &DynamicImage,
+        _photograph: &DynamicImage,
+        sessions: &[SessionHandle<B::Session>],
+        depth: ChannelDepth,
+        progress: Option<&dyn Fn(f64)>,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<DynamicImage, InferenceError> {
+        self.run(input, sessions, depth, progress, cancelled)
+    }
 }
 
 /// One planned operation whose result is **not** a picture, as the execute driver sees it.

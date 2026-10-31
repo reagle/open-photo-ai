@@ -26,6 +26,7 @@ use super::denoise::Denoise;
 use super::detection::{Detection, DetectionVariant};
 use super::face::Faces;
 use super::face_recovery::FaceRecovery;
+use super::grain::Grain;
 use super::light_adjustment::LightAdjustment;
 use super::precision::Precision;
 use super::restore::Restore;
@@ -88,8 +89,10 @@ pub enum Operation {
     Sharpen(Sharpen),
     /// An upscale run.
     Upscale(Upscale),
-    /// A generative restoration, which a chain runs last.
+    /// A generative restoration, which a chain runs after everything faithful.
     Restore(Restore),
+    /// A sensor's grain, which a chain adds last of all.
+    Grain(Grain),
 }
 
 // The five methods below differ in nothing but the name of the method they call, and writing the seven arms out five
@@ -110,6 +113,7 @@ macro_rules! forward {
             Self::Sharpen(operation) => operation.$question(),
             Self::Upscale(operation) => operation.$question(),
             Self::Restore(operation) => operation.$question(),
+            Self::Grain(operation) => operation.$question(),
         }
     };
 }
@@ -128,6 +132,7 @@ impl Operation {
             Self::Sharpen(_) => Family::Sharpen,
             Self::Upscale(_) => Family::Upscale,
             Self::Restore(_) => Family::Restore,
+            Self::Grain(_) => Family::Grain,
         }
     }
 
@@ -162,7 +167,12 @@ impl Operation {
     /// differing only in one share it. An upscale whose scale selects the weights names the native scale of its first
     /// pass. The values are the published catalogue's, never [`cache_tag`](Self::cache_tag)'s.
     pub(crate) fn model_tag(&self) -> String {
-        // Every operation needs at least one artifact, so the empty fallback is never reached.
+        // A grain runs no model and names itself as one would be named; every other operation needs at least one
+        // artifact, so the empty fallback is never reached.
+        if let Self::Grain(grain) = self {
+            return grain.model_tag();
+        }
+
         self.required_artifacts()
             .into_iter()
             .next()
@@ -232,6 +242,8 @@ impl Operation {
             // Kept as a `Result`, as upscale's is: the family's contracts are not all one, and a multi-graph restorer
             // is refused where its graph set is incomplete.
             Self::Restore(restore) => restore.pipeline::<B>(),
+            // Kept as a `Result` for the carrier's sake alone: the grain runs no graph and has nothing to refuse.
+            Self::Grain(grain) => grain.pipeline::<B>(),
         }
     }
 }
@@ -458,6 +470,7 @@ pub(crate) mod tests {
     use crate::models::denoise::DenoiseVariant;
     use crate::models::face_recovery::{FaceRecovery, FaceRecoveryVariant};
     use crate::models::fidelity::Fidelity;
+    use crate::models::grain::{GrainAmount, GrainMode, GrainVariant};
     use crate::models::light_adjustment::LightAdjustmentVariant;
     use crate::models::precision::FloatPrecision;
     use crate::models::restore::RestoreVariant;
@@ -638,6 +651,7 @@ pub(crate) mod tests {
                 Operation::Restore(Restore::new(RestoreVariant::Osaka(OsakaPrecision::Int8), scale, strength)),
                 Family::Restore,
             ),
+            (Grain::sensor(GrainAmount::new(0.5).expect("in range"), GrainMode::Match), Family::Grain),
         ]
     }
 
@@ -681,6 +695,11 @@ pub(crate) mod tests {
         let sharpen = Sharpen::new(SharpenVariant::Moscow(FloatPrecision::Fp32), strength);
         let upscale = Upscale::new(UpscaleVariant::Kyoto(FloatPrecision::Fp16), scale);
         let restore = Restore::new(RestoreVariant::Osaka(OsakaPrecision::Int8), scale, strength);
+        let grain = Grain::new(
+            GrainVariant::Sensor(FloatPrecision::Fp32),
+            GrainAmount::new(0.5).expect("in range"),
+            GrainMode::Add,
+        );
 
         macro_rules! forwards {
             ($operation:expr, $arm:expr) => {{
@@ -706,6 +725,7 @@ pub(crate) mod tests {
         forwards!(sharpen, Operation::Sharpen(sharpen));
         forwards!(upscale, Operation::Upscale(upscale));
         forwards!(restore, Operation::Restore(restore));
+        forwards!(grain, Operation::Grain(grain));
     }
 
     /// The prefix `operation`'s artifacts are named with: its family's, except Osaka's, which keep the `up_` they were
@@ -899,7 +919,7 @@ pub(crate) mod tests {
             }
         }
 
-        // The other carrier, so the spread is over all nine families rather than the eight one of them holds.
+        // The other carrier, so the spread is over all ten families rather than the nine one of them holds.
         for analysis in every_analysis() {
             let _ = analysis.profile();
 
@@ -908,7 +928,7 @@ pub(crate) mod tests {
             }
         }
 
-        assert_eq!(families.len(), 9, "the spread did not reach all nine families: {families:?}");
+        assert_eq!(families.len(), 10, "the spread did not reach all ten families: {families:?}");
     }
 
     #[test]
@@ -1043,6 +1063,8 @@ pub(crate) mod tests {
                 // All three at FP16 only, ported from the reference. Delhi's is the reference's declaration beside
                 // Mumbai's rather than a measurement of its own graph; see `delhi`.
                 Operation::Colorization(colorization) => colorization.precision() == Precision::Fp16,
+                // No model, so nothing measured.
+                Operation::Grain(_) => false,
             };
 
             if measured_arm {

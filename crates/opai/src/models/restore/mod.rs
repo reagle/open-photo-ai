@@ -7,11 +7,10 @@
 //! faithful models in their families, that difference is one entry in a chooser; here it is the family, so a front end
 //! can say so once, run these last, and keep them out of anything automatic.
 //!
-//! **What a run takes.** A model, a size, a strength and a grain. The size is how much larger the result is — 1x restores the
+//! **What a run takes.** A model, a size and a strength. The size is how much larger the result is — 1x restores the
 //! photograph as it is — and an enlarging run resamples first and restores at the new size, which is how these models
 //! are trained and driven; see [`resample`]. The strength blends the restoration with the image it was conditioned on,
-//! so it is the fidelity control. The grain puts back the photograph's own noise, which a restoration draws none of;
-//! see [`grain`].
+//! so it is the fidelity control.
 //!
 //! **Two models, two contracts.** [Kazan](kazan) (PiSA-SR) is one exported graph per 512x512 tile, run through the
 //! shared [`filter`](crate::models::filter) over a photograph [resampled](resample) first. [Osaka](osaka) (SeedVR2) is
@@ -19,9 +18,8 @@
 //! because the resampled image is also what its colour fix corrects towards. Osaka was an upscale model until this
 //! family existed; its artifacts keep the `up_` they were published under.
 //!
-//! **Where it runs.** Last, after every faithful family; see [`Family::APPLY_ORDER`].
+//! **Where it runs.** After every faithful family, with only a grain after it; see [`Family::APPLY_ORDER`].
 
-pub(crate) mod grain;
 pub(crate) mod kazan;
 pub(crate) mod osaka;
 pub(crate) mod resample;
@@ -32,7 +30,6 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use super::artifact::{ArtifactId, Family};
-use super::grain::Grain;
 use super::operation::Operation;
 use super::precision::{FloatPrecision, Precision};
 use super::scale::{RangeError, Scale};
@@ -51,8 +48,7 @@ use osaka::precision::OsakaPrecision;
 pub(crate) use variant::ALL;
 pub use variant::RestoreVariant;
 
-/// One restore run: which model, how much larger the result is, how much of the model's output to apply, and how much
-/// of the grain it removed to put back.
+/// One restore run: which model, how much larger the result is, and how much of the model's output to apply.
 ///
 /// This value **is** the operation's identity, as every family's is: two sizes or two strengths are two requests,
 /// although one set of weights serves them all. Nothing here owns a native resource.
@@ -73,11 +69,6 @@ pub struct Restore {
     scale: Scale,
     /// How much of the model's output this run applies, from 0 to [`Restore::MAX_STRENGTH`].
     strength: Strength,
-    /// How much of the grain the restoration removed this run puts back; [`Grain::OFF`] unless asked for, and left out
-    /// of the serialized form when off, so a restore serialized before grain existed and one serialized now without it
-    /// are the same text.
-    #[serde(skip_serializing_if = "Grain::is_off")]
-    grain: Grain,
 }
 
 /// [`Restore`]'s fields as they arrive, before the family's own bounds are checked.
@@ -86,9 +77,6 @@ struct Fields {
     variant: RestoreVariant,
     scale: Scale,
     strength: Strength,
-    /// Absent from anything written before grain existed, which is a restore without any.
-    #[serde(default)]
-    grain: Grain,
 }
 
 impl TryFrom<Fields> for Restore {
@@ -106,7 +94,7 @@ impl TryFrom<Fields> for Restore {
             return Err(refused(Strength::NAME, fields.strength.get(), Strength::MIN, Self::MAX_STRENGTH));
         }
 
-        Ok(Self::new(fields.variant, fields.scale, fields.strength).with_grain(fields.grain))
+        Ok(Self::new(fields.variant, fields.scale, fields.strength))
     }
 }
 
@@ -121,21 +109,13 @@ impl Restore {
     /// towards the image it was conditioned on.
     pub const MAX_STRENGTH: f64 = 1.0;
 
-    /// The operation running `variant` at `scale` and `strength`, each brought inside this family's bounds, with no
-    /// grain put back; see [`with_grain`](Self::with_grain).
+    /// The operation running `variant` at `scale` and `strength`, each brought inside this family's bounds.
     pub fn new(variant: RestoreVariant, scale: Scale, strength: Strength) -> Self {
         Self {
             variant,
             scale: scale.min(Scale::clamped(Self::MAX_SCALE)),
             strength: strength.min(Strength::clamped(Self::MAX_STRENGTH)),
-            grain: Grain::OFF,
         }
-    }
-
-    /// This run, putting back `grain` of the noise the restoration removed.
-    #[must_use]
-    pub const fn with_grain(self, grain: Grain) -> Self {
-        Self { grain, ..self }
     }
 
     /// Kazan at `precision`, restoring at `scale` and applying `strength` of its output.
@@ -183,11 +163,6 @@ impl Restore {
         self.strength
     }
 
-    /// How much of the grain the restoration removed this run puts back.
-    pub const fn grain(self) -> Grain {
-        self.grain
-    }
-
     /// The precision this runs at, widened to the common currency.
     pub fn precision(self) -> Precision {
         self.variant.precision()
@@ -207,7 +182,7 @@ impl Restore {
 
     /// What this run needs beyond the operation itself.
     pub const fn params(self) -> RestoreParams {
-        RestoreParams { scale: self.scale, strength: self.strength, grain: self.grain }
+        RestoreParams { scale: self.scale, strength: self.strength }
     }
 
     /// The pipeline this operation runs — the **family's contract seam**, where a variant becomes a run.
@@ -223,27 +198,25 @@ impl Restore {
         // from the fields, so a pipeline cannot be constructed from something the library did not say a run needs.
         let params = self.params();
 
-        // The grain wraps either contract from outside, so it measures the photograph as it was handed over, before any
-        // resample, and the result after the strength blend; see `grain`.
-        let restorer: Shared<B> = match self.variant {
+        match self.variant {
             // The scale travels per run, the strength is applied against the image the model was conditioned on, and
             // each graph carries its own profile — see `Diffusion`.
             RestoreVariant::Osaka(precision) => {
                 let graphs =
                     osaka::graph::resolve(&osaka::OSAKA, precision.into()).resolved_graphs().cloned().collect();
 
-                Arc::new(Diffusion::new(
+                Ok(Arc::new(Diffusion::new(
                     self.display_name(),
                     graphs,
                     self.required_artifacts(),
                     params.scale,
                     params.strength,
-                )?)
+                )?))
             }
             // The shared filter at Kazan's own tile, with no guard: a generative tile has no "diverged" a threshold
             // could tell from a redrawn one. Wrapped in the resample, so the filter's strength blends towards the
             // image the model was handed.
-            RestoreVariant::Kazan(_) => resample::resampled(
+            RestoreVariant::Kazan(_) => Ok(resample::resampled(
                 params.scale,
                 filter::pipeline::<B>(
                     self.display_name(),
@@ -254,10 +227,8 @@ impl Restore {
                     None,
                     kazan::GEOMETRY,
                 ),
-            ),
-        };
-
-        Ok(grain::grained(params.grain, restorer))
+            )),
+        }
     }
 
     /// The artifacts that must be on disk before this operation can run, in the order they are first needed:
@@ -306,8 +277,7 @@ impl Restore {
         }
     }
 
-    /// The key the run cache stores this operation's result under: `rs-kazan-fp16-s2-t1`, and
-    /// `rs-kazan-fp16-s2-t1-g0.5v1` with grain.
+    /// The key the run cache stores this operation's result under: `rs-kazan-fp16-s2-t1`.
     ///
     /// Carries the size and the strength, which the tag has to spell itself because it is written out by hand rather
     /// than derived from the identity: both are one model and two images. Hyphen-separated, so it cannot be mistaken
@@ -315,22 +285,14 @@ impl Restore {
     pub fn cache_tag(self) -> String {
         // Written deliberately rather than derived from the serialized form, so that renaming a field cannot silently
         // invalidate every cached image. The letters are upscale's `s` and sharpen's `t`, in this family's namespace.
-        let tag = format!(
+        format!(
             "{}-{}-{}-s{}-t{}",
             Family::Restore.prefix(),
             self.variant.codename(),
             self.variant.precision(),
             self.scale,
             self.strength
-        );
-
-        // The grain only when there is some, so every result stored before it existed keeps its key; and the version of
-        // the synthesis beside it, so a later change to how the noise is drawn never serves an image drawn the old way.
-        if self.grain.is_off() {
-            tag
-        } else {
-            format!("{tag}-g{}v{}", self.grain, imaging::grain::VERSION)
-        }
+        )
     }
 }
 
@@ -342,8 +304,6 @@ pub struct RestoreParams {
     pub scale: Scale,
     /// How much of the model's output this run applies.
     pub strength: Strength,
-    /// How much of the grain the restoration removed this run puts back.
-    pub grain: Grain,
 }
 
 impl std::fmt::Display for Restore {
@@ -442,59 +402,6 @@ mod tests {
         );
     }
 
-    fn grain(value: f64) -> Grain {
-        Grain::new(value).expect("the test supplied a grain in range")
-    }
-
-    #[test]
-    fn grain_off_keeps_the_tag_every_stored_restore_was_written_under() {
-        assert_eq!(kazan(FloatPrecision::Fp16, 1.0, 1.0).with_grain(Grain::OFF).cache_tag(), "rs-kazan-fp16-s1-t1");
-        assert_eq!(
-            kazan(FloatPrecision::Fp16, 1.0, 1.0).with_grain(grain(0.5)).cache_tag(),
-            "rs-kazan-fp16-s1-t1-g0.5v1"
-        );
-        assert_eq!(
-            kazan(FloatPrecision::Fp32, 2.0, 0.5).with_grain(grain(1.0)).cache_tag(),
-            "rs-kazan-fp32-s2-t0.5-g1v1"
-        );
-    }
-
-    #[test]
-    fn a_restore_written_before_grain_existed_reads_as_one_without_it() {
-        let json = r#"{"variant":{"codename":"kazan","precision":"fp16"},"scale":2.0,"strength":0.5}"#;
-        let read: Restore = serde_json::from_str(json).expect("an older restore deserializes");
-
-        assert_eq!(read.grain(), Grain::OFF);
-        assert_eq!(read, kazan(FloatPrecision::Fp16, 2.0, 0.5));
-
-        let grained = kazan(FloatPrecision::Fp16, 2.0, 0.5).with_grain(grain(0.25));
-        let json = serde_json::to_string(&grained).expect("serializes");
-        assert_eq!(
-            json,
-            r#"{"variant":{"codename":"kazan","precision":"fp16"},"scale":2.0,"strength":0.5,"grain":0.25}"#
-        );
-        assert_eq!(serde_json::from_str::<Restore>(&json).expect("round-trips"), grained);
-        assert!(
-            serde_json::from_str::<Restore>(&json.replace("0.25", "1.5")).is_err(),
-            "a grain past 1 was accepted"
-        );
-    }
-
-    #[test]
-    fn grain_off_runs_the_restorer_it_always_ran() {
-        // Not wrapped at all: the pipeline grain 0 reaches is the one a restore ran before grain existed.
-        for variant in every_variant() {
-            let plain = Restore::new(variant, scale(2.0), strength(1.0));
-            let grained = plain.with_grain(grain(1.0));
-
-            for operation in [plain, grained] {
-                let pipeline = operation.pipeline::<NoBackend>().expect("a pipeline");
-                assert_eq!(pipeline.required(), operation.required_artifacts().as_slice());
-                assert_eq!(pipeline.sessions().len(), operation.required_artifacts().len());
-            }
-        }
-    }
-
     #[test]
     fn no_two_runs_producing_different_images_share_one_tag() {
         // The size and the strength both change the image, and neither selects the weights — so both reach the tag.
@@ -503,12 +410,10 @@ mod tests {
         for variant in every_variant() {
             for size in [1.0, 1.5, 2.0, 4.0] {
                 for amount in [0.0, 0.25, 1.0] {
-                    for share in [0.0, 0.5, 1.0] {
-                        let operation = Restore::new(variant, scale(size), strength(amount)).with_grain(grain(share));
+                    let operation = Restore::new(variant, scale(size), strength(amount));
 
-                        if let Some(previous) = seen.insert(operation.cache_tag(), operation) {
-                            panic!("{previous:?} and {operation:?} share the cache tag {}", operation.cache_tag());
-                        }
+                    if let Some(previous) = seen.insert(operation.cache_tag(), operation) {
+                        panic!("{previous:?} and {operation:?} share the cache tag {}", operation.cache_tag());
                     }
                 }
             }
@@ -544,16 +449,13 @@ mod tests {
 
         assert_eq!(operation.scale().get(), Restore::MAX_SCALE);
         assert_eq!(operation.strength().get(), Restore::MAX_STRENGTH);
-        assert_eq!(
-            operation.params(),
-            RestoreParams { scale: scale(4.0), strength: strength(1.0), grain: Grain::OFF }
-        );
+        assert_eq!(operation.params(), RestoreParams { scale: scale(4.0), strength: strength(1.0) });
     }
 
     #[test]
     fn an_operation_round_trips_through_its_serialized_form() {
         for variant in every_variant() {
-            let operation = Restore::new(variant, scale(2.0), strength(0.75)).with_grain(grain(0.5));
+            let operation = Restore::new(variant, scale(2.0), strength(0.75));
             let json = serde_json::to_string(&operation).expect("an operation serializes");
             let back: Restore = serde_json::from_str(&json).expect("an operation deserializes");
 

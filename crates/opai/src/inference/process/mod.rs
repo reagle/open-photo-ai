@@ -41,6 +41,7 @@ use super::progress::{ChainProgress, OnInference};
 use crate::cache::RunCache;
 use crate::error::InferenceError;
 use crate::image::Picture;
+use crate::models::grain::is_grain_reference;
 use crate::models::{Detection, Faces, Operation};
 use crate::pipeline::{Backend, Shared};
 use crate::providers::ExecutionProvider;
@@ -345,7 +346,16 @@ pub(crate) async fn run<B: Backend>(
     // the guarantee: the session cache's "in use" test is the handle's own reference count. A chain naming one model
     // twice takes two handles on one entry, which is correct — the count goes up twice and down twice.
     let mut held: Vec<SessionHandle<B::Session>> = Vec::new();
-    let mut current = source;
+    let mut current = Arc::clone(&source);
+
+    // The photograph a grain matching its source measures against: the chain's input, until a denoise makes another
+    // (see `models::grain`), since a denoise is a request for less grain and matching its input would undo it. Kept
+    // only while a step after it asks for one. A denoise served from the store leaves its bytes here, decoded only when
+    // the grain is computed; a grain served from the store needs neither.
+    let wants_photograph =
+        |after: usize| planned[after..].iter().any(|step| step.pipeline.measures_against_photograph());
+    let mut photograph = Arc::clone(&source);
+    let mut photograph_stored: Option<(usize, Vec<u8>)> = None;
 
     // The bytes of the newest cached prefix walked past, not yet decoded, and the index the run of hits carrying them
     // began at. A hit supersedes the one before it — each stored entry is the whole picture at that point in the
@@ -401,6 +411,10 @@ pub(crate) async fn run<B: Backend>(
                 // Its full share of the bar, through the same path every other report goes through — so a chain whose
                 // every operation was stored still ends on exactly 1 rather than never reporting at all.
                 progress.operation(index, operation.operation().clone()).cached();
+
+                if is_grain_reference(operation.operation().family()) && wants_photograph(index + 1) {
+                    photograph_stored = Some((index, bytes.clone()));
+                }
 
                 if pending.is_none() {
                     skipped_from = index;
@@ -461,6 +475,38 @@ pub(crate) async fn run<B: Backend>(
             RunFailure { error, step: Some((operation.operation().cache_tag(), index)) }
         };
 
+        // A step measured against the photograph is handed it, decoded now where a denoise before it was served from
+        // the store. Bytes that will not decode are that denoise's stored result gone bad: the chain is walked again
+        // from its start with the store trusted only after the denoise, so the denoise and everything before it run
+        // again, as a prefix that would not decode is.
+        let against = if operation.pipeline.measures_against_photograph() {
+            if let Some((at, bytes)) = photograph_stored.take() {
+                // The denoise right before this step is what was just decoded into its input.
+                if at + 1 == index {
+                    photograph = Arc::clone(&current);
+                } else {
+                    match materialize(bytes).await? {
+                        Some(image) => photograph = Arc::new(image),
+                        None => {
+                            tracing::warn!(
+                                at,
+                                "a stored denoise would not decode; rerunning it for the grain after it"
+                            );
+
+                            distrust_before = at + 1;
+                            index = 0;
+                            current = Arc::clone(&source);
+                            photograph = Arc::clone(&source);
+                            continue;
+                        }
+                    }
+                }
+            }
+            Some(Arc::clone(&photograph))
+        } else {
+            None
+        };
+
         let reporter = Arc::new(progress.operation(index, operation.operation().clone()));
 
         let stages = operation.pipeline.stages();
@@ -474,6 +520,7 @@ pub(crate) async fn run<B: Backend>(
                 let pipeline = Shared::clone(&operation.pipeline);
 
                 let input = Arc::clone(&current);
+                let against = against.clone();
                 let cancelled = cancel.clone();
                 let reported = Arc::clone(&reporter);
                 let wanted = progress.wanted();
@@ -499,7 +546,13 @@ pub(crate) async fn run<B: Backend>(
 
                     // One call, whatever the model is. Shared from here on, so the store's writer and the rest of the
                     // chain hold one buffer rather than two.
-                    let produced = pipeline.run(&input, &sessions, depth, report, &stopped).map(Arc::new);
+                    let produced = match &against {
+                        Some(photograph) => {
+                            pipeline.run_against(&input, photograph, &sessions, depth, report, &stopped)
+                        }
+                        None => pipeline.run(&input, &sessions, depth, report, &stopped),
+                    }
+                    .map(Arc::new);
 
                     // Only what actually succeeded — a cancelled or failed operation arrives as an `Err`, so nothing
                     // needs to check the token a second time — and the result is handed back either way: a write that
@@ -549,6 +602,10 @@ pub(crate) async fn run<B: Backend>(
         metrics::STEP_DURATION.record_with_tags(ran.as_secs_f64(), &[("model", &model), ("provider", ran_on)]);
 
         current = produced;
+        if is_grain_reference(operation.operation().family()) && wants_photograph(index + 1) {
+            photograph = Arc::clone(&current);
+            photograph_stored = None;
+        }
         index += 1;
     }
 

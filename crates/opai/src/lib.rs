@@ -18,9 +18,10 @@
 //! them run anything. [`fn@catalogue`] is what a front end reads instead of hard-coding a variant, precision or
 //! bound.
 //!
-//! A per-run parameter ([`Scale`], [`Strength`], [`Bias`], [`Fidelity`], [`Grain`], [`Faces`]) is validated on
-//! acceptance and is part of the operation's identity — two operations are equal exactly when they name the same model,
-//! precision and parameters — and part of the cache tag, which instead answers whether two runs produce the same image.
+//! A per-run parameter ([`Scale`], [`Strength`], [`Bias`], [`Fidelity`], [`Faces`]) is validated on acceptance
+//! and is part of the operation's identity — two operations are equal exactly when they name the same model,
+//! precision and parameters — and part of the cache tag, which instead answers whether two runs produce the
+//! same image.
 //!
 //! What is loaded is independent of both: a resident session is filed under its artifact and provider, so
 //! every operation needing one graph shares it.
@@ -223,10 +224,11 @@ pub use models::{
     Analysis, ArtifactId, Bias, BuildError, ColorBalance, ColorBalanceParams, ColorBalanceVariant, Colorization,
     ColorizationVariant, Confidence, DataOperation, Denoise, DenoiseParams, DenoiseVariant, Detection, DetectionOutput,
     DetectionVariant, Face, FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant, Faces, Family, FamilyEntry,
-    Fidelity, FloatPrecision, Grain, GraphRole, LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant,
-    Operation, OsakaPrecision, ParameterEntry, ParameterKind, ParameterValues, Pass, Point, Precision, RangeError,
-    Rect, Resolution, Restore, RestoreParams, RestoreVariant, Scale, Sharpen, SharpenParams, SharpenVariant, Strength,
-    Subject, UnknownRole, Upscale, UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
+    Fidelity, FloatPrecision, Grain, GrainAmount, GrainMode, GrainParams, GrainVariant, GraphRole, LightAdjustment,
+    LightAdjustmentParams, LightAdjustmentVariant, Operation, OsakaPrecision, ParameterEntry, ParameterKind,
+    ParameterValues, Pass, Point, Precision, RangeError, Rect, Resolution, Restore, RestoreParams, RestoreVariant,
+    Scale, Sharpen, SharpenParams, SharpenVariant, Strength, Subject, UnknownRole, Upscale, UpscaleParams,
+    UpscaleVariant, VariantEntry, catalogue,
 };
 pub use progress::{Dependency, OnPlan, OnProgress, Phase, PlannedDependency, Progress};
 pub use providers::{ExecutionProvider, SupportedProviders};

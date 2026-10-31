@@ -389,11 +389,6 @@ pub struct Selection {
     /// The restore strength, from 1 to 100 percent of the model's own output; default 100.
     #[arg(long = "rs-str", value_name = "STRENGTH", value_parser = parse_restore_strength, requires = "restore")]
     pub restore_strength: Option<u16>,
-
-    /// How much of the photograph's own noise to put back, which the restore smooths away: 0 (none; the default) to
-    /// 100 percent, which matches the photograph's noise per brightness. A clean photograph gets none at any amount.
-    #[arg(long = "rs-grain", value_name = "PERCENT", value_parser = parse_restore_grain, requires = "restore")]
-    pub restore_grain: Option<u16>,
 }
 
 impl Selection {
@@ -518,24 +513,6 @@ fn parse_restore_strength(text: &str) -> Result<u16, String> {
         .ok()
         .filter(|value| (STRENGTH_MIN..=RESTORE_STRENGTH_MAX).contains(value))
         .ok_or_else(|| format!("the strength must be a whole number from {STRENGTH_MIN} to {RESTORE_STRENGTH_MAX}"))
-}
-
-/// The highest `--rs-grain`, the library's [`opai::Grain::MAX`] as a percentage: all of the noise the restore removed.
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "a whole, positive percentage"
-)]
-const RESTORE_GRAIN_MAX: u16 = (opai::Grain::MAX * 100.0) as u16;
-
-/// A `--rs-grain` value: a whole percentage from 0, which is off and accepted as such, refused with the accepted range
-/// otherwise.
-fn parse_restore_grain(text: &str) -> Result<u16, String> {
-    text.trim()
-        .parse()
-        .ok()
-        .filter(|value| *value <= RESTORE_GRAIN_MAX)
-        .ok_or_else(|| format!("the grain must be a whole number from 0 to {RESTORE_GRAIN_MAX}"))
 }
 
 /// The lowest `--dn-str`, `--sh-str` or `--rs-str`. Not the library's 0: a strength of 0 applies nothing, which on a command line is
@@ -857,22 +834,6 @@ mod tests {
         assert_eq!(args.selection.restore_scale.map(Scale::get), Some(4.0));
         assert_eq!(args.selection.restore_strength, Some(60));
         assert!(args.selection.restore_enlarges());
-        assert_eq!(args.selection.restore_grain, None);
-    }
-
-    #[test]
-    fn a_restore_grain_is_a_whole_percentage_from_none_to_all() {
-        for grain in ["0", "50", "100"] {
-            let args = parse(&format!("opai photo.jpg --rs --rs-grain {grain} -o out.png")).expect(grain);
-            assert_eq!(args.selection.restore_grain, grain.parse().ok(), "{grain}");
-        }
-
-        for grain in ["101", "-1", "50.5", "some"] {
-            let error = parse(&format!("opai photo.jpg --rs --rs-grain={grain} -o out.png")).expect_err(grain);
-
-            assert_eq!(error.kind(), ErrorKind::ValueValidation, "{grain}: {error}");
-            assert!(error.to_string().contains("a whole number from 0 to 100"), "{error}");
-        }
     }
 
     #[test]
@@ -941,7 +902,6 @@ mod tests {
             ("--la --cb-bias 20", "--color-balance"),
             ("--up --rs-scale 2", "--restore"),
             ("--sh --rs-str 50", "--restore"),
-            ("--sh --rs-grain 50", "--restore"),
         ] {
             let error = parse(&format!("opai photo.jpg {flags} -o out.png")).expect_err(flags);
 
