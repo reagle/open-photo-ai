@@ -778,7 +778,8 @@ mod tests {
                 "Color Balance",
                 "Sharpen",
                 "Upscale",
-                "Restore"
+                "Restore",
+                "Grain"
             ]
         );
     }

@@ -85,10 +85,22 @@ impl Qualities {
         family.applied_at().map_or(Quality::Hd, |index| self.0[index].value)
     }
 
+    /// Each family's quality beside it, in the library's apply order, for the families that offer a choice of one: a
+    /// family whose every model is published at one precision (Grain's Sensor, at FP32) runs it at either, so its
+    /// quality says nothing and would only make a uniform quality read as mixed.
+    fn chosen(&self) -> impl Iterator<Item = (Family, Sourced<Quality>)> + '_ {
+        Family::APPLY_ORDER.into_iter().zip(self.0).filter(|(family, _)| {
+            opai::catalogue()
+                .iter()
+                .find(|entry| entry.family == *family)
+                .is_some_and(|entry| entry.variants.iter().any(|variant| variant.precisions.len() > 1))
+        })
+    }
+
     /// The one quality every family runs at, or `None` where they differ.
     pub fn uniform(&self) -> Option<Quality> {
-        let first = self.0[0].value;
-        self.0.iter().all(|quality| quality.value == first).then_some(first)
+        let first = self.chosen().next().map_or(self.0[0].value, |(_, quality)| quality.value);
+        self.chosen().all(|(_, quality)| quality.value == first).then_some(first)
     }
 
     /// How the processor line names it: `HD`, `SD`, or `mixed` where the families differ.
@@ -99,12 +111,12 @@ impl Qualities {
     /// How `--verbose` says where it came from, after [`label`](Self::label): `(from GUI settings)`, or for a mixed
     /// quality `(Denoise SD, Upscale SD from GUI settings; the rest HD by default)`.
     pub fn describe(&self) -> String {
-        let first = self.0[0];
-        if self.0.iter().all(|quality| *quality == first) {
+        let first = self.chosen().next().map_or(self.0[0], |(_, quality)| quality);
+        if self.chosen().all(|(_, quality)| quality == first) {
             return format!("({})", first.source.describe());
         }
 
-        let pairs = || Family::APPLY_ORDER.into_iter().zip(self.0);
+        let pairs = || self.chosen();
         let from_gui: Vec<String> = pairs()
             .filter(|(_, quality)| quality.source == Source::Gui)
             .map(|(family, quality)| format!("{} {}", crate::look::family_label(family), quality.value.label()))
@@ -114,7 +126,7 @@ impl Qualities {
             .map(|(_, quality)| quality.value)
             .collect();
 
-        // A quality differs between families only where the GUI chose some of them: `-q` sets all seven.
+        // A quality differs between families only where the GUI chose some of them: `-q` sets them all.
         match defaults.first() {
             None => format!("({} from GUI settings)", from_gui.join(", ")),
             Some(rest) => format!("({} from GUI settings; the rest {} by default)", from_gui.join(", "), rest.label()),

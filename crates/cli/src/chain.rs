@@ -6,7 +6,8 @@
 //! none restated.
 
 use opai::{
-    Bias, Family, Operation, ParameterKind, ParameterValues, Scale, Strength, Subject, Suggestion, VariantEntry,
+    Bias, Family, GrainAmount, GrainMode, Operation, ParameterKind, ParameterValues, Scale, Strength, Subject,
+    Suggestion, VariantEntry,
 };
 
 use crate::args::{Quality, Selection};
@@ -94,6 +95,9 @@ enum Parameter {
     Scale(Scale),
     /// A restore: the size it runs at where one was given, else the published 1x, and its strength.
     Restore { scale: Option<Scale>, strength: Option<u16> },
+    /// A grain: its amount as a percentage where one was given, else the published default, and whether it is added
+    /// rather than matched to the photograph.
+    Grain { amount: Option<u16>, add: bool },
 }
 
 /// The chain `selection` asks for, each family at its quality in `qualities`, over a `width` x `height` photograph.
@@ -150,6 +154,16 @@ pub fn plan(selection: &Selection, qualities: &Qualities, width: u32, height: u3
         ));
     }
 
+    // After everything, the restore included, as the library runs it: the photograph's own grain at the catalogue's
+    // default amount, all of it, unless an amount or adding was asked for.
+    if let Some(model) = selection.grain {
+        built.push(build(
+            model,
+            qualities,
+            Parameter::Grain { amount: selection.grain_amount, add: selection.grain_add },
+        ));
+    }
+
     let (operations, applied) = built.into_iter().unzip();
     Plan { operations, applied, notes }
 }
@@ -197,6 +211,15 @@ fn build<M: CatalogueModel>(model: M, qualities: &Qualities, parameter: Paramete
                 Some(scale) => format!("{scale}x, strength {percent}"),
                 None => format!("strength {percent}"),
             })
+        }
+        Parameter::Grain { amount, add } => {
+            let percent = set(&mut values, variant, GrainAmount::NAME, amount.map(f64::from));
+            if add {
+                values
+                    .set(GrainMode::NAME, GrainMode::Add.as_switch())
+                    .expect("the mode is published by its name");
+            }
+            Some(format!("amount {percent}, {}", if add { "added" } else { "matching the photograph" }))
         }
     };
 
@@ -447,8 +470,28 @@ mod tests {
     }
 
     #[test]
+    fn a_grain_matches_the_photograph_at_the_full_amount_unless_asked_otherwise() {
+        use opai::{Grain, GrainAmount, GrainMode};
+
+        let amount = |value| GrainAmount::new(value).expect("in range");
+        let cases = [
+            ("--gr", Grain::sensor(amount(1.0), GrainMode::Match)),
+            ("--gr --gr-amount 40", Grain::sensor(amount(0.4), GrainMode::Match)),
+            ("--gr --gr-add --gr-amount 25", Grain::sensor(amount(0.25), GrainMode::Add)),
+            ("--gr --gr-add", Grain::sensor(amount(1.0), GrainMode::Add)),
+        ];
+
+        for (flags, expected) in cases {
+            for quality in ["hd", "sd"] {
+                let planned = plan(&format!("opai photo.jpg {flags} -q {quality} -o out.png"), 1000, 800);
+                assert_eq!(planned.operations, vec![expected.clone()], "{flags} -q {quality}");
+            }
+        }
+    }
+
+    #[test]
     fn the_chain_is_pushed_in_the_librarys_apply_order() {
-        let plan = plan("opai photo.jpg --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
+        let plan = plan("opai photo.jpg --gr --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
         let families: Vec<_> = plan.operations.iter().map(Operation::family).collect();
 
         assert_eq!(families, Family::APPLY_ORDER);
@@ -572,6 +615,8 @@ mod tests {
             ("--cb", "Color Balance Rio bias 50"),
             ("--sh", "Sharpen Moscow strength 100"),
             ("--up --scale 2", "Upscale Tokyo 2x"),
+            ("--gr", "Grain Sensor amount 100, matching the photograph"),
+            ("--gr --gr-add --gr-amount 30", "Grain Sensor amount 30, added"),
         ];
 
         for (flags, expected) in cases {
@@ -581,14 +626,15 @@ mod tests {
 
     #[test]
     fn the_description_follows_the_chain_one_for_one_in_its_order() {
-        let plan = plan("opai photo.jpg --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
+        let plan = plan("opai photo.jpg --gr --rs --up --sh --cb --la --cl --fr --dn -o out.png", 1000, 800);
         let families: Vec<_> = plan.applied.iter().map(|applied| applied.family).collect();
 
         assert_eq!(families, Family::APPLY_ORDER);
         assert_eq!(
             describe(&plan.applied),
             "Denoise Stockholm strength 100, Face Recovery Athens, Colorize Delhi, Light Adjust Paris bias 50, \
-             Color Balance Rio bias 50, Sharpen Moscow strength 100, Upscale Tokyo 4x, Restore Kazan strength 100"
+             Color Balance Rio bias 50, Sharpen Moscow strength 100, Upscale Tokyo 4x, Restore Kazan strength 100, \
+             Grain Sensor amount 100, matching the photograph"
         );
     }
 

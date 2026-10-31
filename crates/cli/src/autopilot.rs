@@ -14,7 +14,7 @@ use opai::Family;
 use opai::settings::SharedSettings;
 
 use crate::args::{
-    Args, BalanceModel, ColorizationModel, DenoiseModel, FaceModel, LightModel, RestoreModel, SharpenModel,
+    Args, BalanceModel, ColorizationModel, DenoiseModel, FaceModel, GrainModel, LightModel, RestoreModel, SharpenModel,
     UpscaleModel,
 };
 use crate::settings::Source;
@@ -77,6 +77,11 @@ family_model!(UpscaleModel, Family::Upscale, "OPAI_AP_UPSCALE", UpscaleModel::To
 // it and there is no `OPAI_AP_RESTORE`.
 impl CatalogueModel for RestoreModel {
     const FAMILY: Family = Family::Restore;
+}
+
+// A command-line family only, for the same reason: grain is a user's choice about a photograph, never an analysis's.
+impl CatalogueModel for GrainModel {
+    const FAMILY: Family = Family::Grain;
 }
 
 /// Autopilot's model for every family, in the library's apply order: `None` where the family is switched off.
@@ -344,10 +349,13 @@ mod tests {
         check::<UpscaleModel>();
     }
 
-    /// Every family an analysis can suggest, in the library's apply order: all of them but restore, which a generative
-    /// redraw is never chosen automatically.
+    /// Every family an analysis can suggest, in the library's apply order: all of them but restore and grain, which are
+    /// never chosen automatically.
     fn suggestible() -> Vec<Family> {
-        Family::APPLY_ORDER.into_iter().filter(|family| *family != Family::Restore).collect()
+        Family::APPLY_ORDER
+            .into_iter()
+            .filter(|family| !matches!(family, Family::Restore | Family::Grain))
+            .collect()
     }
 
     #[test]
