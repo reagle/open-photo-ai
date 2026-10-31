@@ -630,13 +630,25 @@
         "sections": {
             "view": "视图",
             "images": "图像",
-            "enhancements": "增强"
+            "enhancements": "增强",
+            "input": "指针与对话框"
         },
         "rows": {
             "zoom": "放大 / 缩小",
             "pan": "平移",
             "images": "上一张图像 / 下一张图像",
             "options": "增强 1–8 的选项"
+        },
+        "input": {
+            "accept": "保存或应用对话框；完成面板或画笔",
+            "escape": "取消对话框；完成面板或画笔",
+            "zoom": "用指针缩放",
+            "pan": "用指针平移",
+            "pinch": "捏合",
+            "scroll": "滚动",
+            "modScroll": "{{key}} + 滚动",
+            "spaceDrag": "{{key}} + 拖动",
+            "drag": "拖动"
         }
     }
 }
