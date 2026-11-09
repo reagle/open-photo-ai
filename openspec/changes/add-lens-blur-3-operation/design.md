@@ -134,6 +134,11 @@ The CPU rows ran on copies with one byte appended (a new identity, so the cache 
 
 100% crops, nothing derived committed. The bonsai at f/1.4 keeps the canopy and pot sharp and blurs the lattice and back wall strongly, close to the prototype's; the canopy's right edge is 2 to 3 px softer than the prototype's because those leaves read 10 to 20 cm off the focus plane in the FP16 stretched graph's depth, which at 36 mm f/1.4 from 1.9 m is a real lens's depth of field (about 10 cm either side). At f/8 the output equals the decoded input but for 434 of 18.5 M pixels off by at most 3/255, which is ImageMagick's JPEG decoder against `rust-sak`'s (the pipeline returns its own decode untouched). Nora's face, glasses and hair stay sharp and the hair against the dark case holds its outline with no halo. **The visible failure is Tokyo's fur hood**: fringe strands that mix fur and background become crisp curls carrying the original, lightly blurred, background between them, and a faint dark haze spreads outward from the hood into the blurred street (fringe pixels classified as far carry their dark colour into a 150 to 400 px disc). That is expected of a layered render with no matting at these radii (the series' risks); f/2.8 shows it a little less, and a wider edge grow trades the haze for a wider sharp fringe. The masking seam (`keep_sharp`) or a matte is the way out; it is not tuned here.
 
+**Amended 2026-11-09.** `--lb-f` takes 0.95 to 32 (`FNumber::MIN` is f/0.95, the Noctilux's), and `--lb-amount` 100 is
+f/0.95. The depth's scale is calibrated by the EXIF's `SubjectDistance` where it is believably the distance at the
+picture's centre (within 0.25..=4 of it), replacing the focal ratio; a crop, whose centre is not where the camera
+focused, is not calibrated and keeps the focal ratio.
+
 ## Risks / Trade-offs
 
 - A RAW's lens EXIF comes through `kamadak-exif`'s TIFF reader; a RAW format that is not TIFF-based (CR3, RAF) yields

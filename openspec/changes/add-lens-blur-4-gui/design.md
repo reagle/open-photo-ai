@@ -84,6 +84,9 @@ What the implementation settled differently from the text above. The change is t
 - **The frontend `Family` union** gains `lens_blur` and `depth` (here, with the panel: slice 3 left it): `depth` is excluded from operations (`ipc/enhance.ts`, beside `detection`) and `lens_blur` from Autopilot's suggestions (`ipc/autopilot.ts`, `hooks/useAutopilot.ts`), and a depth progress report is named as the lens blur. The Autopilot switch for Lens Blur on the Enhancements settings page is off and unavailable, as Restore's is; its model dropdown offers Lisbon alone.
 - **Hand checks** are written in `opai-notes/TESTING.md` ("Lens blur (2026-10-27) (GUI)": add and slider start and end on the bonsai and the no-EXIF copy, a crop, Set focus on Nora's eyes, a drag while armed, Escape, the row text, the first-run compile message, an export matching the preview). They are Joseph's, and the results are not in yet.
 
+**Amended 2026-11-09.** The panel's control became a Blur amount from 0 to 100 (the photograph as taken to the widest),
+and the widest is f/0.95, the Noctilux 50 mm's, the fastest full-frame prime made: `FNumber::MIN` is 0.95 and
+`blurAmount.ts`'s `WIDEST_F_NUMBER` and the library's `AMOUNT_WIDEST_F_NUMBER` agree on it.
 
 ## Platforms
 
