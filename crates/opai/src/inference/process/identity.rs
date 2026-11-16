@@ -96,3 +96,20 @@ pub(crate) fn identity_masked(identity: &str, signature: u64) -> String {
     // identity and chain can fold to this string through `identity_after` or `identity_of_data`.
     xxh3_string(&format!("{identity}|{signature:016x}|{MASK_DISCRIMINATOR}"))
 }
+
+// The guard's tally is stored beside the step's picture rather than inside it: a picture entry is the PNG the step
+// produced, which every other step's read decodes as one, and a tally in a PNG text chunk would be an encoding only
+// this one kind of step had.
+/// What tells a guard's key apart from a chain key and a data key, in the position a [`ChannelDepth::tag`] and
+/// [`DATA_DISCRIMINATOR`] occupy.
+///
+/// A word that is neither a depth tag nor `"data"`, for the reason [`DATA_DISCRIMINATOR`] gives.
+pub(super) const GUARD_DISCRIMINATOR: &str = "guard";
+
+/// The slot the guard's tally for the chain step stored under `step` is kept in.
+///
+/// Folded from the step's own key, so a step and its tally cannot be looked up under two derivations that disagree,
+/// and a step that is a different entry — another predecessor, another depth — has a different tally too.
+pub(crate) fn identity_of_guard(step: &str) -> String {
+    xxh3_string(&format!("{step}|{GUARD_DISCRIMINATOR}"))
+}

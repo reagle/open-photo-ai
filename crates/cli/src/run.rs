@@ -26,7 +26,8 @@
 //!   end its row                --> Enhancements applied, Failed or Stopped, and the bar's [n/N] counts it; under
 //!                                  --verbose a written one adds `: <applied>`; off a terminal, its one plain line,
 //!                                  then ⚠️ naming what the result lost against its source (HDR, bit depth, colour
-//!                                  profile), if anything
+//!                                  profile), if anything, and a ⚠️ line for each enhancement a guarded model left
+//!                                  partly or wholly unprocessed
 //! finish the view, summarize   --> under a live view, each image's ⚠️ line it hid; for several images, the ⚠️ count
 //!                                  of what was lost; then ✨ naming the file for one image, or for more the output
 //!                                  or "beside their sources" without one, then each failure's 🧨 line where the view
@@ -212,13 +213,14 @@ pub async fn run(mut args: Args, look: Look) -> Result<(), CliError> {
         drop(span);
 
         match result {
-            Ok((result, applied)) => {
+            Ok((result, applied, notes)) => {
                 // Off a terminal the row is printed here and the loss line straight after it; a live view owns stderr
                 // and keeps only a few rows, so the loss line waits for it to finish. Either way the row is untouched.
                 let row = view.end_line(index, &source.path, &ImageEnd::Enhanced(args.verbose.then_some(applied)));
                 let loss =
                     (!result.losses.is_empty()).then(|| look::loss_line(&source.path, &result.losses, look.color));
-                for line in ended(row, loss, &mut hidden) {
+                let guarded = notes.iter().map(|note| look::warning(note, look.color));
+                for line in ended(row, loss.into_iter().chain(guarded), &mut hidden) {
                     eprintln!("{line}");
                 }
                 if !result.losses.is_empty() {
@@ -254,13 +256,14 @@ pub async fn run(mut args: Args, look: Look) -> Result<(), CliError> {
     closing(stopped, failures, sources.len())
 }
 
-/// What to print as a written image ends: its plain `row` (`None` under a live view, which drew it) and then its `loss`
-/// line. Under a live view the loss line goes to `hidden` instead, to be printed once the view finishes.
-fn ended(row: Option<String>, loss: Option<String>, hidden: &mut Vec<String>) -> Vec<String> {
+/// What to print as a written image ends: its plain `row` (`None` under a live view, which drew it) and then its
+/// `warnings` — the loss line, then a guarded model's. Under a live view the warnings go to `hidden` instead, to be
+/// printed once the view finishes.
+fn ended(row: Option<String>, warnings: impl IntoIterator<Item = String>, hidden: &mut Vec<String>) -> Vec<String> {
     match row {
-        Some(row) => std::iter::once(row).chain(loss).collect(),
+        Some(row) => std::iter::once(row).chain(warnings).collect(),
         None => {
-            hidden.extend(loss);
+            hidden.extend(warnings);
             Vec::new()
         }
     }
@@ -415,7 +418,7 @@ async fn enhance_one(
     masks: &Masks,
     view: &View,
     cancel: &CancellationToken,
-) -> Result<(opai::export::Written, String), CliError> {
+) -> Result<(opai::export::Written, String, Vec<String>), CliError> {
     // From the header's size, before the pixels are decoded: a mask that does not fit costs this image nothing.
     for (mask, what) in [(&masks.limit, "mask"), (&masks.remove, "removal mask")] {
         if let Some(mask) = mask {
@@ -490,7 +493,11 @@ async fn enhance_one(
         provenance(plan.operations.is_empty(), &verdict)
     );
 
-    Ok((written, applied))
+    // Printed with the loss line, after the image's row: see `ended`. The library has already written its own record
+    // of the same run to the log.
+    let notes = enhanced.guards.iter().filter_map(|report| look::guard_note(&source.path, report)).collect();
+
+    Ok((written, applied, notes))
 }
 
 /// What `plan` applied, in words, ending with how many of its steps the run cache served: `cached` as the progress
@@ -784,6 +791,12 @@ mod tests {
         assert!(ended(None, Some("⚠️ loss".into()), &mut hidden).is_empty());
         assert!(ended(None, None, &mut hidden).is_empty());
         assert_eq!(hidden, ["⚠️ loss"]);
+
+        // A guarded model's line follows the loss line, by either route.
+        let both = || [Some("⚠️ loss".to_string()), Some("⚠️ guard".to_string())].into_iter().flatten();
+        assert_eq!(ended(Some("row".into()), both(), &mut hidden), ["row", "⚠️ loss", "⚠️ guard"]);
+        assert!(ended(None, both(), &mut hidden).is_empty());
+        assert_eq!(hidden, ["⚠️ loss", "⚠️ loss", "⚠️ guard"]);
     }
     use crate::progress::tests::{inference, upscale};
     use clap::ValueEnum;

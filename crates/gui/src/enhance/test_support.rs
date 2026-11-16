@@ -53,6 +53,7 @@ pub(super) fn enhanced(source: &Picture, width: u32, height: u32, identity: &str
         providers: no_providers(),
         faces: opai::ChainFaces::NotAsked,
         matte: opai::ChainMatte::NotAsked,
+        guards: Vec::new(),
     }
 }
 

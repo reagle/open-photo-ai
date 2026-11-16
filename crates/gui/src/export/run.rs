@@ -250,6 +250,7 @@ mod tests {
             providers: no_providers(),
             faces: opai::ChainFaces::NotAsked,
             matte: opai::ChainMatte::NotAsked,
+            guards: Vec::new(),
         }
     }
 

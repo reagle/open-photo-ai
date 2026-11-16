@@ -242,7 +242,7 @@ pub use inference::execute::{ExecuteOptions, Executed};
 pub use inference::faces::{
     ChainFaces, FaceSelection, FacedChain, SelectFaces, default_face_selection, fill_chain_faces,
 };
-pub use inference::process::{Enhanced, ProcessOptions, ProviderReport, ProviderVerdict};
+pub use inference::process::{Enhanced, GuardReport, ProcessOptions, ProviderReport, ProviderVerdict};
 pub use inference::progress::{InferenceProgress, OnInference, Stage};
 pub use libpath::prepare_library_path;
 pub use logging::LogError;
@@ -252,10 +252,10 @@ pub use models::{
     ColorizationVariant, Confidence, DataOperation, Denoise, DenoiseParams, DenoiseVariant, Depth, DepthMap,
     DepthVariant, Detection, DetectionOutput, DetectionVariant, FNumber, FOCUS_X, FOCUS_Y, Face, FaceRecovery,
     FaceRecoveryParams, FaceRecoveryVariant, Faces, Family, FamilyEntry, Fidelity, FloatPrecision, Fraction, Grain,
-    GrainAmount, GrainMode, GrainParams, GrainVariant, GraphRole, Lens, LensBlur, LensBlurEdges, LensBlurRefine,
-    LensBlurVariant, LensOrigin, LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant, Matte, Matting,
-    MattingVariant, Operation, OsakaPrecision, OwnLens, ParameterEntry, ParameterKind, ParameterValues, Pass, Point,
-    Precision, RangeError, Rect, RefineStroke, Remove, RemoveVariant, Resolution, Restore, RestoreParams,
+    GrainAmount, GrainMode, GrainParams, GrainVariant, GraphRole, GuardTally, Lens, LensBlur, LensBlurEdges,
+    LensBlurRefine, LensBlurVariant, LensOrigin, LightAdjustment, LightAdjustmentParams, LightAdjustmentVariant, Matte,
+    Matting, MattingVariant, Operation, OsakaPrecision, OwnLens, ParameterEntry, ParameterKind, ParameterValues, Pass,
+    Point, Precision, RangeError, Rect, RefineStroke, Remove, RemoveVariant, Resolution, Restore, RestoreParams,
     RestoreVariant, Scale, Sharpen, SharpenParams, SharpenVariant, Strength, Subject, UnknownRole, Upscale,
     UpscaleParams, UpscaleVariant, VariantEntry, catalogue,
 };

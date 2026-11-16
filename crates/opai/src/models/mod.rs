@@ -158,6 +158,7 @@ pub use f_number::FNumber;
 pub use face::{Confidence, DetectionOutput, Face, Faces, Point, Rect};
 pub use face_recovery::{FaceRecovery, FaceRecoveryParams, FaceRecoveryVariant};
 pub use fidelity::Fidelity;
+pub use filter::GuardTally;
 pub use fraction::Fraction;
 pub use grain::{Grain, GrainAmount, GrainMode, GrainParams, GrainVariant};
 pub use lens_blur::{
