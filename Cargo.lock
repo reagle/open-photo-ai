@@ -8844,8 +8844,7 @@ dependencies = [
 [[package]]
 name = "zenraw"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6802e9999fa0b57ae0da7016e55e311b8b683004a67646502a90ed17d38700db"
+source = "git+https://github.com/reagle/zenraw?tag=0.2.0-wb.1#f44a2c9776125383149e649d7fcc0dcbe7e523a0"
 dependencies = [
  "archmage",
  "bytemuck",
