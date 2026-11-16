@@ -1639,6 +1639,7 @@ fn a_consumer_can_read_what_a_run_ran_on_and_release_every_session() {
         providers: downgraded.clone(),
         faces: opai::ChainFaces::NotAsked,
         matte: ChainMatte::NotAsked,
+        guards: Vec::new(),
     };
 
     assert_eq!(enhanced.providers, downgraded);

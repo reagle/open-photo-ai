@@ -435,6 +435,7 @@
         }
     },
     "toasts": {
+        "guardKept": "{{enhancement}} はこの写真の {{share}} を変更しませんでした。このモデルにはノイズが多すぎるか暗すぎます。別のモデルをお試しください。",
         "unsupportedFiles_other": "{{count}} 件のファイルは対応していません：{{names}}",
         "recentMissing": "「{{name}}」が見つかりません。移動または削除された可能性があります。"
     },

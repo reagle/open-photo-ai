@@ -50,7 +50,7 @@ use crate::image::{GainMap, Picture};
 use crate::mask::Mask;
 use crate::models::grain::is_grain_reference;
 use crate::models::remove::RemovedAt;
-use crate::models::{Depth, DepthMap, Detection, Faces, Family, Matte, Matting, Operation, Remove};
+use crate::models::{Depth, DepthMap, Detection, Faces, Family, GuardTally, Matte, Matting, Operation, Remove};
 use crate::pipeline::{Backend, Shared, session};
 use crate::providers::ExecutionProvider;
 use crate::sessions::SessionHandle;
@@ -67,10 +67,10 @@ mod options;
 mod plan;
 mod report;
 
-pub(crate) use identity::{identity_after, identity_masked, identity_of_data};
+pub(crate) use identity::{identity_after, identity_masked, identity_of_data, identity_of_guard};
 pub use options::ProcessOptions;
 pub(crate) use plan::{Planned, plan};
-pub use report::{Enhanced, ProviderReport, ProviderVerdict};
+pub use report::{Enhanced, GuardReport, ProviderReport, ProviderVerdict};
 
 /// `operations` in [`Family::APPLY_ORDER`](crate::models::Family::APPLY_ORDER): borrowed where they already are, and
 /// otherwise a stably sorted copy, so two operations of one family keep the order they were given in.
@@ -387,7 +387,11 @@ where
     .await
     .map(|ran| match &removed {
         // What the removals ran on is the chain's too.
-        Some(removed) => Ran { providers: removed.providers.and(ran.providers), ..ran },
+        Some(removed) => Ran {
+            providers: removed.providers.and(ran.providers),
+            guards: [removed.guards.clone(), ran.guards].concat(),
+            ..ran
+        },
         None => ran,
     });
 
@@ -397,22 +401,22 @@ where
         // The mask limits only what follows the removals: a removal is inside what it blends with, so the photograph it
         // brings back, and that photograph's gain map, are as the removals left them — the fill and the gain a
         // removal wrote under it included. A gain map only a removal rewrote is the chain's whatever the mask.
-        (Ok(Ran { pixels, gain_map, providers, kept, photograph: measured }), Some(mask)) => {
+        (Ok(Ran { pixels, gain_map, providers, kept, photograph: measured, guards }), Some(mask)) => {
             let (photograph, original) = kept.unwrap_or_else(|| (source.shared_pixels(), source.shared_gain_map()));
 
             masked(photograph, original, pixels, gain_map, mask, depth, &options.cancel)
                 .instrument(span.clone())
                 .await
-                .map(|(pixels, gain_map)| (pixels, gain_map, providers, measured))
+                .map(|(pixels, gain_map)| (pixels, gain_map, providers, measured, guards))
                 .map_err(RunFailure::from)
         }
-        (outcome, _) => outcome.map(|ran| (ran.pixels, ran.gain_map, ran.providers, ran.photograph)),
+        (outcome, _) => outcome.map(|ran| (ran.pixels, ran.gain_map, ran.providers, ran.photograph, ran.guards)),
     };
 
     // The lens blurs and the grain after the blend, on the same bar as the head and through a store keyed from the
     // blended picture, the grain matching the photograph the head handed on.
     let outcome = match (outcome, &blended) {
-        (Ok((pixels, gain_map, providers, measured)), Some(blended)) if !tail.is_empty() => {
+        (Ok((pixels, gain_map, providers, measured, guards)), Some(blended)) if !tail.is_empty() => {
             let input = source.derive(Arc::clone(&pixels), blended.as_str());
             let blending = RunCache::for_run(store, options.cache, &input);
             let part = Some((split, operations.len()));
@@ -431,9 +435,9 @@ where
             )
             .instrument(span.clone())
             .await
-            .map(|ran| (ran.pixels, ran.gain_map, providers.and(ran.providers)))
+            .map(|ran| (ran.pixels, ran.gain_map, providers.and(ran.providers), [guards, ran.guards].concat()))
         }
-        (outcome, _) => outcome.map(|(pixels, gain_map, providers, _)| (pixels, gain_map, providers)),
+        (outcome, _) => outcome.map(|(pixels, gain_map, providers, _, guards)| (pixels, gain_map, providers, guards)),
     };
 
     // Recorded before the `?`, so that a run which failed says so rather than leaving a reader to infer it from a
@@ -471,7 +475,7 @@ where
         },
     });
 
-    let (pixels, gain_map, providers) = outcome.map_err(|failure| failure.error)?;
+    let (pixels, gain_map, providers, guards) = outcome.map_err(|failure| failure.error)?;
 
     // The path is the source's: it says where the pixels came from, never where they are going, so a result carries
     // the photograph it was made from and writing it is still a destination the caller names.
@@ -503,7 +507,7 @@ where
             .after(operations, limiting.is_some(), source.dimensions(), (pixels.width(), pixels.height()));
     let picture = source.derive(pixels, named).with_shared_gain_map(gain_map).with_edits(edits);
 
-    Ok(Enhanced { picture, providers, faces, matte })
+    Ok(Enhanced { picture, providers, faces, matte, guards })
 }
 
 /// A chain's leading removals, run before the rest of it so that its lens blurs' depth and mattes are estimated on what
@@ -516,6 +520,8 @@ struct Removed {
     steps: usize,
     /// What they ran on, which the chain's report includes.
     providers: ProviderReport,
+    /// What their guards decided, which the chain's report includes.
+    guards: Vec<GuardReport>,
 }
 
 /// `source` after `removals`, the leading steps of its chain, at `depth`: run as [`run`] runs the head of the chain,
@@ -556,6 +562,7 @@ async fn removed_first<B: Backend>(
         picture: source.derive(ran.pixels, named).with_shared_gain_map(ran.gain_map),
         steps: removals.len(),
         providers: ran.providers,
+        guards: ran.guards,
     })
 }
 
@@ -833,6 +840,8 @@ pub(crate) struct Ran {
     /// The photograph a grain after these steps matches: the one handed in, or the source, or what the last denoise
     /// among them made where a later step asked for one. What the tail of a chain run in parts is handed.
     pub(crate) photograph: Arc<DynamicImage>,
+    /// What each guarded step's guard decided, in chain order.
+    pub(crate) guards: Vec<GuardReport>,
 }
 
 /// Runs `source` through the `planned` chain in order, each operation over the result of the one before it, at
@@ -858,6 +867,10 @@ pub(crate) struct Ran {
 /// `cache` is the store this run reads and writes, already decided by [`process`] for the whole call. An operation
 /// whose result is stored reports [`Stage::Cached`](super::progress::Stage::Cached) and acquires no session at all.
 /// A cancelled or failed operation writes nothing.
+///
+/// Every guarded step's [`GuardReport`] comes back beside the pixels, in chain order — from its run, or from the store
+/// beside the picture it served. A stored picture whose tally is missing is a miss, so a served step can never report
+/// less than its run did.
 ///
 /// An empty chain returns `source` unchanged, identity included: applying nothing derives nothing.
 ///
@@ -896,6 +909,7 @@ pub(crate) async fn run<B: Backend>(
             gain_map,
             providers: ProviderReport::new(provider, []),
             kept: None,
+            guards: Vec::new(),
             photograph,
         });
     }
@@ -951,6 +965,10 @@ pub(crate) async fn run<B: Backend>(
         kept = Some((Arc::clone(&current), current_map.clone()));
     }
 
+    // What each guarded step's guard decided, by index, whether the step was computed or served. By index rather than
+    // pushed as the walk goes, because the rewind below walks a span again and the second answer replaces the first.
+    let mut tallies: Vec<Option<GuardTally>> = vec![None; planned.len()];
+
     // The run cache sits in this loop, which is what makes dragging a slider cheap: a step whose result is already
     // there skips the model *and* the session acquisition, since acquiring would install a model for an operation that
     // is not going to run. See `cache` for what a failure at either end costs.
@@ -980,7 +998,21 @@ pub(crate) async fn run<B: Backend>(
         {
             let reading = cache.clone();
             let wanted = key.clone();
-            let stored = spawn_blocking::<_, InferenceError, _>(move || reading.get_bytes(&wanted)).await?;
+            let guarded = operation.pipeline.guarded();
+
+            // A guarded step is served only together with its tally, and a picture whose tally is missing is a miss:
+            // an entry written before tallies were kept, or one whose tally the store declined. Serving the picture
+            // alone would be the one way a second run could say less than the first — the photograph came back
+            // unchanged, and nothing said so — and running the step again is always a correct answer, so no version
+            // tag is needed to retire the entries that have none.
+            let stored = spawn_blocking::<_, InferenceError, _>(move || {
+                let bytes = reading.get_bytes(&wanted)?;
+                let tally =
+                    if guarded { Some(reading.get_value::<GuardTally>(&identity_of_guard(&wanted))?) } else { None };
+
+                Some((bytes, tally))
+            })
+            .await?;
             metrics::cache_lookup(metrics::STEP, stored.is_some());
 
             // A step that changes the gain map is served only with what it made of it: its pixels alone are half a
@@ -996,7 +1028,7 @@ pub(crate) async fn run<B: Backend>(
                 _ => None,
             };
 
-            if let Some(bytes) = stored
+            if let Some((bytes, tally)) = stored
                 && rewritten.as_ref().is_none_or(Option::is_some)
             {
                 // `debug`, because it repeats once per operation and a user dragging a slider would otherwise fill
@@ -1016,6 +1048,8 @@ pub(crate) async fn run<B: Backend>(
                 if is_grain_reference(operation.operation().family()) && wants_photograph(index + 1) {
                     photograph_stored = Some((index, bytes.clone()));
                 }
+
+                tallies[index] = tally;
 
                 if pending.is_none() {
                     skipped_from = index;
@@ -1172,6 +1206,7 @@ pub(crate) async fn run<B: Backend>(
                 let input = Arc::clone(&current);
                 let map = current_map.clone();
                 let against = against.clone();
+                let guarded = pipeline.guarded();
                 let cancelled = cancel.clone();
                 let reported = Arc::clone(&reporter);
                 let wanted = progress.wanted();
@@ -1205,21 +1240,28 @@ pub(crate) async fn run<B: Backend>(
                     // otherwise be stored as that map's reason — is made the stop it was before anything reads it.
                     //
                     // A step measured against the photograph is handed it, and leaves the gain map as it was.
+                    //
+                    // A guarded step is run through `run_tallied`, gain map or not: a guarded model leaves the gain
+                    // map as it was, which is what `None` says, and its tally is the one thing the other two calls
+                    // would drop.
                     let (produced, terminated) = session::terminable(&cancelled, || match (&against, &map) {
                         (Some(photograph), _) => pipeline
                             .run_against(&input, photograph, &sessions, depth, report, &stopped)
-                            .map(|image| (image, None)),
-                        (None, Some(map)) => {
-                            pipeline.run_with_gain_map(&input, map, &sessions, depth, report, &stopped)
-                        }
+                            .map(|image| (image, None, None)),
+                        (None, _) if guarded => pipeline
+                            .run_tallied(&input, &sessions, depth, report, &stopped)
+                            .map(|(image, tally)| (image, None, tally)),
+                        (None, Some(map)) => pipeline
+                            .run_with_gain_map(&input, map, &sessions, depth, report, &stopped)
+                            .map(|(image, rewritten)| (image, rewritten, None)),
                         (None, None) => {
-                            pipeline.run(&input, &sessions, depth, report, &stopped).map(|image| (image, None))
+                            pipeline.run(&input, &sessions, depth, report, &stopped).map(|image| (image, None, None))
                         }
                     });
                     let produced = match session::settled(produced, terminated) {
-                        Ok((_, Some(Err(_)))) if terminated => Err(InferenceError::Cancelled),
-                        Ok((_, Some(Err(error)))) if error.stop_reason().is_some() => Err(error),
-                        produced => produced.map(|(image, rewritten)| (Arc::new(image), rewritten)),
+                        Ok((_, Some(Err(_)), _)) if terminated => Err(InferenceError::Cancelled),
+                        Ok((_, Some(Err(error)), _)) if error.stop_reason().is_some() => Err(error),
+                        produced => produced.map(|(image, rewritten, tally)| (Arc::new(image), rewritten, tally)),
                     };
 
                     // Only what actually succeeded — a cancelled or failed operation arrives as an `Err`, so nothing
@@ -1232,7 +1274,14 @@ pub(crate) async fn run<B: Backend>(
                     // milliseconds to seconds, and nothing in this run needs it done: the next step and the caller have
                     // the pixels. A later read of this key waits for the write rather than missing it — see
                     // `RunCache::put_later`.
-                    if let (Ok((image, rewritten)), Some((cache, key))) = (&produced, &writing) {
+                    //
+                    // The tally is written here and at once rather than queued: it is a few dozen bytes of JSON, and a
+                    // picture already in the store without it would be read as a miss until it landed.
+                    if let (Ok((image, rewritten, tally)), Some((cache, key))) = (&produced, &writing) {
+                        if let Some(tally) = tally {
+                            cache.put_value(&identity_of_guard(key), tally);
+                        }
+
                         cache.put_later(key, Arc::clone(image));
                         match rewritten {
                             Some(Ok(map)) => cache.put_later(&gain_map_key(key), map.shared_pixels()),
@@ -1252,7 +1301,7 @@ pub(crate) async fn run<B: Backend>(
                     let (sessions, produced) = ran.await?;
                     let ran = running.elapsed();
 
-                    Ok((sessions, produced.map(|(image, rewritten)| (image, rewritten, ran))))
+                    Ok((sessions, produced.map(|(image, rewritten, tally)| (image, rewritten, tally, ran))))
                 }
             })
             .instrument(step.clone())
@@ -1265,7 +1314,8 @@ pub(crate) async fn run<B: Backend>(
         // Not recorded here: `process`'s closing record names the step, and a second record would be a second account
         // of one failure. Not the operations that had already succeeded either: a caller given a partial result has
         // no way to tell it from a finished enhancement and would show it to a user as one.
-        let (produced, rewritten, ran) = produced.map_err(in_step)?;
+        let (produced, rewritten, tally, ran) = produced.map_err(in_step)?;
+        tallies[index] = tally;
 
         // The counterpart of the hit above, at the same level and with the same fields, so one `grep` over an
         // operation's id returns every step of every run that touched it and says which way each went.
@@ -1313,7 +1363,9 @@ pub(crate) async fn run<B: Backend>(
     // not only the first one whose provider differed from what was asked for.
     let report = ProviderReport::new(provider, held.iter().map(SessionHandle::provider));
 
-    Ok(Ran { pixels: current, gain_map: current_map, providers: report, kept, photograph })
+    let guards = guard_reports(planned, &tallies, before);
+
+    Ok(Ran { pixels: current, gain_map: current_map, providers: report, kept, photograph, guards })
 }
 
 /// What a step that changes the gain map made of it, as stored beside the step's pixels.
@@ -1340,6 +1392,42 @@ fn stored_gain_map(cache: &RunCache, key: &str, map: &GainMap) -> Option<StoredG
 /// lowercase hexadecimal, so it cannot name another step's entry.
 fn gain_map_key(key: &str) -> String {
     format!("{key}|gm")
+}
+
+/// Every guarded step's report, in chain order, from the tallies the walk collected by index — with a `warn` for each
+/// one whose guard kept part of the photograph unprocessed, its index counted from `before`, where this part of the
+/// chain starts.
+fn guard_reports<B: Backend>(
+    planned: &[Planned<B>],
+    tallies: &[Option<GuardTally>],
+    before: usize,
+) -> Vec<GuardReport> {
+    planned
+        .iter()
+        .zip(tallies)
+        .enumerate()
+        .filter_map(|(index, (step, tally))| {
+            let tally = (*tally)?;
+
+            // `warn`, and the one per-step record above `debug`, because it is the one a user is otherwise never told:
+            // the run succeeded and the result is, in that much of it, the photograph they started from. Written for
+            // a served step as for a computed one, since it is a property of the result being handed back, and a
+            // reader of `opai.log` after the second run must find it as after the first. A tile rescued but not kept
+            // was processed, so a tally with only rescues is not worth a warning.
+            if tally.kept > 0 {
+                tracing::warn!(
+                    operation = %step.operation().cache_tag(),
+                    index = before + index,
+                    kept = tally.kept,
+                    rescued = tally.rescued,
+                    tiles = tally.tiles,
+                    "a guarded model kept part of the photograph unprocessed"
+                );
+            }
+
+            Some(GuardReport { operation: step.operation().clone(), tally })
+        })
+        .collect()
 }
 
 /// The provider a step's sessions ran on, as its duration is tagged: one provider, or `mixed` where its graphs were

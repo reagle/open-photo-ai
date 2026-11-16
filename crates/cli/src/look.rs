@@ -10,7 +10,7 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use opai::export::Loss;
-use opai::{ExecutionProvider, Family};
+use opai::{ExecutionProvider, Family, GuardReport};
 use ratatui::crossterm::style::{Color as TermColor, Stylize};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -267,6 +267,36 @@ pub fn warning(text: impl Display, color: bool) -> String {
     ansi(&format!("⚠️ {text}"), fg(YELLOW, color))
 }
 
+/// What a guarded model's guard did to the image at `path`, as the warning line says it, uncoloured — or `None` where
+/// it kept no tile, since a tile rescued was still processed.
+///
+/// `<path>: Denoise Stockholm (FP32) left 100% of the photograph unchanged (too noisy or too dark for it); try another
+/// denoise model`. Said for **any** tile kept, however few: a kept tile is a square of the photograph left as it was
+/// among squares the model changed, which is visible at a glance, and the percentage already says how small it is. No
+/// model is named as the one to try instead, since which models there are changes.
+pub fn guard_note(path: &Path, report: &GuardReport) -> Option<String> {
+    let tally = report.tally;
+    if tally.kept == 0 {
+        return None;
+    }
+
+    // `whole_percent` floors and stops at 99 short of the whole, so a single tile of hundreds does not read as 0% and
+    // all but one does not read as 100%.
+    let share = match whole_percent(tally.kept_share()) {
+        0 => "less than 1%".to_string(),
+        percent => format!("{percent}%"),
+    };
+    let family = family_label(report.operation.family());
+
+    Some(format!(
+        "{}: {family} {} left {share} of the photograph unchanged (too noisy or too dark for it); try another {} \
+         model",
+        path.display(),
+        report.operation.display_name(),
+        family.to_lowercase()
+    ))
+}
+
 /// `🧨 <error>`, all in bold red.
 pub fn failure(error: impl Display, color: bool) -> String {
     paint_bold(format!("🧨 {error}"), RED, color)
@@ -440,6 +470,52 @@ mod tests {
         assert_eq!(Look::new(true, Some(OsStr::new(""))), Look { interactive: true, color: true });
         assert_eq!(Look::new(true, Some(OsStr::new("1"))), Look { interactive: true, color: false });
         assert_eq!(Look::new(false, None), Look { interactive: false, color: false });
+    }
+
+    /// A Stockholm run whose guard kept `kept` of `tiles` tiles.
+    fn stockholm_keeping(kept: usize, tiles: usize) -> GuardReport {
+        let strength = opai::Strength::new(1.0).expect("in range");
+
+        GuardReport {
+            operation: opai::Denoise::stockholm(opai::FloatPrecision::Fp32, strength),
+            tally: opai::GuardTally { tiles, kept, rescued: 0 },
+        }
+    }
+
+    #[test]
+    fn a_guard_that_kept_the_whole_photograph_says_so_and_names_no_other_model() {
+        assert_eq!(
+            guard_note(Path::new("photos/a.arw"), &stockholm_keeping(425, 425)).as_deref(),
+            Some(
+                "photos/a.arw: Denoise Stockholm (FP32) left 100% of the photograph unchanged (too noisy or too dark \
+                 for it); try another denoise model"
+            )
+        );
+    }
+
+    #[test]
+    fn a_guard_that_kept_one_tile_of_hundreds_still_says_so_without_rounding_it_away() {
+        let one = guard_note(Path::new("a.arw"), &stockholm_keeping(1, 425)).expect("a kept tile is worth a line");
+        assert!(one.contains(" left less than 1% of the photograph unchanged "), "{one}");
+
+        let all_but_one = guard_note(Path::new("a.arw"), &stockholm_keeping(424, 425)).expect("worth a line");
+        assert!(all_but_one.contains(" left 99% of "), "{all_but_one}");
+
+        assert!(
+            guard_note(Path::new("a.arw"), &stockholm_keeping(212, 425))
+                .expect("a line")
+                .contains(" left 49% ")
+        );
+    }
+
+    #[test]
+    fn a_guard_that_kept_nothing_has_no_line() {
+        assert_eq!(guard_note(Path::new("a.arw"), &stockholm_keeping(0, 425)), None);
+
+        // Rescued tiles were processed, on the second try.
+        let mut rescued = stockholm_keeping(0, 425);
+        rescued.tally.rescued = 3;
+        assert_eq!(guard_note(Path::new("a.arw"), &rescued), None);
     }
 
     #[test]
