@@ -61,3 +61,9 @@ opt-level = 3
 # `tag = "26.11.0"` pins to that release.
 [patch."https://github.com/vegidio/rust-sak"]
 rust-sak = { git = "https://github.com/reagle/rust-sak", tag = "26.11.0-meta.7" }
+
+# Local builds only. zenraw 0.2.0's `OutputMode::Develop` white-balances twice, so camera RAW develops too dark with
+# saturated colours shifted (blue skies purple, reds magenta). `0.2.0-wb.1` is the 0.2.0 release plus the fix from
+# imazen/zenraw#28 (issue #27). Delete this section once rust-sak depends on a zenraw release that includes it.
+[patch.crates-io]
+zenraw = { git = "https://github.com/reagle/zenraw", tag = "0.2.0-wb.1" }
