@@ -580,7 +580,7 @@ mod tests {
 
     #[test]
     fn a_gain_map_that_cannot_be_carried_still_writes_an_sdr_jpeg_and_says_so() {
-        use crate::image::test_support::{FIXTURE_SIZE, truncated_ultra_hdr, written_ultra_hdr};
+        use crate::image::test_support::{FIXTURE_SIZE, written_ultra_hdr};
         use crate::image::{GainMap, Hdr, Metadata};
 
         let dir = tempfile::tempdir().expect("a temporary directory");
@@ -595,10 +595,6 @@ mod tests {
         oversized.iso_gain_map = Some(vec![1; 70_000]);
         let refused: GainMap = loaded.gain_map().expect("carried").with_metadata(oversized);
         let refused = loaded.clone().with_gain_map(Some(refused));
-        // Not read at load: cut short inside the gain map.
-        let cut = dir.path().join("cut.jpg");
-        std::fs::write(&cut, truncated_ultra_hdr()).expect("written");
-        let cut = image::load_blocking(&cut).expect("the photograph still loads");
         // A secondary image the MPF index calls a gain map, with no gain-map metadata of its own: refused at load.
         let bare = {
             use crate::image::test_support::{ISO_VERSION, ULTRA_HDR_XMP, display_p3, ramp_image};
@@ -629,7 +625,7 @@ mod tests {
         };
         assert!(bare.gain_map().is_none());
 
-        let pictures = [("refused.jpg", refused), ("cut-out.jpg", cut), ("bare-out.jpg", bare)];
+        let pictures = [("refused.jpg", refused), ("bare-out.jpg", bare)];
         for (name, picture) in pictures {
             let (log, result) = crate::logging::records_of_blocking("info", || {
                 tokio::runtime::Builder::new_current_thread()
@@ -651,6 +647,37 @@ mod tests {
                 let records = crate::logging::records(&log, "HDR gain map dropped: it could not be carried");
                 assert_eq!(records.len(), 1, "{log}");
             }
+        }
+    }
+
+    #[test]
+    fn a_gain_map_a_file_declares_and_does_not_contain_is_reported_missing_not_dropped() {
+        use crate::image::Hdr;
+        use crate::image::test_support::{declared_ultra_hdr_without_gain_map, truncated_ultra_hdr};
+
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let missing =
+            [Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Jpeg, cause: super::super::HdrCause::Missing }];
+        // No gain-map image after the primary, as Lightroom leaves a Pixel photograph; and one cut short inside it.
+        for (name, bytes) in [("declared", declared_ultra_hdr_without_gain_map()), ("cut", truncated_ultra_hdr())] {
+            let path = dir.path().join(format!("{name}.jpg"));
+            std::fs::write(&path, bytes).expect("written");
+            assert_eq!(super::super::predict_blocking(&path, ImageFormat::Jpeg).expect("readable"), missing, "{name}");
+            let picture = image::load_blocking(&path).expect("the photograph still loads");
+            assert!(picture.gain_map_missing(), "{name}");
+
+            let (written, file) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("a runtime")
+                .block_on(write_to(&picture, dir.path(), &format!("{name}-out.jpg"), ImageFormat::Jpeg));
+
+            assert_eq!(written.losses, missing, "{name}");
+            assert_eq!(
+                written.losses[0].to_string(),
+                "no HDR to keep: the file declares a gain map it does not contain"
+            );
+            assert_eq!(rust_sak::image::hdr_bytes(&file), None, "{name}: an SDR JPEG, claiming nothing");
         }
     }
 

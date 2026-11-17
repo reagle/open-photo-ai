@@ -360,6 +360,7 @@
             "hdrGainMap": "Карта усиления HDR удалена: {{format}} пока записывается только в SDR",
             "hdrGainMapNotCarried": "Карта усиления HDR удалена: её не удалось сохранить",
             "hdrGainMapLeftOut": "Записано в SDR (карта усиления не включена)",
+            "hdrGainMapMissing": "Нет HDR для сохранения: файл объявляет карту усиления, которой в нём нет",
             "hdrTransfer": "HDR ({{transfer}}) удалён: {{format}} пока записывается только в SDR",
             "depth": "{{from}} → {{to}} в {{format}}",
             "bits": "{{bits}} бит",

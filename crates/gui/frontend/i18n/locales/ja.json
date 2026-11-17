@@ -342,6 +342,7 @@
             "hdrGainMap": "HDR ゲインマップを破棄: {{format}} は現在 SDR でのみ書き出されます",
             "hdrGainMapNotCarried": "HDR ゲインマップを破棄: 引き継げませんでした",
             "hdrGainMapLeftOut": "SDR で書き出し（ゲインマップは含めません）",
+            "hdrGainMapMissing": "保持する HDR はありません: ファイルはゲインマップを宣言していますが、含まれていません",
             "hdrTransfer": "HDR ({{transfer}}) を破棄: {{format}} は現在 SDR でのみ書き出されます",
             "depth": "{{format}} で {{from}} → {{to}}",
             "bits": "{{bits}} ビット",

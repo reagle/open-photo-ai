@@ -342,6 +342,7 @@
             "hdrGainMap": "Gain map HDR dihapus: keluaran {{format}} untuk saat ini hanya SDR",
             "hdrGainMapNotCarried": "Gain map HDR dihapus: tidak dapat dipertahankan",
             "hdrGainMapLeftOut": "Ditulis sebagai SDR (gain map tidak disertakan)",
+            "hdrGainMapMissing": "Tidak ada HDR yang dipertahankan: berkas menyatakan memiliki gain map yang sebenarnya tidak ada di dalamnya",
             "hdrTransfer": "HDR ({{transfer}}) dihapus: keluaran {{format}} untuk saat ini hanya SDR",
             "depth": "{{from}} → {{to}} di {{format}}",
             "bits": "{{bits}}-bit",

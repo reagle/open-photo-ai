@@ -224,6 +224,16 @@ pub(crate) fn truncated_ultra_hdr() -> Vec<u8> {
     bytes
 }
 
+/// [`written_ultra_hdr`] as a Lightroom export of a Pixel photograph is: the primary still declares a gain map in its XMP
+/// and the file ends at the primary's EOI, with no gain-map image after it.
+pub(crate) fn declared_ultra_hdr_without_gain_map() -> Vec<u8> {
+    let mut metadata = display_p3();
+    metadata.xmp = Some(ULTRA_HDR_XMP.to_vec());
+    let mut bytes = Vec::new();
+    encode_writer_with(&ramp_image(FIXTURE_SIZE), &mut bytes, ImageFormat::Jpeg, None, &metadata).expect("encodable");
+    bytes
+}
+
 /// A minimal big-endian EXIF block: `Make` = `Cam` and `Orientation` = 6 (rotate 90° clockwise to view) in IFD0.
 ///
 /// Orientation 6 rather than 1 so a test can tell a rendition that carried it from one that did not.

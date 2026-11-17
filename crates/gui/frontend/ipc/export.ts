@@ -117,13 +117,14 @@ export type Loss =
     /**
      * An HDR source written as SDR. `cause` is `format` where the format is written as SDR only (every format for PQ
      * and HLG, every format but JPEG for a gain map), `notCarried` where a gain-map JPEG written as JPEG could not
-     * carry its gain map, and `chosen` where it was written as plain JPEG, which leaves the gain map out by choice.
+     * carry the gain map it holds, `missing` where the file declares a gain map it does not contain, and `chosen`
+     * where it was written as plain JPEG, which leaves the gain map out by choice.
      */
     | {
           kind: "hdr";
           hdr: "gainMap" | "pq" | "hlg" | "other";
           format: string;
-          cause: "format" | "notCarried" | "chosen";
+          cause: "format" | "notCarried" | "missing" | "chosen";
       }
     /** Fewer bits per channel than the source, or integers where it had floats. */
     | { kind: "depth"; from: Depth; to: Depth; format: string }

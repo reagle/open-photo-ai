@@ -348,6 +348,7 @@
             "hdrGainMap": "HDR-gainmap verwijderd: {{format}} wordt voorlopig alleen als SDR geschreven",
             "hdrGainMapNotCarried": "HDR-gainmap verwijderd: deze kon niet worden meegenomen",
             "hdrGainMapLeftOut": "Als SDR geschreven (gainmap weggelaten)",
+            "hdrGainMapMissing": "Geen HDR om te behouden: het bestand verklaart een gainmap die het niet bevat",
             "hdrTransfer": "HDR ({{transfer}}) verwijderd: {{format}} wordt voorlopig alleen als SDR geschreven",
             "depth": "{{from}} → {{to}} in {{format}}",
             "bits": "{{bits}}-bits",

@@ -348,6 +348,7 @@
             "hdrGainMap": "Mapa de ganho HDR descartado: por enquanto {{format}} é gravado apenas em SDR",
             "hdrGainMapNotCarried": "Mapa de ganho HDR descartado: não foi possível mantê-lo",
             "hdrGainMapLeftOut": "Gravado em SDR (mapa de ganho omitido)",
+            "hdrGainMapMissing": "Não há HDR a manter: o arquivo declara um mapa de ganho que não contém",
             "hdrTransfer": "HDR ({{transfer}}) descartado: por enquanto {{format}} é gravado apenas em SDR",
             "depth": "{{from}} → {{to}} em {{format}}",
             "bits": "{{bits}} bits",

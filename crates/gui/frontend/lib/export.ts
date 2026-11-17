@@ -218,6 +218,9 @@ export const formatLoss = (t: TFunction, loss: Loss): string => {
 
     switch (loss.kind) {
         case "hdr":
+            if (loss.cause === "missing") {
+                return t("export.loss.hdrGainMapMissing");
+            }
             if (loss.cause === "notCarried") {
                 return t("export.loss.hdrGainMapNotCarried");
             }

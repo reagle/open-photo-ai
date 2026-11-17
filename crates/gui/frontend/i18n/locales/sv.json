@@ -348,6 +348,7 @@
             "hdrGainMap": "HDR-förstärkningskarta borttagen: {{format}} skrivs tills vidare bara som SDR",
             "hdrGainMapNotCarried": "HDR-förstärkningskarta borttagen: den kunde inte föras över",
             "hdrGainMapLeftOut": "Skrivs som SDR (förstärkningskartan utelämnas)",
+            "hdrGainMapMissing": "Ingen HDR att behålla: filen deklarerar en förstärkningskarta som den inte innehåller",
             "hdrTransfer": "HDR ({{transfer}}) borttaget: {{format}} skrivs tills vidare bara som SDR",
             "depth": "{{from}} → {{to}} i {{format}}",
             "bits": "{{bits}} bitar",

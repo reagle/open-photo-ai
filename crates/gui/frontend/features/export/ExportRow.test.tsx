@@ -203,6 +203,13 @@ describe("the loss warning", () => {
         expect(await listed()).toEqual(["HDR gain map dropped: it could not be carried", "16-bit → 8-bit in JPEG"]);
     });
 
+    it("words a gain map the file declares and does not contain as no HDR to keep", async () => {
+        render(<PredictedRow predicted={[{ ...HDR, cause: "missing" }]} />);
+        await named();
+
+        expect(await listed()).toEqual(["No HDR to keep: the file declares a gain map it does not contain"]);
+    });
+
     it("is not drawn on a row that loses nothing", async () => {
         render(<PredictedRow predicted={[]} />);
         await named();

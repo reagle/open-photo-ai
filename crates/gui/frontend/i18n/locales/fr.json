@@ -354,6 +354,7 @@
             "hdrGainMap": "Carte de gain HDR supprimée : {{format}} est écrit en SDR uniquement pour l'instant",
             "hdrGainMapNotCarried": "Carte de gain HDR supprimée : elle n'a pas pu être conservée",
             "hdrGainMapLeftOut": "Écrit en SDR (carte de gain omise)",
+            "hdrGainMapMissing": "Aucun HDR à conserver : le fichier déclare une carte de gain qu'il ne contient pas",
             "hdrTransfer": "HDR ({{transfer}}) supprimé : {{format}} est écrit en SDR uniquement pour l'instant",
             "depth": "{{from}} → {{to}} en {{format}}",
             "bits": "{{bits}} bits",

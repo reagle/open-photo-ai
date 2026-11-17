@@ -88,6 +88,8 @@ pub struct Picture {
     gain_map: Option<Arc<GainMap>>,
     /// What was done to the source to make these pixels, shared like the metadata.
     edits: Arc<Edits>,
+    /// Whether the source declared a gain map that its file does not contain, so there was none to read.
+    gain_map_missing: bool,
 }
 
 impl Picture {
@@ -111,6 +113,7 @@ impl Picture {
             fidelity,
             gain_map: None,
             edits: Arc::default(),
+            gain_map_missing: false,
         }
     }
 
@@ -142,6 +145,13 @@ impl Picture {
         Self { gain_map, ..self }
     }
 
+    /// This picture marked as having declared a gain map its file does not contain — how [`load`](fn@super::load)
+    /// tells that from one it found and could not read.
+    #[must_use]
+    pub fn with_gain_map_missing(self, missing: bool) -> Self {
+        Self { gain_map_missing: missing, ..self }
+    }
+
     /// A picture computed from this one: `pixels` under `identity`, keeping this picture's path, metadata, fidelity and
     /// gain map.
     ///
@@ -157,6 +167,7 @@ impl Picture {
             fidelity: Arc::clone(&self.fidelity),
             gain_map: self.gain_map.clone(),
             edits: Arc::clone(&self.edits),
+            gain_map_missing: self.gain_map_missing,
         }
     }
 
@@ -221,6 +232,12 @@ impl Picture {
     /// The source's HDR gain map, if it had one that could be read; see the type's documentation.
     pub fn gain_map(&self) -> Option<&GainMap> {
         self.gain_map.as_deref()
+    }
+
+    /// Whether the source declared a gain map that its file does not contain, as a Lightroom export of a Pixel photograph
+    /// does: no gain-map image was found, which is not the same as one found and unreadable.
+    pub fn gain_map_missing(&self) -> bool {
+        self.gain_map_missing
     }
 
     /// The gain map as a shared handle, for the asynchronous export. A refcount bump, not a copy.

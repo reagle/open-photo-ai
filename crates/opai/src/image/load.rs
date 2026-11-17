@@ -113,12 +113,15 @@ fn read(path: &Path) -> Result<Picture, ImageIoError> {
     } else {
         (Metadata::default(), Fidelity::of_pixels(&pixels))
     };
-    let gain_map = gain_map_of(path, metadata.gain_map.take(), metadata.exif.as_deref(), &fidelity, &pixels);
+    let encoded = metadata.gain_map.take();
+    let missing = encoded.is_none() && fidelity.hdr == Some(Hdr::GainMap);
+    let gain_map = gain_map_of(path, encoded, metadata.exif.as_deref(), &fidelity, &pixels);
 
     Ok(Picture::new(path, Arc::new(pixels), identity)
         .with_metadata(metadata)
         .with_fidelity(fidelity)
-        .with_gain_map(gain_map))
+        .with_gain_map(gain_map)
+        .with_gain_map_missing(missing))
 }
 
 /// The gain map `encoded` decoded for a base image of `pixels` whose EXIF block is `exif`; `None`, and the drop logged, if the file declares a gain

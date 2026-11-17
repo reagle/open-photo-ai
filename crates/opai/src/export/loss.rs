@@ -80,6 +80,9 @@ pub enum HdrCause {
     /// JPEG for the sites and apps that mishandle an Ultra HDR one. Asked for, so a front end words it as what was done
     /// rather than as a warning.
     Chosen,
+    /// A JPEG whose XMP declares a gain map that the file does not contain, as a Lightroom export of a Pixel photograph
+    /// does: there is no HDR in it to keep.
+    Missing,
 }
 
 /// Why a [`Loss::Profile`] happened.
@@ -108,6 +111,9 @@ impl fmt::Display for Loss {
                 write!(f, "HDR gain map dropped: it could not be carried")
             }
             Self::Hdr { cause: HdrCause::Chosen, .. } => write!(f, "written as SDR (gain map left out)"),
+            Self::Hdr { hdr: Hdr::GainMap, cause: HdrCause::Missing, .. } => {
+                write!(f, "no HDR to keep: the file declares a gain map it does not contain")
+            }
             Self::Hdr { hdr: Hdr::GainMap, format, .. } => {
                 write!(f, "HDR gain map dropped: {} output is SDR only for now", format.name())
             }
@@ -166,6 +172,11 @@ pub(crate) fn losses_carrying(
     gain_map: bool,
 ) -> Vec<Loss> {
     let profile = picture.metadata().icc_profile.as_deref();
+    let gain_map = match (gain_map, picture.gain_map_missing()) {
+        (true, _) => GainMapState::Carried,
+        (false, true) => GainMapState::Missing,
+        (false, false) => GainMapState::NotCarried,
+    };
     assess(picture.fidelity(), profile, picture.pixels().color(), format, choice, gain_map)
 }
 
@@ -254,7 +265,14 @@ pub fn predict_export_blocking(
 ) -> Result<Prediction, ImageIoError> {
     let path = path.as_ref();
     if is_raw(path) {
-        let losses = assess(&Fidelity::of_colour(ColorType::Rgb16), None, ColorType::Rgb16, format, choice, false);
+        let losses = assess(
+            &Fidelity::of_colour(ColorType::Rgb16),
+            None,
+            ColorType::Rgb16,
+            format,
+            choice,
+            GainMapState::NotCarried,
+        );
         return Ok(Prediction { losses, gain_map: false });
     }
 
@@ -283,9 +301,15 @@ fn predict_from(
     // `probe_bytes` reports the base at its upright size, so the gain map is judged turned the same way.
     let metadata = rust_sak::image::metadata_bytes(bytes);
     let orientation = base_orientation(metadata.exif.as_deref());
-    let gain_map = metadata
-        .gain_map
-        .is_some_and(|gain_map| GainMap::plausible(&gain_map, (info.width, info.height), orientation).is_ok());
+    // No gain-map image in the file is not one that fails the check: the first has no HDR to keep, the second has HDR
+    // it cannot carry.
+    let gain_map = match metadata.gain_map {
+        None => GainMapState::Missing,
+        Some(gain_map) if GainMap::plausible(&gain_map, (info.width, info.height), orientation).is_ok() => {
+            GainMapState::Carried
+        }
+        Some(_) => GainMapState::NotCarried,
+    };
 
     Ok(assess(&fidelity, carried.as_deref(), info.color_type, format, choice, gain_map))
 }
@@ -382,6 +406,17 @@ fn png_header_end(bytes: &[u8]) -> Option<usize> {
     }
 }
 
+/// Whether a gain-map JPEG's gain map is written with it, and if not why.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GainMapState {
+    /// It is found, readable and written.
+    Carried,
+    /// It is in the file but could not be read, or could not be prepared or written.
+    NotCarried,
+    /// The file declares one and does not contain it.
+    Missing,
+}
+
 /// [`losses`] for pixels of `colour` carrying `profile`, from a source of `fidelity`, under the gain-map `choice`, with
 /// or without its `gain_map` carried.
 pub(crate) fn assess(
@@ -390,7 +425,7 @@ pub(crate) fn assess(
     colour: ColorType,
     format: ImageFormat,
     choice: GainMapChoice,
-    gain_map: bool,
+    gain_map: GainMapState,
 ) -> Vec<Loss> {
     let mut losses = Vec::new();
 
@@ -400,9 +435,10 @@ pub(crate) fn assess(
         (Some(hdr @ Hdr::GainMap), ImageFormat::Jpeg) if choice == GainMapChoice::Drop => {
             losses.push(Loss::Hdr { hdr, format, cause: HdrCause::Chosen });
         }
-        (Some(Hdr::GainMap), ImageFormat::Jpeg) if gain_map => {}
+        (Some(Hdr::GainMap), ImageFormat::Jpeg) if gain_map == GainMapState::Carried => {}
         (Some(hdr @ Hdr::GainMap), ImageFormat::Jpeg) => {
-            losses.push(Loss::Hdr { hdr, format, cause: HdrCause::NotCarried });
+            let cause = if gain_map == GainMapState::Missing { HdrCause::Missing } else { HdrCause::NotCarried };
+            losses.push(Loss::Hdr { hdr, format, cause });
         }
         (Some(hdr), _) => losses.push(Loss::Hdr { hdr, format, cause: HdrCause::Format }),
     }
@@ -538,6 +574,25 @@ mod tests {
         assert_eq!(losses[0].to_string(), "HDR gain map dropped: it could not be carried");
         // And the write's own answer, once a gain map the picture carries could not be prepared.
         assert_eq!(losses_carrying(&ultra_hdr(), ImageFormat::Jpeg, GainMapChoice::Keep, false), losses);
+    }
+
+    #[test]
+    fn an_ultra_hdr_jpeg_that_declares_a_gain_map_it_lacks_has_no_hdr_to_keep() {
+        let lacking = ultra_hdr().with_gain_map(None).with_gain_map_missing(true);
+
+        let losses = losses(&lacking, ImageFormat::Jpeg);
+
+        assert_eq!(losses, [Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Jpeg, cause: HdrCause::Missing }]);
+        assert_eq!(losses[0].to_string(), "no HDR to keep: the file declares a gain map it does not contain");
+        assert_eq!(
+            serde_json::to_value(&losses[0]).expect("JSON"),
+            serde_json::json!({ "kind": "hdr", "hdr": "gainMap", "format": "JPEG", "cause": "missing" })
+        );
+        // Another format loses it to the format, as for any gain-map JPEG.
+        assert_eq!(
+            super::losses(&lacking, ImageFormat::Png),
+            [Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Png, cause: HdrCause::Format }]
+        );
     }
 
     #[test]
@@ -717,8 +772,8 @@ mod tests {
     #[test]
     fn a_prediction_from_the_file_agrees_with_the_assessment_of_the_loaded_picture() {
         use crate::image::test_support::{
-            truncated_ultra_hdr, write_fixture, written_jpeg, written_p3, written_turned_ultra_hdr_of,
-            written_ultra_hdr, written_ultra_hdr_of,
+            declared_ultra_hdr_without_gain_map, truncated_ultra_hdr, write_fixture, written_jpeg, written_p3,
+            written_turned_ultra_hdr_of, written_ultra_hdr, written_ultra_hdr_of,
         };
 
         let dir = tempfile::tempdir().expect("a temporary directory");
@@ -740,6 +795,8 @@ mod tests {
             write_fixture(dir.path(), "quarter.jpg", &written_ultra_hdr_of((40, 32), (10, 8), 1)),
             // A full-resolution gain map stored on its side, which fits the upright base only once turned with it.
             write_fixture(dir.path(), "turned.jpg", &written_turned_ultra_hdr_of((32, 24), (32, 24))),
+            // Declared in the XMP, and no gain-map image after the primary, as Lightroom leaves a Pixel photograph.
+            write_fixture(dir.path(), "declared.jpg", &declared_ultra_hdr_without_gain_map()),
         ];
 
         for path in &files {
@@ -760,12 +817,16 @@ mod tests {
             hdr(ImageFormat::Png, HdrCause::Format)
         );
         assert_eq!(predict_blocking(&files[2], ImageFormat::Jpeg).expect("readable"), []);
-        for cut in [&files[4], &files[5]] {
+        for (file, cause) in [
+            (&files[4], HdrCause::Missing),
+            (&files[5], HdrCause::NotCarried),
+            (&files[8], HdrCause::Missing),
+        ] {
             assert_eq!(
-                predict_blocking(cut, ImageFormat::Jpeg).expect("readable"),
-                hdr(ImageFormat::Jpeg, HdrCause::NotCarried),
+                predict_blocking(file, ImageFormat::Jpeg).expect("readable"),
+                hdr(ImageFormat::Jpeg, cause),
                 "{}",
-                cut.display()
+                file.display()
             );
         }
         for carried in [&files[6], &files[7]] {
@@ -962,7 +1023,7 @@ mod tests {
                     pixels.color(),
                     format,
                     GainMapChoice::Keep,
-                    false,
+                    GainMapState::NotCarried,
                 )
                 .iter()
                 .any(|loss| matches!(loss, Loss::Profile { .. }));

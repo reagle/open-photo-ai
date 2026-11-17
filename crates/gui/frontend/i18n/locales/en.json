@@ -348,6 +348,7 @@
             "hdrGainMap": "HDR gain map dropped: {{format}} output is SDR only for now",
             "hdrGainMapNotCarried": "HDR gain map dropped: it could not be carried",
             "hdrGainMapLeftOut": "Written as SDR (gain map left out)",
+            "hdrGainMapMissing": "No HDR to keep: the file declares a gain map it does not contain",
             "hdrTransfer": "HDR ({{transfer}}) dropped: {{format}} output is SDR only for now",
             "depth": "{{from}} → {{to}} in {{format}}",
             "bits": "{{bits}}-bit",

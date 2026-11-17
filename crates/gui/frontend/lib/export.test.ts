@@ -228,6 +228,12 @@ describe("formatLoss", () => {
         );
     });
 
+    it("words a gain map a file declares and does not contain", () => {
+        expect(words({ kind: "hdr", hdr: "gainMap", format: "JPEG", cause: "missing" })).toBe(
+            "No HDR to keep: the file declares a gain map it does not contain",
+        );
+    });
+
     it("words a depth loss, floats included", () => {
         expect(words({ kind: "depth", from: { bits: 16, float: false }, to: eight, format: "JPEG" })).toBe(
             "16-bit → 8-bit in JPEG",

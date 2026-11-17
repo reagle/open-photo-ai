@@ -348,6 +348,7 @@
             "hdrGainMap": "HDR गेन मैप हटाया गया: {{format}} आउटपुट अभी केवल SDR है",
             "hdrGainMapNotCarried": "HDR गेन मैप हटाया गया: इसे बनाए नहीं रखा जा सका",
             "hdrGainMapLeftOut": "SDR में लिखा गया (गेन मैप छोड़ा गया)",
+            "hdrGainMapMissing": "बनाए रखने के लिए कोई HDR नहीं: फ़ाइल एक गेन मैप घोषित करती है जो उसमें मौजूद नहीं है",
             "hdrTransfer": "HDR ({{transfer}}) हटाया गया: {{format}} आउटपुट अभी केवल SDR है",
             "depth": "{{format}} में {{from}} → {{to}}",
             "bits": "{{bits}}-बिट",
