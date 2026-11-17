@@ -31,7 +31,8 @@ export const hdrTip = (t: TFunction, hdr: NonNullable<PhotoInfo["hdr"]>): string
  * every enhancement but a lens blur and a removal leaves it as it is, those two rewrite it, and the one
  * case that drops it - a rewrite that failed - is warned of on the export's row ("it could not be
  * carried"). So the badge answers the file, as the information card's line does, and is absent with
- * nothing to say, while the question is out, and for a file that could not be read.
+ * nothing to say, while the question is out, for a file that could not be read, and for a file that
+ * declares a gain map it does not contain (Lightroom exports a Pixel's photograph so).
  */
 export const NavbarHdr = ({ file }: { file: ImageRecord }) => {
     const { t } = useTranslation();

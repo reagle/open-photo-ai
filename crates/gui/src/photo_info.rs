@@ -212,6 +212,38 @@ mod tests {
     }
 
     #[test]
+    fn a_jpeg_declaring_a_gain_map_it_does_not_contain_has_no_hdr() {
+        // As Lightroom exports a Pixel's photograph: the ISO 21496-1 declaration stays, the gain-map image does not.
+        let pixels = image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(16, 12, image::Rgb([90; 3])));
+        let mut declared = rust_sak::image::Metadata::default();
+        declared.iso_gain_map = Some(vec![0; 4]);
+        let mut bytes = Vec::new();
+        let quality = Some(rust_sak::image::EncodeOptions::Jpeg { quality: 90 });
+        rust_sak::image::encode_writer_with(
+            &pixels,
+            &mut bytes,
+            rust_sak::image::ImageFormat::Jpeg,
+            quality,
+            &declared,
+        )
+        .expect("encodable");
+        assert!(rust_sak::image::hdr_bytes(&bytes).is_some(), "the fixture declares a gain map");
+        assert!(rust_sak::image::metadata_bytes(&bytes).gain_map.is_none(), "and holds none");
+
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let path = dir.path().join("declared.jpg");
+        std::fs::write(&path, bytes).expect("written");
+        let opened = Opened::default();
+        tauri::async_runtime::block_on(crate::images::files::describe_and_admit(vec![path.clone()], &opened))
+            .expect("the runtime is alive");
+        let identity = opai::image::identity_blocking(&path).expect("a written file has an identity");
+
+        let info = tauri::async_runtime::block_on(info_of(&opened, identity)).expect("an admitted photograph");
+
+        assert_eq!(info.hdr, None);
+    }
+
+    #[test]
     fn an_identity_never_opened_is_refused_by_name() {
         let opened = Opened::default();
         let refused = tauri::async_runtime::block_on(info_of(&opened, "feedface".into())).expect_err("unknown");

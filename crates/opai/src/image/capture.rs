@@ -45,7 +45,8 @@ pub struct Capture {
     pub taken_offset: Option<String>,
     /// Whether the file records where it was taken (`GPSLatitude`). Only whether: the place is not read.
     pub located: bool,
-    /// How the file declares HDR, if it does: a gain map, PQ or HLG.
+    /// How the file declares HDR, if it does: a gain map it contains, PQ or HLG. A declared gain map the file lacks is no
+    /// HDR.
     pub hdr: Option<Hdr>,
     /// The f-number an earlier Open Photo AI lens blur simulated (`opai:LensBlurFNumber`): the photograph is already
     /// blurred.
@@ -64,7 +65,7 @@ pub fn read_capture(path: &Path) -> Capture {
 
     let mut prefix = Vec::new();
     if std::fs::File::open(path).and_then(|file| file.take(PREFIX).read_to_end(&mut prefix)).is_ok() {
-        capture.hdr = hdr_bytes(&prefix);
+        capture.hdr = hdr_bytes(&prefix).filter(|&hdr| hdr != Hdr::GainMap || contains_gain_map(path));
         let xmp = metadata_bytes(&prefix).xmp.and_then(|packet| Xmp::parse(&packet).ok());
         if let Some(xmp) = xmp {
             capture.rendered_f_number =
@@ -73,6 +74,13 @@ pub fn read_capture(path: &Path) -> Capture {
         }
     }
     capture
+}
+
+/// Whether the file at `path` holds the gain-map image its metadata declares. A JPEG can declare one and not hold it:
+/// Lightroom exports a Pixel's photograph with the Ultra HDR XMP and no trailer after the primary image. The trailer
+/// lies past the prefix [`read_capture`] reads, so the whole file is read, and only once a gain map is declared.
+fn contains_gain_map(path: &Path) -> bool {
+    std::fs::read(path).is_ok_and(|bytes| metadata_bytes(&bytes).gain_map.is_some())
 }
 
 /// The capture fields of `exif`.
