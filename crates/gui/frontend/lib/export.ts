@@ -54,8 +54,14 @@ export const typeLabel = (t: TFunction, extension: string, ultraHdr: boolean) =>
 /** Whether `loss` is a gain map left out because plain JPEG was chosen: asked for, so noted rather than warned of. */
 export const isChosen = (loss: Loss) => loss.kind === "hdr" && loss.cause === "chosen";
 
-/** Whether any of `losses` is one to warn of: one the user did not choose. */
-export const warnsOf = (losses: readonly Loss[]) => losses.some((loss) => !isChosen(loss));
+/**
+ * Whether `loss` is a gain map the file declares and does not contain, as a Lightroom export of a Pixel photograph
+ * does: there was no HDR to lose, so it is noted rather than warned of.
+ */
+export const isMissing = (loss: Loss) => loss.kind === "hdr" && loss.cause === "missing";
+
+/** Whether any of `losses` is one to warn of: one the user did not choose, of something the file had. */
+export const warnsOf = (losses: readonly Loss[]) => losses.some((loss) => !isChosen(loss) && !isMissing(loss));
 
 /**
  * Whether the file named `name` is written as an Ultra HDR JPEG: its source declares a gain map (`gainMap`), it is
@@ -218,6 +224,9 @@ export const formatLoss = (t: TFunction, loss: Loss): string => {
 
     switch (loss.kind) {
         case "hdr":
+            if (loss.cause === "missing") {
+                return t("export.loss.hdrGainMapMissing");
+            }
             if (loss.cause === "notCarried") {
                 return t("export.loss.hdrGainMapNotCarried");
             }

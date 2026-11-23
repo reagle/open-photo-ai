@@ -9,7 +9,7 @@ import { framedDimensions } from "@/ipc/crop";
 import { type ExportName, type Loss, revealExport } from "@/ipc/export";
 import { renditionFor } from "@/ipc/images";
 import { enlargement, progressLabelKey } from "@/lib/enhancements";
-import { formatLoss, typeLabel, warnsOf, writesUltraHdr } from "@/lib/export";
+import { formatLoss, isMissing, typeLabel, warnsOf, writesUltraHdr } from "@/lib/export";
 import { report } from "@/lib/report";
 import { cn, formatBytes, formatDimensions } from "@/lib/utils";
 import { useImageCrop } from "@/stores/crop";
@@ -112,12 +112,14 @@ const StagePill = ({ row }: { row: Row }) => {
  * with each loss in words in its tooltip. Focusable, so the tooltip is reachable from the keyboard too.
  *
  * **A gain map left out by plain JPEG is a note, not a warning**: the user chose an SDR JPEG, so where that is all
- * the file loses, the mark is a muted information sign rather than the warning's triangle.
+ * the file loses, the mark is a muted information sign rather than the warning's triangle. So is a gain map the file
+ * declares and does not contain: it had no HDR to lose.
  */
 const LossWarning = ({ losses }: { losses: readonly Loss[] }) => {
     const { t } = useTranslation();
     const warns = warnsOf(losses);
     const Mark = warns ? TriangleAlert : Info;
+    const note = losses.some(isMissing) ? t("export.loss.nothingLost") : t("export.loss.chosen");
 
     return (
         <Tooltip>
@@ -125,7 +127,7 @@ const LossWarning = ({ losses }: { losses: readonly Loss[] }) => {
                 type="button"
                 data-slot="export-loss"
                 data-chosen={warns ? undefined : ""}
-                aria-label={warns ? t("export.loss.warning") : t("export.loss.chosen")}
+                aria-label={warns ? t("export.loss.warning") : note}
                 className={cn(
                     "flex size-4 flex-none items-center justify-center rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden",
                     warns ? "text-warning" : "text-foreground-dim",

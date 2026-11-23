@@ -84,6 +84,13 @@ describe("Ultra HDR on a row", () => {
         expect(warnsOf([NOT_CARRIED])).toBe(true);
         expect(warnsOf([])).toBe(false);
     });
+
+    it("does not warn of a gain map the file declares and does not contain: it had no HDR to lose", () => {
+        const missing: Loss = { kind: "hdr", hdr: "gainMap", format: "PNG", cause: "missing" };
+
+        expect(warnsOf([missing])).toBe(false);
+        expect(warnsOf([missing, DEPTH])).toBe(true);
+    });
 });
 
 describe("directoryOf", () => {
@@ -225,6 +232,12 @@ describe("formatLoss", () => {
     it("words a gain map plain JPEG left out as what was done, not as a failure", () => {
         expect(words({ kind: "hdr", hdr: "gainMap", format: "JPEG", cause: "chosen" })).toBe(
             "Written as SDR (gain map left out)",
+        );
+    });
+
+    it("words a gain map a file declares and does not contain", () => {
+        expect(words({ kind: "hdr", hdr: "gainMap", format: "JPEG", cause: "missing" })).toBe(
+            "No HDR to keep: the file declares a gain map it does not contain",
         );
     });
 

@@ -182,10 +182,10 @@ describe("the loss warning", () => {
         <ExportRow path={HOLIDAY.path} name={useNames()?.byPath.get(HOLIDAY.path)} predicted={predicted} />
     );
 
-    /** The words the warning's tooltip lists, once it is focused open. */
-    const listed = async () => {
-        const trigger = warning();
-        if (!trigger) throw new Error("no warning is drawn");
+    /** The words the mark's tooltip lists, once it is focused open: the warning's, or the note's named `note`. */
+    const listed = async (note?: string) => {
+        const trigger = note ? screen.queryByRole("button", { name: note }) : warning();
+        if (!trigger) throw new Error("no mark is drawn");
         fireEvent.focus(trigger);
         const lists = await waitFor(() => {
             const found = document.querySelectorAll("[data-slot='export-loss-list']");
@@ -201,6 +201,16 @@ describe("the loss warning", () => {
         await named();
 
         expect(await listed()).toEqual(["HDR gain map dropped: it could not be carried", "16-bit → 8-bit in JPEG"]);
+    });
+
+    it("notes a gain map the file declares and does not contain as no HDR to keep, without warning of it", async () => {
+        render(<PredictedRow predicted={[{ ...HDR, cause: "missing" }]} />);
+        await named();
+
+        expect(warning()).not.toBeInTheDocument();
+        expect(await listed("Nothing to lose: the file has no HDR")).toEqual([
+            "No HDR to keep: the file declares a gain map it does not contain",
+        ]);
     });
 
     it("is not drawn on a row that loses nothing", async () => {

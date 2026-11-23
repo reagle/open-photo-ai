@@ -571,6 +571,28 @@ describe("JPG (Ultra HDR)", () => {
         expect(await screen.findAllByText("Written as SDR (gain map left out)")).not.toHaveLength(0);
     });
 
+    it("names a JPEG declaring a gain map it does not contain plain JPG, and notes it without warning or counting it", async () => {
+        // As Rust answers a Lightroom export of a Pixel photograph: no gain map held, and none to lose.
+        const MISSING: Loss = { kind: "hdr", hdr: "gainMap", format: "JPEG", cause: "missing" };
+        predicted.mockImplementation((paths: string[]) =>
+            Promise.resolve(paths.map((path) => ({ path, losses: [MISSING], gainMap: false, unreadable: false }))),
+        );
+        useExportSettingsStore.getState().setFormat("uhdr");
+        pick(PORTRAIT);
+        await mountNamed();
+
+        await waitFor(() => expect(types()).toEqual(["JPG → JPG"]));
+        const mark = await screen.findByRole("button", { name: "Nothing to lose: the file has no HDR" });
+        expect(mark).toHaveAttribute("data-chosen");
+        expect(screen.queryByRole("button", { name: "Quality lost in this format" })).not.toBeInTheDocument();
+        expect(notice()).toBeNull();
+
+        fireEvent.focus(mark);
+        expect(
+            await screen.findAllByText("No HDR to keep: the file declares a gain map it does not contain"),
+        ).not.toHaveLength(0);
+    });
+
     it("leaves the warning where another format loses the gain map", async () => {
         useExportSettingsStore.getState().setFormat("png");
         pick(PORTRAIT);
