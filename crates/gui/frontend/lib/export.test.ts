@@ -84,6 +84,13 @@ describe("Ultra HDR on a row", () => {
         expect(warnsOf([NOT_CARRIED])).toBe(true);
         expect(warnsOf([])).toBe(false);
     });
+
+    it("does not warn of a gain map the file declares and does not contain: it had no HDR to lose", () => {
+        const missing: Loss = { kind: "hdr", hdr: "gainMap", format: "PNG", cause: "missing" };
+
+        expect(warnsOf([missing])).toBe(false);
+        expect(warnsOf([missing, DEPTH])).toBe(true);
+    });
 });
 
 describe("directoryOf", () => {

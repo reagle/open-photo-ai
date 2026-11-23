@@ -339,6 +339,7 @@
             "notice": "{{total}} 张图像中有 {{count}} 张在此格式下会损失质量。将指针悬停在某行的警告上可查看详情。",
             "warning": "此格式会损失质量",
             "chosen": "所选格式不包含此项",
+            "nothingLost": "无损失：文件不含 HDR",
             "hdrGainMap": "已丢弃 HDR 增益图：{{format}} 目前仅输出 SDR",
             "hdrGainMapNotCarried": "已丢弃 HDR 增益图：无法保留",
             "hdrGainMapLeftOut": "以 SDR 输出（不含增益图）",

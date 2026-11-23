@@ -221,8 +221,9 @@ pub(crate) fn reconcile(
 ///
 /// **Only what the prediction needs is read** ([`header`]): a JPEG up to its first scan and a PNG up to its first
 /// image data, where every block it reads lies; another format whole. A format change in the export dialog asks again
-/// for every queued file, so a 30 MB JPEG costs its few kilobytes of header each time rather than its 30 MB. A gain-map
-/// JPEG asked about as JPEG is the exception, read whole: its gain map lies after the primary image.
+/// for every queued file, so a 30 MB JPEG costs its few kilobytes of header each time rather than its 30 MB. A JPEG
+/// that declares a gain map is the exception, read whole in every format: its gain map lies after the primary image,
+/// and whether it is there decides whether the file has HDR to lose at all.
 ///
 /// A lower bound: it may miss a loss but never names one the write will not have. An enhancement that narrows the
 /// depth or changes the colour model is not foreseen (a grayscale photograph colourised loses its `GRAY` profile to the
@@ -243,17 +244,14 @@ pub fn predict_blocking(path: impl AsRef<Path>, format: ImageFormat) -> Result<V
 pub struct Prediction {
     /// What the file will lose against its source, as [`predict_blocking`] gives it.
     pub losses: Vec<Loss>,
-    /// Whether the source declares an HDR gain map — an Ultra HDR or ISO 21496-1 JPEG — as
-    /// [`hdr_bytes`](rust_sak::image::hdr_bytes) reads its header, whether or not it will be carried: what a front
-    /// end names the source by.
+    /// Whether the source holds an HDR gain map — an Ultra HDR or ISO 21496-1 JPEG — whether or not it will be carried:
+    /// what a front end names the source by. A file that declares a gain map it does not contain
+    /// ([`HdrCause::Missing`]), as a Lightroom export of a Pixel photograph does, holds none.
     pub gain_map: bool,
 }
 
 /// [`predict_blocking`] under the gain-map `choice` — a plain JPEG leaves the gain map out by choice
-/// ([`HdrCause::Chosen`]) — with whether the source declares a gain map beside it.
-///
-/// A gain map left out is not read past the header: only one asked to be carried is judged, as
-/// [`predict_blocking`] judges it.
+/// ([`HdrCause::Chosen`]) — with whether the source holds a gain map beside it.
 ///
 /// # Errors
 ///
@@ -277,13 +275,14 @@ pub fn predict_export_blocking(
     }
 
     let mut bytes = header(path).map_err(ImageIoError::read(path))?;
-    let gain_map = rust_sak::image::hdr_bytes(&bytes) == Some(Hdr::GainMap);
-    // Whether the gain map is carried decides only a gain-map JPEG written as JPEG with it, and it lies after the
-    // primary.
-    if format == ImageFormat::Jpeg && choice == GainMapChoice::Keep && gain_map {
+    let declared = rust_sak::image::hdr_bytes(&bytes) == Some(Hdr::GainMap);
+    // The gain map lies after the primary, and whether it is there at all matters in every format and choice.
+    if declared {
         bytes = std::fs::read(path).map_err(ImageIoError::read(path))?;
     }
-    Ok(Prediction { losses: predict_from(&bytes, path, format, choice)?, gain_map })
+    let losses = predict_from(&bytes, path, format, choice)?;
+    let missing = losses.iter().any(|loss| matches!(loss, Loss::Hdr { cause: HdrCause::Missing, .. }));
+    Ok(Prediction { losses, gain_map: declared && !missing })
 }
 
 /// [`predict_export_blocking`]'s losses from the file's `bytes`, as much of them as [`header`] reads.
@@ -430,15 +429,18 @@ pub(crate) fn assess(
     let mut losses = Vec::new();
 
     // Kept only by a gain-map JPEG written as JPEG with its gain map; PQ and HLG are not written as HDR yet.
+    // A declared gain map the file lacks is missing whatever the format and choice: there is no HDR to lose.
     match (fidelity.hdr, format) {
         (None, _) => {}
+        (Some(hdr @ Hdr::GainMap), _) if gain_map == GainMapState::Missing => {
+            losses.push(Loss::Hdr { hdr, format, cause: HdrCause::Missing });
+        }
         (Some(hdr @ Hdr::GainMap), ImageFormat::Jpeg) if choice == GainMapChoice::Drop => {
             losses.push(Loss::Hdr { hdr, format, cause: HdrCause::Chosen });
         }
         (Some(Hdr::GainMap), ImageFormat::Jpeg) if gain_map == GainMapState::Carried => {}
         (Some(hdr @ Hdr::GainMap), ImageFormat::Jpeg) => {
-            let cause = if gain_map == GainMapState::Missing { HdrCause::Missing } else { HdrCause::NotCarried };
-            losses.push(Loss::Hdr { hdr, format, cause });
+            losses.push(Loss::Hdr { hdr, format, cause: HdrCause::NotCarried });
         }
         (Some(hdr), _) => losses.push(Loss::Hdr { hdr, format, cause: HdrCause::Format }),
     }
@@ -588,10 +590,10 @@ mod tests {
             serde_json::to_value(&losses[0]).expect("JSON"),
             serde_json::json!({ "kind": "hdr", "hdr": "gainMap", "format": "JPEG", "cause": "missing" })
         );
-        // Another format loses it to the format, as for any gain-map JPEG.
+        // Another format has no HDR to lose either: it is missing there too, not lost to the format.
         assert_eq!(
             super::losses(&lacking, ImageFormat::Png),
-            [Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Png, cause: HdrCause::Format }]
+            [Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Png, cause: HdrCause::Missing }]
         );
     }
 
@@ -844,13 +846,18 @@ mod tests {
         let plain = write_fixture(dir.path(), "plain.jpg", &written_jpeg());
         let chosen = [Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Jpeg, cause: HdrCause::Chosen }];
 
-        // Left out by choice, a gain map is no longer judged: even one that could not be carried is simply left out.
-        for path in [&hawk, &cut] {
-            let prediction = predict_export_blocking(path, ImageFormat::Jpeg, GainMapChoice::Drop).expect("readable");
-            assert_eq!(prediction, Prediction { losses: chosen.to_vec(), gain_map: true }, "{}", path.display());
-            let loaded = crate::image::load_blocking(path).expect("decodable");
-            assert_eq!(losses_carrying(&loaded, ImageFormat::Jpeg, GainMapChoice::Drop, false), chosen);
-        }
+        // Left out by choice, a gain map is simply left out.
+        let prediction = predict_export_blocking(&hawk, ImageFormat::Jpeg, GainMapChoice::Drop).expect("readable");
+        assert_eq!(prediction, Prediction { losses: chosen.to_vec(), gain_map: true });
+        let loaded = crate::image::load_blocking(&hawk).expect("decodable");
+        assert_eq!(losses_carrying(&loaded, ImageFormat::Jpeg, GainMapChoice::Drop, false), chosen);
+
+        // One cut short inside the file is not there to leave out: it is missing, by choice or not.
+        let missing = [Loss::Hdr { hdr: Hdr::GainMap, format: ImageFormat::Jpeg, cause: HdrCause::Missing }];
+        let prediction = predict_export_blocking(&cut, ImageFormat::Jpeg, GainMapChoice::Drop).expect("readable");
+        assert_eq!(prediction, Prediction { losses: missing.to_vec(), gain_map: false });
+        let loaded = crate::image::load_blocking(&cut).expect("decodable");
+        assert_eq!(losses_carrying(&loaded, ImageFormat::Jpeg, GainMapChoice::Drop, false), missing);
         assert_eq!(chosen[0].to_string(), "written as SDR (gain map left out)");
         assert_eq!(
             serde_json::to_value(&chosen[0]).expect("serializes"),
@@ -868,6 +875,27 @@ mod tests {
         // A JPEG without one has nothing to leave out, and is not named by one.
         let sdr = predict_export_blocking(&plain, ImageFormat::Jpeg, GainMapChoice::Drop).expect("readable");
         assert_eq!(sdr, Prediction { losses: Vec::new(), gain_map: false });
+    }
+
+    #[test]
+    fn a_jpeg_declaring_a_gain_map_it_lacks_is_foreseen_as_missing_in_every_format_and_not_named_by_one() {
+        use crate::image::test_support::{declared_ultra_hdr_without_gain_map, write_fixture};
+
+        // As Lightroom exports a Pixel photograph: the Ultra HDR XMP stays, the gain-map image does not.
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let path = write_fixture(dir.path(), "declared.jpg", &declared_ultra_hdr_without_gain_map());
+        let loaded = crate::image::load_blocking(&path).expect("decodable");
+
+        for (format, choice) in [
+            (ImageFormat::Jpeg, GainMapChoice::Keep),
+            (ImageFormat::Jpeg, GainMapChoice::Drop),
+            (ImageFormat::Png, GainMapChoice::Keep),
+        ] {
+            let missing = vec![Loss::Hdr { hdr: Hdr::GainMap, format, cause: HdrCause::Missing }];
+            let prediction = predict_export_blocking(&path, format, choice).expect("readable");
+            assert_eq!(prediction, Prediction { losses: missing.clone(), gain_map: false }, "{format:?} {choice:?}");
+            assert_eq!(losses_carrying(&loaded, format, choice, false), missing, "{format:?} {choice:?}");
+        }
     }
 
     #[test]

@@ -339,6 +339,7 @@
             "notice": "{{count}} dari {{total}} gambar akan kehilangan kualitas dalam format ini. Arahkan penunjuk ke peringatan di sebuah baris untuk melihat apa yang hilang.",
             "warning": "Kualitas hilang dalam format ini",
             "chosen": "Tidak disertakan oleh format yang dipilih",
+            "nothingLost": "Tidak ada yang hilang: berkas tidak memiliki HDR",
             "hdrGainMap": "Gain map HDR dihapus: keluaran {{format}} untuk saat ini hanya SDR",
             "hdrGainMapNotCarried": "Gain map HDR dihapus: tidak dapat dipertahankan",
             "hdrGainMapLeftOut": "Ditulis sebagai SDR (gain map tidak disertakan)",

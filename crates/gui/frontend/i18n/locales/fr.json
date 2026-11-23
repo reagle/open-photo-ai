@@ -351,6 +351,7 @@
             "notice": "{{count}} images sur {{total}} perdront en qualité dans ce format. Survolez l'avertissement d'une ligne pour voir ce qui est perdu.",
             "warning": "Perte de qualité dans ce format",
             "chosen": "Omis par le format choisi",
+            "nothingLost": "Rien à perdre : le fichier n'a pas de HDR",
             "hdrGainMap": "Carte de gain HDR supprimée : {{format}} est écrit en SDR uniquement pour l'instant",
             "hdrGainMapNotCarried": "Carte de gain HDR supprimée : elle n'a pas pu être conservée",
             "hdrGainMapLeftOut": "Écrit en SDR (carte de gain omise)",

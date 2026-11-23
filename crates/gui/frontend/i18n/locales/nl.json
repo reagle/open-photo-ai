@@ -345,6 +345,7 @@
             "notice": "{{count}} van {{total}} afbeeldingen verliezen kwaliteit in dit formaat. Wijs de waarschuwing in een rij aan om te zien wat.",
             "warning": "Kwaliteitsverlies in dit formaat",
             "chosen": "Weggelaten door het gekozen formaat",
+            "nothingLost": "Niets te verliezen: het bestand heeft geen HDR",
             "hdrGainMap": "HDR-gainmap verwijderd: {{format}} wordt voorlopig alleen als SDR geschreven",
             "hdrGainMapNotCarried": "HDR-gainmap verwijderd: deze kon niet worden meegenomen",
             "hdrGainMapLeftOut": "Als SDR geschreven (gainmap weggelaten)",
